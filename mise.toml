@@ -5,6 +5,7 @@ node = "24.15.0"
 "aqua:rhysd/actionlint" = "1.7.12"
 swiftlint = "0.63.2"
 golangci-lint = "2.11.4"
+gitleaks = "8.30.1"
 
 [tasks.setup]
 description = "Install pinned toolchain and npm dependencies"
@@ -21,6 +22,10 @@ run = "AGENT_SECRET_IN_MISE=1 scripts/lint-go.sh"
 [tasks."lint:swift"]
 description = "Run SwiftLint with strict all-rules mode"
 run = "swiftlint lint --strict --no-cache"
+
+[tasks."lint:secrets"]
+description = "Scan the working tree for committed secret values"
+run = "gitleaks dir . --redact --no-banner"
 
 [tasks."lint:smart"]
 description = "Run smart lints for staged files"

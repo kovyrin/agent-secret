@@ -16,6 +16,7 @@ fi
 
 scripts/lint-go.sh
 go test ./...
+gitleaks dir . --redact --no-banner
 
 if [ ! -x node_modules/.bin/markdownlint ]; then
   npm ci --ignore-scripts --no-audit --no-fund

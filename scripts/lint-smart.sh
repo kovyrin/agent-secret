@@ -198,6 +198,13 @@ if [ "$npm_changed" -eq 1 ]; then
   npm ci --ignore-scripts --no-audit --no-fund
 fi
 
+echo "Running gitleaks on changed content..."
+if [ "$use_staged" -eq 1 ]; then
+  gitleaks git --staged --redact --no-banner
+else
+  gitleaks dir . --redact --no-banner
+fi
+
 if [ ${#go_files[@]} -gt 0 ]; then
   echo "Running gofmt on changed Go files..."
   gofmt_out="$(gofmt -l "${go_files[@]}")"

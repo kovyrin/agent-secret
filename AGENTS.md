@@ -47,6 +47,7 @@ Focused checks:
 mise run lint:go
 mise exec -- golangci-lint run --timeout 5m
 mise run lint:swift
+mise run lint:secrets
 mise run lint:smart
 mise run test
 scripts/lint.sh
