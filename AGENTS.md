@@ -51,6 +51,7 @@ mise run lint:secrets
 mise run lint:vuln
 mise run lint:smart
 mise run test
+mise run test:race
 scripts/lint.sh
 scripts/lint-go.sh
 ```

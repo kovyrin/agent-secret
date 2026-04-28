@@ -43,6 +43,10 @@ go test ./...
 cd approver && swift test
 """
 
+[tasks."test:race"]
+description = "Run Go tests with the race detector enabled"
+run = "go test -race ./..."
+
 [tasks.build]
 description = "Build Go commands and the macOS approver app"
 run = """
