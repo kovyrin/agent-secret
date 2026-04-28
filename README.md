@@ -51,6 +51,14 @@ internals, but the repository boundary and module path should remain stable.
 The current project-local checks are:
 
 ```bash
+mise run setup
+mise run lint
+mise run build
+```
+
+The underlying commands are:
+
+```bash
 scripts/lint.sh
 go test ./...
 go test -tags integration ./...
@@ -62,6 +70,29 @@ swift run agent-secret-approver-smoke
 
 The integration test skips unless `AGENT_SECRET_LIVE_REF` and
 `AGENT_SECRET_1PASSWORD_ACCOUNT` point at a test-only 1Password reference.
+
+## Development Toolchain
+
+The project uses `mise` as the toolchain entrypoint. Install `mise`, then run:
+
+```bash
+mise run setup
+```
+
+This installs the pinned Go, Node/npm/npx, and shellcheck versions from
+`mise.toml`, installs npm dependencies from `package-lock.json`, and configures
+the repository's tracked pre-commit hook.
+Swift, `codesign`, `iconutil`, and `sips` still come from the macOS/Xcode
+command line tools.
+
+Project scripts run through `mise` by default, so these work from a normal
+shell after setup:
+
+```bash
+scripts/lint.sh
+scripts/lint-go.sh
+scripts/lint-smart.sh --staged
+```
 
 ## Development Install
 

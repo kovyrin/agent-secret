@@ -1,0 +1,35 @@
+[tools]
+go = "1.26.2"
+node = "24.15.0"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"aqua:rhysd/actionlint" = "1.7.12"
+
+[tasks.setup]
+description = "Install pinned toolchain and npm dependencies"
+run = "mise install && npm ci --ignore-scripts --no-audit --no-fund && scripts/install-git-hooks.sh"
+
+[tasks.lint]
+description = "Run all lint and test checks"
+run = "AGENT_SECRET_IN_MISE=1 scripts/lint.sh"
+
+[tasks."lint:go"]
+description = "Run Go format and vet checks"
+run = "AGENT_SECRET_IN_MISE=1 scripts/lint-go.sh"
+
+[tasks."lint:smart"]
+description = "Run smart lints for staged files"
+run = "AGENT_SECRET_IN_MISE=1 scripts/lint-smart.sh --staged"
+
+[tasks.test]
+description = "Run Go and Swift tests"
+run = """
+go test ./...
+cd approver && swift test
+"""
+
+[tasks.build]
+description = "Build Go commands and the macOS approver app"
+run = """
+go build ./cmd/agent-secret ./cmd/agent-secretd
+cd approver && ./scripts/build-app.sh
+"""

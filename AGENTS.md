@@ -28,13 +28,27 @@ independent from unrelated external projects.
 
 ## Commands
 
-These commands are expected once the scaffold exists:
+Use `mise` as the project toolchain entrypoint. Before local development:
 
 ```bash
-go test ./...
-gofmt -w .
-cd approver && swift test
-npx --yes markdownlint-cli '**/*.md'
+mise run setup
+```
+
+Default checks:
+
+```bash
+mise run lint
+mise run build
+```
+
+Focused checks:
+
+```bash
+mise run lint:go
+mise run lint:smart
+mise run test
+scripts/lint.sh
+scripts/lint-go.sh
 ```
 
 Integration tests must be opt-in. Prefer environment variables that point at
@@ -55,5 +69,6 @@ test-only `op://` references, and never print fetched values.
 ## Documentation Policy
 
 - Keep docs practical and implementation-focused.
-- When creating or editing Markdown, run markdownlint for the touched files.
+- When creating or editing Markdown, run `mise run lint` or
+  `npx --no-install markdownlint '**/*.md'` from a `mise exec` shell.
 - Record research findings in docs before relying on them in implementation.

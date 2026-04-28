@@ -4,29 +4,34 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 
-go_tool=(go)
-if ! command -v go >/dev/null 2>&1; then
-  if command -v mise >/dev/null 2>&1; then
-    go_tool=(mise x go@1.26.2 -- go)
-  else
-    echo "lint: required command not found: go" >&2
+if [ "${AGENT_SECRET_IN_MISE:-}" != "1" ]; then
+  if ! command -v mise >/dev/null 2>&1; then
+    echo "lint: required command not found: mise" >&2
     exit 1
   fi
+
+  export AGENT_SECRET_IN_MISE=1
+  exec mise exec -- "$0" "$@"
 fi
 
 scripts/lint-go.sh
-"${go_tool[@]}" test ./...
+go test ./...
 
-if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck scripts/*.sh approver/scripts/*.sh
-else
-  echo "lint: shellcheck not found; skipping shell lint" >&2
+if [ ! -x node_modules/.bin/markdownlint ]; then
+  npm ci --ignore-scripts --no-audit --no-fund
 fi
 
-if command -v npx >/dev/null 2>&1; then
-  npx --yes markdownlint-cli '**/*.md'
-else
-  echo "lint: npx not found; skipping markdownlint" >&2
+shellcheck scripts/*.sh approver/scripts/*.sh
+if [ -d .github/workflows ]; then
+  workflow_files=()
+  while IFS= read -r -d '' file; do
+    workflow_files+=("$file")
+  done < <(find .github/workflows -type f \( -name "*.yml" -o -name "*.yaml" \) -print0)
+
+  if [ ${#workflow_files[@]} -gt 0 ]; then
+    actionlint "${workflow_files[@]}"
+  fi
 fi
+npx --no-install markdownlint '**/*.md'
 
 (cd approver && swift test)

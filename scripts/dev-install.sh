@@ -30,6 +30,13 @@ USAGE
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 
+if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
+  if command -v mise >/dev/null 2>&1; then
+    export AGENT_SECRET_IN_MISE=1
+    exec mise exec -- "$0" "$@"
+  fi
+fi
+
 bin_dir="${AGENT_SECRET_INSTALL_BIN_DIR:-$HOME/.local/bin}"
 app_dir="${AGENT_SECRET_INSTALL_APP_DIR:-$HOME/Applications}"
 stop_daemon=1

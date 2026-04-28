@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint-test-build:
+    name: Lint, Test, Build
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Trust mise config
+        run: mise trust --yes
+
+      - name: Install project dependencies
+        run: mise run setup
+
+      - name: Run lints and tests
+        run: mise run lint
+
+      - name: Build commands and app bundle
+        run: mise run build

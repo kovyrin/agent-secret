@@ -1,0 +1,11 @@
+{
+  "name": "agent-secret",
+  "private": true,
+  "description": "Development tooling for agent-secret.",
+  "scripts": {
+    "lint:md": "markdownlint '**/*.md'"
+  },
+  "devDependencies": {
+    "markdownlint-cli": "0.48.0"
+  }
+}
