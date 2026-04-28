@@ -79,7 +79,9 @@ add_unique() {
 add_go_target() {
   local target="$1"
 
-  if add_unique "$target" "${go_targets[@]}"; then
+  if [ ${#go_targets[@]} -eq 0 ]; then
+    go_targets+=("$target")
+  elif add_unique "$target" "${go_targets[@]}"; then
     go_targets+=("$target")
   fi
 }

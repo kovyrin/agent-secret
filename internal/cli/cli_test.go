@@ -12,10 +12,9 @@ import (
 )
 
 func TestParseExecBuildsValidatedRequest(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	writeExecutable(t, dir, "terraform")
+	t.Setenv("PATH", dir)
 	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	parser := NewParser(func() time.Time { return now })
 
