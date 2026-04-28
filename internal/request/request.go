@@ -1,0 +1,366 @@
+package request
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+)
+
+const (
+	MaxReasonLength = 240
+	DefaultExecTTL  = 2 * time.Minute
+	MinExecTTL      = 10 * time.Second
+	MaxExecTTL      = 10 * time.Minute
+)
+
+var (
+	ErrInvalidAlias        = errors.New("invalid secret alias")
+	ErrInvalidCommand      = errors.New("invalid command")
+	ErrInvalidDeliveryMode = errors.New("invalid delivery mode")
+	ErrInvalidMaxReads     = errors.New("invalid max reads")
+	ErrInvalidReason       = errors.New("invalid reason")
+	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
+	ErrInvalidTTL          = errors.New("invalid ttl")
+)
+
+var aliasPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
+
+type DeliveryMode string
+
+const (
+	DeliveryEnvExec       DeliveryMode = "env_exec"
+	DeliverySessionSocket DeliveryMode = "session_socket"
+)
+
+type SecretSpec struct {
+	Alias string
+	Ref   string
+}
+
+type SecretRef struct {
+	Raw     string
+	Vault   string
+	Item    string
+	Section string
+	Field   string
+}
+
+type Secret struct {
+	Alias string
+	Ref   SecretRef
+}
+
+type ExecOptions struct {
+	Reason       string
+	Command      []string
+	CWD          string
+	Env          []string
+	Secrets      []SecretSpec
+	TTL          time.Duration
+	ReceivedAt   time.Time
+	DeliveryMode DeliveryMode
+	MaxReads     int
+	OverrideEnv  bool
+	ForceRefresh bool
+}
+
+type ExecRequest struct {
+	Reason             string
+	Command            []string
+	ResolvedExecutable string
+	CWD                string
+	Env                []string `json:"-"`
+	Secrets            []Secret
+	TTL                time.Duration
+	ReceivedAt         time.Time
+	ExpiresAt          time.Time
+	DeliveryMode       DeliveryMode
+	MaxReads           int
+	OverrideEnv        bool
+	OverriddenAliases  []string
+	ForceRefresh       bool
+}
+
+func (r ExecRequest) Expired(at time.Time) bool {
+	return !at.Before(r.ExpiresAt)
+}
+
+func NewExec(opts ExecOptions) (ExecRequest, error) {
+	reason, err := validateReason(opts.Reason)
+	if err != nil {
+		return ExecRequest{}, err
+	}
+
+	mode := opts.DeliveryMode
+	if mode == "" {
+		mode = DeliveryEnvExec
+	}
+	if err := validateDelivery(mode, opts.MaxReads); err != nil {
+		return ExecRequest{}, err
+	}
+
+	ttl := opts.TTL
+	if ttl == 0 {
+		ttl = DefaultExecTTL
+	}
+	if ttl < MinExecTTL || ttl > MaxExecTTL {
+		return ExecRequest{}, fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
+	}
+
+	receivedAt := opts.ReceivedAt
+	if receivedAt.IsZero() {
+		receivedAt = time.Now()
+	}
+
+	cwd, err := normalizeCWD(opts.CWD)
+	if err != nil {
+		return ExecRequest{}, err
+	}
+
+	env := opts.Env
+	if env == nil {
+		env = os.Environ()
+	}
+	env = slices.Clone(env)
+
+	command, resolved, err := resolveCommand(cwd, env, opts.Command)
+	if err != nil {
+		return ExecRequest{}, err
+	}
+
+	secrets, err := parseSecrets(opts.Secrets)
+	if err != nil {
+		return ExecRequest{}, err
+	}
+
+	overriddenAliases, err := detectOverrides(env, secrets, opts.OverrideEnv)
+	if err != nil {
+		return ExecRequest{}, err
+	}
+
+	return ExecRequest{
+		Reason:             reason,
+		Command:            command,
+		ResolvedExecutable: resolved,
+		CWD:                cwd,
+		Env:                env,
+		Secrets:            secrets,
+		TTL:                ttl,
+		ReceivedAt:         receivedAt,
+		ExpiresAt:          receivedAt.Add(ttl),
+		DeliveryMode:       mode,
+		MaxReads:           opts.MaxReads,
+		OverrideEnv:        opts.OverrideEnv,
+		OverriddenAliases:  overriddenAliases,
+		ForceRefresh:       opts.ForceRefresh,
+	}, nil
+}
+
+func ParseSecretRef(ref string) (SecretRef, error) {
+	if strings.TrimSpace(ref) != ref || ref == "" {
+		return SecretRef{}, fmt.Errorf("%w: must be non-empty and untrimmed", ErrInvalidReference)
+	}
+	if !strings.HasPrefix(ref, "op://") {
+		return SecretRef{}, fmt.Errorf("%w: must start with op://", ErrInvalidReference)
+	}
+
+	parts := strings.Split(strings.TrimPrefix(ref, "op://"), "/")
+	if len(parts) < 3 || len(parts) > 4 {
+		return SecretRef{}, fmt.Errorf("%w: expected op://vault/item[/section]/field", ErrInvalidReference)
+	}
+	for _, part := range parts {
+		if part == "" {
+			return SecretRef{}, fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
+		}
+	}
+
+	secretRef := SecretRef{
+		Raw:   ref,
+		Vault: parts[0],
+		Item:  parts[1],
+		Field: parts[len(parts)-1],
+	}
+	if len(parts) == 4 {
+		secretRef.Section = parts[2]
+	}
+
+	return secretRef, nil
+}
+
+func validateReason(reason string) (string, error) {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return "", fmt.Errorf("%w: required", ErrInvalidReason)
+	}
+	if len([]rune(trimmed)) > MaxReasonLength {
+		return "", fmt.Errorf("%w: maximum length is %d characters", ErrInvalidReason, MaxReasonLength)
+	}
+	return trimmed, nil
+}
+
+func validateDelivery(mode DeliveryMode, maxReads int) error {
+	switch mode {
+	case DeliveryEnvExec:
+		if maxReads != 0 {
+			return fmt.Errorf("%w: max reads is session/socket-only", ErrInvalidMaxReads)
+		}
+	case DeliverySessionSocket:
+		if maxReads <= 0 {
+			return fmt.Errorf("%w: session/socket reads require a positive max reads", ErrInvalidMaxReads)
+		}
+	default:
+		return fmt.Errorf("%w: %q", ErrInvalidDeliveryMode, mode)
+	}
+	return nil
+}
+
+func normalizeCWD(cwd string) (string, error) {
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("get current working directory: %w", err)
+		}
+	}
+
+	abs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", fmt.Errorf("resolve cwd: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("stat cwd %q: %w", abs, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("cwd %q is not a directory", abs)
+	}
+
+	return evalPath(abs), nil
+}
+
+func resolveCommand(cwd string, env []string, command []string) ([]string, string, error) {
+	if len(command) == 0 || command[0] == "" {
+		return nil, "", fmt.Errorf("%w: argv is required", ErrInvalidCommand)
+	}
+
+	argv := slices.Clone(command)
+	executable := argv[0]
+	var candidate string
+
+	if strings.ContainsRune(executable, '/') {
+		if filepath.IsAbs(executable) {
+			candidate = executable
+		} else {
+			candidate = filepath.Join(cwd, executable)
+		}
+		resolved, err := validateExecutable(candidate)
+		if err != nil {
+			return nil, "", err
+		}
+		return argv, resolved, nil
+	}
+
+	pathValue := lookupEnv(env, "PATH")
+	for _, dir := range filepath.SplitList(pathValue) {
+		if dir == "" {
+			dir = "."
+		}
+		candidate = filepath.Join(dir, executable)
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(cwd, candidate)
+		}
+		resolved, err := validateExecutable(candidate)
+		if err == nil {
+			return argv, resolved, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("%w: executable %q not found in caller PATH", ErrInvalidCommand, executable)
+}
+
+func validateExecutable(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("%w: resolve executable %q: %w", ErrInvalidCommand, path, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("%w: stat executable %q: %w", ErrInvalidCommand, abs, err)
+	}
+	if info.IsDir() || info.Mode().Perm()&0111 == 0 {
+		return "", fmt.Errorf("%w: %q is not executable", ErrInvalidCommand, abs)
+	}
+	return evalPath(abs), nil
+}
+
+func parseSecrets(specs []SecretSpec) ([]Secret, error) {
+	if len(specs) == 0 {
+		return nil, fmt.Errorf("%w: at least one secret is required", ErrInvalidReference)
+	}
+
+	seenAliases := make(map[string]struct{}, len(specs))
+	secrets := make([]Secret, 0, len(specs))
+	for _, spec := range specs {
+		if !aliasPattern.MatchString(spec.Alias) {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidAlias, spec.Alias)
+		}
+		if _, exists := seenAliases[spec.Alias]; exists {
+			return nil, fmt.Errorf("%w: duplicate alias %q", ErrInvalidAlias, spec.Alias)
+		}
+		seenAliases[spec.Alias] = struct{}{}
+
+		ref, err := ParseSecretRef(spec.Ref)
+		if err != nil {
+			return nil, err
+		}
+		secrets = append(secrets, Secret{Alias: spec.Alias, Ref: ref})
+	}
+
+	return secrets, nil
+}
+
+func detectOverrides(env []string, secrets []Secret, override bool) ([]string, error) {
+	present := make(map[string]struct{}, len(env))
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			present[key] = struct{}{}
+		}
+	}
+
+	overridden := make([]string, 0)
+	for _, secret := range secrets {
+		if _, exists := present[secret.Alias]; exists {
+			if !override {
+				return nil, fmt.Errorf("%w: existing environment variable %q requires override", ErrInvalidAlias, secret.Alias)
+			}
+			overridden = append(overridden, secret.Alias)
+		}
+	}
+	slices.Sort(overridden)
+
+	return overridden, nil
+}
+
+func lookupEnv(env []string, key string) string {
+	for _, entry := range env {
+		gotKey, value, ok := strings.Cut(entry, "=")
+		if ok && gotKey == key {
+			return value
+		}
+	}
+	return ""
+}
+
+func evalPath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
+}

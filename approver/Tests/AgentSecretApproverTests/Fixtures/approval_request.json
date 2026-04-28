@@ -1,0 +1,23 @@
+{
+  "command": [
+    "/opt/homebrew/bin/terraform",
+    "plan"
+  ],
+  "cwd": "/tmp/project",
+  "expiresAt": "2027-01-15T08:00:00Z",
+  "nonce": "nonce_456",
+  "overriddenAliases": [
+    "EXAMPLE_TOKEN"
+  ],
+  "overrideEnv": true,
+  "reason": "Run Terraform plan for staging",
+  "requestID": "req_123",
+  "resolvedExecutable": "/opt/homebrew/bin/terraform",
+  "reusableUses": 3,
+  "secrets": [
+    {
+      "alias": "EXAMPLE_TOKEN",
+      "ref": "op://Example Vault/Example Item/token"
+    }
+  ]
+}
