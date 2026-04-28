@@ -6,6 +6,7 @@ node = "24.15.0"
 swiftlint = "0.63.2"
 golangci-lint = "2.11.4"
 gitleaks = "8.30.1"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.3.0"
 
 [tasks.setup]
 description = "Install pinned toolchain and npm dependencies"
@@ -26,6 +27,10 @@ run = "swiftlint lint --strict --no-cache"
 [tasks."lint:secrets"]
 description = "Scan the working tree for committed secret values"
 run = "gitleaks dir . --redact --no-banner"
+
+[tasks."lint:vuln"]
+description = "Scan Go packages for known reachable vulnerabilities"
+run = "govulncheck ./..."
 
 [tasks."lint:smart"]
 description = "Run smart lints for staged files"

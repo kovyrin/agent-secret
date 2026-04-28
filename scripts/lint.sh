@@ -16,6 +16,7 @@ fi
 
 scripts/lint-go.sh
 go test ./...
+govulncheck ./...
 gitleaks dir . --redact --no-banner
 
 if [ ! -x node_modules/.bin/markdownlint ]; then

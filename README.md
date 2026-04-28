@@ -94,6 +94,7 @@ scripts/lint-go.sh
 mise exec -- golangci-lint run --timeout 5m
 mise run lint:swift
 mise run lint:secrets
+mise run lint:vuln
 scripts/lint-smart.sh --staged
 ```
 
