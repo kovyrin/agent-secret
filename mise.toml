@@ -3,6 +3,7 @@ go = "1.26.2"
 node = "24.15.0"
 "aqua:koalaman/shellcheck" = "0.11.0"
 "aqua:rhysd/actionlint" = "1.7.12"
+swiftlint = "0.63.2"
 
 [tasks.setup]
 description = "Install pinned toolchain and npm dependencies"
@@ -15,6 +16,10 @@ run = "AGENT_SECRET_IN_MISE=1 scripts/lint.sh"
 [tasks."lint:go"]
 description = "Run Go format and vet checks"
 run = "AGENT_SECRET_IN_MISE=1 scripts/lint-go.sh"
+
+[tasks."lint:swift"]
+description = "Run SwiftLint with strict all-rules mode"
+run = "swiftlint lint --strict --no-cache"
 
 [tasks."lint:smart"]
 description = "Run smart lints for staged files"

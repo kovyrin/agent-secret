@@ -1,59 +1,95 @@
 import AgentSecretApprover
 import Foundation
 
-enum ApproverAppError: Error, CustomStringConvertible {
-    case missingValue(String)
+private enum ApproverAppError: Error, CustomStringConvertible {
     case invalidDecision(String)
     case missingSocket
+    case missingValue(String)
 
     var description: String {
         switch self {
-        case let .missingValue(flag):
-            "missing value for \(flag)"
         case let .invalidDecision(value):
             "invalid mock decision \(value)"
+
         case .missingSocket:
             "missing --socket for daemon approval mode"
+
+        case let .missingValue(flag):
+            "missing value for \(flag)"
         }
     }
 }
 
-let arguments = Array(CommandLine.arguments.dropFirst())
+private let kDefaultMockRequestTTL: TimeInterval = 120
+private let kUsageExitCode: Int32 = 64
+private let kArguments: [String] = Array(CommandLine.arguments.dropFirst())
 
 do {
-    let presenter: ApprovalPresenter = if let mockDecision = try mockDecisionFromArguments(arguments) {
+    let presenter: ApprovalPresenter = if let mockDecision: ApprovalDecisionKind = try mockDecisionFromArguments(
+        kArguments
+    ) {
         StaticDecisionPresenter(decision: mockDecision)
     } else {
         AppKitApprovalPresenter()
     }
-    let client: ApprovalDaemonClient = if let socketPath = try value(for: "--socket", in: arguments) {
+    let client: ApprovalDaemonClient = if let socketPath: String = try value(for: "--socket", in: kArguments) {
         try SocketDaemonClient(socketPath: socketPath)
-    } else if hasMockRequest(arguments) {
-        MockDaemonClient(request: try requestFromArguments(arguments))
+    } else if hasMockRequest(kArguments) {
+        MockDaemonClient(request: try requestFromArguments(kArguments))
     } else {
         throw ApproverAppError.missingSocket
     }
-    let controller = ApprovalController(client: client, presenter: presenter)
-    let decision = try controller.run()
+    let controller: ApprovalController = ApprovalController(client: client, presenter: presenter)
+    let decision: ApprovalDecision = try controller.run()
 
-    if hasMockRequest(arguments) {
-        let encoder = JSONEncoder()
+    if hasMockRequest(kArguments) {
+        let encoder: JSONEncoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(decision)
+        let data: Data = try encoder.encode(decision)
         FileHandle.standardOutput.write(data)
         FileHandle.standardOutput.write(Data("\n".utf8))
     }
 } catch {
     FileHandle.standardError.write(Data("agent-secret-approver: \(error)\n".utf8))
-    exit(64)
+    exit(kUsageExitCode)
 }
 
-func requestFromArguments(_ arguments: [String]) throws -> ApprovalRequest {
-    if let path = try value(for: "--mock-request", in: arguments) {
-        let data = path == "-"
-            ? FileHandle.standardInput.readDataToEndOfFile()
-            : try Data(contentsOf: URL(fileURLWithPath: path))
-        let decoder = JSONDecoder()
+private func hasMockRequest(_ arguments: [String]) -> Bool {
+    arguments.contains("--mock-request")
+}
+
+private func mockDecisionFromArguments(_ arguments: [String]) throws -> ApprovalDecisionKind? {
+    guard let raw: String = try value(for: "--mock-decision", in: arguments) else {
+        return nil
+    }
+
+    switch raw {
+    case "approve", "approve-once":
+        return .approveOnce
+
+    case "deny":
+        return .deny
+
+    case "reuse", "approve-reusable":
+        return .approveReusable
+
+    case "timeout":
+        return .timeout
+
+    default:
+        throw ApproverAppError.invalidDecision(raw)
+    }
+}
+
+private func requestFromArguments(_ arguments: [String]) throws -> ApprovalRequest {
+    if let path: String = try value(for: "--mock-request", in: arguments) {
+        let data: Data
+        if path == "-" {
+            data = FileHandle.standardInput.readDataToEndOfFile()
+        } else {
+            data = try Data(contentsOf: URL(fileURLWithPath: path))
+        }
+        let decoder: JSONDecoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(ApprovalRequest.self, from: data)
     }
@@ -64,7 +100,7 @@ func requestFromArguments(_ arguments: [String]) throws -> ApprovalRequest {
         reason: "Approve a mock agent-secret request",
         command: ["/usr/bin/env", "terraform", "plan"],
         cwd: FileManager.default.currentDirectoryPath,
-        expiresAt: Date().addingTimeInterval(120),
+        expiresAt: Date().addingTimeInterval(kDefaultMockRequestTTL),
         secrets: [
             RequestedSecret(
                 alias: "EXAMPLE_TOKEN",
@@ -74,35 +110,12 @@ func requestFromArguments(_ arguments: [String]) throws -> ApprovalRequest {
     )
 }
 
-func hasMockRequest(_ arguments: [String]) -> Bool {
-    arguments.contains("--mock-request")
-}
-
-func mockDecisionFromArguments(_ arguments: [String]) throws -> ApprovalDecisionKind? {
-    guard let raw = try value(for: "--mock-decision", in: arguments) else {
+private func value(for flag: String, in arguments: [String]) throws -> String? {
+    guard let index: [String].Index = arguments.firstIndex(of: flag) else {
         return nil
     }
 
-    switch raw {
-    case "approve", "approve-once":
-        return .approveOnce
-    case "reuse", "approve-reusable":
-        return .approveReusable
-    case "deny":
-        return .deny
-    case "timeout":
-        return .timeout
-    default:
-        throw ApproverAppError.invalidDecision(raw)
-    }
-}
-
-func value(for flag: String, in arguments: [String]) throws -> String? {
-    guard let index = arguments.firstIndex(of: flag) else {
-        return nil
-    }
-
-    let next = arguments.index(after: index)
+    let next: [String].Index = arguments.index(after: index)
     guard next < arguments.endIndex else {
         throw ApproverAppError.missingValue(flag)
     }

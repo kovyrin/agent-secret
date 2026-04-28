@@ -45,6 +45,7 @@ Focused checks:
 
 ```bash
 mise run lint:go
+mise run lint:swift
 mise run lint:smart
 mise run test
 scripts/lint.sh

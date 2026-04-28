@@ -46,6 +46,10 @@ else
   while IFS= read -r -d '' file; do
     changed_files+=("$file")
   done < <(git diff --name-only -z --diff-filter=ACMRT)
+
+  while IFS= read -r -d '' file; do
+    changed_files+=("$file")
+  done < <(git ls-files --others --exclude-standard -z)
 fi
 
 if [ ${#changed_files[@]} -eq 0 ]; then
@@ -57,10 +61,12 @@ go_files=()
 go_targets=()
 markdown_files=()
 shell_files=()
+swift_files=()
 workflow_files=()
 npm_changed=0
 mise_changed=0
 markdown_config_changed=0
+swiftlint_config_changed=0
 
 add_unique() {
   local item="$1"
@@ -146,12 +152,18 @@ for file in "${changed_files[@]}"; do
     *.md)
       markdown_files+=("$file")
       ;;
+    *.swift)
+      swift_files+=("$file")
+      ;;
     package.json | package-lock.json)
       npm_changed=1
       markdown_config_changed=1
       ;;
     mise.toml)
       mise_changed=1
+      ;;
+    .swiftlint.yml)
+      swiftlint_config_changed=1
       ;;
     .markdownlintignore)
       markdown_config_changed=1
@@ -210,6 +222,14 @@ fi
 if [ ${#workflow_files[@]} -gt 0 ]; then
   echo "Running actionlint on changed workflows..."
   actionlint "${workflow_files[@]}"
+fi
+
+if [ "$swiftlint_config_changed" -eq 1 ]; then
+  echo "Running SwiftLint on all Swift files..."
+  swiftlint lint --strict --no-cache
+elif [ ${#swift_files[@]} -gt 0 ]; then
+  echo "Running SwiftLint on changed Swift files..."
+  swiftlint lint --strict --no-cache --force-exclude "${swift_files[@]}"
 fi
 
 if [ ${#markdown_files[@]} -gt 0 ] || [ "$markdown_config_changed" -eq 1 ]; then

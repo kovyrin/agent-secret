@@ -91,6 +91,7 @@ shell after setup:
 ```bash
 scripts/lint.sh
 scripts/lint-go.sh
+mise run lint:swift
 scripts/lint-smart.sh --staged
 ```
 

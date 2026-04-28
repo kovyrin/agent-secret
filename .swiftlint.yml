@@ -1,0 +1,21 @@
+strict: true
+opt_in_rules:
+  - all
+
+included:
+  - approver/Sources
+  - approver/Tests
+
+excluded:
+  - approver/.build
+  - approver/dist
+
+disabled_rules:
+  # SwiftLint 0.63.2 cannot satisfy this together with default `opening_brace`.
+  - contrasted_opening_brace
+  # This project intentionally uses XCTest without adding Nimble as a test-only dependency.
+  - prefer_nimble
+  # Conflicts with `explicit_enum_raw_value` for String-backed CodingKeys.
+  - redundant_string_enum_value
+  # Conflicts with `explicit_type_interface` for stored properties with obvious initializers.
+  - redundant_type_annotation

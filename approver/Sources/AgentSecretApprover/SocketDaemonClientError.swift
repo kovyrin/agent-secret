@@ -1,0 +1,50 @@
+import Foundation
+
+/// Errors returned while talking to the local daemon socket.
+public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
+    /// The socket connect syscall failed.
+    case connectFailed(Int32)
+    /// The daemon returned a structured error response.
+    case daemonError(String, String)
+    /// The daemon closed the connection before a full line arrived.
+    case disconnected
+    /// The daemon returned an unexpected response shape.
+    case invalidResponse(String)
+    /// The socket path does not fit in a Unix socket address.
+    case pathTooLong(String)
+    /// The socket read syscall failed.
+    case readFailed(Int32)
+    /// Unix sockets are unavailable on this platform.
+    case socketUnavailable
+    /// The socket write syscall failed.
+    case writeFailed(Int32)
+
+    /// Human-readable error message for CLI output.
+    public var description: String {
+        switch self {
+        case let .connectFailed(errnoValue):
+            "connect failed: errno \(errnoValue)"
+
+        case let .daemonError(code, message):
+            "daemon error \(code): \(message)"
+
+        case .disconnected:
+            "daemon disconnected"
+
+        case let .invalidResponse(message):
+            "invalid daemon response: \(message)"
+
+        case let .pathTooLong(path):
+            "socket path is too long: \(path)"
+
+        case let .readFailed(errnoValue):
+            "read failed: errno \(errnoValue)"
+
+        case .socketUnavailable:
+            "unix sockets are unavailable on this platform"
+
+        case let .writeFailed(errnoValue):
+            "write failed: errno \(errnoValue)"
+        }
+    }
+}

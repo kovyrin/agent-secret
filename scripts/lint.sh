@@ -32,6 +32,7 @@ if [ -d .github/workflows ]; then
     actionlint "${workflow_files[@]}"
   fi
 fi
+swiftlint lint --strict --no-cache
 npx --no-install markdownlint '**/*.md'
 
 (cd approver && swift test)
