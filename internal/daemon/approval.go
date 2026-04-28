@@ -213,21 +213,21 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 	cmd := exec.CommandContext(ctx, executable, "--socket", socketPath)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
-		return ExpectedApprover{}, fmt.Errorf("%w: open /dev/null: %v", ErrApproverLaunchFailed, err)
+		return ExpectedApprover{}, fmt.Errorf("%w: open /dev/null: %w", ErrApproverLaunchFailed, err)
 	}
-	defer devNull.Close()
+	defer func() { _ = devNull.Close() }()
 	cmd.Stdin = devNull
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
 	if err := cmd.Start(); err != nil {
-		return ExpectedApprover{}, fmt.Errorf("%w: %v", ErrApproverLaunchFailed, err)
+		return ExpectedApprover{}, fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)
 	}
 	expected := ExpectedApprover{
 		PID:            cmd.Process.Pid,
 		ExecutablePath: executable,
 	}
 	if err := cmd.Process.Release(); err != nil {
-		return ExpectedApprover{}, fmt.Errorf("%w: release process: %v", ErrApproverLaunchFailed, err)
+		return ExpectedApprover{}, fmt.Errorf("%w: release process: %w", ErrApproverLaunchFailed, err)
 	}
 	return expected, nil
 }
@@ -279,7 +279,7 @@ func (a *SocketApprover) promoteNext() {
 	}
 	expected, err := a.launcher.Launch(context.Background(), a.socketPath, job.payload)
 	if err != nil {
-		a.complete(job, approvalResult{err: fmt.Errorf("%w: %v", ErrApproverLaunchFailed, err)})
+		a.complete(job, approvalResult{err: fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)})
 		return
 	}
 
@@ -353,19 +353,18 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 func comparableApproverPath(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("normalize approver path: %w", err)
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return abs, nil
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
 	}
-	return resolved, nil
+	return abs, nil
 }
 
 func defaultApproverPath() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("%w: get executable path: %v", ErrApproverLaunchFailed, err)
+		return "", fmt.Errorf("%w: get executable path: %w", ErrApproverLaunchFailed, err)
 	}
 	candidates := []string{
 		filepath.Join(filepath.Dir(exe), "agent-secret-approver"),

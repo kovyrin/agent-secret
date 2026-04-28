@@ -15,10 +15,14 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	socketPath, err := daemon.DefaultSocketPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: resolve default socket path: %v\n", err)
-		os.Exit(1)
+		stderrf("agent-secretd: resolve default socket path: %v\n", err)
+		return 1
 	}
 
 	flags := flag.NewFlagSet("agent-secretd", flag.ExitOnError)
@@ -26,16 +30,16 @@ func main() {
 	approverPath := flags.String("approver", os.Getenv("AGENT_SECRET_APPROVER_PATH"), "approver executable or .app path")
 	accountName := flags.String("account", os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"), "1Password account name for desktop-app integration")
 	if err := flags.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: parse flags: %v\n", err)
-		os.Exit(2)
+		stderrf("agent-secretd: parse flags: %v\n", err)
+		return 2
 	}
 
 	auditWriter, err := audit.OpenDefault(nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: open audit log: %v\n", err)
-		os.Exit(1)
+		stderrf("agent-secretd: open audit log: %v\n", err)
+		return 1
 	}
-	defer auditWriter.Close()
+	defer func() { _ = auditWriter.Close() }()
 
 	approver, err := daemon.NewSocketApprover(
 		socketPath,
@@ -43,8 +47,8 @@ func main() {
 		nil,
 	)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: initialize approver: %v\n", err)
-		os.Exit(1)
+		stderrf("agent-secretd: initialize approver: %v\n", err)
+		return 1
 	}
 
 	broker, err := daemon.NewBroker(daemon.BrokerOptions{
@@ -53,18 +57,23 @@ func main() {
 		Audit:    auditWriter,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: initialize broker: %v\n", err)
-		os.Exit(1)
+		stderrf("agent-secretd: initialize broker: %v\n", err)
+		return 1
 	}
 	server, err := daemon.NewServer(daemon.ServerOptions{Broker: broker, Approvals: approver})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: initialize server: %v\n", err)
-		os.Exit(1)
+		stderrf("agent-secretd: initialize server: %v\n", err)
+		return 1
 	}
 	if err := server.ListenAndServe(context.Background(), socketPath); err != nil {
-		fmt.Fprintf(os.Stderr, "agent-secretd: %v\n", err)
-		os.Exit(1)
+		stderrf("agent-secretd: %v\n", err)
+		return 1
 	}
+	return 0
+}
+
+func stderrf(format string, args ...any) {
+	_, _ = fmt.Fprintf(os.Stderr, format, args...)
 }
 
 type unavailableResolver struct{}
@@ -95,11 +104,11 @@ func newResolver(account string) daemon.Resolver {
 func (r *desktopResolver) Resolve(ctx context.Context, ref string) (string, error) {
 	resolver, err := r.client(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create 1Password resolver: %w", err)
 	}
 	secret, err := resolver.Resolve(ctx, ref)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve secret: %w", err)
 	}
 	return secret.Value(), nil
 }

@@ -156,7 +156,7 @@ func (s *Store) FindReusable(ctx context.Context, req request.ExecRequest, sink 
 		}
 		if sink != nil {
 			if err := sink.ApprovalReused(ctx, event); err != nil {
-				return ReusableApproval{}, fmt.Errorf("%w: %v", ErrAuditFailed, err)
+				return ReusableApproval{}, fmt.Errorf("%w: %w", ErrAuditFailed, err)
 			}
 		}
 
@@ -357,6 +357,8 @@ func consumesUse(result DeliveryResult) bool {
 		DeliveryCommandStartedAuditFailureAfter,
 		DeliveryClientDisconnectAfterPayload:
 		return true
+	case DeliveryPrePayloadFailure:
+		return false
 	default:
 		return false
 	}

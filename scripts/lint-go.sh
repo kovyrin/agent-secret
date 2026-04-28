@@ -49,3 +49,5 @@ for mod in "${modules[@]}"; do
 
   (cd "$module_dir" && go vet ./...)
 done
+
+golangci-lint run --timeout 5m

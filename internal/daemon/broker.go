@@ -141,7 +141,7 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
 	if err := b.audit.Record(ctx, event); err != nil {
-		return ExecGrant{}, fmt.Errorf("%w: %v", ErrAuditRequired, err)
+		return ExecGrant{}, fmt.Errorf("%w: %w", ErrAuditRequired, err)
 	}
 
 	b.mu.Lock()
@@ -179,9 +179,9 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 	}
 
 	event := audit.FromExecRequest(audit.EventCommandStarted, requestID, active.req)
-	event.ChildPID = audit.Int(childPID)
+	event.ChildPID = new(childPID)
 	if err := b.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %v", ErrAuditRequired, err)
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
 	}
 
 	b.mu.Lock()
@@ -199,10 +199,10 @@ func (b *Broker) ReportCompleted(ctx context.Context, requestID string, nonce st
 	}
 
 	event := audit.FromExecRequest(audit.EventCommandCompleted, requestID, active.req)
-	event.ExitCode = audit.Int(exitCode)
+	event.ExitCode = new(exitCode)
 	event.Signal = signal
 	if err := b.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %v", ErrAuditRequired, err)
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
 	}
 
 	b.mu.Lock()
@@ -257,7 +257,7 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 		event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 		event.ApprovalID = approval.ID
 		if err := b.audit.Record(ctx, event); err != nil {
-			return ExecGrant{}, fmt.Errorf("%w: %v", ErrAuditRequired, err)
+			return ExecGrant{}, fmt.Errorf("%w: %w", ErrAuditRequired, err)
 		}
 	} else {
 		var err error
@@ -276,13 +276,13 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 
 func (b *Broker) preflightAudit(ctx context.Context) error {
 	preflighter, ok := b.audit.(interface {
-		Preflight(context.Context) error
+		Preflight(ctx context.Context) error
 	})
 	if !ok {
 		return nil
 	}
 	if err := preflighter.Preflight(ctx); err != nil {
-		return fmt.Errorf("%w: %v", ErrAuditRequired, err)
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
 	}
 	return nil
 }

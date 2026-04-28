@@ -85,7 +85,7 @@ func (c *Client) ReportCompleted(ctx context.Context, requestID string, nonce st
 func roundTrip[T any](ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) (T, error) {
 	var zero T
 	if err := ctx.Err(); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("daemon request canceled: %w", err)
 	}
 	env, err := NewEnvelope(messageType, requestID, nonce, payload)
 	if err != nil {
@@ -100,12 +100,12 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("read daemon response %s: %w", messageType, err)
 	}
 	if err := validateEnvelope(resp); err != nil {
-		return zero, err
+		return zero, fmt.Errorf("validate daemon response %s: %w", messageType, err)
 	}
 	if resp.Type == TypeError {
 		payload, err := DecodePayload[ErrorPayload](resp)
 		if err != nil {
-			return zero, err
+			return zero, fmt.Errorf("decode daemon error response %s: %w", messageType, err)
 		}
 		return zero, &ProtocolError{Code: payload.Code, Message: payload.Message}
 	}
@@ -123,7 +123,7 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 	}
 	var out T
 	if err := json.Unmarshal(resp.Payload, &out); err != nil {
-		return zero, fmt.Errorf("%w: %v", ErrMalformedEnvelope, err)
+		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
 }

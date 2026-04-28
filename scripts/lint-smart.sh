@@ -59,6 +59,7 @@ fi
 
 go_files=()
 go_targets=()
+go_config_changed=0
 markdown_files=()
 shell_files=()
 swift_files=()
@@ -149,6 +150,9 @@ for file in "${changed_files[@]}"; do
     go.mod | go.sum | */go.mod | */go.sum)
       add_go_target_for_file "$file"
       ;;
+    .golangci.yml)
+      go_config_changed=1
+      ;;
     *.md)
       markdown_files+=("$file")
       ;;
@@ -212,6 +216,14 @@ if [ ${#go_targets[@]} -gt 0 ]; then
     echo "Running go vet: $module_dir $package_pattern"
     (cd "$module_dir" && go vet "$package_pattern")
   done
+fi
+
+if [ "$go_config_changed" -eq 1 ]; then
+  echo "Running golangci-lint on all Go files..."
+  golangci-lint run --timeout 5m
+elif [ ${#go_files[@]} -gt 0 ]; then
+  echo "Running golangci-lint on changed Go files..."
+  golangci-lint run --timeout 5m "${go_files[@]}"
 fi
 
 if [ ${#shell_files[@]} -gt 0 ]; then

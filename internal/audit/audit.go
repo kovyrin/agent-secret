@@ -159,10 +159,6 @@ func (w *Writer) Close() error {
 	return err
 }
 
-func Int(value int) *int {
-	return &value
-}
-
 func openPath(path string, now func() time.Time) (*Writer, error) {
 	if now == nil {
 		now = time.Now

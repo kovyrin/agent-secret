@@ -13,7 +13,7 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	bin := writeExecutable(t, dir, "tool")
+	bin := writeExecutable(t, dir)
 	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 
 	req, err := NewExec(ExecOptions{
@@ -55,7 +55,7 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir, "tool")
+	writeExecutable(t, dir)
 
 	tests := []struct {
 		name string
@@ -109,7 +109,7 @@ func TestNewExecAllowsSessionSocketMaxReads(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir, "tool")
+	writeExecutable(t, dir)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 		o.DeliveryMode = DeliverySessionSocket
@@ -128,10 +128,10 @@ func TestNewExecResolvesSlashPathRelativeToCWD(t *testing.T) {
 
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
-	if err := os.Mkdir(binDir, 0o755); err != nil {
+	if err := os.Mkdir(binDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	bin := writeExecutable(t, binDir, "tool")
+	bin := writeExecutable(t, binDir)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 		o.Command = []string{"./bin/tool"}
@@ -149,7 +149,7 @@ func TestNewExecRecordsOverrideAliases(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir, "tool")
+	writeExecutable(t, dir)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 		o.Env = append(o.Env, "TOKEN=already")
@@ -167,7 +167,7 @@ func TestExecRequestExpiryUsesDaemonReceiptTTL(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir, "tool")
+	writeExecutable(t, dir)
 	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
@@ -214,10 +214,10 @@ func mutate(opts ExecOptions, fn func(*ExecOptions)) ExecOptions {
 	return opts
 }
 
-func writeExecutable(t *testing.T, dir string, name string) string {
+func writeExecutable(t *testing.T, dir string) string {
 	t.Helper()
 
-	path := filepath.Join(dir, name)
+	path := filepath.Join(dir, "tool")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write executable: %v", err)
 	}

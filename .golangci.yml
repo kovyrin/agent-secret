@@ -1,0 +1,79 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: all
+  disable:
+    # Context propagation through background daemon promotion is intentionally explicit.
+    - contextcheck
+    # Size and complexity caps are design-review concerns for this small codebase.
+    - cyclop
+    - funlen
+    - gocognit
+    # No project dependency policy exists yet.
+    - depguard
+    # Sentinel-only error construction is too noisy for validation and test errors.
+    - err113
+    # Optional fields and test fixtures make exhaustive struct literals impractical.
+    - exhaustruct
+    # CLI output intentionally writes to configured stdout/stderr.
+    - forbidigo
+    # Function ordering, repeated strings, line length, magic numbers, and whitespace
+    # are already covered by readability review, gofmt, and focused tests.
+    - funcorder
+    - goconst
+    - lll
+    - mnd
+    - nlreturn
+    - wsl
+    - wsl_v5
+    # The project intentionally uses Go's idiomatic inline error handling.
+    - noinlineerr
+    # Some tests exercise process/socket behavior and cannot safely run as blanket parallel subtests.
+    - paralleltest
+    - tparallel
+    # The daemon protocol and audit log intentionally use stable snake_case JSON fields.
+    - tagliatelle
+    # Internal package tests need internal state access for daemon/socket edge cases.
+    - testpackage
+    # Interface/generic returns are intentional at package seams and protocol helpers.
+    - ireturn
+    # Micro-optimizations and test-directory preferences are not worth forcing globally.
+    - prealloc
+    - usetesting
+    # Short variable names are allowed when local and conventional.
+    - varnamelen
+    # Package-boundary error wrapping is enforced where it affects caller behavior.
+    - wrapcheck
+    # JSON tag coverage is enforced by tests for value-free audit/policy shapes.
+    - musttag
+  settings:
+    gosec:
+      excludes:
+        # This tool intentionally launches approved commands and app bundles.
+        - G204
+        # Private directories need executable bits; test scripts need executable bits.
+        - G301
+        - G302
+        - G306
+        # Paths are validated by caller-specific policy and tests, not blanket taint rules.
+        - G304
+        - G703
+        # Queue promotion is detached from request cancellation by design.
+        - G118
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt

@@ -197,7 +197,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&secrets, "secret", "secret mapping")
 	if err := fs.Parse(args[:boundary]); err != nil {
-		return Command{}, fmt.Errorf("%w: %v", ErrInvalidArguments, err)
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
 	if *jsonOutput {
 		return Command{}, ErrUnsupportedExecJSON
@@ -221,7 +221,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		ForceRefresh: *forceRefresh,
 	})
 	if err != nil {
-		return Command{}, err
+		return Command{}, fmt.Errorf("build exec request: %w", err)
 	}
 
 	return Command{Kind: KindExec, ExecRequest: req}, nil
@@ -292,7 +292,7 @@ func (s *secretFlags) String() string {
 func (s *secretFlags) Set(value string) error {
 	alias, ref, ok := strings.Cut(value, "=")
 	if !ok || alias == "" || ref == "" {
-		return fmt.Errorf("%w: --secret must be ALIAS=op://...", ErrInvalidArguments)
+		return fmt.Errorf("%w: --secret must be ALIAS=op://example", ErrInvalidArguments)
 	}
 	s.specs = append(s.specs, request.SecretSpec{Alias: alias, Ref: ref})
 	return nil

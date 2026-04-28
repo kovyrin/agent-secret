@@ -173,10 +173,8 @@ func ParseSecretRef(ref string) (SecretRef, error) {
 	if len(parts) < 3 || len(parts) > 4 {
 		return SecretRef{}, fmt.Errorf("%w: expected op://vault/item[/section]/field", ErrInvalidReference)
 	}
-	for _, part := range parts {
-		if part == "" {
-			return SecretRef{}, fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
-		}
+	if slices.Contains(parts, "") {
+		return SecretRef{}, fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
 	}
 
 	secretRef := SecretRef{

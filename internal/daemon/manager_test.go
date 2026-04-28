@@ -21,7 +21,7 @@ func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MkdirTemp returned error: %v", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	socketPath := filepath.Join(dir, "d.sock")
 	manager := Manager{
 		SocketPath:     socketPath,
@@ -60,7 +60,7 @@ func runDaemonManagerHelper(t *testing.T) {
 		}
 	}
 	if socketPath == "" {
-		fmt.Fprintln(os.Stderr, "missing --socket")
+		_, _ = fmt.Fprintln(os.Stderr, "missing --socket")
 		os.Exit(64)
 	}
 	aud := &memoryAudit{}
@@ -70,19 +70,19 @@ func runDaemonManagerHelper(t *testing.T) {
 		Audit:    aud,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "new broker: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "new broker: %v\n", err)
 		os.Exit(70)
 	}
 	server, err := NewServer(ServerOptions{Broker: broker, Validator: allowPeerValidator{}})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "new server: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "new server: %v\n", err)
 		os.Exit(70)
 	}
 	if err := server.ListenAndServe(context.Background(), socketPath); err != nil {
 		if len(aud.Events()) > 0 && aud.Events()[len(aud.Events())-1].Type == audit.EventDaemonStop {
 			os.Exit(0)
 		}
-		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		os.Exit(70)
 	}
 	os.Exit(0)

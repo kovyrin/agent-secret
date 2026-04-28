@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	onepassword "github.com/1password/onepassword-sdk-go"
@@ -111,10 +112,8 @@ func ValidateReference(ref string) error {
 		return fmt.Errorf("%w: expected op://vault/item[/section]/field", ErrInvalidReference)
 	}
 
-	for _, part := range parts {
-		if part == "" {
-			return fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
-		}
+	if slices.Contains(parts, "") {
+		return fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
 	}
 
 	return nil

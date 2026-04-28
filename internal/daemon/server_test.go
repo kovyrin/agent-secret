@@ -115,7 +115,7 @@ func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
 	if err := encoder.Encode(Envelope{Version: 99, Type: TypeDaemonStatus}); err != nil {
@@ -219,7 +219,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
 	appClient := NewClient(appConn)
-	defer appClient.Close()
+	defer func() { _ = appClient.Close() }()
 	pending, err := appClient.FetchPendingApproval(context.Background())
 	if err != nil {
 		t.Fatalf("FetchPendingApproval returned error: %v", err)
@@ -310,6 +310,7 @@ func startRawTestServer(t *testing.T, opts BrokerOptions) (string, func()) {
 
 type appTestClient struct {
 	*Client
+
 	SocketPath string
 }
 

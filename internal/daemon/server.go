@@ -69,8 +69,8 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
-	defer os.Remove(path)
+	defer func() { _ = listener.Close() }()
+	defer func() { _ = os.Remove(path) }()
 	return s.Serve(ctx, listener)
 }
 
@@ -108,7 +108,7 @@ func (s *Server) Stop(ctx context.Context) {
 }
 
 func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := s.validator.Validate(conn); err != nil {
 		_ = writeError(conn, "", "", "peer_rejected", err)
 		return
@@ -223,7 +223,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 
 func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 	provider, ok := s.validator.(interface {
-		Info(*net.UnixConn) (peercred.Info, error)
+		Info(conn *net.UnixConn) (peercred.Info, error)
 	})
 	if ok {
 		return provider.Info(conn)

@@ -73,7 +73,7 @@ func (m Manager) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("open /dev/null: %w", err)
 	}
-	defer devNull.Close()
+	defer func() { _ = devNull.Close() }()
 	cmd.Stdin = devNull
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
@@ -102,7 +102,7 @@ func (m Manager) Status(ctx context.Context) (StatusPayload, error) {
 	if err != nil {
 		return StatusPayload{}, err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	return client.Status(ctx)
 }
 
@@ -119,7 +119,7 @@ func (m Manager) Stop(ctx context.Context) error {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := m.Status(ctx); err != nil {
+		if m.stopped(ctx) {
 			return nil
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -129,6 +129,11 @@ func (m Manager) Stop(ctx context.Context) error {
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
 	return Connect(ctx, m.SocketPath)
+}
+
+func (m Manager) stopped(ctx context.Context) bool {
+	_, err := m.Status(ctx)
+	return err != nil
 }
 
 func (m Manager) daemonArgs() []string {

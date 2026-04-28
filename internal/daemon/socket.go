@@ -47,7 +47,7 @@ func Dial(ctx context.Context, path string) (*net.UnixConn, error) {
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(ctx, "unix", path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrDaemonUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrDaemonUnavailable, err)
 	}
 	unixConn, ok := conn.(*net.UnixConn)
 	if !ok {

@@ -134,10 +134,9 @@ func comparablePath(path string) (string, error) {
 		return "", err
 	}
 
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return abs, nil
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
 	}
 
-	return resolved, nil
+	return abs, nil
 }

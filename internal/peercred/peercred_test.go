@@ -17,12 +17,12 @@ func TestPeerCredCapturesCurrentProcess(t *testing.T) {
 		os.TempDir(),
 		"as-peer-"+strconv.Itoa(os.Getpid())+"-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".sock",
 	)
-	defer os.Remove(socketPath)
+	defer func() { _ = os.Remove(socketPath) }()
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
 	if err != nil {
 		t.Fatalf("listen unix: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	accepted := make(chan *net.UnixConn, 1)
 	acceptErr := make(chan error, 1)
@@ -39,14 +39,14 @@ func TestPeerCredCapturesCurrentProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial unix: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	var server *net.UnixConn
 	select {
 	case err := <-acceptErr:
 		t.Fatalf("accept unix: %v", err)
 	case server = <-accepted:
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 	}
 
 	info, err := Inspect(server)

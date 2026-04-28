@@ -26,7 +26,7 @@ func TestOpenDefaultCreatesPrivateJSONLAuditLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenDefault returned error: %v", err)
 	}
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 
 	err = writer.Record(context.Background(), Event{
 		Type:       EventCommandStarting,
@@ -41,7 +41,7 @@ func TestOpenDefaultCreatesPrivateJSONLAuditLog(t *testing.T) {
 	}
 	err = writer.Record(context.Background(), Event{
 		Type:     EventCommandStarted,
-		ChildPID: Int(1234),
+		ChildPID: new(1234),
 	})
 	if err != nil {
 		t.Fatalf("Record command_started returned error: %v", err)
@@ -121,7 +121,7 @@ func TestDefaultPathIgnoresEnvironmentOverrides(t *testing.T) {
 func TestEventShapeIsValueFree(t *testing.T) {
 	t.Parallel()
 
-	eventType := reflect.TypeOf(Event{})
+	eventType := reflect.TypeFor[Event]()
 	for _, disallowed := range []string{"Env", "Value", "Values", "SecretValue", "SecretValues"} {
 		if _, ok := eventType.FieldByName(disallowed); ok {
 			t.Fatalf("event unexpectedly exposes %s field", disallowed)
@@ -133,7 +133,7 @@ func TestEventShapeIsValueFree(t *testing.T) {
 		Reason:     "Run Terraform plan",
 		Command:    []string{"/usr/bin/env", "terraform", "plan"},
 		SecretRefs: []SecretRef{{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"}},
-		ExitCode:   Int(0),
+		ExitCode:   new(0),
 	}
 	encoded, err := json.Marshal(event)
 	if err != nil {

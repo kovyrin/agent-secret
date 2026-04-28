@@ -77,7 +77,7 @@ func DecodePayload[T any](env Envelope) (T, error) {
 		return out, nil
 	}
 	if err := json.Unmarshal(env.Payload, &out); err != nil {
-		return out, fmt.Errorf("%w: %v", ErrMalformedEnvelope, err)
+		return out, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
 }
