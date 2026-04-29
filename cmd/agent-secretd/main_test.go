@@ -11,6 +11,6 @@ func TestNewResolverUsesDesktopResolverWithoutAccountOverride(t *testing.T) {
 		t.Fatalf("resolver type = %T, want *desktopResolver", resolver)
 	}
 	if desktop.account != "" {
-		t.Fatalf("account = %q, want default account discovery", desktop.account)
+		t.Fatalf("account = %q, want resolver-level default account", desktop.account)
 	}
 }

@@ -50,8 +50,8 @@ AGENT_SECRET_LIVE_REF="op://Example Vault/Example Item/token" \
 go test -tags integration ./...
 ```
 
-Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when the first account
-from `op account list` is not the account you want to test.
+Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when you want to force
+a specific 1Password account instead of `my.1password.com`.
 
 The live test logs only value length and SHA-256 metadata. It does not print the
 secret value. On 2026-04-28, this passed against a test account after

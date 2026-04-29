@@ -3,7 +3,6 @@ package opresolver
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"testing"
 )
 
@@ -160,65 +159,13 @@ func TestDesktopAccountUsesOPAccountEnvironment(t *testing.T) {
 	}
 }
 
-func TestDesktopAccountDiscoversFirstLocalAccount(t *testing.T) {
-	account, err := desktopAccountWith(
-		context.Background(),
-		"",
-		"",
-		accountListStub([]byte(`[{"account_uuid":"FIRST"}]`), nil),
-	)
+func TestDesktopAccountUsesSDKDefaultWhenUnset(t *testing.T) {
+	account, err := desktopAccountWith(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("desktopAccount returned error: %v", err)
 	}
-	if account != "FIRST" {
-		t.Fatalf("account = %q, want discovered account", account)
-	}
-}
-
-func TestDefaultDesktopAccountReportsMissingOPCLI(t *testing.T) {
-	_, err := defaultDesktopAccountWith(context.Background(), accountListStub(nil, exec.ErrNotFound))
-	if err == nil {
-		t.Fatal("expected missing op error")
-	}
-}
-
-func TestDefaultDesktopAccountWrapsOPCLIError(t *testing.T) {
-	_, err := defaultDesktopAccountWith(context.Background(), accountListStub(nil, errors.New("boom")))
-	if err == nil {
-		t.Fatal("expected op command error")
-	}
-}
-
-func TestFirstAccountUUIDUsesFirstConfiguredAccount(t *testing.T) {
-	t.Parallel()
-
-	account, err := firstAccountUUID([]byte(`[
-		{"url": "example.1password.com", "account_uuid": "FIRST"},
-		{"url": "second.1password.com", "account_uuid": "SECOND"}
-	]`))
-	if err != nil {
-		t.Fatalf("firstAccountUUID returned error: %v", err)
-	}
-	if account != "FIRST" {
-		t.Fatalf("account = %q, want first configured account", account)
-	}
-}
-
-func TestFirstAccountUUIDRejectsMissingAccounts(t *testing.T) {
-	t.Parallel()
-
-	_, err := firstAccountUUID([]byte(`[{"url":"example.1password.com"}]`))
-	if err == nil {
-		t.Fatal("expected missing account error")
-	}
-}
-
-func TestFirstAccountUUIDRejectsInvalidJSON(t *testing.T) {
-	t.Parallel()
-
-	_, err := firstAccountUUID([]byte(`not-json`))
-	if err == nil {
-		t.Fatal("expected invalid JSON error")
+	if account != DefaultDesktopAccount {
+		t.Fatalf("account = %q, want default account", account)
 	}
 }
 
@@ -247,11 +194,5 @@ func TestNormalizeDesktopOptionsTrimsAndDefaults(t *testing.T) {
 	})
 	if opts.IntegrationName != "agent-secretd" || opts.IntegrationVersion != "1.2.3" {
 		t.Fatalf("explicit integration info was not preserved: %+v", opts)
-	}
-}
-
-func accountListStub(out []byte, err error) accountListFunc {
-	return func(context.Context) ([]byte, error) {
-		return out, err
 	}
 }
