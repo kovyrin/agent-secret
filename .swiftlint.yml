@@ -13,6 +13,12 @@ excluded:
 disabled_rules:
   # SwiftLint 0.63.2 cannot satisfy this together with default `opening_brace`.
   - contrasted_opening_brace
+  # SwiftFormat owns default/internal access-control spelling.
+  - explicit_acl
+  - explicit_top_level_acl
+  # SwiftFormat removes redundant raw values and inferred type annotations.
+  - explicit_enum_raw_value
+  - explicit_type_interface
   # This project intentionally uses XCTest without adding Nimble as a test-only dependency.
   - prefer_nimble
   # Conflicts with `explicit_enum_raw_value` for String-backed CodingKeys.

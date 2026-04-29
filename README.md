@@ -89,10 +89,13 @@ Project scripts run through `mise` by default, so these work from a normal
 shell after setup:
 
 ```bash
+mise format
 scripts/lint.sh
 scripts/lint-go.sh
 mise exec -- golangci-lint run --timeout 5m
 mise run lint:swift
+mise run lint:shell
+mise run lint:toml
 mise run lint:secrets
 mise run lint:vuln
 scripts/lint-smart.sh --staged

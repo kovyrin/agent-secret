@@ -6,9 +6,9 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         static func decode(from decoder: Decoder) throws -> Date {
             let container: SingleValueDecodingContainer = try decoder.singleValueContainer()
             let value: String = try container.decode(String.self)
-            let fractionalFormatter: ISO8601DateFormatter = ISO8601DateFormatter()
+            let fractionalFormatter = ISO8601DateFormatter()
             fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let plainFormatter: ISO8601DateFormatter = ISO8601DateFormatter()
+            let plainFormatter = ISO8601DateFormatter()
 
             for formatter in [fractionalFormatter, plainFormatter] {
                 if let date: Date = formatter.date(from: value) {
@@ -34,7 +34,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         try self.init(transport: UnixSocketLineTransport(path: socketPath))
     }
 
-    internal init(transport: LineTransport) {
+    init(transport: LineTransport) {
         self.transport = transport
         decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom(AgentSecretDateCoding.decode)
@@ -45,7 +45,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
 
     /// Fetches the pending approval request from the daemon.
     public func fetchPendingRequest() throws -> ApprovalRequest {
-        let request: DaemonEnvelope<EmptyPayload> = DaemonEnvelope<EmptyPayload>(
+        let request = DaemonEnvelope<EmptyPayload>(
             nonce: nil,
             payload: nil,
             requestID: nil,
@@ -73,7 +73,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
 
     /// Submits an approval decision to the daemon.
     public func submit(_ decision: ApprovalDecision) throws {
-        let request: DaemonEnvelope<ApprovalDecision> = DaemonEnvelope<ApprovalDecision>(
+        let request = DaemonEnvelope<ApprovalDecision>(
             nonce: decision.nonce,
             payload: decision,
             requestID: decision.requestID,
@@ -100,7 +100,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         return .daemonError(payload?.code ?? "unknown", payload?.message ?? "unknown daemon error")
     }
 
-    private func send<Payload: Encodable>(_ envelope: DaemonEnvelope<Payload>) throws {
+    private func send(_ envelope: DaemonEnvelope<some Encodable>) throws {
         let data: Data = try encoder.encode(envelope)
         try transport.writeLine(data)
     }

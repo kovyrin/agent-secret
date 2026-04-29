@@ -35,15 +35,15 @@ do {
     let client: ApprovalDaemonClient = if let socketPath: String = try value(for: "--socket", in: kArguments) {
         try SocketDaemonClient(socketPath: socketPath)
     } else if hasMockRequest(kArguments) {
-        MockDaemonClient(request: try requestFromArguments(kArguments))
+        try MockDaemonClient(request: requestFromArguments(kArguments))
     } else {
         throw ApproverAppError.missingSocket
     }
-    let controller: ApprovalController = ApprovalController(client: client, presenter: presenter)
+    let controller = ApprovalController(client: client, presenter: presenter)
     let decision: ApprovalDecision = try controller.run()
 
     if hasMockRequest(kArguments) {
-        let encoder: JSONEncoder = JSONEncoder()
+        let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data: Data = try encoder.encode(decision)
         FileHandle.standardOutput.write(data)
@@ -83,13 +83,12 @@ private func mockDecisionFromArguments(_ arguments: [String]) throws -> Approval
 
 private func requestFromArguments(_ arguments: [String]) throws -> ApprovalRequest {
     if let path: String = try value(for: "--mock-request", in: arguments) {
-        let data: Data
-        if path == "-" {
-            data = FileHandle.standardInput.readDataToEndOfFile()
+        let data: Data = if path == "-" {
+            FileHandle.standardInput.readDataToEndOfFile()
         } else {
-            data = try Data(contentsOf: URL(fileURLWithPath: path))
+            try Data(contentsOf: URL(fileURLWithPath: path))
         }
-        let decoder: JSONDecoder = JSONDecoder()
+        let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(ApprovalRequest.self, from: data)
     }

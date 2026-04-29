@@ -7,7 +7,7 @@ public enum ApprovalDecisionKind: String, Codable, Equatable, Sendable {
     /// Approve the same command for the bounded reusable window.
     case approveReusable = "approve_reusable"
     /// Reject the request.
-    case deny = "deny"
+    case deny
     /// Treat the request as unanswered.
-    case timeout = "timeout"
+    case timeout
 }

@@ -4,7 +4,7 @@ import Foundation
 private let kReusableUseLimit: Int = 3
 private let kSampleExpiration: TimeInterval = 1_800_000_000
 
-private let kRequest: ApprovalRequest = ApprovalRequest(
+private let kRequest: ApprovalRequest = .init(
     requestID: "req_123",
     nonce: "nonce_456",
     reason: "Run Terraform plan for staging",
@@ -19,9 +19,9 @@ private let kRequest: ApprovalRequest = ApprovalRequest(
     ]
 )
 
-private let kClient: MockDaemonClient = MockDaemonClient(request: kRequest)
-private let kLogger: RecordingLogger = RecordingLogger()
-private let kController: ApprovalController = ApprovalController(
+private let kClient: MockDaemonClient = .init(request: kRequest)
+private let kLogger: RecordingLogger = .init()
+private let kController: ApprovalController = .init(
     client: kClient,
     presenter: StaticDecisionPresenter(decision: .approveReusable),
     logger: kLogger
@@ -34,7 +34,7 @@ try assert(kDecision.decision == .approveReusable, "decision kind mismatch")
 try assert(kDecision.reusableUses == kReusableUseLimit, "reusable use limit mismatch")
 try assert(kClient.submittedDecision == kDecision, "decision was not submitted")
 
-private let kEncodedDecision: String = String(data: try JSONEncoder().encode(kDecision), encoding: .utf8) ?? ""
+private let kEncodedDecision: String = try String(data: JSONEncoder().encode(kDecision), encoding: .utf8) ?? ""
 
 try assert(!kEncodedDecision.contains("op://"), "decision encoded secret references")
 try assert(!kEncodedDecision.contains("EXAMPLE_TOKEN"), "decision encoded aliases")

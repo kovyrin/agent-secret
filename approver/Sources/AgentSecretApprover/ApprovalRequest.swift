@@ -3,17 +3,17 @@ import Foundation
 /// Secret approval context shown to the local operator before a command runs.
 public struct ApprovalRequest: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
-        case command = "command"
-        case cwd = "cwd"
-        case expiresAt = "expiresAt"
-        case nonce = "nonce"
-        case overrideEnv = "overrideEnv"
-        case overriddenAliases = "overriddenAliases"
-        case reason = "reason"
-        case requestID = "requestID"
-        case resolvedExecutable = "resolvedExecutable"
-        case reusableUses = "reusableUses"
-        case secrets = "secrets"
+        case command
+        case cwd
+        case expiresAt
+        case nonce
+        case overrideEnv
+        case overriddenAliases
+        case reason
+        case requestID
+        case resolvedExecutable
+        case reusableUses
+        case secrets
     }
 
     /// Default reusable approval count when older daemon payloads omit it.

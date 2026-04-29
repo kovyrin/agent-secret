@@ -27,7 +27,7 @@ public final class ApprovalController {
 
         let decisionKind: ApprovalDecisionKind = presenter.decide(for: request)
         let reusableUses: Int? = decisionKind == .approveReusable ? Self.reusableDecisionUses : nil
-        let decision: ApprovalDecision = ApprovalDecision(
+        let decision = ApprovalDecision(
             requestID: request.requestID,
             nonce: request.nonce,
             decision: decisionKind,

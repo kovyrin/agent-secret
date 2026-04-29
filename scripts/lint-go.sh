@@ -39,12 +39,7 @@ for mod in "${modules[@]}"; do
   done < <(find "$module_dir" -name "*.go" -not -path "*/vendor/*")
 
   if [ ${#go_files[@]} -gt 0 ]; then
-    gofmt_out="$(gofmt -l "${go_files[@]}")"
-    if [ -n "$gofmt_out" ]; then
-      echo "gofmt required on:"
-      echo "$gofmt_out"
-      exit 1
-    fi
+    scripts/check-format.sh go "${go_files[@]}"
   fi
 
   (cd "$module_dir" && go vet ./...)

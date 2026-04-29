@@ -1,17 +1,17 @@
 import Foundation
 
-internal struct DaemonEnvelope<Payload: Codable>: Codable {
+struct DaemonEnvelope<Payload: Codable>: Codable {
     private enum CodingKeys: String, CodingKey {
-        case nonce = "nonce"
-        case payload = "payload"
+        case nonce
+        case payload
         case requestID = "request_id"
-        case type = "type"
-        case version = "version"
+        case type
+        case version
     }
 
-    internal let nonce: String?
-    internal let payload: Payload?
-    internal let requestID: String?
-    internal let type: String
-    internal let version: Int
+    let nonce: String?
+    let payload: Payload?
+    let requestID: String?
+    let type: String
+    let version: Int
 }

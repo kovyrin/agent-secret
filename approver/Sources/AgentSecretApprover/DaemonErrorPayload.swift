@@ -1,6 +1,6 @@
 import Foundation
 
-internal struct DaemonErrorPayload: Codable {
-    internal let code: String
-    internal let message: String
+struct DaemonErrorPayload: Codable {
+    let code: String
+    let message: String
 }

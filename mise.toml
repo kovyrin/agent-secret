@@ -3,7 +3,10 @@ go = "1.26.2"
 node = "24.15.0"
 "aqua:koalaman/shellcheck" = "0.11.0"
 "aqua:rhysd/actionlint" = "1.7.12"
+"aqua:mvdan/sh" = "3.13.1"
+taplo = "0.10.0"
 swiftlint = "0.63.2"
+swiftformat = "0.61.1"
 golangci-lint = "2.11.4"
 gitleaks = "8.30.1"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.3.0"
@@ -16,13 +19,28 @@ run = "mise install && npm ci --ignore-scripts --no-audit --no-fund && scripts/i
 description = "Run all lint and test checks"
 run = "AGENT_SECRET_IN_MISE=1 scripts/lint.sh"
 
+[tasks.format]
+description = "Format Go, Swift, shell, and TOML files"
+run = "AGENT_SECRET_IN_MISE=1 scripts/format.sh"
+
 [tasks."lint:go"]
 description = "Run Go format, vet, and golangci-lint checks"
 run = "AGENT_SECRET_IN_MISE=1 scripts/lint-go.sh"
 
 [tasks."lint:swift"]
-description = "Run SwiftLint with strict all-rules mode"
-run = "swiftlint lint --strict --no-cache"
+description = "Run SwiftLint and SwiftFormat"
+run = """
+AGENT_SECRET_IN_MISE=1 scripts/check-format.sh swift
+swiftlint lint --strict --no-cache
+"""
+
+[tasks."lint:shell"]
+description = "Run shell syntax, style, and formatting checks"
+run = "shellcheck scripts/*.sh approver/scripts/*.sh && AGENT_SECRET_IN_MISE=1 scripts/check-format.sh shell"
+
+[tasks."lint:toml"]
+description = "Run TOML formatting checks"
+run = "AGENT_SECRET_IN_MISE=1 scripts/check-format.sh toml"
 
 [tasks."lint:secrets"]
 description = "Scan the working tree for committed secret values"

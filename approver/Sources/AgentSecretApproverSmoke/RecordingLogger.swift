@@ -1,10 +1,10 @@
 import AgentSecretApprover
 import Foundation
 
-internal final class RecordingLogger: ApprovalLogger {
-    internal private(set) var events: [String] = []
+final class RecordingLogger: ApprovalLogger {
+    private(set) var events: [String] = []
 
-    internal func record(_ event: String, requestID: String?) {
+    func record(_ event: String, requestID: String?) {
         events.append("\(event):\(requestID ?? "none")")
     }
 

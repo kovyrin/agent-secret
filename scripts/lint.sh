@@ -26,6 +26,7 @@ if [ ! -x node_modules/.bin/markdownlint ]; then
 fi
 
 shellcheck scripts/*.sh approver/scripts/*.sh
+scripts/check-format.sh shell
 if [ -d .github/workflows ]; then
   workflow_files=()
   while IFS= read -r -d '' file; do
@@ -36,6 +37,8 @@ if [ -d .github/workflows ]; then
     actionlint "${workflow_files[@]}"
   fi
 fi
+scripts/check-format.sh toml
+scripts/check-format.sh swift
 swiftlint lint --strict --no-cache
 npx --no-install markdownlint '**/*.md'
 

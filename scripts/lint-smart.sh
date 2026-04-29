@@ -64,10 +64,12 @@ markdown_files=()
 shell_files=()
 swift_files=()
 workflow_files=()
+toml_files=()
 npm_changed=0
 mise_changed=0
 markdown_config_changed=0
 swiftlint_config_changed=0
+swiftformat_config_changed=0
 
 add_unique() {
   local item="$1"
@@ -165,9 +167,16 @@ for file in "${changed_files[@]}"; do
       ;;
     mise.toml)
       mise_changed=1
+      toml_files+=("$file")
+      ;;
+    *.toml)
+      toml_files+=("$file")
       ;;
     .swiftlint.yml)
       swiftlint_config_changed=1
+      ;;
+    .swiftformat)
+      swiftformat_config_changed=1
       ;;
     .markdownlintignore)
       markdown_config_changed=1
@@ -207,12 +216,7 @@ fi
 
 if [ ${#go_files[@]} -gt 0 ]; then
   echo "Running gofmt on changed Go files..."
-  gofmt_out="$(gofmt -l "${go_files[@]}")"
-  if [ -n "$gofmt_out" ]; then
-    echo "gofmt required on:"
-    echo "$gofmt_out"
-    exit 1
-  fi
+  scripts/check-format.sh go "${go_files[@]}"
 fi
 
 if [ ${#go_targets[@]} -gt 0 ]; then
@@ -241,11 +245,26 @@ fi
 if [ ${#shell_files[@]} -gt 0 ]; then
   echo "Running shellcheck on changed shell files..."
   shellcheck "${shell_files[@]}"
+  echo "Running shfmt on changed shell files..."
+  scripts/check-format.sh shell "${shell_files[@]}"
 fi
 
 if [ ${#workflow_files[@]} -gt 0 ]; then
   echo "Running actionlint on changed workflows..."
   actionlint "${workflow_files[@]}"
+fi
+
+if [ ${#toml_files[@]} -gt 0 ]; then
+  echo "Running taplo on changed TOML files..."
+  scripts/check-format.sh toml "${toml_files[@]}"
+fi
+
+if [ "$swiftformat_config_changed" -eq 1 ]; then
+  echo "Running SwiftFormat on all Swift files..."
+  scripts/check-format.sh swift
+elif [ ${#swift_files[@]} -gt 0 ]; then
+  echo "Running SwiftFormat on changed Swift files..."
+  scripts/check-format.sh swift "${swift_files[@]}"
 fi
 
 if [ "$swiftlint_config_changed" -eq 1 ]; then

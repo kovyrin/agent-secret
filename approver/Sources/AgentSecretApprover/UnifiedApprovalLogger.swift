@@ -19,7 +19,7 @@ public struct UnifiedApprovalLogger: ApprovalLogger {
 
     /// Records a metadata-only approval event.
     public func record(_ event: String, requestID: String?) {
-        let logger: Logger = Logger(subsystem: subsystem, category: category)
+        let logger = Logger(subsystem: subsystem, category: category)
         logger.info(
             "event=\(event, privacy: .public) request_id=\(requestID ?? "none", privacy: .public)"
         )

@@ -1,5 +1,5 @@
 import Foundation
 
-internal struct EmptyPayload: Codable {
+struct EmptyPayload: Codable {
     /* Empty daemon payload marker. */
 }

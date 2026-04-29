@@ -44,9 +44,12 @@ mise run build
 Focused checks:
 
 ```bash
+mise format
 mise run lint:go
 mise exec -- golangci-lint run --timeout 5m
 mise run lint:swift
+mise run lint:shell
+mise run lint:toml
 mise run lint:secrets
 mise run lint:vuln
 mise run lint:smart

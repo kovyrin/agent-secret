@@ -1,9 +1,8 @@
+@testable import AgentSecretApprover
 import Foundation
 import XCTest
 
-@testable import AgentSecretApprover
-
-internal final class ApprovalControllerTests: XCTestCase {
+final class ApprovalControllerTests: XCTestCase {
     private final class MemoryLineTransport: LineTransport {
         private var reads: [Data]
         private(set) var writtenStrings: [String] = []
@@ -69,7 +68,7 @@ internal final class ApprovalControllerTests: XCTestCase {
         nonce: String,
         payload: String
     ) -> Data {
-        let json: String = """
+        let json = """
         {"nonce":"\(nonce)","payload":\(payload),"request_id":"\(requestID)","type":"\(type)","version":1}
         """
         return Data(json.utf8)
@@ -84,10 +83,10 @@ internal final class ApprovalControllerTests: XCTestCase {
         Data(#"{"type":"ok","version":1}"#.utf8)
     }
 
-    internal func testReusableDecisionCarriesThreeUseLimit() throws {
+    func testReusableDecisionCarriesThreeUseLimit() throws {
         let request: ApprovalRequest = Self.sampleRequest
-        let client: MockDaemonClient = MockDaemonClient(request: request)
-        let controller: ApprovalController = ApprovalController(
+        let client = MockDaemonClient(request: request)
+        let controller = ApprovalController(
             client: client,
             presenter: StaticDecisionPresenter(decision: .approveReusable),
             logger: RecordingLogger()
@@ -99,8 +98,8 @@ internal final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(decision.reusableUses, Self.expectedReusableUses)
     }
 
-    internal func testSharedApprovalFixturesDecode() throws {
-        let decoder: JSONDecoder = JSONDecoder()
+    func testSharedApprovalFixturesDecode() throws {
+        let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
         let request: ApprovalRequest = try decoder.decode(
@@ -125,7 +124,7 @@ internal final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(decision.reusableUses, Self.expectedReusableUses)
     }
 
-    internal func testSocketDaemonClientFetchesAndSubmitsDecision() throws {
+    func testSocketDaemonClientFetchesAndSubmitsDecision() throws {
         let payload: String = try String(data: Self.fixtureData("approval_request"), encoding: .utf8)?
             .replacingOccurrences(
                 of: #""expiresAt": "2027-01-15T08:00:00Z""#,
@@ -137,8 +136,8 @@ internal final class ApprovalControllerTests: XCTestCase {
             nonce: "nonce_456",
             payload: payload
         )
-        let transport: MemoryLineTransport = MemoryLineTransport(reads: [requestData, Self.okEnvelope()])
-        let client: SocketDaemonClient = SocketDaemonClient(transport: transport)
+        let transport = MemoryLineTransport(reads: [requestData, Self.okEnvelope()])
+        let client = SocketDaemonClient(transport: transport)
 
         let request: ApprovalRequest = try client.fetchPendingRequest()
         XCTAssertEqual(request.requestID, "req_123")
@@ -156,13 +155,13 @@ internal final class ApprovalControllerTests: XCTestCase {
         XCTAssertFalse(written.contains(Self.canarySecretValue))
     }
 
-    internal func testSocketDaemonClientReportsDaemonErrors() {
-        let errorLine: Data = Data(
+    func testSocketDaemonClientReportsDaemonErrors() {
+        let errorLine = Data(
             """
             {"payload":{"code":"stale_approval","message":"stale approval response"},"type":"error","version":1}
             """.utf8
         )
-        let client: SocketDaemonClient = SocketDaemonClient(transport: MemoryLineTransport(reads: [errorLine]))
+        let client = SocketDaemonClient(transport: MemoryLineTransport(reads: [errorLine]))
 
         XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
             XCTAssertEqual(
@@ -172,11 +171,11 @@ internal final class ApprovalControllerTests: XCTestCase {
         }
     }
 
-    internal func testSubmitsApproveOnceDecisionWithoutSecretValues() throws {
+    func testSubmitsApproveOnceDecisionWithoutSecretValues() throws {
         let request: ApprovalRequest = Self.sampleRequest
-        let client: MockDaemonClient = MockDaemonClient(request: request)
-        let logger: RecordingLogger = RecordingLogger()
-        let controller: ApprovalController = ApprovalController(
+        let client = MockDaemonClient(request: request)
+        let logger = RecordingLogger()
+        let controller = ApprovalController(
             client: client,
             presenter: StaticDecisionPresenter(decision: .approveOnce),
             logger: logger
@@ -194,17 +193,17 @@ internal final class ApprovalControllerTests: XCTestCase {
         )
         XCTAssertEqual(client.submittedDecision, decision)
 
-        let encoded: String = String(data: try JSONEncoder().encode(decision), encoding: .utf8) ?? ""
+        let encoded: String = try String(data: JSONEncoder().encode(decision), encoding: .utf8) ?? ""
         XCTAssertFalse(encoded.contains("op://"))
         XCTAssertFalse(encoded.contains("EXAMPLE_TOKEN"))
         XCTAssertFalse(logger.events.contains { event -> Bool in event.contains("op://") })
     }
 
-    internal func testViewModelContainsApprovalContextWithoutSecretValuesOrDebugIdentifiers() {
+    func testViewModelContainsApprovalContextWithoutSecretValuesOrDebugIdentifiers() {
         var request: ApprovalRequest = Self.sampleRequest
         request.overrideEnv = true
         request.overriddenAliases = ["EXAMPLE_TOKEN"]
-        let viewModel: ApprovalRequestViewModel = ApprovalRequestViewModel(
+        let viewModel = ApprovalRequestViewModel(
             request: request,
             now: Date(timeIntervalSince1970: Self.viewModelNow)
         )
