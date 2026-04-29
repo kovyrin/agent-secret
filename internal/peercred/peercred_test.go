@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -103,4 +104,64 @@ func TestPeerCredRejectsMissingMetadata(t *testing.T) {
 	if !errors.Is(err, ErrMissingMetadata) {
 		t.Fatalf("expected missing metadata, got %v", err)
 	}
+}
+
+func TestInspectRequiresUnixConnection(t *testing.T) {
+	t.Parallel()
+
+	_, err := Inspect(nil)
+	if err == nil {
+		t.Fatal("expected nil connection error")
+	}
+}
+
+func TestPeerCredRejectsSpecificMismatches(t *testing.T) {
+	t.Parallel()
+
+	expected, err := CurrentExpected()
+	if err != nil {
+		t.Fatalf("current expected peer: %v", err)
+	}
+	info := Info(expected)
+
+	tests := []struct {
+		name string
+		info Info
+		want string
+	}{
+		{name: "uid", info: withUID(info, expected.UID+1), want: "uid"},
+		{name: "gid", info: withGID(info, expected.GID+1), want: "gid"},
+		{name: "executable", info: withExecutable(info, filepath.Join(t.TempDir(), "other-tool")), want: "executable"},
+		{name: "cwd", info: withCWD(info, filepath.Join(t.TempDir(), "other-cwd")), want: "cwd"},
+	}
+
+	for _, tt := range tests {
+		err := Validate(tt.info, expected)
+		if !errors.Is(err, ErrPolicyMismatch) {
+			t.Fatalf("%s: expected policy mismatch, got %v", tt.name, err)
+		}
+		if !strings.Contains(err.Error(), tt.want) {
+			t.Fatalf("%s: mismatch error %q did not mention %q", tt.name, err, tt.want)
+		}
+	}
+}
+
+func withUID(info Info, uid int) Info {
+	info.UID = uid
+	return info
+}
+
+func withGID(info Info, gid int) Info {
+	info.GID = gid
+	return info
+}
+
+func withExecutable(info Info, path string) Info {
+	info.ExecutablePath = path
+	return info
+}
+
+func withCWD(info Info, path string) Info {
+	info.CWD = path
+	return info
 }

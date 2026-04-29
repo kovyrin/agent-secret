@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -98,4 +100,82 @@ func waitForStatusFailure(t *testing.T, manager Manager) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("daemon still responded after stop")
+}
+
+func TestNewManagerUsesDefaultSocketAndDaemonPathOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AGENT_SECRET_DAEMON_PATH", "/tmp/agent-secretd-test")
+
+	manager, err := NewManager("")
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+	wantSocket := filepath.Join(home, "Library", "Application Support", "agent-secret", "agent-secretd.sock")
+	if manager.SocketPath != wantSocket {
+		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath, wantSocket)
+	}
+	if manager.DaemonPath != "/tmp/agent-secretd-test" {
+		t.Fatalf("DaemonPath = %q, want env override", manager.DaemonPath)
+	}
+	if manager.StartupTimeout != 3*time.Second {
+		t.Fatalf("StartupTimeout = %s, want 3s", manager.StartupTimeout)
+	}
+}
+
+func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{SocketPath: "/tmp/agent-secret.sock"}
+	if got := manager.daemonArgs(); !slices.Equal(got, []string{"--socket", "/tmp/agent-secret.sock"}) {
+		t.Fatalf("default daemon args = %v", got)
+	}
+
+	manager.DaemonArgs = []string{"--listen", "{socket}", "--verbose"}
+	got := manager.daemonArgs()
+	want := []string{"--listen", "/tmp/agent-secret.sock", "--verbose"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("custom daemon args = %v, want %v", got, want)
+	}
+}
+
+func TestDaemonAppPathAndStartCommand(t *testing.T) {
+	t.Setenv("AGENT_SECRET_DAEMON_APP_PATH", "/tmp/AgentSecretDaemon.app")
+	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
+	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/Applications/AgentSecretApprover.app")
+
+	appPath, ok := defaultDaemonAppPath()
+	if runtime.GOOS == "darwin" {
+		if !ok || appPath != "/tmp/AgentSecretDaemon.app" {
+			t.Fatalf("default daemon app path = %q, %v", appPath, ok)
+		}
+		cmd := daemonStartCommand(context.Background(), appPath, []string{"--socket", "/tmp/d.sock"})
+		if cmd.Path != "/usr/bin/open" {
+			t.Fatalf("darwin app command path = %q, want /usr/bin/open", cmd.Path)
+		}
+		for _, want := range []string{
+			"-g",
+			"-n",
+			appPath,
+			"--env",
+			"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
+			"AGENT_SECRET_APPROVER_PATH=/Applications/AgentSecretApprover.app",
+			"--args",
+			"--socket",
+			"/tmp/d.sock",
+		} {
+			if !slices.Contains(cmd.Args, want) {
+				t.Fatalf("darwin app command args %v missing %q", cmd.Args, want)
+			}
+		}
+		return
+	}
+
+	if ok || appPath != "" {
+		t.Fatalf("non-darwin daemon app path = %q, %v", appPath, ok)
+	}
+	cmd := daemonStartCommand(context.Background(), "/tmp/agent-secretd", []string{"--socket", "/tmp/d.sock"})
+	if cmd.Path != "/tmp/agent-secretd" {
+		t.Fatalf("daemon command path = %q, want direct binary", cmd.Path)
+	}
 }

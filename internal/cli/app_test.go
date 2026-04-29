@@ -111,6 +111,56 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	}
 }
 
+func TestAppDaemonStartAndStopCommands(t *testing.T) {
+	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Audit:    &appAudit{},
+	})
+	defer cleanup()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"daemon", "start"}); code != 0 {
+		t.Fatalf("daemon start exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "running pid=") {
+		t.Fatalf("daemon start output = %q", stdout.String())
+	}
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"daemon", "stop"}); code != 0 {
+		t.Fatalf("daemon stop exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "agent-secretd: stopped" {
+		t.Fatalf("daemon stop output = %q", stdout.String())
+	}
+}
+
+func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"bananas"}); code != 2 {
+		t.Fatalf("unknown command exit=%d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown command") {
+		t.Fatalf("parse error stderr = %q", stderr.String())
+	}
+
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"daemon", "status"}); code != 1 {
+		t.Fatalf("stopped daemon status exit=%d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "agent-secretd: stopped") {
+		t.Fatalf("stopped daemon status stdout = %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stopped daemon status wrote stderr: %q", stderr.String())
+	}
+}
+
 func runAppExecHelper() {
 	if len(os.Args) == 0 || os.Args[len(os.Args)-1] != "child" {
 		return

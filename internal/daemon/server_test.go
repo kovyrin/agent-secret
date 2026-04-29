@@ -23,10 +23,11 @@ func (allowPeerValidator) Validate(_ *net.UnixConn) error {
 
 type staticPeerValidator struct {
 	info peercred.Info
+	err  error
 }
 
 func (v staticPeerValidator) Validate(_ *net.UnixConn) error {
-	return nil
+	return v.err
 }
 
 func (v staticPeerValidator) Info(_ *net.UnixConn) (peercred.Info, error) {
@@ -244,6 +245,65 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 		t.Fatalf("RequestExec returned error: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for exec response")
+	}
+}
+
+func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startRawServerWithBroker(
+		t,
+		newTestBroker(t, BrokerOptions{
+			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		nil,
+		staticPeerValidator{err: peercred.ErrPolicyMismatch},
+	)
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	var resp Envelope
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatalf("decode peer rejection: %v", err)
+	}
+	if resp.Type != TypeError {
+		t.Fatalf("peer rejection response type = %s", resp.Type)
+	}
+	payload, err := DecodePayload[ErrorPayload](resp)
+	if err != nil {
+		t.Fatalf("decode peer rejection payload: %v", err)
+	}
+	if payload.Code != "peer_rejected" {
+		t.Fatalf("peer rejection code = %q", payload.Code)
+	}
+}
+
+func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err  error
+		want string
+	}{
+		{err: ErrApprovalDenied, want: "approval_denied"},
+		{err: ErrAuditRequired, want: "audit_failed"},
+		{err: ErrInvalidNonce, want: "invalid_nonce"},
+		{err: ErrApproverPeerMismatch, want: "approver_peer_mismatch"},
+		{err: ErrNoPendingApproval, want: "no_pending_approval"},
+		{err: ErrRequestExpired, want: "request_expired"},
+		{err: ErrStaleApproval, want: "stale_approval"},
+		{err: errors.New("other"), want: "request_failed"},
+	}
+	for _, tt := range tests {
+		if got := codeForError(tt.err); got != tt.want {
+			t.Fatalf("codeForError(%v) = %q, want %q", tt.err, got, tt.want)
+		}
 	}
 }
 

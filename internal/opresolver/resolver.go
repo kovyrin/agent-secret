@@ -46,9 +46,27 @@ func NewResolver(secrets SecretsAPI) (*Resolver, error) {
 }
 
 func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, error) {
+	normalized, err := normalizeDesktopOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := onepassword.NewClient(
+		ctx,
+		onepassword.WithDesktopAppIntegration(normalized.Account),
+		onepassword.WithIntegrationInfo(normalized.IntegrationName, normalized.IntegrationVersion),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create 1Password SDK client: %w", err)
+	}
+
+	return NewResolver(client.Secrets())
+}
+
+func normalizeDesktopOptions(opts ClientOptions) (ClientOptions, error) {
 	account := strings.TrimSpace(opts.Account)
 	if account == "" {
-		return nil, errors.New("1Password account name is required")
+		return ClientOptions{}, errors.New("1Password account name is required")
 	}
 
 	integrationName := strings.TrimSpace(opts.IntegrationName)
@@ -61,16 +79,11 @@ func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, err
 		integrationVersion = "dev"
 	}
 
-	client, err := onepassword.NewClient(
-		ctx,
-		onepassword.WithDesktopAppIntegration(account),
-		onepassword.WithIntegrationInfo(integrationName, integrationVersion),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create 1Password SDK client: %w", err)
-	}
-
-	return NewResolver(client.Secrets())
+	return ClientOptions{
+		Account:            account,
+		IntegrationName:    integrationName,
+		IntegrationVersion: integrationVersion,
+	}, nil
 }
 
 func (r *Resolver) Resolve(ctx context.Context, ref string) (Secret, error) {

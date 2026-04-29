@@ -133,17 +133,46 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 	t.Parallel()
 
 	parser := NewParser(time.Now)
-	command, err := parser.Parse([]string{"exec", "--help"})
-	if !errors.Is(err, ErrHelpRequested) {
-		t.Fatalf("expected help error, got %v", err)
+	tests := []struct {
+		name  string
+		args  []string
+		wants []string
+	}{
+		{
+			name:  "top",
+			args:  []string{"--help"},
+			wants: []string{"agent-secret controls", "exec", "daemon", "doctor"},
+		},
+		{
+			name:  "exec",
+			args:  []string{"exec", "--help"},
+			wants: []string{"--reason", "--secret", "--force-refresh", "audit.jsonl", "stdout", "stderr"},
+		},
+		{
+			name:  "daemon",
+			args:  []string{"daemon", "--help"},
+			wants: []string{"daemon status", "daemon start", "daemon stop", "in-memory"},
+		},
+		{
+			name:  "doctor",
+			args:  []string{"doctor", "--help"},
+			wants: []string{"non-secret local diagnostics", "1Password"},
+		},
 	}
-	for _, want := range []string{"--reason", "--secret", "--force-refresh", "audit.jsonl", "stdout", "stderr"} {
-		if !strings.Contains(command.HelpText, want) {
-			t.Fatalf("help missing %q:\n%s", want, command.HelpText)
+
+	for _, tt := range tests {
+		command, err := parser.Parse(tt.args)
+		if !errors.Is(err, ErrHelpRequested) {
+			t.Fatalf("%s: expected help error, got %v", tt.name, err)
 		}
-	}
-	if strings.Contains(command.HelpText, "synthetic-secret-value") {
-		t.Fatal("help text contains secret-looking canary value")
+		for _, want := range tt.wants {
+			if !strings.Contains(command.HelpText, want) {
+				t.Fatalf("%s help missing %q:\n%s", tt.name, want, command.HelpText)
+			}
+		}
+		if strings.Contains(command.HelpText, "synthetic-secret-value") {
+			t.Fatalf("%s help contains secret-looking canary value", tt.name)
+		}
 	}
 }
 

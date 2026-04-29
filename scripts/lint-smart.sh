@@ -228,9 +228,14 @@ fi
 if [ "$go_config_changed" -eq 1 ]; then
   echo "Running golangci-lint on all Go files..."
   golangci-lint run --timeout 5m
-elif [ ${#go_files[@]} -gt 0 ]; then
-  echo "Running golangci-lint on changed Go files..."
-  golangci-lint run --timeout 5m "${go_files[@]}"
+elif [ ${#go_targets[@]} -gt 0 ]; then
+  target=""
+  for target in "${go_targets[@]}"; do
+    module_dir="${target%%::*}"
+    package_pattern="${target#*::}"
+    echo "Running golangci-lint: $module_dir $package_pattern"
+    (cd "$module_dir" && golangci-lint run --timeout 5m "$package_pattern")
+  done
 fi
 
 if [ ${#shell_files[@]} -gt 0 ]; then

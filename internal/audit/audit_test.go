@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -194,6 +195,52 @@ func TestWriterRejectsInvalidEventsAndClosedUse(t *testing.T) {
 	}
 	if err := writer.Record(context.Background(), Event{Type: EventCommandStarting}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("expected closed writer error, got %v", err)
+	}
+}
+
+func TestWriterPreflightAndApprovalReused(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
+	writer, err := OpenDefault(func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("OpenDefault returned error: %v", err)
+	}
+
+	if err := writer.Preflight(context.Background()); err != nil {
+		t.Fatalf("Preflight returned error: %v", err)
+	}
+	err = writer.ApprovalReused(context.Background(), policy.ReuseAuditEvent{
+		ApprovalID:   "approval_1",
+		RemainingTTL: 90 * time.Second,
+		RemainingUse: 2,
+	})
+	if err != nil {
+		t.Fatalf("ApprovalReused returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	if err := writer.Preflight(context.Background()); !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected closed preflight error, got %v", err)
+	}
+
+	data, err := os.ReadFile(expectedPath(home))
+	if err != nil {
+		t.Fatalf("read audit log: %v", err)
+	}
+	var event Event
+	if err := json.Unmarshal(bytes.TrimSpace(data), &event); err != nil {
+		t.Fatalf("unmarshal approval_reused event: %v", err)
+	}
+	if event.Type != EventApprovalReused || event.ApprovalID != "approval_1" {
+		t.Fatalf("unexpected approval_reused event: %+v", event)
+	}
+	if event.RemainingTTLMillis == nil || *event.RemainingTTLMillis != 90000 {
+		t.Fatalf("remaining TTL metadata = %v, want 90000", event.RemainingTTLMillis)
+	}
+	if event.RemainingUses == nil || *event.RemainingUses != 2 {
+		t.Fatalf("remaining uses metadata = %v, want 2", event.RemainingUses)
 	}
 }
 

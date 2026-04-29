@@ -10,9 +10,11 @@ type fakeSecretsAPI struct {
 	value string
 	ref   string
 	err   error
+	calls int
 }
 
 func (f *fakeSecretsAPI) Resolve(_ context.Context, ref string) (string, error) {
+	f.calls++
 	f.ref = ref
 	if f.err != nil {
 		return "", f.err
@@ -96,5 +98,75 @@ func TestResolveWrapsSDKError(t *testing.T) {
 	_, err = resolver.Resolve(context.Background(), "op://Example Vault/Item/password")
 	if err == nil {
 		t.Fatal("expected resolve error")
+	}
+}
+
+func TestNewResolverRequiresSecretsAPI(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewResolver(nil)
+	if err == nil {
+		t.Fatal("expected nil secrets API error")
+	}
+}
+
+func TestResolveRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeSecretsAPI{value: "synthetic-secret-value"}
+	resolver, err := NewResolver(fake)
+	if err != nil {
+		t.Fatalf("NewResolver returned error: %v", err)
+	}
+
+	_, err = resolver.Resolve(context.Background(), "Example Vault/Item/password")
+	if !errors.Is(err, ErrInvalidReference) {
+		t.Fatalf("expected invalid reference error, got %v", err)
+	}
+	if fake.calls != 0 {
+		t.Fatalf("invalid reference called SDK %d time(s)", fake.calls)
+	}
+}
+
+func TestNewDesktopResolverRequiresAccount(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewDesktopResolver(context.Background(), ClientOptions{Account: " \t "})
+	if err == nil {
+		t.Fatal("expected missing account error")
+	}
+}
+
+func TestNormalizeDesktopOptionsTrimsAndDefaults(t *testing.T) {
+	t.Parallel()
+
+	opts, err := normalizeDesktopOptions(ClientOptions{
+		Account:            " Fixture ",
+		IntegrationName:    " \t ",
+		IntegrationVersion: " ",
+	})
+	if err != nil {
+		t.Fatalf("normalizeDesktopOptions returned error: %v", err)
+	}
+	if opts.Account != "Fixture" {
+		t.Fatalf("account = %q, want Fixture", opts.Account)
+	}
+	if opts.IntegrationName != "Agent Secret Broker" {
+		t.Fatalf("integration name = %q, want default", opts.IntegrationName)
+	}
+	if opts.IntegrationVersion != "dev" {
+		t.Fatalf("integration version = %q, want dev", opts.IntegrationVersion)
+	}
+
+	opts, err = normalizeDesktopOptions(ClientOptions{
+		Account:            "Fixture",
+		IntegrationName:    "agent-secretd",
+		IntegrationVersion: "1.2.3",
+	})
+	if err != nil {
+		t.Fatalf("normalizeDesktopOptions with explicit values returned error: %v", err)
+	}
+	if opts.IntegrationName != "agent-secretd" || opts.IntegrationVersion != "1.2.3" {
+		t.Fatalf("explicit integration info was not preserved: %+v", opts)
 	}
 }

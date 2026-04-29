@@ -215,6 +215,75 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 	}
 }
 
+func TestSocketApproverConstructorValidation(t *testing.T) {
+	t.Parallel()
+
+	if _, err := NewSocketApprover("", &recordingLauncher{}, time.Now); err == nil {
+		t.Fatal("expected missing socket path error")
+	}
+	if _, err := NewSocketApprover("/tmp/agent-secret-test.sock", nil, time.Now); !errors.Is(err, ErrApproverLaunchFailed) {
+		t.Fatalf("expected launcher error, got %v", err)
+	}
+}
+
+func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	launcher := &recordingLauncher{expected: ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	waitForPending(t, approver)
+
+	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  "banana",
+	})
+	if !errors.Is(err, ErrMalformedEnvelope) {
+		t.Fatalf("expected malformed decision error, got %v", err)
+	}
+	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  "timeout",
+	})
+	if err != nil {
+		t.Fatalf("timeout decision returned error: %v", err)
+	}
+	if err := <-errCh; !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("ApproveExec error = %v, want expired", err)
+	}
+}
+
+func TestProcessApproverLauncherExecutablePath(t *testing.T) {
+	t.Parallel()
+
+	appPath := filepath.Join(t.TempDir(), "AgentSecretApprover.app")
+	got, err := (ProcessApproverLauncher{AppPath: appPath}).executablePath()
+	if err != nil {
+		t.Fatalf("app executablePath returned error: %v", err)
+	}
+	want := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
+	if got != want {
+		t.Fatalf("app executable path = %q, want %q", got, want)
+	}
+
+	binaryPath := filepath.Join(t.TempDir(), "agent-secret-approver")
+	got, err = (ProcessApproverLauncher{AppPath: binaryPath}).executablePath()
+	if err != nil {
+		t.Fatalf("binary executablePath returned error: %v", err)
+	}
+	if got != binaryPath {
+		t.Fatalf("binary executable path = %q, want %q", got, binaryPath)
+	}
+}
+
 func newSocketApproverForTest(t *testing.T, launcher ApproverLauncher, now func() time.Time) *SocketApprover {
 	t.Helper()
 	approver, err := NewSocketApprover("/tmp/agent-secret-test.sock", launcher, now)
