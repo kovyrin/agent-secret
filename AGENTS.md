@@ -52,6 +52,7 @@ mise run lint:vuln
 mise run lint:smart
 mise run test
 mise run test:race
+mise run test:coverage
 scripts/lint.sh
 scripts/lint-go.sh
 ```

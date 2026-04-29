@@ -97,6 +97,7 @@ mise run lint:secrets
 mise run lint:vuln
 scripts/lint-smart.sh --staged
 mise run test:race
+mise run test:coverage
 ```
 
 ## Development Install

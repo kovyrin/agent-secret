@@ -47,6 +47,10 @@ cd approver && swift test
 description = "Run Go tests with the race detector enabled"
 run = "go test -race ./..."
 
+[tasks."test:coverage"]
+description = "Run Go tests with coverage floors for internal packages"
+run = "scripts/check-go-coverage.sh"
+
 [tasks.build]
 description = "Build Go commands and the macOS approver app"
 run = """
