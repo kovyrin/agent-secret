@@ -12,8 +12,8 @@ import (
 func TestLiveDesktopResolve(t *testing.T) {
 	ref := os.Getenv("AGENT_SECRET_LIVE_REF")
 	account := os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")
-	if ref == "" || account == "" {
-		t.Skip("set AGENT_SECRET_LIVE_REF and AGENT_SECRET_1PASSWORD_ACCOUNT to run live 1Password SDK test")
+	if ref == "" {
+		t.Skip("set AGENT_SECRET_LIVE_REF to run live 1Password SDK test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

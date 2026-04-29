@@ -141,6 +141,7 @@ func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 
 func TestDaemonAppPathAndStartCommand(t *testing.T) {
 	t.Setenv("AGENT_SECRET_DAEMON_APP_PATH", "/tmp/AgentSecretDaemon.app")
+	t.Setenv("OP_ACCOUNT", "DefaultFixture")
 	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
 	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/Applications/AgentSecretApprover.app")
 
@@ -157,6 +158,8 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 			"-g",
 			"-n",
 			appPath,
+			"--env",
+			"OP_ACCOUNT=DefaultFixture",
 			"--env",
 			"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
 			"AGENT_SECRET_APPROVER_PATH=/Applications/AgentSecretApprover.app",

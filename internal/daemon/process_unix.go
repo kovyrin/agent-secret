@@ -50,6 +50,7 @@ func defaultDaemonAppPath() (string, bool) {
 
 func daemonAppEnvironment() []string {
 	names := []string{
+		"OP_ACCOUNT",
 		"AGENT_SECRET_1PASSWORD_ACCOUNT",
 		"AGENT_SECRET_APPROVER_PATH",
 	}

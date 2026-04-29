@@ -3,6 +3,7 @@ package opresolver
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"testing"
 )
 
@@ -128,26 +129,107 @@ func TestResolveRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
 	}
 }
 
-func TestNewDesktopResolverRequiresAccount(t *testing.T) {
+func TestNormalizeDesktopOptionsAllowsDefaultAccount(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewDesktopResolver(context.Background(), ClientOptions{Account: " \t "})
+	opts := normalizeDesktopOptions(ClientOptions{Account: " \t "})
+	if opts.Account != "" {
+		t.Fatalf("account = %q, want default account sentinel", opts.Account)
+	}
+}
+
+func TestDesktopAccountUsesExplicitOverride(t *testing.T) {
+	t.Setenv("OP_ACCOUNT", "FromEnv")
+	account, err := desktopAccount(context.Background(), " Fixture ")
+	if err != nil {
+		t.Fatalf("desktopAccount returned error: %v", err)
+	}
+	if account != "Fixture" {
+		t.Fatalf("account = %q, want explicit override", account)
+	}
+}
+
+func TestDesktopAccountUsesOPAccountEnvironment(t *testing.T) {
+	t.Setenv("OP_ACCOUNT", " Fixture ")
+	account, err := desktopAccount(context.Background(), "")
+	if err != nil {
+		t.Fatalf("desktopAccount returned error: %v", err)
+	}
+	if account != "Fixture" {
+		t.Fatalf("account = %q, want OP_ACCOUNT", account)
+	}
+}
+
+func TestDesktopAccountDiscoversFirstLocalAccount(t *testing.T) {
+	account, err := desktopAccountWith(
+		context.Background(),
+		"",
+		"",
+		accountListStub([]byte(`[{"account_uuid":"FIRST"}]`), nil),
+	)
+	if err != nil {
+		t.Fatalf("desktopAccount returned error: %v", err)
+	}
+	if account != "FIRST" {
+		t.Fatalf("account = %q, want discovered account", account)
+	}
+}
+
+func TestDefaultDesktopAccountReportsMissingOPCLI(t *testing.T) {
+	_, err := defaultDesktopAccountWith(context.Background(), accountListStub(nil, exec.ErrNotFound))
+	if err == nil {
+		t.Fatal("expected missing op error")
+	}
+}
+
+func TestDefaultDesktopAccountWrapsOPCLIError(t *testing.T) {
+	_, err := defaultDesktopAccountWith(context.Background(), accountListStub(nil, errors.New("boom")))
+	if err == nil {
+		t.Fatal("expected op command error")
+	}
+}
+
+func TestFirstAccountUUIDUsesFirstConfiguredAccount(t *testing.T) {
+	t.Parallel()
+
+	account, err := firstAccountUUID([]byte(`[
+		{"url": "example.1password.com", "account_uuid": "FIRST"},
+		{"url": "second.1password.com", "account_uuid": "SECOND"}
+	]`))
+	if err != nil {
+		t.Fatalf("firstAccountUUID returned error: %v", err)
+	}
+	if account != "FIRST" {
+		t.Fatalf("account = %q, want first configured account", account)
+	}
+}
+
+func TestFirstAccountUUIDRejectsMissingAccounts(t *testing.T) {
+	t.Parallel()
+
+	_, err := firstAccountUUID([]byte(`[{"url":"example.1password.com"}]`))
 	if err == nil {
 		t.Fatal("expected missing account error")
+	}
+}
+
+func TestFirstAccountUUIDRejectsInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	_, err := firstAccountUUID([]byte(`not-json`))
+	if err == nil {
+		t.Fatal("expected invalid JSON error")
 	}
 }
 
 func TestNormalizeDesktopOptionsTrimsAndDefaults(t *testing.T) {
 	t.Parallel()
 
-	opts, err := normalizeDesktopOptions(ClientOptions{
+	opts := normalizeDesktopOptions(ClientOptions{
 		Account:            " Fixture ",
 		IntegrationName:    " \t ",
 		IntegrationVersion: " ",
 	})
-	if err != nil {
-		t.Fatalf("normalizeDesktopOptions returned error: %v", err)
-	}
 	if opts.Account != "Fixture" {
 		t.Fatalf("account = %q, want Fixture", opts.Account)
 	}
@@ -158,15 +240,18 @@ func TestNormalizeDesktopOptionsTrimsAndDefaults(t *testing.T) {
 		t.Fatalf("integration version = %q, want dev", opts.IntegrationVersion)
 	}
 
-	opts, err = normalizeDesktopOptions(ClientOptions{
+	opts = normalizeDesktopOptions(ClientOptions{
 		Account:            "Fixture",
 		IntegrationName:    "agent-secretd",
 		IntegrationVersion: "1.2.3",
 	})
-	if err != nil {
-		t.Fatalf("normalizeDesktopOptions with explicit values returned error: %v", err)
-	}
 	if opts.IntegrationName != "agent-secretd" || opts.IntegrationVersion != "1.2.3" {
 		t.Fatalf("explicit integration info was not preserved: %+v", opts)
+	}
+}
+
+func accountListStub(out []byte, err error) accountListFunc {
+	return func(context.Context) ([]byte, error) {
+		return out, err
 	}
 }

@@ -46,14 +46,15 @@ func NewResolver(secrets SecretsAPI) (*Resolver, error) {
 }
 
 func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, error) {
-	normalized, err := normalizeDesktopOptions(opts)
+	normalized := normalizeDesktopOptions(opts)
+	account, err := desktopAccount(ctx, normalized.Account)
 	if err != nil {
 		return nil, err
 	}
 
 	client, err := onepassword.NewClient(
 		ctx,
-		onepassword.WithDesktopAppIntegration(normalized.Account),
+		onepassword.WithDesktopAppIntegration(account),
 		onepassword.WithIntegrationInfo(normalized.IntegrationName, normalized.IntegrationVersion),
 	)
 	if err != nil {
@@ -63,11 +64,8 @@ func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, err
 	return NewResolver(client.Secrets())
 }
 
-func normalizeDesktopOptions(opts ClientOptions) (ClientOptions, error) {
+func normalizeDesktopOptions(opts ClientOptions) ClientOptions {
 	account := strings.TrimSpace(opts.Account)
-	if account == "" {
-		return ClientOptions{}, errors.New("1Password account name is required")
-	}
 
 	integrationName := strings.TrimSpace(opts.IntegrationName)
 	if integrationName == "" {
@@ -83,7 +81,7 @@ func normalizeDesktopOptions(opts ClientOptions) (ClientOptions, error) {
 		Account:            account,
 		IntegrationName:    integrationName,
 		IntegrationVersion: integrationVersion,
-	}, nil
+	}
 }
 
 func (r *Resolver) Resolve(ctx context.Context, ref string) (Secret, error) {

@@ -105,7 +105,7 @@ Safety rules:
   - --reason is required, trimmed, and capped at 240 characters.
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
-  - Set AGENT_SECRET_1PASSWORD_ACCOUNT before first real use so the daemon can use 1Password desktop-app integration.
+  - By default, the daemon uses OP_ACCOUNT or the first local account from op account list. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - exec has no --json mode and never prints secret values.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
@@ -140,7 +140,8 @@ Flags:
 
 Environment:
 
-  AGENT_SECRET_1PASSWORD_ACCOUNT  1Password account name used by the daemon after local approval.
+  OP_ACCOUNT                      Optional 1Password account name, UUID, or sign-in address used as the default account.
+  AGENT_SECRET_1PASSWORD_ACCOUNT  Optional 1Password account name or UUID override. Empty uses OP_ACCOUNT or op account list.
 
 Unsupported by design:
 

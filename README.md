@@ -68,8 +68,10 @@ cd approver && ./scripts/build-app.sh
 swift run agent-secret-approver-smoke
 ```
 
-The integration test skips unless `AGENT_SECRET_LIVE_REF` and
-`AGENT_SECRET_1PASSWORD_ACCOUNT` point at a test-only 1Password reference.
+The integration test skips unless `AGENT_SECRET_LIVE_REF` points at a test-only
+1Password reference. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only
+when the first account from `op account list` is not the account you want to
+test.
 
 ## Development Toolchain
 
@@ -122,8 +124,11 @@ Override the install locations with `--bin-dir`, `--app-dir`,
 `AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
 one-off flags, run `./scripts/dev-install.sh` directly.
 
-Set `AGENT_SECRET_1PASSWORD_ACCOUNT` in the shell that will run
-`agent-secret exec`; the daemon inherits that value when it auto-starts.
+By default, `agent-secret` uses `OP_ACCOUNT`, or the first local account from
+`op account list` when `OP_ACCOUNT` is unset. Set
+`AGENT_SECRET_1PASSWORD_ACCOUNT` in the shell that will run `agent-secret exec`
+only when you want to force a specific account; the daemon inherits that value
+when it auto-starts.
 On macOS, `agent-secret` starts the daemon through `AgentSecretDaemon.app` so
 1Password sees the SDK caller as Agent Secret instead of the terminal or agent
 desktop app that launched the CLI.

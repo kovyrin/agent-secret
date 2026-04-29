@@ -47,9 +47,11 @@ Live test command:
 
 ```bash
 AGENT_SECRET_LIVE_REF="op://Example Vault/Example Item/token" \
-AGENT_SECRET_1PASSWORD_ACCOUNT="example-account" \
 go test -tags integration ./...
 ```
+
+Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when the first account
+from `op account list` is not the account you want to test.
 
 The live test logs only value length and SHA-256 metadata. It does not print the
 secret value. On 2026-04-28, this passed against a test account after

@@ -28,7 +28,7 @@ func run() int {
 	flags := flag.NewFlagSet("agent-secretd", flag.ExitOnError)
 	flags.StringVar(&socketPath, "socket", socketPath, "daemon socket path")
 	approverPath := flags.String("approver", os.Getenv("AGENT_SECRET_APPROVER_PATH"), "approver executable or .app path")
-	accountName := flags.String("account", os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"), "1Password account name for desktop-app integration")
+	accountName := flags.String("account", os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"), "1Password account name or UUID; empty uses OP_ACCOUNT or the first account from op account list")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		stderrf("agent-secretd: parse flags: %v\n", err)
 		return 2
@@ -76,12 +76,6 @@ func stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, args...)
 }
 
-type unavailableResolver struct{}
-
-func (unavailableResolver) Resolve(context.Context, string) (string, error) {
-	return "", fmt.Errorf("%w: set AGENT_SECRET_1PASSWORD_ACCOUNT or pass --account", daemon.ErrNoResolver)
-}
-
 type desktopResolver struct {
 	mu       sync.Mutex
 	account  string
@@ -95,9 +89,6 @@ type desktopResolverResult struct {
 
 func newResolver(account string) daemon.Resolver {
 	account = strings.TrimSpace(account)
-	if account == "" {
-		return unavailableResolver{}
-	}
 	return &desktopResolver{account: account}
 }
 

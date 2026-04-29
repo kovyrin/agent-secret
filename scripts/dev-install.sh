@@ -22,8 +22,10 @@ Environment:
   AGENT_SECRET_INSTALL_BIN_DIR  Default binary install directory.
   AGENT_SECRET_INSTALL_APP_DIR  Default app install directory.
 
-After install, set AGENT_SECRET_1PASSWORD_ACCOUNT in the shell that will run
-agent-secret exec. The daemon inherits that value when it auto-starts.
+By default agent-secret uses OP_ACCOUNT, or the first local account from
+op account list when OP_ACCOUNT is unset. Set AGENT_SECRET_1PASSWORD_ACCOUNT in
+the shell that will run agent-secret exec only when you want to force a specific
+account. The daemon inherits that value when it auto-starts.
 USAGE
 }
 
