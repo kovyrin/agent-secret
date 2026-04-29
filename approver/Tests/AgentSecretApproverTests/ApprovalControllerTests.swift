@@ -62,6 +62,34 @@ final class ApprovalControllerTests: XCTestCase {
         )
     }
 
+    private static var multiSecretRequest: ApprovalRequest {
+        ApprovalRequest(
+            requestID: "req_multi",
+            nonce: "nonce_multi",
+            reason: "Run integration checks",
+            command: ["/usr/bin/env"],
+            cwd: "/tmp/project",
+            expiresAt: Date(timeIntervalSince1970: sampleExpiration),
+            secrets: multiSecrets,
+            resolvedExecutable: "/usr/bin/env"
+        )
+    }
+
+    private static var multiSecrets: [RequestedSecret] {
+        [
+            RequestedSecret(alias: "LOGIN", ref: "op://Private/Github/username"),
+            RequestedSecret(alias: "GITHUB_TOKEN", ref: "op://Private/Github/token"),
+            RequestedSecret(alias: "GITHUB_EMAIL", ref: "op://Private/Github/email"),
+            RequestedSecret(alias: "DB_HOST", ref: "op://Database/App/host"),
+            RequestedSecret(alias: "DB_USER", ref: "op://Database/App/user"),
+            RequestedSecret(alias: "DB_PASSWORD", ref: "op://Database/App/password"),
+            RequestedSecret(alias: "DB_NAME", ref: "op://Database/App/name"),
+            RequestedSecret(alias: "OPENAI_API_KEY", ref: "op://OpenAI/Platform/api_key"),
+            RequestedSecret(alias: "OPENAI_ORG_ID", ref: "op://OpenAI/Platform/org_id"),
+            RequestedSecret(alias: "OPENAI_PROJECT_ID", ref: "op://OpenAI/Platform/project_id")
+        ]
+    }
+
     private static func daemonEnvelope(
         type: String,
         requestID: String,
@@ -217,6 +245,27 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
         XCTAssertFalse(viewModel.renderedText.contains(request.requestID))
         XCTAssertFalse(viewModel.renderedText.contains(request.nonce))
+    }
+
+    func testViewModelSummarizesManySecretsByVault() {
+        let viewModel = ApprovalRequestViewModel(
+            request: Self.multiSecretRequest,
+            now: Date(timeIntervalSince1970: Self.viewModelNow)
+        )
+
+        XCTAssertEqual(viewModel.secretCount, Self.multiSecrets.count)
+        XCTAssertEqual(viewModel.vaultCount, Self.expectedReusableUses)
+        XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use 10 secrets?")
+        XCTAssertEqual(viewModel.accessSummary, "wants temporary access to 10 secrets from 3 vaults.")
+        XCTAssertTrue(viewModel.highScopeWarning)
+        XCTAssertTrue(viewModel.printsEnvironmentWarning)
+        XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Private", "Database", "OpenAI"])
+        XCTAssertEqual(viewModel.vaultGroups.first?.countLabel, "3 secrets")
+        XCTAssertEqual(viewModel.vaultGroups.first?.aliasSummary, "LOGIN, GITHUB_TOKEN, GITHUB_EMAIL")
+        XCTAssertEqual(viewModel.requestedSecrets.first?.fieldName, "username")
+        XCTAssertEqual(viewModel.requestedSecrets.first?.symbolName, "person")
+        XCTAssertTrue(viewModel.footerMessage.contains("The secrets are injected"))
+        XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
     }
 
     deinit {
