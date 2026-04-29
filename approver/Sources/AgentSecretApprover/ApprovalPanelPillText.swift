@@ -10,7 +10,7 @@ import Foundation
 
         var body: some View {
             Text(text)
-                .font(.system(size: Metric.detailTitleFontSize, weight: .medium, design: .monospaced))
+                .font(.system(size: Metric.pillFontSize, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.green)
                 .lineLimit(Metric.singleLineLimit)
                 .truncationMode(.middle)

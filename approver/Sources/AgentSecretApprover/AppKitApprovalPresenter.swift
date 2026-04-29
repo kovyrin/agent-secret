@@ -12,7 +12,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
     #if canImport(AppKit)
         private static let panelHeight: CGFloat = 660
         private static let panelOrigin: CGFloat = 0
-        private static let panelWidth: CGFloat = 640
+        private static let panelWidth: CGFloat = 832
     #endif
 
     /// Creates an AppKit-backed presenter.

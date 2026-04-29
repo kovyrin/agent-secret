@@ -12,6 +12,7 @@ import Foundation
         let decide: (ApprovalDecisionKind) -> Void
 
         @State private var detailsExpanded = false
+        @State private var textInspection: ApprovalPanelTextInspection?
 
         var body: some View {
             VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
@@ -37,6 +38,9 @@ import Foundation
             .frame(width: Metric.cardWidth)
             .background(cardBackground)
             .padding(Metric.outerPadding)
+            .sheet(item: $textInspection) { inspection in
+                ApprovalPanelTextInspector(inspection: inspection)
+            }
         }
 
         private var cardBackground: some View {
@@ -69,30 +73,12 @@ import Foundation
         }
 
         private var promptAccessLine: some View {
-            Group {
-                if viewModel.secretCount == Metric.singleSecretCount {
-                    HStack(spacing: Metric.inlineSpacing) {
-                        ApprovalPanelPillText(text: viewModel.executable)
-                        Text(viewModel.accessSummary)
-                        secretAliases
-                    }
-                    .font(.system(size: Metric.inlineFontSize))
-                } else {
-                    HStack(spacing: Metric.inlineSpacing) {
-                        ApprovalPanelPillText(text: viewModel.executable)
-                        Text(viewModel.accessSummary)
-                    }
-                    .font(.system(size: Metric.inlineFontSize))
-                }
+            HStack(spacing: Metric.inlineSpacing) {
+                ApprovalPanelPillText(text: viewModel.executable)
+                Text(viewModel.accessSummary)
             }
-        }
-
-        private var secretAliases: some View {
-            HStack(spacing: Metric.aliasSpacing) {
-                ForEach(viewModel.requestedSecrets, id: \.alias) { secret in
-                    ApprovalPanelPillText(text: secret.alias)
-                }
-            }
+            .font(.system(size: Metric.inlineFontSize))
+            .fixedSize(horizontal: false, vertical: true)
         }
 
         private var secretSection: some View {
@@ -126,7 +112,7 @@ import Foundation
             if viewModel.secretCount == Metric.singleSecretCount {
                 return "Requested secret"
             }
-            return "Requested secrets (\(viewModel.secretCount))"
+            return "Requested secrets"
         }
 
         private var secretPanelBackground: some View {
@@ -141,10 +127,32 @@ import Foundation
 
         private var requestContext: some View {
             VStack(alignment: .leading, spacing: Metric.contextRowSpacing) {
-                ApprovalPanelContextRow(icon: "terminal", title: "Command", value: viewModel.command)
+                ApprovalPanelContextRow(
+                    icon: "bubble.left",
+                    title: "Reason",
+                    value: viewModel.reason,
+                    valueLineLimit: nil
+                )
+                ApprovalPanelContextRow(
+                    icon: "terminal",
+                    title: "Command",
+                    value: viewModel.command,
+                    inspectAction: commandInspectionAction
+                )
                 ApprovalPanelContextRow(icon: "folder", title: "Project folder", value: viewModel.projectFolder)
-                ApprovalPanelContextRow(icon: "bubble.left", title: "Reason", value: viewModel.reason)
                 ApprovalPanelContextRow(icon: "scope", title: "Scope", value: viewModel.scopeSummary)
+            }
+        }
+
+        private var commandInspectionAction: (() -> Void)? {
+            guard viewModel.commandNeedsInspector else {
+                return nil
+            }
+            return {
+                textInspection = ApprovalPanelTextInspection(
+                    title: "Full command",
+                    text: viewModel.command
+                )
             }
         }
 
@@ -212,10 +220,11 @@ import Foundation
         private var decisionButtons: some View {
             HStack(spacing: Metric.buttonSpacing) {
                 denyButton
-                    .frame(width: Metric.secondaryButtonWidth)
+                    .frame(width: Metric.decisionButtonWidth)
                 allowOnceButton
-                    .frame(width: Metric.secondaryButtonWidth)
+                    .frame(width: Metric.decisionButtonWidth)
                 allowReusableButton
+                    .frame(width: Metric.decisionButtonWidth)
             }
             .frame(height: Metric.buttonHeight)
         }
@@ -226,7 +235,7 @@ import Foundation
                 title: "Deny",
                 subtitle: "Default action",
                 role: .secondary,
-                keyboardShortcut: .defaultAction
+                keyboardShortcut: .cancelAction
             ) {
                 decide(.deny)
             }
@@ -238,7 +247,7 @@ import Foundation
                 title: "Allow once",
                 subtitle: "This time only",
                 role: .secondary,
-                keyboardShortcut: nil
+                keyboardShortcut: .defaultAction
             ) {
                 decide(.approveOnce)
             }

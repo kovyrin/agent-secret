@@ -146,7 +146,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--force-refresh", "default account", "audit.jsonl", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--force-refresh", "default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",

@@ -76,7 +76,7 @@ Secrets are never printed by agent-secret and are never written to disk. The nor
   2. agent-secret starts or connects to the per-user daemon.
   3. The daemon asks the native macOS approver before any 1Password access.
   4. If approved, the daemon fetches exactly the approved refs and sends an env payload to agent-secret exec.
-  5. agent-secret exec spawns the child process and passes stdout/stderr through unchanged.
+  5. agent-secret exec spawns the child process and passes stdin/stdout/stderr through unchanged.
 
 Commands:
 
@@ -145,7 +145,7 @@ Environment:
 
 Unsupported by design:
 
-  --json              exec passes stdout/stderr through unchanged and has no JSON mode.
+  --json              exec passes stdin/stdout/stderr through unchanged and has no JSON mode.
   --reuse             The approver decides whether an approval is reusable.
 
 Examples:
@@ -164,7 +164,7 @@ Examples:
 Exit behavior:
 
   If approval, audit, daemon connection, or secret fetch fails before payload delivery, the child is not spawned.
-  After the child starts, stdout and stderr are passed through. The wrapper returns the child exit status.
+  After the child starts, stdin, stdout, and stderr are passed through. The wrapper returns the child exit status.
   Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
 `)
 }

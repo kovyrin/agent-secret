@@ -23,6 +23,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     }
 
     private static let highScopeSecretThreshold: Int = 6
+    private static let commandInspectorThreshold: Int = 96
     private static let secondsPerMinute: Int = 60
 
     /// Prompt title.
@@ -31,6 +32,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let reason: String
     /// Shell-rendered command display.
     public let command: String
+    /// True when the command should expose a full-text inspector affordance.
+    public let commandNeedsInspector: Bool
     /// Executable path displayed in the approval summary.
     public let executable: String
     /// Working directory display.
@@ -57,7 +60,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let highScopeWarning: Bool
     /// Human-readable approval TTL.
     public let timeRemaining: String
-    /// Compact timer string for approval buttons.
+    /// Human-readable timer string for approval buttons.
     public let compactTimeRemaining: String
     /// Maximum launches covered by reusable approval.
     public let reusableUses: Int
@@ -78,8 +81,9 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public init(request: ApprovalRequest, now: Date = Date()) {
         title = "Secret Access Request"
         reason = request.reason
-        executable = request.resolvedExecutable ?? request.command.first ?? "unknown command"
+        executable = Self.executableName(request.resolvedExecutable ?? request.command.first)
         command = Self.commandDisplay(request.command, resolvedExecutable: request.resolvedExecutable)
+        commandNeedsInspector = Self.commandNeedsInspector(command)
         cwd = request.cwd
         projectFolder = Self.displayPath(request.cwd)
         resolvedExecutable = request.resolvedExecutable
@@ -90,14 +94,11 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         vaultGroups = secretPresentation.vaultGroups
         vaultCount = secretPresentation.vaultCount
         promptQuestion = Self.promptQuestion(secretCount: secretPresentation.count)
-        accessSummary = Self.accessSummary(
-            secretCount: secretPresentation.count,
-            vaultCount: secretPresentation.vaultCount
-        )
+        accessSummary = Self.accessSummary()
         highScopeWarning = secretPresentation.count >= Self.highScopeSecretThreshold
         let remaining: TimeInterval = request.expiresAt.timeIntervalSince(now)
         timeRemaining = Self.formatRemaining(remaining)
-        compactTimeRemaining = Self.formatCompactRemaining(remaining)
+        compactTimeRemaining = timeRemaining
         reusableUses = request.reusableUses
         scopeSummary = Self.scopeSummary(
             reusableUses: request.reusableUses,
@@ -161,19 +162,13 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
 
     private static func promptQuestion(secretCount: Int) -> String {
         if secretCount == 1 {
-            return "Allow this command to use a secret?"
+            return "Allow this command to use the following secret?"
         }
-        return "Allow this command to use \(secretCount) secrets?"
+        return "Allow this command to use the following \(secretCount) secrets?"
     }
 
-    private static func accessSummary(secretCount: Int, vaultCount: Int) -> String {
-        if secretCount == 1 {
-            return "wants temporary access to"
-        }
-        if vaultCount > 1 {
-            return "wants temporary access to \(secretCount) secrets from \(vaultCount) vaults."
-        }
-        return "wants temporary access to \(secretCount) secrets."
+    private static func accessSummary() -> String {
+        "wants temporary access."
     }
 
     private static func footerMessage(secretCount: Int) -> String {
@@ -231,6 +226,17 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         return parts.joined(separator: " ")
     }
 
+    private static func commandNeedsInspector(_ command: String) -> Bool {
+        command.count > commandInspectorThreshold || command.contains("\n")
+    }
+
+    private static func executableName(_ path: String?) -> String {
+        guard let path, !path.isEmpty else {
+            return "unknown command"
+        }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
     private static func scopeSummary(reusableUses: Int, compactTimeRemaining: String) -> String {
         "Same command only • max \(reusableUses) uses • expires in \(compactTimeRemaining)"
     }
@@ -253,16 +259,12 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         if seconds >= secondsPerMinute {
             let minutes: Int = seconds / secondsPerMinute
             let remainingSeconds: Int = seconds % secondsPerMinute
-            return remainingSeconds == 0 ? "\(minutes)m" : "\(minutes)m \(remainingSeconds)s"
+            if remainingSeconds == 0 {
+                return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+            }
+            return "\(minutes) min \(remainingSeconds) sec"
         }
-        return "\(seconds)s"
-    }
-
-    private static func formatCompactRemaining(_ interval: TimeInterval) -> String {
-        let seconds: Int = Self.visibleRemainingSeconds(interval)
-        let minutes: Int = seconds / secondsPerMinute
-        let remainingSeconds: Int = seconds % secondsPerMinute
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return seconds == 1 ? "1 second" : "\(seconds) sec"
     }
 
     private static func visibleRemainingSeconds(_ interval: TimeInterval) -> Int {

@@ -240,11 +240,26 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertTrue(viewModel.renderedText.contains("/tmp/project"))
         XCTAssertTrue(viewModel.renderedText.contains("EXAMPLE_TOKEN -> op://Example Vault/Example Item/token"))
         XCTAssertTrue(viewModel.renderedText.contains("Resolved binary: /opt/homebrew/bin/terraform"))
-        XCTAssertTrue(viewModel.renderedText.contains("Time remaining: 2m"))
+        XCTAssertTrue(viewModel.renderedText.contains("Time remaining: 2 minutes"))
         XCTAssertTrue(viewModel.renderedText.contains("Will replace existing variables: EXAMPLE_TOKEN"))
+        XCTAssertEqual(viewModel.executable, "terraform")
+        XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following secret?")
+        XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
+        XCTAssertEqual(viewModel.compactTimeRemaining, "2 minutes")
+        XCTAssertFalse(viewModel.commandNeedsInspector)
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
         XCTAssertFalse(viewModel.renderedText.contains(request.requestID))
         XCTAssertFalse(viewModel.renderedText.contains(request.nonce))
+    }
+
+    func testViewModelMarksLongCommandsInspectable() {
+        var request: ApprovalRequest = Self.sampleRequest
+        let script = String(repeating: "terraform import cloudflare_record.long_name ", count: 3)
+        request.command = ["/bin/sh", "-c", script]
+        request.resolvedExecutable = "/bin/sh"
+        let viewModel = ApprovalRequestViewModel(request: request, now: Date(timeIntervalSince1970: Self.viewModelNow))
+
+        XCTAssertTrue(viewModel.commandNeedsInspector)
     }
 
     func testViewModelSummarizesManySecretsByVault() {
@@ -255,8 +270,8 @@ final class ApprovalControllerTests: XCTestCase {
 
         XCTAssertEqual(viewModel.secretCount, Self.multiSecrets.count)
         XCTAssertEqual(viewModel.vaultCount, Self.expectedReusableUses)
-        XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use 10 secrets?")
-        XCTAssertEqual(viewModel.accessSummary, "wants temporary access to 10 secrets from 3 vaults.")
+        XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following 10 secrets?")
+        XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
         XCTAssertTrue(viewModel.highScopeWarning)
         XCTAssertTrue(viewModel.printsEnvironmentWarning)
         XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Private", "Database", "OpenAI"])

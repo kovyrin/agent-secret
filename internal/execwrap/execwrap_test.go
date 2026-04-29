@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"slices"
@@ -108,6 +109,28 @@ func TestRunInjectsEnvOnlyIntoChildAndRecordsMetadata(t *testing.T) {
 	}
 }
 
+func TestRunForwardsStdinToChild(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), Spec{
+		Path:   os.Args[0],
+		Args:   []string{"-test.run=TestExecHelperProcess", "--", "echo-stdin"},
+		Env:    helperEnv(),
+		Stdin:  strings.NewReader("script-from-stdin\n"),
+		Stdout: &stdout,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%q", result.ExitCode, stdout.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "script-from-stdin" {
+		t.Fatalf("stdout = %q, want stdin echoed", got)
+	}
+}
+
 func TestRunPreservesExitCode(t *testing.T) {
 	t.Parallel()
 
@@ -189,6 +212,32 @@ func TestRunForwardsInterruptToChild(t *testing.T) {
 	}
 }
 
+func TestRunTerminatesChildOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	started := time.Now()
+	result, err := Run(ctx, Spec{
+		Path: os.Args[0],
+		Args: []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
+		Env:  helperEnv(),
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if time.Since(started) > 3*time.Second {
+		t.Fatalf("context cancellation did not terminate the child promptly")
+	}
+	if result.ExitCode == 0 {
+		t.Fatalf("exit code = 0, want cancellation to terminate child")
+	}
+}
+
 func TestAuditEventShapeIsValueFree(t *testing.T) {
 	t.Parallel()
 
@@ -236,6 +285,12 @@ func TestExecHelperProcess(t *testing.T) {
 			os.Exit(42)
 		}
 		fmt.Println("env-ok")
+		os.Exit(0)
+	case "echo-stdin":
+		if _, err := io.Copy(os.Stdout, os.Stdin); err != nil {
+			fmt.Printf("copy-stdin: %v\n", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	case "exit-42":
 		os.Exit(42)

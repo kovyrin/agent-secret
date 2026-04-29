@@ -10,9 +10,12 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 )
 
 var ErrEnvironmentConflict = errors.New("approved alias already exists in parent environment")
+
+const terminateGracePeriod = 2 * time.Second
 
 type AuditSink interface {
 	Record(ctx context.Context, event AuditEvent) error
@@ -35,6 +38,7 @@ type Spec struct {
 	Env           map[string]string
 	SecretAliases []string
 	OverrideEnv   bool
+	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
 	Audit         AuditSink
@@ -65,15 +69,28 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 		return Result{}, err
 	}
 
-	cmd := exec.CommandContext(ctx, spec.Path, spec.Args...)
+	stdin := readerOrDefault(spec.Stdin, os.Stdin)
+	commandContext := context.Background()
+	if ctx != nil {
+		commandContext = context.WithoutCancel(ctx)
+	}
+	cmd := exec.CommandContext(commandContext, spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = env
+	cmd.Stdin = stdin
 	cmd.Stdout = writerOrDefault(spec.Stdout, os.Stdout)
 	cmd.Stderr = writerOrDefault(spec.Stderr, os.Stderr)
 	setProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("start child: %w", err)
+	}
+
+	restoreTerminal, err := foregroundChild(cmd.Process, stdin)
+	if err != nil {
+		_ = terminateChild(cmd.Process)
+		_, _ = cmd.Process.Wait()
+		return Result{}, err
 	}
 
 	if err := record(ctx, spec.Audit, AuditEvent{
@@ -85,22 +102,29 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 	}); err != nil {
 		_ = terminateChild(cmd.Process)
 		_, _ = cmd.Process.Wait()
+		_ = restoreTerminal()
 		return Result{}, err
 	}
 
 	done := make(chan struct{})
 	go forwardInterrupts(done, cmd.Process, interrupts)
+	go terminateOnContext(done, cmd.Process, ctx)
 
 	waitErr := cmd.Wait()
 	close(done)
+	restoreErr := restoreTerminal()
 
 	result := resultFromState(cmd.ProcessState)
+	childPID := cmd.Process.Pid
+	if cmd.ProcessState != nil {
+		childPID = cmd.ProcessState.Pid()
+	}
 	event := AuditEvent{
 		Type:          "command_completed",
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
-		ChildPID:      cmd.ProcessState.Pid(),
+		ChildPID:      childPID,
 		ExitCode:      result.ExitCode,
 	}
 	if result.Signal != nil {
@@ -112,6 +136,9 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 
 	if waitErr != nil && cmd.ProcessState == nil {
 		return result, fmt.Errorf("wait for child: %w", waitErr)
+	}
+	if restoreErr != nil {
+		return result, fmt.Errorf("restore terminal foreground process group: %w", restoreErr)
 	}
 
 	return result, nil
@@ -157,6 +184,7 @@ func forwardInterrupts(done <-chan struct{}, process *os.Process, interrupts <-c
 		return
 	}
 
+	seen := 0
 	for {
 		select {
 		case <-done:
@@ -166,9 +194,42 @@ func forwardInterrupts(done <-chan struct{}, process *os.Process, interrupts <-c
 				return
 			}
 			if sig != nil {
-				_ = signalChild(process, sig)
+				seen++
+				if seen == 1 {
+					_ = signalChild(process, sig)
+				} else {
+					terminateChildUntilDone(done, process)
+				}
 			}
 		}
+	}
+}
+
+func terminateOnContext(done <-chan struct{}, process *os.Process, ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		terminateChildUntilDone(done, process)
+	}
+}
+
+func terminateChildUntilDone(done <-chan struct{}, process *os.Process) {
+	if process == nil {
+		return
+	}
+
+	_ = signalChild(process, syscall.SIGTERM)
+	timer := time.NewTimer(terminateGracePeriod)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+	case <-timer.C:
+		_ = signalChild(process, syscall.SIGKILL)
 	}
 }
 
@@ -188,6 +249,13 @@ func resultFromState(state *os.ProcessState) Result {
 func writerOrDefault(writer io.Writer, fallback io.Writer) io.Writer {
 	if writer != nil {
 		return writer
+	}
+	return fallback
+}
+
+func readerOrDefault(reader io.Reader, fallback io.Reader) io.Reader {
+	if reader != nil {
+		return reader
 	}
 	return fallback
 }

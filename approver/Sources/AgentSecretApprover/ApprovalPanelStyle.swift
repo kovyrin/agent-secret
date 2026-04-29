@@ -25,7 +25,7 @@ import Foundation
             static let cardShadowRadius: CGFloat = 18
             static let cardShadowYOffset: CGFloat = 10
             static let cardVerticalPadding: CGFloat = 24
-            static let cardWidth: CGFloat = 600
+            static let cardWidth: CGFloat = 780
             static let cautionBlue: Double = 0.04
             static let cautionBorderOpacity: Double = 0.30
             static let cautionCornerRadius: CGFloat = 12
@@ -37,6 +37,13 @@ import Foundation
             static let cautionSpacing: CGFloat = 10
             static let compactSecretLimit: Int = 5
             static let contextRowSpacing: CGFloat = 10
+            static let contextTitleFontSize: CGFloat = 13
+            static let contextValueFontSize: CGFloat = 12
+            static let decisionButtonCount: CGFloat = 3
+            static let decisionButtonGapCount: CGFloat = 2
+            static let decisionButtonWidth: CGFloat = (
+                cardWidth - (cardHorizontalPadding * horizontalEdgeCount) - (buttonSpacing * decisionButtonGapCount)
+            ) / decisionButtonCount
             static let detailLabelSpacing: CGFloat = 2
             static let detailLeadingPadding: CGFloat = 22
             static let detailSpacing: CGFloat = 5
@@ -62,16 +69,20 @@ import Foundation
             static let headerIconShieldSize: CGFloat = 44
             static let headerIconSize: CGFloat = 52
             static let headerSpacing: CGFloat = 18
+            static let horizontalEdgeCount: CGFloat = 2
             static let iconBoxCornerRadius: CGFloat = 9
             static let iconBoxFillOpacity: Double = 0.55
             static let iconBoxSize: CGFloat = 34
             static let iconFontSize: CGFloat = 16
             static let inlineFontSize: CGFloat = 15
             static let inlineSpacing: CGFloat = 8
+            static let inspectorHeight: CGFloat = 420
+            static let inspectorWidth: CGFloat = 760
             static let minimumScaleFactor: CGFloat = 0.80
             static let outerPadding: CGFloat = 14
             static let panelCornerRadius: CGFloat = 12
             static let pillCornerRadius: CGFloat = 8
+            static let pillFontSize: CGFloat = 13
             static let pillHorizontalPadding: CGFloat = 8
             static let pillVerticalPadding: CGFloat = 4
             static let primaryBorderOpacity: Double = 0.45
@@ -93,7 +104,6 @@ import Foundation
             static let secretPanelPadding: CGFloat = 14
             static let sectionLabelFontSize: CGFloat = 14
             static let sectionSpacing: CGFloat = 12
-            static let secondaryButtonWidth: CGFloat = 140
             static let singleLineLimit: Int = 1
             static let singleSecretCount: Int = 1
             static let subtleBorderOpacity: Double = 0.18
