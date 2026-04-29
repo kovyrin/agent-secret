@@ -108,7 +108,7 @@ mise run test:coverage
 To use the current development build from any project on the same machine:
 
 ```bash
-./scripts/dev-install.sh
+mise dev:install
 ```
 
 By default this installs:
@@ -119,7 +119,8 @@ By default this installs:
   `~/Applications`.
 
 Override the install locations with `--bin-dir`, `--app-dir`,
-`AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`.
+`AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
+one-off flags, run `./scripts/dev-install.sh` directly.
 
 Set `AGENT_SECRET_1PASSWORD_ACCOUNT` in the shell that will run
 `agent-secret exec`; the daemon inherits that value when it auto-starts.
