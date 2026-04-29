@@ -244,6 +244,37 @@ func TestWriterPreflightAndApprovalReused(t *testing.T) {
 	}
 }
 
+func TestWriterHonorsCanceledContextBeforeWriting(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writer, err := OpenDefault(time.Now)
+	if err != nil {
+		t.Fatalf("OpenDefault returned error: %v", err)
+	}
+	defer func() { _ = writer.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := writer.Preflight(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Preflight canceled error = %v, want context.Canceled", err)
+	}
+	if err := writer.Record(ctx, Event{Type: EventCommandStarting}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Record canceled error = %v, want context.Canceled", err)
+	}
+}
+
+func TestOpenPathRejectsDirectoryAtAuditPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatalf("mkdir audit path: %v", err)
+	}
+
+	_, err := openPath(path, time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+}
+
 func expectedPath(home string) string {
 	return filepath.Join(home, "Library", "Logs", "agent-secret", "audit.jsonl")
 }

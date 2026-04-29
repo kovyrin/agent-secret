@@ -284,6 +284,43 @@ func TestProcessApproverLauncherExecutablePath(t *testing.T) {
 	}
 }
 
+func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
+	t.Parallel()
+
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	expected, err := (ProcessApproverLauncher{AppPath: helper}).Launch(
+		context.Background(),
+		"/tmp/agent-secret-test.sock",
+		ApprovalRequestPayload{},
+	)
+	if err != nil {
+		t.Fatalf("Launch returned error: %v", err)
+	}
+	if expected.PID <= 0 {
+		t.Fatalf("expected launched process pid, got %+v", expected)
+	}
+	if expected.ExecutablePath != helper {
+		t.Fatalf("expected executable path = %q, want %q", expected.ExecutablePath, helper)
+	}
+}
+
+func TestProcessApproverLauncherWrapsStartFailure(t *testing.T) {
+	t.Parallel()
+
+	_, err := (ProcessApproverLauncher{AppPath: filepath.Join(t.TempDir(), "missing")}).Launch(
+		context.Background(),
+		"/tmp/agent-secret-test.sock",
+		ApprovalRequestPayload{},
+	)
+	if !errors.Is(err, ErrApproverLaunchFailed) {
+		t.Fatalf("expected launch failure, got %v", err)
+	}
+}
+
 func newSocketApproverForTest(t *testing.T, launcher ApproverLauncher, now func() time.Time) *SocketApprover {
 	t.Helper()
 	approver, err := NewSocketApprover("/tmp/agent-secret-test.sock", launcher, now)

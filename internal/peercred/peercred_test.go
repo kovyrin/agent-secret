@@ -115,6 +115,15 @@ func TestInspectRequiresUnixConnection(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsUninitializedUnixConnection(t *testing.T) {
+	t.Parallel()
+
+	_, err := Inspect(&net.UnixConn{})
+	if err == nil {
+		t.Fatal("expected uninitialized connection error")
+	}
+}
+
 func TestPeerCredRejectsSpecificMismatches(t *testing.T) {
 	t.Parallel()
 
@@ -143,6 +152,53 @@ func TestPeerCredRejectsSpecificMismatches(t *testing.T) {
 		if !strings.Contains(err.Error(), tt.want) {
 			t.Fatalf("%s: mismatch error %q did not mention %q", tt.name, err, tt.want)
 		}
+	}
+}
+
+func TestComparablePathResolvesSymlinks(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	link := filepath.Join(dir, "link")
+	if err := os.WriteFile(target, []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink target: %v", err)
+	}
+
+	got, err := comparablePath(link)
+	if err != nil {
+		t.Fatalf("comparablePath returned error: %v", err)
+	}
+	want, err := comparablePath(target)
+	if err != nil {
+		t.Fatalf("comparablePath target returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("resolved path = %q, want %q", got, want)
+	}
+}
+
+func TestCurrentExpectedWrapsOSErrors(t *testing.T) {
+	t.Parallel()
+
+	boom := errors.New("boom")
+	_, err := currentExpected(func() (string, error) {
+		return "", boom
+	}, os.Getwd)
+	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "executable") {
+		t.Fatalf("executable error = %v", err)
+	}
+
+	_, err = currentExpected(func() (string, error) {
+		return "/bin/tool", nil
+	}, func() (string, error) {
+		return "", boom
+	})
+	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "cwd") {
+		t.Fatalf("cwd error = %v", err)
 	}
 }
 

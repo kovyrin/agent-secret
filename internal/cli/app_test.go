@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -158,6 +159,59 @@ func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stopped daemon status wrote stderr: %q", stderr.String())
+	}
+}
+
+func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{
+		SocketPath: filepath.Join(t.TempDir(), "missing.sock"),
+	}, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--reason", "Run helper",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		os.Args[0], "-test.run=TestAppExecReportsDaemonStartFailureBeforeSpawn", "--", "child",
+	})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "start daemon") {
+		t.Fatalf("stderr = %q, want start daemon failure", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want no child output", stdout.String())
+	}
+}
+
+func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
+	app := NewApp(daemon.Manager{}, nil, nil)
+	if app.Stdout == nil || app.Stderr == nil {
+		t.Fatalf("NewApp did not install default writers: %+v", app)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app.Stdout = &stdout
+	app.Stderr = &stderr
+	if code := app.Run(context.Background(), []string{"help"}); code != 0 {
+		t.Fatalf("help exit = %d, stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "agent-secret controls") {
+		t.Fatalf("help output = %q", stdout.String())
+	}
+}
+
+func TestDaemonAuditReporterTreatsProtocolFailureAsFatal(t *testing.T) {
+	protocolErr := &daemon.ProtocolError{Code: "invalid_nonce", Message: "bad nonce"}
+	if !isProtocolFailure(protocolErr) {
+		t.Fatal("protocol error was not classified as protocol failure")
+	}
+	if isProtocolFailure(errors.New("network closed")) {
+		t.Fatal("plain error was classified as protocol failure")
 	}
 }
 

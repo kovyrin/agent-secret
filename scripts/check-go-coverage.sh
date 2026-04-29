@@ -4,8 +4,8 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 
-min_package="${AGENT_SECRET_GO_COVERAGE_MIN_PACKAGE:-75}"
-min_total="${AGENT_SECRET_GO_COVERAGE_MIN_TOTAL:-75}"
+min_package="${AGENT_SECRET_GO_COVERAGE_MIN_PACKAGE:-80}"
+min_total="${AGENT_SECRET_GO_COVERAGE_MIN_TOTAL:-80}"
 
 tmp_dir="$(mktemp -d)"
 cleanup() {

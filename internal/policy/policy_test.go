@@ -232,6 +232,34 @@ func TestSessionHandlesEnforceNonceTTLReadsAndDestroy(t *testing.T) {
 	}
 }
 
+func TestSessionCreationAndLookupFailures(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	if _, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
+		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
+	}, 0); !errors.Is(err, ErrReadExhausted) {
+		t.Fatalf("expected read exhaustion for maxReads=0, got %v", err)
+	}
+
+	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
+		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
+	}, 1)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+	if _, err := store.ResolveHandle("missing", "handle", "nonce_1"); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("expected missing session mismatch, got %v", err)
+	}
+	if _, err := store.ResolveHandle(session.ID, "missing", session.Nonce); !errors.Is(err, ErrHandleMissing) {
+		t.Fatalf("expected missing handle error, got %v", err)
+	}
+	if err := store.DestroySession("missing"); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("expected missing destroy mismatch, got %v", err)
+	}
+}
+
 func TestSessionExpiration(t *testing.T) {
 	t.Parallel()
 
@@ -287,6 +315,65 @@ func TestPolicyObjectsAreValueFreeWhenCacheContainsSecret(t *testing.T) {
 	}
 	if string(encoded) == "" || containsCanary(encoded) {
 		t.Fatalf("session object leaked canary: %s", encoded)
+	}
+}
+
+func TestSecretCacheClearScope(t *testing.T) {
+	t.Parallel()
+
+	cache := NewSecretCache()
+	cache.Put("scope_1", "op://Example/Item/token", "first")
+	cache.Put("scope_2", "op://Example/Item/token", "second")
+	cache.ClearScope("scope_1")
+
+	if _, ok := cache.Get("scope_1", "op://Example/Item/token"); ok {
+		t.Fatal("scope_1 value survived ClearScope")
+	}
+	if value, ok := cache.Get("scope_2", "op://Example/Item/token"); !ok || value != "second" {
+		t.Fatalf("scope_2 value = %q, %v; want second, true", value, ok)
+	}
+}
+
+func TestUnknownDeliveryResultDoesNotConsumeReusableUse(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	approval, err := store.AddReusable(testRequest(t, now), "appr_1", "nonce_1")
+	if err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+
+	after, err := store.FinishReusableAttempt(approval.ID, DeliveryResult("future_result"))
+	if err != nil {
+		t.Fatalf("FinishReusableAttempt returned error: %v", err)
+	}
+	if after.Uses != 0 {
+		t.Fatalf("unknown delivery result consumed use: %d", after.Uses)
+	}
+}
+
+func TestAddReusableAndCreateSessionGenerateIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	approval, err := store.AddReusable(testRequest(t, now), "", "")
+	if err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+	if !strings.HasPrefix(approval.ID, "appr_") || !strings.HasPrefix(approval.Nonce, "nonce_") {
+		t.Fatalf("generated approval identifiers = %+v", approval)
+	}
+
+	session, err := store.CreateSession("", "", now.Add(time.Minute), []SecretGrant{
+		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
+	}, 1)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+	if !strings.HasPrefix(session.ID, "sess_") || !strings.HasPrefix(session.Nonce, "nonce_") {
+		t.Fatalf("generated session identifiers = %+v", session)
 	}
 }
 

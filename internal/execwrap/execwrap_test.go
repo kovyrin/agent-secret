@@ -36,6 +36,17 @@ func (m *memoryAudit) Events() []AuditEvent {
 	return slices.Clone(m.events)
 }
 
+type failingAudit struct {
+	failType string
+}
+
+func (f failingAudit) Record(_ context.Context, event AuditEvent) error {
+	if event.Type == f.failType {
+		return errors.New("audit offline")
+	}
+	return nil
+}
+
 func TestMergeEnvRejectsConflictsByDefault(t *testing.T) {
 	t.Parallel()
 
@@ -113,6 +124,43 @@ func TestRunPreservesExitCode(t *testing.T) {
 	}
 }
 
+func TestRunRejectsMissingCommandPath(t *testing.T) {
+	t.Parallel()
+
+	_, err := Run(context.Background(), Spec{}, nil)
+	if err == nil {
+		t.Fatal("expected missing command path error")
+	}
+}
+
+func TestRunStopsBeforeSpawnWhenStartingAuditFails(t *testing.T) {
+	t.Parallel()
+
+	_, err := Run(context.Background(), Spec{
+		Path:  os.Args[0],
+		Args:  []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
+		Env:   helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
+		Audit: failingAudit{failType: "command_starting"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected command_starting audit failure")
+	}
+}
+
+func TestRunTerminatesChildWhenStartedAuditFails(t *testing.T) {
+	t.Parallel()
+
+	_, err := Run(context.Background(), Spec{
+		Path:  os.Args[0],
+		Args:  []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
+		Env:   helperEnv(),
+		Audit: failingAudit{failType: "command_started"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected command_started audit failure")
+	}
+}
+
 func TestRunForwardsInterruptToChild(t *testing.T) {
 	t.Parallel()
 
@@ -162,6 +210,15 @@ func TestAuditEventShapeIsValueFree(t *testing.T) {
 	}
 }
 
+func TestResultFromNilState(t *testing.T) {
+	t.Parallel()
+
+	result := resultFromState(nil)
+	if result.ExitCode != -1 || result.Signal != nil {
+		t.Fatalf("nil process state result = %+v", result)
+	}
+}
+
 func TestExecHelperProcess(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_EXEC_HELPER") != "1" {
 		return
@@ -189,6 +246,9 @@ func TestExecHelperProcess(t *testing.T) {
 		<-signals
 		fmt.Println("signal-ok")
 		os.Exit(130)
+	case "sleep-long":
+		time.Sleep(10 * time.Second)
+		os.Exit(0)
 	default:
 		fmt.Printf("unknown helper mode %q\n", mode)
 		os.Exit(64)

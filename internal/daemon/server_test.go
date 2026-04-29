@@ -248,6 +248,129 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	}
 }
 
+func TestServerReportsApprovalUnavailable(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := startTestServer(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	_, err := client.FetchPendingApproval(context.Background())
+	if !IsProtocolError(err, "approval_unavailable") {
+		t.Fatalf("expected approval unavailable protocol error, got %v", err)
+	}
+	if err := client.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  "approve_once",
+	}); !IsProtocolError(err, "approval_unavailable") {
+		t.Fatalf("expected approval unavailable decision error, got %v", err)
+	}
+}
+
+func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startRawTestServer(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Audit:    &memoryAudit{},
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	encoder := json.NewEncoder(conn)
+	decoder := json.NewDecoder(conn)
+
+	tests := []struct {
+		env      Envelope
+		wantCode string
+	}{
+		{
+			env:      Envelope{Version: ProtocolVersion, Type: TypeRequestExec, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      Envelope{Version: ProtocolVersion, Type: TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_command_started",
+		},
+		{
+			env:      Envelope{Version: ProtocolVersion, Type: TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_command_completed",
+		},
+		{
+			env:      Envelope{Version: ProtocolVersion, Type: "banana", RequestID: "req_1", Nonce: "nonce_1"},
+			wantCode: "bad_type",
+		},
+	}
+	for _, tt := range tests {
+		if err := encoder.Encode(tt.env); err != nil {
+			t.Fatalf("encode %s: %v", tt.env.Type, err)
+		}
+		var resp Envelope
+		if err := decoder.Decode(&resp); err != nil {
+			t.Fatalf("decode response for %s: %v", tt.env.Type, err)
+		}
+		payload, err := DecodePayload[ErrorPayload](resp)
+		if err != nil {
+			t.Fatalf("decode error payload for %s: %v", tt.env.Type, err)
+		}
+		if payload.Code != tt.wantCode {
+			t.Fatalf("%s code = %q, want %q", tt.env.Type, payload.Code, tt.wantCode)
+		}
+	}
+}
+
+func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	approver := newSocketApproverForTest(t, &recordingLauncher{
+		expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath},
+	}, time.Now)
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Audit:    &memoryAudit{},
+	})
+	path, stop := startRawServerWithBroker(t, broker, approver, staticPeerValidator{info: peer})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := json.NewEncoder(conn).Encode(Envelope{
+		Version:   ProtocolVersion,
+		Type:      TypeApprovalDecision,
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Payload:   json.RawMessage(`[]`),
+	}); err != nil {
+		t.Fatalf("encode bad approval decision: %v", err)
+	}
+	var resp Envelope
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatalf("decode bad approval decision response: %v", err)
+	}
+	payload, err := DecodePayload[ErrorPayload](resp)
+	if err != nil {
+		t.Fatalf("decode error payload: %v", err)
+	}
+	if payload.Code != "bad_approval_decision" {
+		t.Fatalf("bad approval decision code = %q", payload.Code)
+	}
+}
+
 func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
 	t.Parallel()
 

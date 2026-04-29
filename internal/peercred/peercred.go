@@ -101,12 +101,16 @@ func Validate(info Info, expected Expected) error {
 }
 
 func CurrentExpected() (Expected, error) {
-	exe, err := os.Executable()
+	return currentExpected(os.Executable, os.Getwd)
+}
+
+func currentExpected(executable func() (string, error), getwd func() (string, error)) (Expected, error) {
+	exe, err := executable()
 	if err != nil {
 		return Expected{}, fmt.Errorf("get current executable: %w", err)
 	}
 
-	cwd, err := os.Getwd()
+	cwd, err := getwd()
 	if err != nil {
 		return Expected{}, fmt.Errorf("get current cwd: %w", err)
 	}
