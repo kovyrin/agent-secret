@@ -34,8 +34,9 @@ const (
 )
 
 type SecretRef struct {
-	Alias string `json:"alias"`
-	Ref   string `json:"ref"`
+	Alias   string `json:"alias"`
+	Ref     string `json:"ref"`
+	Account string `json:"account,omitempty"`
 }
 
 type Event struct {
@@ -205,7 +206,7 @@ func rejectInsecureFile(path string) error {
 func secretRefs(secrets []request.Secret) []SecretRef {
 	refs := make([]SecretRef, 0, len(secrets))
 	for _, secret := range secrets {
-		refs = append(refs, SecretRef{Alias: secret.Alias, Ref: secret.Ref.Raw})
+		refs = append(refs, SecretRef{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
 	}
 	return refs
 }

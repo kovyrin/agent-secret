@@ -19,6 +19,7 @@ place. Session/socket secret reads are next.
 
 - [Product Requirements](docs/prd.md)
 - [Implementation Plan](docs/implementation-plan.md)
+- [Configuration Reference](docs/configuration.md)
 - [Code Layout](docs/code-layout.md)
 - [Epic 2 Spike Notes](docs/epic-2-spikes.md)
 
@@ -71,7 +72,8 @@ swift run agent-secret-approver-smoke
 The integration test skips unless `AGENT_SECRET_LIVE_REF` points at a test-only
 1Password reference. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only
 when you want to force a specific 1Password account instead of
-`my.1password.com`.
+`my.1password.com`. Project config accounts override those defaults for the
+secrets that declare them.
 
 ## Development Toolchain
 
@@ -127,10 +129,61 @@ one-off flags, run `./scripts/dev-install.sh` directly.
 By default, `agent-secret` uses the personal 1Password sign-in address
 `my.1password.com`. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` in the
 shell that will run `agent-secret exec` only when you want to force a specific
-account; the daemon inherits that value when it auto-starts.
+account; the daemon inherits that value when it auto-starts. Project config can
+also set `account` globally, per profile, or per secret, and those config values
+take precedence for the affected secret refs.
 On macOS, `agent-secret` starts the daemon through `AgentSecretDaemon.app` so
 1Password sees the SDK caller as Agent Secret instead of the terminal or agent
 desktop app that launched the CLI.
+
+## Command Usage
+
+The main command is `exec`, which asks the daemon for approved secrets and then
+runs the child process:
+
+```bash
+agent-secret exec [flags] -- COMMAND [ARG...]
+```
+
+Common forms:
+
+```bash
+agent-secret exec --reason "Terraform plan" \
+  --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
+  -- terraform plan
+
+agent-secret exec -- terraform plan
+
+agent-secret exec --profile terraform-cloudflare -- terraform plan
+```
+
+Current `exec` flags:
+
+- `--reason TEXT`: reason shown to the approver. Required unless the selected
+  profile provides `reason`.
+- `--secret ALIAS=op://vault/item[/section]/field`: explicit secret mapping.
+  Repeat for multiple secrets.
+- `--profile NAME`: load a named project profile.
+- `--config PATH`: use a specific config file instead of upward discovery.
+- `--cwd DIR`: run the child process from `DIR`.
+- `--ttl DURATION`: approval TTL. Defaults to profile `ttl` or `2m`; allowed
+  range is `10s` through `10m`.
+- `--override-env`: allow approved aliases to replace existing child
+  environment variables.
+- `--force-refresh`: for reusable approvals, refetch approved refs before
+  delivery.
+
+The command to run must appear after `--` as argv. `agent-secret exec` has no
+`--json` mode and does not parse shell strings.
+
+Daemon management and diagnostics:
+
+```bash
+agent-secret daemon status
+agent-secret daemon start
+agent-secret daemon stop
+agent-secret doctor
+```
 
 ## Project Profiles
 
@@ -144,14 +197,19 @@ provided.
 ```yaml
 version: 1
 
+account: my.1password.com
 default_profile: terraform-cloudflare
 
 profiles:
   terraform-cloudflare:
+    account: Fixture
     reason: Terraform DNS management
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+      PREVIEW_TOKEN:
+        ref: op://Example/Preview/token
+        account: Fixture Preview
 
   ansible:
     reason: Run Ansible playbook
@@ -160,6 +218,10 @@ profiles:
       CADDY_TOKEN: op://Example/Caddy/token
 ```
 
+`account` is optional. The precedence is per-secret `account`, then profile
+`account`, then top-level `account`, then `OP_ACCOUNT` /
+`AGENT_SECRET_1PASSWORD_ACCOUNT`, then `my.1password.com`.
+
 Run a profile with:
 
 ```bash
@@ -167,9 +229,13 @@ agent-secret exec -- terraform plan
 agent-secret exec --profile terraform-cloudflare -- terraform plan
 ```
 
-`--secret` flags can be combined with a profile for one-off additional refs.
-Explicit `--secret`-only invocations do not load `default_profile`.
-CLI `--reason` and `--ttl` override profile defaults.
+`--secret` flags can be combined with a profile for one-off additional refs; in
+that mode, explicit secrets inherit the loaded profile account. Explicit
+`--secret`-only invocations do not load `default_profile`. CLI `--reason` and
+`--ttl` override profile defaults.
+
+See [Configuration Reference](docs/configuration.md) for the full config schema,
+discovery rules, account precedence, and command reference.
 
 ## Default Safety Posture
 

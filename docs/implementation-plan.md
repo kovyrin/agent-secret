@@ -517,7 +517,7 @@ Status: Complete
   rejected.
 - Added project-local `agent-secret.yml` / `.agent-secret.yml` profile loading
   for named secret bundles, config `default_profile`, profile default reasons,
-  and profile default TTLs.
+  profile default TTLs, and config/profile/secret account defaults.
 - Added a single-socket JSON protocol for `request.exec`, `command.started`,
   `command.completed`, daemon status, and daemon stop.
 - Added per-user daemon socket discovery, stale-socket cleanup, on-demand daemon
@@ -575,17 +575,17 @@ Status: Complete
 - Goal: turn user input into validated request objects.
 - Preconditions/inputs: request model exists.
 - Failing test/check: parser tests for required `--reason`, `--secret` mappings,
-  `--profile` mappings, `default_profile` mappings, `--` command boundary,
-  daemon subcommands, TTL parsing, rejection of `--json` for `exec`, and
-  rejection of shell-string command input, `--override-env` parsing, and
-  `--force-refresh` parsing. Parser tests reject
-  any `--reuse` request/hint flag. Parser/request tests prove missing, blank, or
-  over-limit reasons stop before approval UI, reusable-approval lookup, SDK
-  access, or child spawn. Help tests fail until `agent-secret --help` and
-  `agent-secret exec --help` include purpose, safety rules, commands, flags,
-  examples, daemon behavior, audit-log location, exit behavior, and no real
-  secret values. Reuse tests fail unless reused invocations include the same
-  exact reason.
+  `--profile` mappings, `default_profile` mappings, config/profile/secret
+  account defaults, `--` command boundary, daemon subcommands, TTL parsing,
+  rejection of `--json` for `exec`, and rejection of shell-string command
+  input, `--override-env` parsing, and `--force-refresh` parsing. Parser tests
+  reject any `--reuse` request/hint flag. Parser/request tests prove missing,
+  blank, or over-limit reasons stop before approval UI, reusable-approval
+  lookup, SDK access, or child spawn. Help tests fail until
+  `agent-secret --help` and `agent-secret exec --help` include purpose, safety
+  rules, commands, flags, examples, daemon behavior, audit-log location, exit
+  behavior, and no real secret values. Reuse tests fail unless reused
+  invocations include the same exact reason.
 - Implementation:
   - choose a small CLI parsing library or standard-library parser
   - parse `exec`, `doctor`, and initial debug commands

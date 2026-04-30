@@ -77,9 +77,9 @@ func stderrf(format string, args ...any) {
 }
 
 type desktopResolver struct {
-	mu       sync.Mutex
-	account  string
-	resolver *opresolver.Resolver
+	mu      sync.Mutex
+	account string
+	clients map[string]*opresolver.Resolver
 }
 
 type desktopResolverResult struct {
@@ -89,11 +89,11 @@ type desktopResolverResult struct {
 
 func newResolver(account string) daemon.Resolver {
 	account = strings.TrimSpace(account)
-	return &desktopResolver{account: account}
+	return &desktopResolver{account: account, clients: make(map[string]*opresolver.Resolver)}
 }
 
-func (r *desktopResolver) Resolve(ctx context.Context, ref string) (string, error) {
-	resolver, err := r.client(ctx)
+func (r *desktopResolver) Resolve(ctx context.Context, ref string, account string) (string, error) {
+	resolver, err := r.client(ctx, account)
 	if err != nil {
 		return "", fmt.Errorf("create 1Password resolver: %w", err)
 	}
@@ -104,11 +104,12 @@ func (r *desktopResolver) Resolve(ctx context.Context, ref string) (string, erro
 	return secret.Value(), nil
 }
 
-func (r *desktopResolver) client(ctx context.Context) (*opresolver.Resolver, error) {
+func (r *desktopResolver) client(ctx context.Context, accountOverride string) (*opresolver.Resolver, error) {
+	account := r.effectiveAccount(accountOverride)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.resolver != nil {
-		return r.resolver, nil
+	if resolver := r.clients[account]; resolver != nil {
+		return resolver, nil
 	}
 
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -116,7 +117,7 @@ func (r *desktopResolver) client(ctx context.Context) (*opresolver.Resolver, err
 	results := make(chan desktopResolverResult, 1)
 	go func() {
 		resolver, err := opresolver.NewDesktopResolver(initCtx, opresolver.ClientOptions{
-			Account:            r.account,
+			Account:            account,
 			IntegrationName:    "Agent Secret Broker",
 			IntegrationVersion: "dev",
 		})
@@ -128,12 +129,19 @@ func (r *desktopResolver) client(ctx context.Context) (*opresolver.Resolver, err
 		if result.err != nil {
 			return nil, result.err
 		}
-		r.resolver = result.resolver
-		return r.resolver, nil
+		r.clients[account] = result.resolver
+		return result.resolver, nil
 	case <-initCtx.Done():
 		return nil, fmt.Errorf(
 			"create 1Password SDK client timed out after 30s: unlock or restart 1Password and confirm SDK desktop integration is enabled: %w",
 			initCtx.Err(),
 		)
 	}
+}
+
+func (r *desktopResolver) effectiveAccount(accountOverride string) string {
+	if account := strings.TrimSpace(accountOverride); account != "" {
+		return account
+	}
+	return r.account
 }

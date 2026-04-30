@@ -38,8 +38,9 @@ const (
 )
 
 type SecretSpec struct {
-	Alias string
-	Ref   string
+	Alias   string
+	Ref     string
+	Account string
 }
 
 type SecretRef struct {
@@ -51,8 +52,9 @@ type SecretRef struct {
 }
 
 type Secret struct {
-	Alias string
-	Ref   SecretRef
+	Alias   string
+	Ref     SecretRef
+	Account string
 }
 
 type ExecOptions struct {
@@ -316,7 +318,7 @@ func parseSecrets(specs []SecretSpec) ([]Secret, error) {
 		if err != nil {
 			return nil, err
 		}
-		secrets = append(secrets, Secret{Alias: spec.Alias, Ref: ref})
+		secrets = append(secrets, Secret{Alias: spec.Alias, Ref: ref, Account: strings.TrimSpace(spec.Account)})
 	}
 
 	return secrets, nil

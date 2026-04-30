@@ -64,8 +64,9 @@ type ReuseKey struct {
 }
 
 type SecretGrant struct {
-	Alias string
-	Ref   string
+	Alias   string
+	Ref     string
+	Account string
 }
 
 type Session struct {
@@ -80,6 +81,7 @@ type Handle struct {
 	ID       string
 	Alias    string
 	Ref      string
+	Account  string
 	MaxReads int
 	Reads    int
 }
@@ -205,6 +207,7 @@ func (s *Store) CreateSession(id string, nonce string, expiresAt time.Time, gran
 			ID:       handleID,
 			Alias:    grant.Alias,
 			Ref:      grant.Ref,
+			Account:  grant.Account,
 			MaxReads: maxReads,
 		}
 	}
@@ -247,7 +250,7 @@ func (s *Store) ResolveHandle(sessionID string, handleID string, nonce string) (
 	}
 
 	handle.Reads++
-	return SecretGrant{Alias: handle.Alias, Ref: handle.Ref}, nil
+	return SecretGrant{Alias: handle.Alias, Ref: handle.Ref, Account: handle.Account}, nil
 }
 
 func (s *Store) DestroySession(id string) error {
@@ -265,7 +268,7 @@ func (s *Store) DestroySession(id string) error {
 func NewReuseKey(req request.ExecRequest) ReuseKey {
 	secrets := make([]SecretGrant, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
-		secrets = append(secrets, SecretGrant{Alias: secret.Alias, Ref: secret.Ref.Raw})
+		secrets = append(secrets, SecretGrant{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
 	}
 	slices.SortFunc(secrets, func(a SecretGrant, b SecretGrant) int {
 		if a.Alias < b.Alias {
@@ -278,6 +281,12 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 			return -1
 		}
 		if a.Ref > b.Ref {
+			return 1
+		}
+		if a.Account < b.Account {
+			return -1
+		}
+		if a.Account > b.Account {
 			return 1
 		}
 		return 0
@@ -319,22 +328,23 @@ type SecretCache struct {
 type CacheKey struct {
 	ScopeID string
 	Ref     string
+	Account string
 }
 
 func NewSecretCache() *SecretCache {
 	return &SecretCache{values: make(map[CacheKey]string)}
 }
 
-func (c *SecretCache) Put(scopeID string, ref string, value string) {
+func (c *SecretCache) Put(scopeID string, ref string, account string, value string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.values[CacheKey{ScopeID: scopeID, Ref: ref}] = value
+	c.values[CacheKey{ScopeID: scopeID, Ref: ref, Account: account}] = value
 }
 
-func (c *SecretCache) Get(scopeID string, ref string) (string, bool) {
+func (c *SecretCache) Get(scopeID string, ref string, account string) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	value, ok := c.values[CacheKey{ScopeID: scopeID, Ref: ref}]
+	value, ok := c.values[CacheKey{ScopeID: scopeID, Ref: ref, Account: account}]
 	return value, ok
 }
 

@@ -55,13 +55,17 @@ func TestParseExecBuildsRequestFromProfile(t *testing.T) {
 	writeExecutable(t, infraDir, "terraform")
 	writeProfileConfig(t, root, `
 version: 1
+account: Default Account
 profiles:
   terraform-cloudflare:
+    account: Terraform Account
     reason: Terraform DNS management
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
-      EXTRA_TOKEN: op://Example/Extra/token
+      EXTRA_TOKEN:
+        ref: op://Example/Extra/token
+        account: Extra Account
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", infraDir)
@@ -91,6 +95,9 @@ profiles:
 	if req.Secrets[0].Alias != "CLOUDFLARE_API_TOKEN" || req.Secrets[1].Alias != "EXTRA_TOKEN" {
 		t.Fatalf("secrets not sorted from profile: %+v", req.Secrets)
 	}
+	if req.Secrets[0].Account != "Terraform Account" || req.Secrets[1].Account != "Extra Account" {
+		t.Fatalf("accounts not applied from profile config: %+v", req.Secrets)
+	}
 }
 
 func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
@@ -102,6 +109,7 @@ func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
 	writeExecutable(t, binDir, "terraform")
 	writeProfileConfig(t, root, `
 version: 1
+account: Default Account
 default_profile: terraform-cloudflare
 profiles:
   terraform-cloudflare:
@@ -132,6 +140,9 @@ profiles:
 	}
 	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "CLOUDFLARE_API_TOKEN" {
 		t.Fatalf("secrets = %+v", req.Secrets)
+	}
+	if req.Secrets[0].Account != "Default Account" {
+		t.Fatalf("default profile account = %q", req.Secrets[0].Account)
 	}
 }
 
@@ -184,6 +195,7 @@ func TestParseExecExplicitSecretsDoNotLoadDefaultProfile(t *testing.T) {
 	writeExecutable(t, binDir, "tool")
 	writeProfileConfig(t, root, `
 version: 1
+account: Default Account
 default_profile: extra
 profiles:
   extra:
@@ -210,6 +222,9 @@ profiles:
 	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
 		t.Fatalf("default profile leaked into explicit secret request: %+v", req.Secrets)
 	}
+	if req.Secrets[0].Account != "" {
+		t.Fatalf("default account leaked into explicit secret request: %+v", req.Secrets)
+	}
 }
 
 func TestParseExecMergesProfileAndExplicitSecretsWithOverrides(t *testing.T) {
@@ -223,6 +238,7 @@ func TestParseExecMergesProfileAndExplicitSecretsWithOverrides(t *testing.T) {
 version: 1
 profiles:
   ansible:
+    account: Ansible Account
     reason: Profile reason
     ttl: 10m
     secrets:
@@ -254,6 +270,9 @@ profiles:
 	}
 	if len(req.Secrets) != 2 {
 		t.Fatalf("secret count = %d", len(req.Secrets))
+	}
+	if req.Secrets[0].Account != "Ansible Account" || req.Secrets[1].Account != "Ansible Account" {
+		t.Fatalf("profile account was not applied to profile and explicit secrets: %+v", req.Secrets)
 	}
 }
 
@@ -357,7 +376,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",

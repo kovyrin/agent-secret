@@ -78,6 +78,7 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 		{name: "resolved executable", mutate: func(r *request.ExecRequest) { r.ResolvedExecutable = "/different/tool" }},
 		{name: "cwd", mutate: func(r *request.ExecRequest) { r.CWD = "/tmp/other" }},
 		{name: "ref", mutate: func(r *request.ExecRequest) { r.Secrets[0].Ref.Raw = "op://Example Vault/Other/token" }},
+		{name: "account", mutate: func(r *request.ExecRequest) { r.Secrets[0].Account = "Fixture" }},
 		{name: "delivery mode", mutate: func(r *request.ExecRequest) { r.DeliveryMode = request.DeliverySessionSocket }},
 		{name: "override", mutate: func(r *request.ExecRequest) { r.OverrideEnv = true }},
 		{name: "overridden alias", mutate: func(r *request.ExecRequest) { r.OverriddenAliases = []string{"TOKEN"} }},
@@ -204,7 +205,7 @@ func TestSessionHandlesEnforceNonceTTLReadsAndDestroy(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
+		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token", Account: "Fixture"},
 	}, 1)
 	if err != nil {
 		t.Fatalf("CreateSession returned error: %v", err)
@@ -215,7 +216,7 @@ func TestSessionHandlesEnforceNonceTTLReadsAndDestroy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveHandle returned error: %v", err)
 	}
-	if grant.Alias != "TOKEN" {
+	if grant.Alias != "TOKEN" || grant.Account != "Fixture" {
 		t.Fatalf("grant = %+v", grant)
 	}
 	if _, err := store.ResolveHandle(session.ID, handleID, session.Nonce); !errors.Is(err, ErrReadExhausted) {
@@ -289,8 +290,8 @@ func TestPolicyObjectsAreValueFreeWhenCacheContainsSecret(t *testing.T) {
 	}
 
 	cache := NewSecretCache()
-	cache.Put(approval.ID, req.Secrets[0].Ref.Raw, canarySecret)
-	if value, ok := cache.Get(approval.ID, req.Secrets[0].Ref.Raw); !ok || value != canarySecret {
+	cache.Put(approval.ID, req.Secrets[0].Ref.Raw, req.Secrets[0].Account, canarySecret)
+	if value, ok := cache.Get(approval.ID, req.Secrets[0].Ref.Raw, req.Secrets[0].Account); !ok || value != canarySecret {
 		t.Fatal("secret cache did not return stored canary")
 	}
 
@@ -303,12 +304,12 @@ func TestPolicyObjectsAreValueFreeWhenCacheContainsSecret(t *testing.T) {
 	}
 
 	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: req.Secrets[0].Ref.Raw},
+		{Alias: "TOKEN", Ref: req.Secrets[0].Ref.Raw, Account: req.Secrets[0].Account},
 	}, 1)
 	if err != nil {
 		t.Fatalf("CreateSession returned error: %v", err)
 	}
-	cache.Put(session.ID, req.Secrets[0].Ref.Raw, canarySecret)
+	cache.Put(session.ID, req.Secrets[0].Ref.Raw, req.Secrets[0].Account, canarySecret)
 	encoded, err = json.Marshal(session)
 	if err != nil {
 		t.Fatalf("marshal session: %v", err)
@@ -322,15 +323,30 @@ func TestSecretCacheClearScope(t *testing.T) {
 	t.Parallel()
 
 	cache := NewSecretCache()
-	cache.Put("scope_1", "op://Example/Item/token", "first")
-	cache.Put("scope_2", "op://Example/Item/token", "second")
+	cache.Put("scope_1", "op://Example/Item/token", "", "first")
+	cache.Put("scope_2", "op://Example/Item/token", "", "second")
 	cache.ClearScope("scope_1")
 
-	if _, ok := cache.Get("scope_1", "op://Example/Item/token"); ok {
+	if _, ok := cache.Get("scope_1", "op://Example/Item/token", ""); ok {
 		t.Fatal("scope_1 value survived ClearScope")
 	}
-	if value, ok := cache.Get("scope_2", "op://Example/Item/token"); !ok || value != "second" {
+	if value, ok := cache.Get("scope_2", "op://Example/Item/token", ""); !ok || value != "second" {
 		t.Fatalf("scope_2 value = %q, %v; want second, true", value, ok)
+	}
+}
+
+func TestSecretCacheSeparatesSameRefAcrossAccounts(t *testing.T) {
+	t.Parallel()
+
+	cache := NewSecretCache()
+	cache.Put("scope", "op://Example/Item/token", "Personal", "personal")
+	cache.Put("scope", "op://Example/Item/token", "Work", "work")
+
+	if value, ok := cache.Get("scope", "op://Example/Item/token", "Personal"); !ok || value != "personal" {
+		t.Fatalf("personal value = %q, %v; want personal, true", value, ok)
+	}
+	if value, ok := cache.Get("scope", "op://Example/Item/token", "Work"); !ok || value != "work" {
+		t.Fatalf("work value = %q, %v; want work, true", value, ok)
 	}
 }
 

@@ -34,7 +34,7 @@ type ApprovalDecision struct {
 }
 
 type Resolver interface {
-	Resolve(ctx context.Context, ref string) (string, error)
+	Resolve(ctx context.Context, ref string, account string) (string, error)
 }
 
 type AuditSink interface {
@@ -251,8 +251,8 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 			return ExecGrant{}, err
 		}
 		values = fanoutValues(req.Secrets, refValues)
-		for ref, value := range refValues {
-			b.cache.Put(approval.ID, ref, value)
+		for identity, value := range refValues {
+			b.cache.Put(approval.ID, identity.ref, identity.account, value)
 		}
 		event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 		event.ApprovalID = approval.ID
@@ -314,8 +314,8 @@ func (b *Broker) freshGrant(
 			return ExecGrant{}, err
 		}
 		approvalID = approval.ID
-		for ref, value := range refValues {
-			b.cache.Put(approvalID, ref, value)
+		for identity, value := range refValues {
+			b.cache.Put(approvalID, identity.ref, identity.account, value)
 		}
 	}
 
@@ -326,32 +326,32 @@ func (b *Broker) freshGrant(
 	}, nil
 }
 
-func (b *Broker) resolveUniqueRefs(ctx context.Context, secrets []request.Secret) (map[string]string, error) {
-	refs := uniqueRefs(secrets)
+func (b *Broker) resolveUniqueRefs(ctx context.Context, secrets []request.Secret) (map[secretIdentity]string, error) {
+	identities := uniqueSecretIdentities(secrets)
 	type result struct {
-		ref   string
-		value string
-		err   error
+		identity secretIdentity
+		value    string
+		err      error
 	}
 
 	sem := make(chan struct{}, b.fetchLimit)
-	results := make(chan result, len(refs))
-	for _, ref := range refs {
+	results := make(chan result, len(identities))
+	for _, identity := range identities {
 		sem <- struct{}{}
-		go func(ref string) {
+		go func(identity secretIdentity) {
 			defer func() { <-sem }()
-			value, err := b.resolver.Resolve(ctx, ref)
-			results <- result{ref: ref, value: value, err: err}
-		}(ref)
+			value, err := b.resolver.Resolve(ctx, identity.ref, identity.account)
+			results <- result{identity: identity, value: value, err: err}
+		}(identity)
 	}
 
-	resolved := make(map[string]string, len(refs))
-	for range refs {
+	resolved := make(map[secretIdentity]string, len(identities))
+	for range identities {
 		got := <-results
 		if got.err != nil {
 			return nil, fmt.Errorf("resolve approved ref: %w", got.err)
 		}
-		resolved[got.ref] = got.value
+		resolved[got.identity] = got.value
 	}
 
 	return resolved, nil
@@ -360,7 +360,7 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, secrets []request.Secret
 func (b *Broker) cachedValues(approvalID string, secrets []request.Secret) (map[string]string, error) {
 	env := make(map[string]string, len(secrets))
 	for _, secret := range secrets {
-		value, ok := b.cache.Get(approvalID, secret.Ref.Raw)
+		value, ok := b.cache.Get(approvalID, secret.Ref.Raw, secret.Account)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrMissingCache, secret.Ref.Raw)
 		}
@@ -383,24 +383,44 @@ func (b *Broker) activeRequest(requestID string, nonce string) (*activeExec, err
 	return active, nil
 }
 
-func uniqueRefs(secrets []request.Secret) []string {
-	seen := make(map[string]struct{}, len(secrets))
-	refs := make([]string, 0, len(secrets))
-	for _, secret := range secrets {
-		if _, ok := seen[secret.Ref.Raw]; ok {
-			continue
-		}
-		seen[secret.Ref.Raw] = struct{}{}
-		refs = append(refs, secret.Ref.Raw)
-	}
-	slices.Sort(refs)
-	return refs
+type secretIdentity struct {
+	ref     string
+	account string
 }
 
-func fanoutValues(secrets []request.Secret, refValues map[string]string) map[string]string {
+func uniqueSecretIdentities(secrets []request.Secret) []secretIdentity {
+	seen := make(map[secretIdentity]struct{}, len(secrets))
+	identities := make([]secretIdentity, 0, len(secrets))
+	for _, secret := range secrets {
+		identity := secretIdentity{ref: secret.Ref.Raw, account: secret.Account}
+		if _, ok := seen[identity]; ok {
+			continue
+		}
+		seen[identity] = struct{}{}
+		identities = append(identities, identity)
+	}
+	slices.SortFunc(identities, func(a secretIdentity, b secretIdentity) int {
+		if a.ref < b.ref {
+			return -1
+		}
+		if a.ref > b.ref {
+			return 1
+		}
+		if a.account < b.account {
+			return -1
+		}
+		if a.account > b.account {
+			return 1
+		}
+		return 0
+	})
+	return identities
+}
+
+func fanoutValues(secrets []request.Secret, refValues map[secretIdentity]string) map[string]string {
 	values := make(map[string]string, len(secrets))
 	for _, secret := range secrets {
-		values[secret.Alias] = refValues[secret.Ref.Raw]
+		values[secret.Alias] = refValues[secretIdentity{ref: secret.Ref.Raw, account: secret.Account}]
 	}
 	return values
 }

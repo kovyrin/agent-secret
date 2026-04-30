@@ -42,24 +42,32 @@ type mockResolver struct {
 	order  *[]string
 }
 
-func (m *mockResolver) Resolve(_ context.Context, ref string) (string, error) {
+func (m *mockResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.calls = append(m.calls, ref)
+	key := resolverCallKey(ref, account)
+	m.calls = append(m.calls, key)
 	if m.order != nil {
-		*m.order = append(*m.order, "resolve:"+ref)
+		*m.order = append(*m.order, "resolve:"+key)
 	}
-	if err := m.errs[ref]; err != nil {
+	if err := m.errs[key]; err != nil {
 		return "", err
 	}
-	return m.values[ref], nil
+	return m.values[key], nil
 }
 
 func (m *mockResolver) Calls() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.calls)
+}
+
+func resolverCallKey(ref string, account string) string {
+	if account == "" {
+		return ref
+	}
+	return account + "|" + ref
 }
 
 type memoryAudit struct {
@@ -188,6 +196,35 @@ func TestBrokerDeduplicatesRefsAndPreservesEmptyValues(t *testing.T) {
 	}
 	if value, ok := grant.Env["TOKEN_COPY"]; !ok || value != "" {
 		t.Fatalf("empty TOKEN_COPY value not preserved: %+v", grant.Env)
+	}
+}
+
+func TestBrokerSeparatesSameRefAcrossAccounts(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Shared/Item/token"
+	resolver := &mockResolver{values: map[string]string{
+		resolverCallKey(ref, "Personal"): "personal-value",
+		resolverCallKey(ref, "Work"):     "work-value",
+	}}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+
+	grant, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "PERSONAL_TOKEN", Ref: ref, Account: "Personal"},
+		{Alias: "WORK_TOKEN", Ref: ref, Account: "Work"},
+	}))
+	if err != nil {
+		t.Fatalf("HandleExec returned error: %v", err)
+	}
+	if grant.Env["PERSONAL_TOKEN"] != "personal-value" || grant.Env["WORK_TOKEN"] != "work-value" {
+		t.Fatalf("same ref across accounts was not resolved separately: %+v", grant.Env)
+	}
+	if len(resolver.Calls()) != 2 {
+		t.Fatalf("account-specific refs should not dedupe together: %v", resolver.Calls())
 	}
 }
 
@@ -382,7 +419,7 @@ func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecReq
 		if err != nil {
 			t.Fatalf("ParseSecretRef returned error: %v", err)
 		}
-		reqSecrets = append(reqSecrets, request.Secret{Alias: spec.Alias, Ref: ref})
+		reqSecrets = append(reqSecrets, request.Secret{Alias: spec.Alias, Ref: ref, Account: spec.Account})
 	}
 
 	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)

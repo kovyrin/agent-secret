@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -111,6 +112,7 @@ Safety rules:
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   - If no --profile or --secret is provided, exec uses default_profile from the discovered project config.
+  - Project configs can set account defaults at the file, profile, or secret level.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
@@ -153,13 +155,18 @@ Project profiles:
   Put agent-secret.yml or .agent-secret.yml at the project root:
 
     version: 1
+    account: my.1password.com
     default_profile: terraform-cloudflare
     profiles:
       terraform-cloudflare:
+        account: Fixture
         reason: Terraform DNS management
         ttl: 10m
         secrets:
           CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+          PREVIEW_TOKEN:
+            ref: op://Example/Preview/token
+            account: Fixture Preview
 
   Then run:
 
@@ -169,6 +176,8 @@ Project profiles:
   --secret flags may be combined with --profile for one-off additional refs.
   Explicit --secret-only invocations do not load default_profile.
   CLI --reason and --ttl override profile defaults.
+  Account precedence is per-secret account, profile account, top-level account,
+  OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
 
 Environment:
 
@@ -261,7 +270,9 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		effectiveTTL = profile.TTL
 	}
 	if loadedProfile {
-		effectiveSecrets = append(profile.Secrets, effectiveSecrets...)
+		profileSecrets := slices.Clone(profile.Secrets)
+		profileSecrets = append(profileSecrets, applyDefaultAccount(effectiveSecrets, profile.Account)...)
+		effectiveSecrets = profileSecrets
 	}
 
 	req, err := request.NewExec(request.ExecOptions{
@@ -303,6 +314,20 @@ func loadExecProfile(profileName string, configPath string, explicitSecrets []re
 		label = "default"
 	}
 	return profileconfig.Profile{}, false, fmt.Errorf("load profile %q: %w", label, err)
+}
+
+func applyDefaultAccount(secrets []request.SecretSpec, account string) []request.SecretSpec {
+	if account == "" || len(secrets) == 0 {
+		return secrets
+	}
+	updated := make([]request.SecretSpec, 0, len(secrets))
+	for _, secret := range secrets {
+		if secret.Account == "" {
+			secret.Account = account
+		}
+		updated = append(updated, secret)
+	}
+	return updated
 }
 
 func parseDaemon(args []string) (Command, error) {

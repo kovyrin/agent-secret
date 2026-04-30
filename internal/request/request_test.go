@@ -23,7 +23,7 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 		Env:        []string{"PATH=" + dir, "EXISTING=value"},
 		ReceivedAt: receivedAt,
 		Secrets: []SecretSpec{
-			{Alias: "TOKEN", Ref: "op://Example Vault/Cloudflare/token"},
+			{Alias: "TOKEN", Ref: "op://Example Vault/Cloudflare/token", Account: " Fixture "},
 			{Alias: "TOKEN_COPY", Ref: "op://Example Vault/Cloudflare/token"},
 		},
 	})
@@ -48,6 +48,9 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	}
 	if len(req.Secrets) != 2 || req.Secrets[0].Ref.Raw != req.Secrets[1].Ref.Raw {
 		t.Fatalf("duplicate refs with different aliases should be preserved: %+v", req.Secrets)
+	}
+	if req.Secrets[0].Account != "Fixture" {
+		t.Fatalf("account = %q, want trimmed Fixture", req.Secrets[0].Account)
 	}
 }
 

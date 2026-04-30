@@ -46,6 +46,49 @@ profiles:
 	}
 }
 
+func TestLoadAppliesAccountPrecedence(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+account: Default Account
+profiles:
+  inherited:
+    reason: Inherited
+    secrets:
+      TOKEN: op://Example/Item/token
+  overridden:
+    account: Profile Account
+    reason: Overridden
+    secrets:
+      A_TOKEN: op://Example/A/token
+      B_TOKEN:
+        ref: op://Example/B/token
+        account: Secret Account
+`)
+
+	inherited, err := Load(LoadOptions{Name: "inherited", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load inherited returned error: %v", err)
+	}
+	if inherited.Account != "Default Account" || inherited.Secrets[0].Account != "Default Account" {
+		t.Fatalf("inherited account mismatch: profile=%q secrets=%+v", inherited.Account, inherited.Secrets)
+	}
+
+	overridden, err := Load(LoadOptions{Name: "overridden", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load overridden returned error: %v", err)
+	}
+	if overridden.Account != "Profile Account" {
+		t.Fatalf("profile account = %q", overridden.Account)
+	}
+	if overridden.Secrets[0].Account != "Profile Account" {
+		t.Fatalf("profile account was not applied to scalar secret: %+v", overridden.Secrets)
+	}
+	if overridden.Secrets[1].Account != "Secret Account" {
+		t.Fatalf("secret account override was not applied: %+v", overridden.Secrets)
+	}
+}
+
 func TestLoadUsesDefaultProfileWhenNameIsEmpty(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
@@ -180,6 +223,21 @@ profiles:
 	_, err = Load(LoadOptions{Name: "broken", StartDir: root})
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("expected ErrInvalidConfig for missing secrets, got %v", err)
+	}
+
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  broken:
+    reason: Broken
+    secrets:
+      TOKEN:
+        ref: op://Example/Item/token
+        unknown: nope
+`)
+	_, err = Load(LoadOptions{Name: "broken", StartDir: root})
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for unknown secret field, got %v", err)
 	}
 }
 

@@ -248,7 +248,7 @@ type appResolver struct {
 	values map[string]string
 }
 
-func (r *appResolver) Resolve(_ context.Context, ref string) (string, error) {
+func (r *appResolver) Resolve(_ context.Context, ref string, _ string) (string, error) {
 	return r.values[ref], nil
 }
 

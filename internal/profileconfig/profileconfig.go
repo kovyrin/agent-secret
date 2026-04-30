@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -30,6 +31,7 @@ type LoadOptions struct {
 type Profile struct {
 	Name       string
 	SourcePath string
+	Account    string
 	Reason     string
 	Secrets    []request.SecretSpec
 	TTL        time.Duration
@@ -37,14 +39,58 @@ type Profile struct {
 
 type configFile struct {
 	Version        int                    `yaml:"version"`
+	Account        string                 `yaml:"account"`
 	DefaultProfile string                 `yaml:"default_profile"`
 	Profiles       map[string]profileYAML `yaml:"profiles"`
 }
 
 type profileYAML struct {
-	Reason  string            `yaml:"reason"`
-	Secrets map[string]string `yaml:"secrets"`
-	TTL     string            `yaml:"ttl"`
+	Account string                `yaml:"account"`
+	Reason  string                `yaml:"reason"`
+	Secrets map[string]secretYAML `yaml:"secrets"`
+	TTL     string                `yaml:"ttl"`
+}
+
+type secretYAML struct {
+	Ref     string
+	Account string
+}
+
+func (s *secretYAML) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var ref string
+		if err := value.Decode(&ref); err != nil {
+			return err
+		}
+		s.Ref = ref
+		return nil
+	case yaml.MappingNode:
+		return s.unmarshalMapping(value)
+	case yaml.DocumentNode, yaml.SequenceNode, yaml.AliasNode:
+		return errors.New("secret must be a ref string or mapping")
+	}
+	return errors.New("secret must be a ref string or mapping")
+}
+
+func (s *secretYAML) unmarshalMapping(value *yaml.Node) error {
+	for i := 0; i < len(value.Content); i += 2 {
+		key := value.Content[i].Value
+		item := value.Content[i+1]
+		switch key {
+		case "ref":
+			if err := item.Decode(&s.Ref); err != nil {
+				return err
+			}
+		case "account":
+			if err := item.Decode(&s.Account); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown secret field %q", key)
+		}
+	}
+	return nil
 }
 
 func Load(opts LoadOptions) (Profile, error) {
@@ -84,11 +130,12 @@ func Load(opts LoadOptions) (Profile, error) {
 		return Profile{}, fmt.Errorf("%w: %q in %s", ErrProfileNotFound, profileName, path)
 	}
 
+	account := effectiveAccount(doc.Account, rawProfile.Account)
 	ttl, err := parseTTL(rawProfile.TTL, path, profileName)
 	if err != nil {
 		return Profile{}, err
 	}
-	secrets, err := parseSecrets(rawProfile.Secrets, path, profileName)
+	secrets, err := parseSecrets(rawProfile.Secrets, account, path, profileName)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -96,6 +143,7 @@ func Load(opts LoadOptions) (Profile, error) {
 	return Profile{
 		Name:       profileName,
 		SourcePath: path,
+		Account:    account,
 		Reason:     rawProfile.Reason,
 		Secrets:    secrets,
 		TTL:        ttl,
@@ -162,7 +210,7 @@ func parseTTL(raw string, path string, profileName string) (time.Duration, error
 	return ttl, nil
 }
 
-func parseSecrets(raw map[string]string, path string, profileName string) ([]request.SecretSpec, error) {
+func parseSecrets(raw map[string]secretYAML, account string, path string, profileName string) ([]request.SecretSpec, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: %s profile %q must define at least one secret", ErrInvalidConfig, path, profileName)
 	}
@@ -175,11 +223,23 @@ func parseSecrets(raw map[string]string, path string, profileName string) ([]req
 
 	secrets := make([]request.SecretSpec, 0, len(aliases))
 	for _, alias := range aliases {
-		ref := raw[alias]
-		if ref == "" {
+		spec := raw[alias]
+		if spec.Ref == "" {
 			return nil, fmt.Errorf("%w: %s profile %q secret %q has empty ref", ErrInvalidConfig, path, profileName, alias)
 		}
-		secrets = append(secrets, request.SecretSpec{Alias: alias, Ref: ref})
+		secrets = append(secrets, request.SecretSpec{
+			Alias:   alias,
+			Ref:     spec.Ref,
+			Account: effectiveAccount(account, spec.Account),
+		})
 	}
 	return secrets, nil
+}
+
+func effectiveAccount(defaultAccount string, overrideAccount string) string {
+	override := strings.TrimSpace(overrideAccount)
+	if override != "" {
+		return override
+	}
+	return strings.TrimSpace(defaultAccount)
 }
