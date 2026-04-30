@@ -516,7 +516,8 @@ Status: Complete
   `--force-refresh`; `--json`, shell-string command input, and `--reuse` are
   rejected.
 - Added project-local `agent-secret.yml` / `.agent-secret.yml` profile loading
-  for named secret bundles, profile default reasons, and profile default TTLs.
+  for named secret bundles, config `default_profile`, profile default reasons,
+  and profile default TTLs.
 - Added a single-socket JSON protocol for `request.exec`, `command.started`,
   `command.completed`, daemon status, and daemon stop.
 - Added per-user daemon socket discovery, stale-socket cleanup, on-demand daemon
@@ -574,9 +575,10 @@ Status: Complete
 - Goal: turn user input into validated request objects.
 - Preconditions/inputs: request model exists.
 - Failing test/check: parser tests for required `--reason`, `--secret` mappings,
-  `--profile` mappings, `--` command boundary, daemon subcommands, TTL parsing,
-  rejection of `--json` for `exec`, and rejection of shell-string command input,
-  `--override-env` parsing, and `--force-refresh` parsing. Parser tests reject
+  `--profile` mappings, `default_profile` mappings, `--` command boundary,
+  daemon subcommands, TTL parsing, rejection of `--json` for `exec`, and
+  rejection of shell-string command input, `--override-env` parsing, and
+  `--force-refresh` parsing. Parser tests reject
   any `--reuse` request/hint flag. Parser/request tests prove missing, blank, or
   over-limit reasons stop before approval UI, reusable-approval lookup, SDK
   access, or child spawn. Help tests fail until `agent-secret --help` and

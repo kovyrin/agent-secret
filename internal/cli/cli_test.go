@@ -93,6 +93,125 @@ profiles:
 	}
 }
 
+func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "terraform")
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: terraform-cloudflare
+profiles:
+  terraform-cloudflare:
+    reason: Default Terraform DNS management
+    ttl: 10m
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--",
+		"terraform", "plan",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if req.Reason != "Default Terraform DNS management" {
+		t.Fatalf("Reason = %q", req.Reason)
+	}
+	if req.TTL != 10*time.Minute {
+		t.Fatalf("TTL = %s", req.TTL)
+	}
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "CLOUDFLARE_API_TOKEN" {
+		t.Fatalf("secrets = %+v", req.Secrets)
+	}
+}
+
+func TestParseExecBuildsDefaultProfileFromExplicitConfigPath(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "custom-agent-secret.yml")
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "terraform")
+	writeConfigFile(t, configPath, `
+version: 1
+default_profile: terraform-cloudflare
+profiles:
+  terraform-cloudflare:
+    reason: Explicit config default
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--config", configPath,
+		"--",
+		"terraform", "plan",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if req.Reason != "Explicit config default" {
+		t.Fatalf("Reason = %q", req.Reason)
+	}
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "CLOUDFLARE_API_TOKEN" {
+		t.Fatalf("secrets = %+v", req.Secrets)
+	}
+}
+
+func TestParseExecExplicitSecretsDoNotLoadDefaultProfile(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: extra
+profiles:
+  extra:
+    reason: Extra
+    secrets:
+      EXTRA_TOKEN: op://Example/Extra/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Explicit only",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
+		t.Fatalf("default profile leaked into explicit secret request: %+v", req.Secrets)
+	}
+}
+
 func TestParseExecMergesProfileAndExplicitSecretsWithOverrides(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -185,11 +304,6 @@ func TestParseExecRejectsUnsafeOrUnsupportedForms(t *testing.T) {
 			args: []string{"exec", "--reason", "reason", "--cwd", dir, "--secret", "TOKEN", "--", "tool"},
 			want: ErrInvalidArguments,
 		},
-		{
-			name: "config without profile",
-			args: []string{"exec", "--reason", "reason", "--cwd", dir, "--config", "agent-secret.yml", "--secret", "TOKEN=op://Example/Item/token", "--", "tool"},
-			want: ErrInvalidArguments,
-		},
 	}
 
 	for _, tt := range tests {
@@ -243,7 +357,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",
@@ -285,7 +399,13 @@ func writeExecutable(t *testing.T, dir string, name string) {
 func writeProfileConfig(t *testing.T, dir string, contents string) {
 	t.Helper()
 
-	if err := os.WriteFile(filepath.Join(dir, "agent-secret.yml"), []byte(contents), 0o644); err != nil {
-		t.Fatalf("write profile config: %v", err)
+	writeConfigFile(t, filepath.Join(dir, "agent-secret.yml"), contents)
+}
+
+func writeConfigFile(t *testing.T, path string, contents string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
 	}
 }

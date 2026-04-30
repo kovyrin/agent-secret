@@ -137,10 +137,14 @@ desktop app that launched the CLI.
 Projects can keep reusable secret bundles in `agent-secret.yml` or
 `.agent-secret.yml`. The file contains only 1Password refs and metadata, never
 resolved values. `agent-secret exec --profile NAME` discovers the config from
-the current directory or a parent.
+the current directory or a parent. If `default_profile` is set, `agent-secret
+exec -- COMMAND` uses that profile when no `--profile` or `--secret` flags are
+provided.
 
 ```yaml
 version: 1
+
+default_profile: terraform-cloudflare
 
 profiles:
   terraform-cloudflare:
@@ -159,10 +163,12 @@ profiles:
 Run a profile with:
 
 ```bash
+agent-secret exec -- terraform plan
 agent-secret exec --profile terraform-cloudflare -- terraform plan
 ```
 
 `--secret` flags can be combined with a profile for one-off additional refs.
+Explicit `--secret`-only invocations do not load `default_profile`.
 CLI `--reason` and `--ttl` override profile defaults.
 
 ## Default Safety Posture

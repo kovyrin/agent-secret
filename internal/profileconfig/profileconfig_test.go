@@ -46,6 +46,31 @@ profiles:
 	}
 }
 
+func TestLoadUsesDefaultProfileWhenNameIsEmpty(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+default_profile: terraform-cloudflare
+profiles:
+  terraform-cloudflare:
+    reason: Terraform DNS management
+    ttl: 10m
+    secrets:
+      TOKEN: op://Example/Cloudflare/token
+`)
+
+	profile, err := Load(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if profile.Name != "terraform-cloudflare" {
+		t.Fatalf("Name = %q", profile.Name)
+	}
+	if profile.Reason != "Terraform DNS management" {
+		t.Fatalf("Reason = %q", profile.Reason)
+	}
+}
+
 func TestLoadUsesExplicitConfigPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom.yml")
 	writeConfig(t, path, `
@@ -63,6 +88,23 @@ profiles:
 	}
 	if profile.SourcePath != path {
 		t.Fatalf("SourcePath = %q, want %q", profile.SourcePath, path)
+	}
+}
+
+func TestLoadReportsMissingDefaultProfile(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  one:
+    reason: One
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+
+	_, err := Load(LoadOptions{StartDir: root})
+	if !errors.Is(err, ErrProfileNotFound) {
+		t.Fatalf("expected ErrProfileNotFound, got %v", err)
 	}
 }
 

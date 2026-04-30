@@ -92,6 +92,8 @@ Common examples:
     --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
     -- terraform plan
 
+  agent-secret exec -- terraform plan
+
   agent-secret exec --profile terraform-cloudflare -- terraform plan
 
   agent-secret exec --reason "Run Ansible against home inventory" \
@@ -108,6 +110,7 @@ Safety rules:
   - --reason is required, trimmed, and capped at 240 characters.
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
+  - If no --profile or --secret is provided, exec uses default_profile from the discovered project config.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
@@ -132,7 +135,7 @@ Usage:
 Required:
 
   --reason TEXT       Human-readable reason shown to the approver and used for reuse matching. Required unless the profile sets reason.
-  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field. Required unless a profile supplies secrets.
+  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field. Required unless a profile supplies secrets or the project config sets default_profile.
   -- COMMAND [ARG...] Command argv to execute. The -- boundary is required.
 
 Flags:
@@ -150,6 +153,7 @@ Project profiles:
   Put agent-secret.yml or .agent-secret.yml at the project root:
 
     version: 1
+    default_profile: terraform-cloudflare
     profiles:
       terraform-cloudflare:
         reason: Terraform DNS management
@@ -159,9 +163,11 @@ Project profiles:
 
   Then run:
 
+    agent-secret exec -- terraform plan
     agent-secret exec --profile terraform-cloudflare -- terraform plan
 
   --secret flags may be combined with --profile for one-off additional refs.
+  Explicit --secret-only invocations do not load default_profile.
   CLI --reason and --ttl override profile defaults.
 
 Environment:
@@ -241,27 +247,20 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if fs.NArg() != 0 {
 		return Command{}, ErrShellStringCommand
 	}
-	if *configPath != "" && *profileName == "" {
-		return Command{}, fmt.Errorf("%w: --config requires --profile", ErrInvalidArguments)
-	}
-
 	effectiveReason := *reason
 	effectiveTTL := *ttl
 	effectiveSecrets := secrets.specs
-	if *profileName != "" {
-		profile, err := profileconfig.Load(profileconfig.LoadOptions{
-			Name:       *profileName,
-			ConfigPath: *configPath,
-		})
-		if err != nil {
-			return Command{}, fmt.Errorf("load profile %q: %w", *profileName, err)
-		}
-		if effectiveReason == "" {
-			effectiveReason = profile.Reason
-		}
-		if effectiveTTL == 0 {
-			effectiveTTL = profile.TTL
-		}
+	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, effectiveSecrets)
+	if err != nil {
+		return Command{}, err
+	}
+	if loadedProfile && effectiveReason == "" {
+		effectiveReason = profile.Reason
+	}
+	if loadedProfile && effectiveTTL == 0 {
+		effectiveTTL = profile.TTL
+	}
+	if loadedProfile {
 		effectiveSecrets = append(profile.Secrets, effectiveSecrets...)
 	}
 
@@ -281,6 +280,29 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	return Command{Kind: KindExec, ExecRequest: req}, nil
+}
+
+func loadExecProfile(profileName string, configPath string, explicitSecrets []request.SecretSpec) (profileconfig.Profile, bool, error) {
+	if profileName == "" && len(explicitSecrets) > 0 {
+		return profileconfig.Profile{}, false, nil
+	}
+
+	profile, err := profileconfig.Load(profileconfig.LoadOptions{
+		Name:       profileName,
+		ConfigPath: configPath,
+	})
+	if err == nil {
+		return profile, true, nil
+	}
+	if profileName == "" && configPath == "" && errors.Is(err, profileconfig.ErrConfigNotFound) {
+		return profileconfig.Profile{}, false, nil
+	}
+
+	label := profileName
+	if label == "" {
+		label = "default"
+	}
+	return profileconfig.Profile{}, false, fmt.Errorf("load profile %q: %w", label, err)
 }
 
 func parseDaemon(args []string) (Command, error) {

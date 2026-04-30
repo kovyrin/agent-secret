@@ -36,8 +36,9 @@ type Profile struct {
 }
 
 type configFile struct {
-	Version  int                    `yaml:"version"`
-	Profiles map[string]profileYAML `yaml:"profiles"`
+	Version        int                    `yaml:"version"`
+	DefaultProfile string                 `yaml:"default_profile"`
+	Profiles       map[string]profileYAML `yaml:"profiles"`
 }
 
 type profileYAML struct {
@@ -47,10 +48,6 @@ type profileYAML struct {
 }
 
 func Load(opts LoadOptions) (Profile, error) {
-	if opts.Name == "" {
-		return Profile{}, fmt.Errorf("%w: profile name is required", ErrProfileNotFound)
-	}
-
 	path, err := Find(opts.ConfigPath, opts.StartDir)
 	if err != nil {
 		return Profile{}, err
@@ -74,22 +71,30 @@ func Load(opts LoadOptions) (Profile, error) {
 		return Profile{}, fmt.Errorf("%w: %s must define at least one profile", ErrInvalidConfig, path)
 	}
 
-	rawProfile, ok := doc.Profiles[opts.Name]
-	if !ok {
-		return Profile{}, fmt.Errorf("%w: %q in %s", ErrProfileNotFound, opts.Name, path)
+	profileName := opts.Name
+	if profileName == "" {
+		profileName = doc.DefaultProfile
+	}
+	if profileName == "" {
+		return Profile{}, fmt.Errorf("%w: %s default_profile is required when no profile name is provided", ErrProfileNotFound, path)
 	}
 
-	ttl, err := parseTTL(rawProfile.TTL, path, opts.Name)
+	rawProfile, ok := doc.Profiles[profileName]
+	if !ok {
+		return Profile{}, fmt.Errorf("%w: %q in %s", ErrProfileNotFound, profileName, path)
+	}
+
+	ttl, err := parseTTL(rawProfile.TTL, path, profileName)
 	if err != nil {
 		return Profile{}, err
 	}
-	secrets, err := parseSecrets(rawProfile.Secrets, path, opts.Name)
+	secrets, err := parseSecrets(rawProfile.Secrets, path, profileName)
 	if err != nil {
 		return Profile{}, err
 	}
 
 	return Profile{
-		Name:       opts.Name,
+		Name:       profileName,
 		SourcePath: path,
 		Reason:     rawProfile.Reason,
 		Secrets:    secrets,

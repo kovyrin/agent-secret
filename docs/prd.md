@@ -135,10 +135,13 @@ feature should stay generic and should not depend on any one consumer project.
 
 The first dogfood-ready config workflow is project-local profiles. A checked-in
 `agent-secret.yml` file names reusable secret bundles while still storing only
-`op://` refs and metadata:
+`op://` refs and metadata. If `default_profile` is set, the caller can omit
+`--profile` when no explicit `--secret` flags are provided:
 
 ```yaml
 version: 1
+
+default_profile: terraform-cloudflare
 
 profiles:
   terraform-cloudflare:
@@ -148,15 +151,17 @@ profiles:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
 ```
 
-The caller runs the normal `exec` path with the named profile:
+The caller runs the normal `exec` path with the default or named profile:
 
 ```bash
+agent-secret exec -- terraform plan
 agent-secret exec --profile terraform-cloudflare -- terraform plan
 ```
 
 The broker approves the declared refs before the wrapped command runs, avoids
 printing values, and lets CLI `--reason`, `--ttl`, and additional `--secret`
-flags override or extend the profile for one-off use.
+flags override or extend a named profile for one-off use. Explicit
+`--secret`-only invocations do not load `default_profile`.
 
 ### Use Case 4: Git Credential Helper
 
@@ -832,8 +837,8 @@ examples for Terraform/Ansible-style `exec`, `doctor`, daemon management, and
 clear statements that the tool never prints secret values and does not support
 raw resolve. Subcommand help, especially `agent-secret exec --help`, should give
 focused examples and explain required `--reason`, `--secret ALIAS=op://...`,
-`--profile`, project profile config, `--ttl`, `--cwd`, `--override-env`, and
-`--force-refresh`.
+`--profile`, `default_profile`, project profile config, `--ttl`, `--cwd`,
+`--override-env`, and `--force-refresh`.
 
 `exec` accepts only argv after `--`. The CLI does not parse shell command
 strings. If shell behavior is required, the caller must make it explicit, for
@@ -841,8 +846,9 @@ example `agent-secret exec ... -- sh -lc 'terraform plan'`; the approval UI then
 shows that full argv.
 
 The first implementation accepts explicit `--secret ALIAS=op://...` mappings
-and project-local `--profile NAME` mappings from `agent-secret.yml` or
-`.agent-secret.yml`. A broader `--secret-config` mapping mode remains deferred.
+and project-local `--profile NAME` or `default_profile` mappings from
+`agent-secret.yml` or `.agent-secret.yml`. A broader `--secret-config` mapping
+mode remains deferred.
 
 `doctor` should use the same on-demand daemon startup path as normal commands,
 then report the resulting daemon status. It should launch/probe the native
