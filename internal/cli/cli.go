@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -91,6 +92,8 @@ Common examples:
     --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
     -- terraform plan
 
+  agent-secret exec --profile terraform-cloudflare -- terraform plan
+
   agent-secret exec --reason "Run Ansible against home inventory" \
     --cwd /path/to/project \
     --secret ANSIBLE_VAULT_PASSWORD=op://Example/Ansible/password \
@@ -104,6 +107,7 @@ Safety rules:
 
   - --reason is required, trimmed, and capped at 240 characters.
   - --secret must be ALIAS=op://vault/item[/section]/field.
+  - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
@@ -123,20 +127,42 @@ agent-secret exec validates a command request, asks the local daemon for approve
 Usage:
 
   agent-secret exec --reason TEXT --secret ALIAS=op://vault/item/field [flags] -- COMMAND [ARG...]
+  agent-secret exec --profile NAME [flags] -- COMMAND [ARG...]
 
 Required:
 
-  --reason TEXT       Human-readable reason shown to the approver and used for reuse matching.
-  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field.
+  --reason TEXT       Human-readable reason shown to the approver and used for reuse matching. Required unless the profile sets reason.
+  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field. Required unless a profile supplies secrets.
   -- COMMAND [ARG...] Command argv to execute. The -- boundary is required.
 
 Flags:
 
+  --profile NAME      Load a named profile from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
+  --config PATH       Profile config path. Defaults to upward discovery from the current directory.
   --cwd DIR           Child working directory. Defaults to the caller cwd.
-  --ttl DURATION      Approval TTL. Defaults to 2m. Allowed range: 10s through 10m.
+  --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
   --override-env      Allow approved aliases to replace existing child environment variables.
   --force-refresh     For matching reusable approvals, refetch approved refs before delivery.
   -h, --help          Show this help.
+
+Project profiles:
+
+  Put agent-secret.yml or .agent-secret.yml at the project root:
+
+    version: 1
+    profiles:
+      terraform-cloudflare:
+        reason: Terraform DNS management
+        ttl: 10m
+        secrets:
+          CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+
+  Then run:
+
+    agent-secret exec --profile terraform-cloudflare -- terraform plan
+
+  --secret flags may be combined with --profile for one-off additional refs.
+  CLI --reason and --ttl override profile defaults.
 
 Environment:
 
@@ -196,6 +222,8 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	reason := fs.String("reason", "", "approval reason")
 	cwd := fs.String("cwd", "", "working directory")
 	ttl := fs.Duration("ttl", 0, "approval ttl")
+	profileName := fs.String("profile", "", "profile name")
+	configPath := fs.String("config", "", "profile config path")
 	overrideEnv := fs.Bool("override-env", false, "override existing env aliases")
 	forceRefresh := fs.Bool("force-refresh", false, "refresh reusable approval values")
 	jsonOutput := fs.Bool("json", false, "unsupported")
@@ -213,13 +241,36 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if fs.NArg() != 0 {
 		return Command{}, ErrShellStringCommand
 	}
+	if *configPath != "" && *profileName == "" {
+		return Command{}, fmt.Errorf("%w: --config requires --profile", ErrInvalidArguments)
+	}
+
+	effectiveReason := *reason
+	effectiveTTL := *ttl
+	effectiveSecrets := secrets.specs
+	if *profileName != "" {
+		profile, err := profileconfig.Load(profileconfig.LoadOptions{
+			Name:       *profileName,
+			ConfigPath: *configPath,
+		})
+		if err != nil {
+			return Command{}, fmt.Errorf("load profile %q: %w", *profileName, err)
+		}
+		if effectiveReason == "" {
+			effectiveReason = profile.Reason
+		}
+		if effectiveTTL == 0 {
+			effectiveTTL = profile.TTL
+		}
+		effectiveSecrets = append(profile.Secrets, effectiveSecrets...)
+	}
 
 	req, err := request.NewExec(request.ExecOptions{
-		Reason:       *reason,
+		Reason:       effectiveReason,
 		Command:      command,
 		CWD:          *cwd,
-		Secrets:      secrets.specs,
-		TTL:          *ttl,
+		Secrets:      effectiveSecrets,
+		TTL:          effectiveTTL,
 		ReceivedAt:   p.now(),
 		DeliveryMode: request.DeliveryEnvExec,
 		OverrideEnv:  *overrideEnv,

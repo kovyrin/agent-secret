@@ -174,7 +174,8 @@ Source: [Product Requirements](prd.md)
 - No disk-backed secret delivery, including temporary credential files.
 - No policy-file language until the broker, approval, and `exec` paths work.
 - No allowlist implementation in v1.
-- No `--secret-config` implementation in the first `exec` milestone.
+- No broad `--secret-config` implementation in the first `exec` milestone;
+  project-local `--profile` support covers named ref bundles.
 - No reusable approval management commands in v1 beyond `agent-secret daemon
   stop`.
 - No public-release polish such as notarized installers, contribution process,
@@ -514,6 +515,8 @@ Status: Complete
   `--secret ALIAS=op://...`, `--` argv boundary, TTLs, `--override-env`, and
   `--force-refresh`; `--json`, shell-string command input, and `--reuse` are
   rejected.
+- Added project-local `agent-secret.yml` / `.agent-secret.yml` profile loading
+  for named secret bundles, profile default reasons, and profile default TTLs.
 - Added a single-socket JSON protocol for `request.exec`, `command.started`,
   `command.completed`, daemon status, and daemon stop.
 - Added per-user daemon socket discovery, stale-socket cleanup, on-demand daemon
@@ -571,12 +574,12 @@ Status: Complete
 - Goal: turn user input into validated request objects.
 - Preconditions/inputs: request model exists.
 - Failing test/check: parser tests for required `--reason`, `--secret` mappings,
-  `--` command boundary, daemon subcommands, TTL parsing, rejection of `--json`
-  for `exec`, and rejection of shell-string command input, `--override-env`
-  parsing, and `--force-refresh` parsing. Parser tests reject any `--reuse`
-  request/hint flag. Parser/request tests prove missing, blank, or over-limit
-  reasons stop before approval UI, reusable-approval lookup, SDK access, or child
-  spawn. Help tests fail until `agent-secret --help` and
+  `--profile` mappings, `--` command boundary, daemon subcommands, TTL parsing,
+  rejection of `--json` for `exec`, and rejection of shell-string command input,
+  `--override-env` parsing, and `--force-refresh` parsing. Parser tests reject
+  any `--reuse` request/hint flag. Parser/request tests prove missing, blank, or
+  over-limit reasons stop before approval UI, reusable-approval lookup, SDK
+  access, or child spawn. Help tests fail until `agent-secret --help` and
   `agent-secret exec --help` include purpose, safety rules, commands, flags,
   examples, daemon behavior, audit-log location, exit behavior, and no real
   secret values. Reuse tests fail unless reused invocations include the same

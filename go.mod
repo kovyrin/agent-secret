@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/1password/onepassword-sdk-go v0.4.0
 	golang.org/x/sys v0.40.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

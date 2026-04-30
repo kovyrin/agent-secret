@@ -133,19 +133,30 @@ Some local projects keep a checked-in mapping from logical credential keys to
 values into the project's own encrypted or managed secret store. The broker
 feature should stay generic and should not depend on any one consumer project.
 
-For v1 planning, this is a candidate follow-on dogfood workflow after basic
-`exec` works. The first implementation should use explicit `--secret` flags
-only; `--secret-config` is a later feature:
+The first dogfood-ready config workflow is project-local profiles. A checked-in
+`agent-secret.yml` file names reusable secret bundles while still storing only
+`op://` refs and metadata:
 
-```bash
-agent-secret exec \
-  --reason "Sync project credentials into local encrypted store" \
-  --secret-config ./config/op-secrets.yml \
-  -- ./bin/setup-op-secrets
+```yaml
+version: 1
+
+profiles:
+  terraform-cloudflare:
+    reason: Terraform DNS management
+    ttl: 10m
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
 ```
 
-The broker should approve the declared refs before the sync helper runs, avoid
-printing values, and make the mapping file visible in the approval context.
+The caller runs the normal `exec` path with the named profile:
+
+```bash
+agent-secret exec --profile terraform-cloudflare -- terraform plan
+```
+
+The broker approves the declared refs before the wrapped command runs, avoids
+printing values, and lets CLI `--reason`, `--ttl`, and additional `--secret`
+flags override or extend the profile for one-off use.
 
 ### Use Case 4: Git Credential Helper
 
@@ -821,7 +832,8 @@ examples for Terraform/Ansible-style `exec`, `doctor`, daemon management, and
 clear statements that the tool never prints secret values and does not support
 raw resolve. Subcommand help, especially `agent-secret exec --help`, should give
 focused examples and explain required `--reason`, `--secret ALIAS=op://...`,
-`--ttl`, `--cwd`, `--override-env`, and `--force-refresh`.
+`--profile`, project profile config, `--ttl`, `--cwd`, `--override-env`, and
+`--force-refresh`.
 
 `exec` accepts only argv after `--`. The CLI does not parse shell command
 strings. If shell behavior is required, the caller must make it explicit, for
@@ -829,7 +841,8 @@ example `agent-secret exec ... -- sh -lc 'terraform plan'`; the approval UI then
 shows that full argv.
 
 The first implementation accepts explicit `--secret ALIAS=op://...` mappings
-only. Config-file mapping support, including `--secret-config`, is deferred.
+and project-local `--profile NAME` mappings from `agent-secret.yml` or
+`.agent-secret.yml`. A broader `--secret-config` mapping mode remains deferred.
 
 `doctor` should use the same on-demand daemon startup path as normal commands,
 then report the resulting daemon status. It should launch/probe the native

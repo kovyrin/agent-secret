@@ -132,6 +132,39 @@ On macOS, `agent-secret` starts the daemon through `AgentSecretDaemon.app` so
 1Password sees the SDK caller as Agent Secret instead of the terminal or agent
 desktop app that launched the CLI.
 
+## Project Profiles
+
+Projects can keep reusable secret bundles in `agent-secret.yml` or
+`.agent-secret.yml`. The file contains only 1Password refs and metadata, never
+resolved values. `agent-secret exec --profile NAME` discovers the config from
+the current directory or a parent.
+
+```yaml
+version: 1
+
+profiles:
+  terraform-cloudflare:
+    reason: Terraform DNS management
+    ttl: 10m
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+
+  ansible:
+    reason: Run Ansible playbook
+    secrets:
+      ANSIBLE_BECOME_PASSWORD: op://Example/Ansible/password
+      CADDY_TOKEN: op://Example/Caddy/token
+```
+
+Run a profile with:
+
+```bash
+agent-secret exec --profile terraform-cloudflare -- terraform plan
+```
+
+`--secret` flags can be combined with a profile for one-off additional refs.
+CLI `--reason` and `--ttl` override profile defaults.
+
 ## Default Safety Posture
 
 - 1Password remains the source of truth for storage and account authentication.

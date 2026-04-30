@@ -19,6 +19,7 @@ agent-secret/
     daemon/                      # Daemon lifecycle and request orchestration
     op/                          # 1Password SDK adapter
     policy/                      # Request validation, reuse, TTL, sessions
+    profileconfig/               # Project-local profile config loading
     socket/                      # Unix socket protocol and peer metadata
     supervisor/                  # CLI-owned child process supervision
   approver/                      # SwiftUI/AppKit macOS approval app
