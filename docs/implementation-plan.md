@@ -517,7 +517,8 @@ Status: Complete
   rejected.
 - Added project-local `agent-secret.yml` / `.agent-secret.yml` profile loading
   for named secret bundles, config `default_profile`, profile default reasons,
-  profile default TTLs, and config/profile/secret account defaults.
+  profile default TTLs, config/profile/secret account defaults, and nested
+  profile includes.
 - Added a single-socket JSON protocol for `request.exec`, `command.started`,
   `command.completed`, daemon status, and daemon stop.
 - Added per-user daemon socket discovery, stale-socket cleanup, on-demand daemon

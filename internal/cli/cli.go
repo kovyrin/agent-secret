@@ -112,7 +112,7 @@ Safety rules:
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   - If no --profile or --secret is provided, exec uses default_profile from the discovered project config.
-  - Project configs can set account defaults at the file, profile, or secret level.
+  - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
@@ -167,6 +167,14 @@ Project profiles:
           PREVIEW_TOKEN:
             ref: op://Example/Preview/token
             account: Fixture Preview
+          SHARED_TOKEN: op://Example/Shared/token
+
+      ansible:
+        include:
+          - terraform-cloudflare
+        reason: Run Ansible playbook
+        secrets:
+          ANSIBLE_BECOME_PASSWORD: op://Example/Ansible/password
 
   Then run:
 
@@ -178,6 +186,8 @@ Project profiles:
   CLI --reason and --ttl override profile defaults.
   Account precedence is per-secret account, profile account, top-level account,
   OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
+  Included profiles are resolved in order. Later includes and the selected
+  profile override earlier secrets with the same alias.
 
 Environment:
 

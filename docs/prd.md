@@ -154,12 +154,24 @@ profiles:
       PREVIEW_TOKEN:
         ref: op://Example/Preview/token
         account: Fixture Preview
+
+  ansible-with-dns:
+    include:
+      - terraform-cloudflare
+    reason: Run Ansible playbook with DNS secrets
+    secrets:
+      ANSIBLE_BECOME_PASSWORD: op://Example/Ansible/password
 ```
 
 `account` is optional and may be set at the top level, profile level, or secret
 level. The precedence is per-secret `account`, then profile `account`, then
 top-level `account`, then `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`, then
 `my.1password.com`.
+
+Profiles may include other profiles. Includes are resolved in order; later
+includes and the selected profile override earlier secrets with the same alias.
+This keeps common secret bundles reusable without introducing a separate config
+concept.
 
 The caller runs the normal `exec` path with the default or named profile:
 

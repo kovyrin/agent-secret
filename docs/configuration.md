@@ -59,6 +59,8 @@ profiles:
         account: Fixture Preview
 
   ansible:
+    include:
+      - terraform-cloudflare
     reason: Run Ansible playbook
     ttl: 10m
     secrets:
@@ -81,7 +83,41 @@ Profile fields:
 - `reason`: optional if `--reason` is provided on the CLI.
 - `ttl`: optional approval TTL, such as `90s`, `2m`, or `10m`.
 - `account`: optional 1Password account override for all secrets in a profile.
-- `secrets`: required map of environment aliases to 1Password references.
+- `include`: optional list of profile names to merge before this profile.
+- `secrets`: map of environment aliases to 1Password references. Required
+  unless `include` contributes at least one secret.
+
+## Profile Includes
+
+Profiles can include other profiles to avoid repeating common secret bundles:
+
+```yaml
+profiles:
+  terraform-cloudflare:
+    reason: Terraform DNS management
+    ttl: 10m
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+
+  ansible:
+    secrets:
+      ANSIBLE_BECOME_PASSWORD: op://Example/Ansible/password
+
+  ansible-with-dns:
+    include:
+      - ansible
+      - terraform-cloudflare
+    reason: Run Ansible playbook with DNS changes
+```
+
+Includes are resolved in order. Later included profiles override earlier
+secrets with the same alias, and the selected profile overrides all included
+profiles. `reason` and `ttl` also follow that order: the last included value is
+used unless the selected profile sets its own value.
+
+Each included secret keeps the account chosen by the profile that defined it.
+If the selected profile needs a different account or ref for a secret, redeclare
+that alias in its own `secrets` map.
 
 Secret entries can be scalar references:
 

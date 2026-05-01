@@ -212,11 +212,20 @@ profiles:
         account: Fixture Preview
 
   ansible:
+    include:
+      - terraform-cloudflare
     reason: Run Ansible playbook
     secrets:
       ANSIBLE_BECOME_PASSWORD: op://Example/Ansible/password
       CADDY_TOKEN: op://Example/Caddy/token
 ```
+
+Profiles may include other profiles with `include`. Included profiles are
+resolved in order; later includes and the selected profile override earlier
+secrets with the same alias. The selected profile's `reason` and `ttl` become
+request defaults. Its `account` applies to its own secrets and CLI `--secret`
+additions. Included secrets keep the account selected by the profile that
+defined them unless the selected profile overrides that secret alias.
 
 `account` is optional. The precedence is per-secret `account`, then profile
 `account`, then top-level `account`, then `OP_ACCOUNT` /

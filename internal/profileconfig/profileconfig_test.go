@@ -89,6 +89,136 @@ profiles:
 	}
 }
 
+func TestLoadIncludesProfiles(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+account: Default Account
+profiles:
+  base:
+    account: Base Account
+    reason: Base reason
+    ttl: 5m
+    secrets:
+      BASE_TOKEN: op://Example/Base/token
+      OVERRIDE_TOKEN: op://Example/Base/override
+  frigate:
+    reason: Frigate reason
+    ttl: 7m
+    secrets:
+      FRIGATE_TOKEN: op://Example/Frigate/token
+      OVERRIDE_TOKEN: op://Example/Frigate/override
+  deploy:
+    include:
+      - base
+      - frigate
+    account: Deploy Account
+    reason: Deploy reason
+    ttl: 10m
+    secrets:
+      LOCAL_TOKEN: op://Example/Deploy/token
+      OVERRIDE_TOKEN: op://Example/Deploy/override
+`)
+
+	profile, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if profile.Account != "Deploy Account" {
+		t.Fatalf("Account = %q", profile.Account)
+	}
+	if profile.Reason != "Deploy reason" {
+		t.Fatalf("Reason = %q", profile.Reason)
+	}
+	if profile.TTL != 10*time.Minute {
+		t.Fatalf("TTL = %s", profile.TTL)
+	}
+	want := map[string]struct {
+		account string
+		ref     string
+	}{
+		"BASE_TOKEN":     {account: "Base Account", ref: "op://Example/Base/token"},
+		"FRIGATE_TOKEN":  {account: "Default Account", ref: "op://Example/Frigate/token"},
+		"LOCAL_TOKEN":    {account: "Deploy Account", ref: "op://Example/Deploy/token"},
+		"OVERRIDE_TOKEN": {account: "Deploy Account", ref: "op://Example/Deploy/override"},
+	}
+	if len(profile.Secrets) != len(want) {
+		t.Fatalf("secret count = %d, want %d: %+v", len(profile.Secrets), len(want), profile.Secrets)
+	}
+	for _, secret := range profile.Secrets {
+		expected, ok := want[secret.Alias]
+		if !ok {
+			t.Fatalf("unexpected secret: %+v", secret)
+		}
+		if secret.Account != expected.account || secret.Ref != expected.ref {
+			t.Fatalf("%s = account %q ref %q, want account %q ref %q", secret.Alias, secret.Account, secret.Ref, expected.account, expected.ref)
+		}
+	}
+}
+
+func TestLoadAllowsIncludeOnlyProfile(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  base:
+    reason: Base reason
+    ttl: 5m
+    secrets:
+      BASE_TOKEN: op://Example/Base/token
+  deploy:
+    include:
+      - base
+`)
+
+	profile, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if profile.Reason != "Base reason" || profile.TTL != 5*time.Minute {
+		t.Fatalf("included defaults not applied: reason=%q ttl=%s", profile.Reason, profile.TTL)
+	}
+	if len(profile.Secrets) != 1 || profile.Secrets[0].Alias != "BASE_TOKEN" {
+		t.Fatalf("included secrets not applied: %+v", profile.Secrets)
+	}
+}
+
+func TestLoadReportsIncludeErrors(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  deploy:
+    include:
+      - missing
+    secrets:
+      TOKEN: op://Example/Deploy/token
+`)
+	_, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if !errors.Is(err, ErrProfileNotFound) {
+		t.Fatalf("expected ErrProfileNotFound for missing include, got %v", err)
+	}
+
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  one:
+    include:
+      - two
+    secrets:
+      ONE_TOKEN: op://Example/One/token
+  two:
+    include:
+      - one
+    secrets:
+      TWO_TOKEN: op://Example/Two/token
+`)
+	_, err = Load(LoadOptions{Name: "one", StartDir: root})
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for include cycle, got %v", err)
+	}
+}
+
 func TestLoadUsesDefaultProfileWhenNameIsEmpty(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `

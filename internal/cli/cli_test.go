@@ -376,7 +376,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",
