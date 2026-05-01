@@ -209,6 +209,40 @@ NEXT=op://Example/Next/token
 	}
 }
 
+func TestParseExecEnvFileDoesNotLoadDefaultProfile(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: deploy
+profiles:
+  deploy:
+    reason: Default deploy
+    secrets:
+      DEFAULT_TOKEN: op://Example/Default/token
+`)
+	envPath := filepath.Join(root, ".env")
+	writeConfigFile(t, envPath, "PLAIN=kept\n")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	_, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Plain env file",
+		"--env-file", envPath,
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, request.ErrInvalidReference) {
+		t.Fatalf("expected plain-only env file not to load default profile, got %v", err)
+	}
+}
+
 func TestParseExecFiltersEnvFileSecretsWithOnly(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -251,6 +285,63 @@ PLAIN=kept
 	}
 }
 
+func TestParseExecCombinesProfileEnvFileSecretAndOnlyPredictably(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  deploy:
+    account: Profile Account
+    reason: Deploy
+    secrets:
+      PROFILE_KEEP: op://Example/Profile/keep
+      PROFILE_DROP: op://Example/Profile/drop
+`)
+	envPath := filepath.Join(root, ".env")
+	writeConfigFile(t, envPath, `
+FILE_KEEP=op://Example/File/keep
+FILE_DROP=op://Example/File/drop
+PLAIN=kept
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--profile", "deploy",
+		"--env-file", envPath,
+		"--only", "PROFILE_KEEP,FILE_KEEP",
+		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 3 {
+		t.Fatalf("secret count = %d, want 3: %+v", len(req.Secrets), req.Secrets)
+	}
+	for index, want := range []string{"PROFILE_KEEP", "EXPLICIT_TOKEN", "FILE_KEEP"} {
+		if req.Secrets[index].Alias != want {
+			t.Fatalf("secret %d alias = %q, want %q: %+v", index, req.Secrets[index].Alias, want, req.Secrets)
+		}
+		if req.Secrets[index].Account != "Profile Account" {
+			t.Fatalf("secret %d account = %q, want Profile Account: %+v", index, req.Secrets[index].Account, req.Secrets)
+		}
+	}
+	if got := lookupTestEnv(req.Env, "PLAIN"); got != "kept" {
+		t.Fatalf("PLAIN = %q, want kept", got)
+	}
+}
+
 func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -284,6 +375,60 @@ func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
 	for _, secret := range req.Secrets {
 		if secret.Account != "fixture.1password.com" {
 			t.Fatalf("%s account = %q, want fixture.1password.com: %+v", secret.Alias, secret.Account, req.Secrets)
+		}
+	}
+}
+
+func TestParseExecAccountPrecedenceInCombinedSources(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      PROFILE_TOKEN: op://Example/Profile/token
+      PROFILE_OVERRIDE:
+        ref: op://Example/Profile/override
+        account: Secret Account
+`)
+	envPath := filepath.Join(root, ".env")
+	writeConfigFile(t, envPath, "FILE_TOKEN=op://Example/File/token\n")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--profile", "deploy",
+		"--account", "CLI Account",
+		"--env-file", envPath,
+		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	got := make(map[string]string)
+	for _, secret := range command.ExecRequest.Secrets {
+		got[secret.Alias] = secret.Account
+	}
+	want := map[string]string{
+		"EXPLICIT_TOKEN":   "CLI Account",
+		"FILE_TOKEN":       "CLI Account",
+		"PROFILE_OVERRIDE": "Secret Account",
+		"PROFILE_TOKEN":    "CLI Account",
+	}
+	for alias, account := range want {
+		if got[alias] != account {
+			t.Fatalf("%s account = %q, want %q: %+v", alias, got[alias], account, command.ExecRequest.Secrets)
 		}
 	}
 }

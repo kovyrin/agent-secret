@@ -117,7 +117,7 @@ Safety rules:
   - --reason is required, trimmed, and capped at 240 characters.
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
-  - If no --profile, --secret, or secret-bearing --env-file is provided, exec uses default_profile from the discovered project config.
+  - If no --profile, --secret, or --env-file is provided, exec uses default_profile from the discovered project config.
   - --env-file PATH loads dotenv-style KEY=VALUE entries. op:// values become approved secret refs; other values are passed only to the child.
   - --only filters profile refs and env-file refs, but not deliberate one-off --secret refs.
   - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
@@ -147,7 +147,7 @@ Usage:
 Required:
 
   --reason TEXT       Human-readable reason shown to the approver and used for reuse matching. Required unless the profile sets reason.
-  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field. Required unless a profile supplies secrets or the project config sets default_profile.
+  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field. Required unless a profile, default_profile, or --env-file supplies secret refs.
   -- COMMAND [ARG...] Command argv to execute. The -- boundary is required.
 
 Flags:
@@ -301,8 +301,8 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 	childEnv := mergeEnv(os.Environ(), envFileValues.Plain)
 	childEnv = removeEnvKeys(childEnv, envFileValues.SecretAliases)
-	cliSecrets := append(slices.Clone(secrets.specs), envFileValues.Secrets...)
-	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, cliSecrets)
+	hasExplicitSource := len(secrets.specs) > 0 || len(envFiles.paths) > 0
+	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, hasExplicitSource)
 	if err != nil {
 		return Command{}, err
 	}
@@ -357,8 +357,8 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	return Command{Kind: KindExec, ExecRequest: req}, nil
 }
 
-func loadExecProfile(profileName string, configPath string, explicitSecrets []request.SecretSpec) (profileconfig.Profile, bool, error) {
-	if profileName == "" && len(explicitSecrets) > 0 {
+func loadExecProfile(profileName string, configPath string, hasExplicitSource bool) (profileconfig.Profile, bool, error) {
+	if profileName == "" && hasExplicitSource {
 		return profileconfig.Profile{}, false, nil
 	}
 

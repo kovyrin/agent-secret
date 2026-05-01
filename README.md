@@ -203,8 +203,8 @@ Projects can keep reusable secret bundles in `agent-secret.yml` or
 `.agent-secret.yml`. The file contains only 1Password refs and metadata, never
 resolved values. `agent-secret exec --profile NAME` discovers the config from
 the current directory or a parent. If `default_profile` is set, `agent-secret
-exec -- COMMAND` uses that profile when no `--profile` or `--secret` flags are
-provided.
+exec -- COMMAND` uses that profile when no `--profile`, `--secret`, or
+`--env-file` flags are provided.
 
 ```yaml
 version: 1

@@ -74,8 +74,8 @@ Top-level fields:
 
 - `version`: required. Must be `1`.
 - `account`: optional default 1Password account for all profiles in the file.
-- `default_profile`: optional profile name used when `exec` has no `--profile`
-  and no explicit `--secret`.
+- `default_profile`: optional profile name used when `exec` has no `--profile`,
+  no explicit `--secret`, and no `--env-file`.
 - `profiles`: required map of profile names to profile definitions.
 
 Profile fields:
