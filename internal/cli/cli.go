@@ -143,6 +143,7 @@ Required:
 Flags:
 
   --profile NAME      Load a named profile from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
+  --only ALIAS        Keep only selected profile aliases. Repeat or pass comma-separated aliases.
   --config PATH       Profile config path. Defaults to upward discovery from the current directory.
   --cwd DIR           Child working directory. Defaults to the caller cwd.
   --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
@@ -180,8 +181,10 @@ Project profiles:
 
     agent-secret exec -- terraform plan
     agent-secret exec --profile terraform-cloudflare -- terraform plan
+    agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- ansible-playbook site.yml
 
   --secret flags may be combined with --profile for one-off additional refs.
+  --only filters profile-loaded aliases before one-off --secret refs are added.
   Explicit --secret-only invocations do not load default_profile.
   CLI --reason and --ttl override profile defaults.
   Account precedence is per-secret account, profile account, top-level account,
@@ -242,6 +245,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	var secrets secretFlags
+	var only onlyFlags
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	reason := fs.String("reason", "", "approval reason")
@@ -254,6 +258,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	jsonOutput := fs.Bool("json", false, "unsupported")
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&secrets, "secret", "secret mapping")
+	fs.Var(&only, "only", "profile alias filter")
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
@@ -273,6 +278,9 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
+	if len(only.aliases) > 0 && !loadedProfile {
+		return Command{}, fmt.Errorf("%w: --only requires a profile or default_profile", ErrInvalidArguments)
+	}
 	if loadedProfile && effectiveReason == "" {
 		effectiveReason = profile.Reason
 	}
@@ -280,7 +288,10 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		effectiveTTL = profile.TTL
 	}
 	if loadedProfile {
-		profileSecrets := slices.Clone(profile.Secrets)
+		profileSecrets, err := filterProfileSecrets(profile.Secrets, only.aliases)
+		if err != nil {
+			return Command{}, err
+		}
 		profileSecrets = append(profileSecrets, applyDefaultAccount(effectiveSecrets, profile.Account)...)
 		effectiveSecrets = profileSecrets
 	}
@@ -338,6 +349,34 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 		updated = append(updated, secret)
 	}
 	return updated
+}
+
+func filterProfileSecrets(secrets []request.SecretSpec, aliases []string) ([]request.SecretSpec, error) {
+	if len(aliases) == 0 {
+		return slices.Clone(secrets), nil
+	}
+
+	allowed := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		allowed[alias] = struct{}{}
+	}
+
+	filtered := make([]request.SecretSpec, 0, len(allowed))
+	for _, secret := range secrets {
+		if _, ok := allowed[secret.Alias]; ok {
+			filtered = append(filtered, secret)
+			delete(allowed, secret.Alias)
+		}
+	}
+	if len(allowed) > 0 {
+		missing := make([]string, 0, len(allowed))
+		for alias := range allowed {
+			missing = append(missing, alias)
+		}
+		slices.Sort(missing)
+		return nil, fmt.Errorf("%w: --only alias not found in profile: %s", ErrInvalidArguments, strings.Join(missing, ", "))
+	}
+	return filtered, nil
 }
 
 func parseDaemon(args []string) (Command, error) {
@@ -408,6 +447,25 @@ func (s *secretFlags) Set(value string) error {
 		return fmt.Errorf("%w: --secret must be ALIAS=op://example", ErrInvalidArguments)
 	}
 	s.specs = append(s.specs, request.SecretSpec{Alias: alias, Ref: ref})
+	return nil
+}
+
+type onlyFlags struct {
+	aliases []string
+}
+
+func (o *onlyFlags) String() string {
+	return strings.Join(o.aliases, ",")
+}
+
+func (o *onlyFlags) Set(value string) error {
+	for rawAlias := range strings.SplitSeq(value, ",") {
+		alias := strings.TrimSpace(rawAlias)
+		if alias == "" {
+			return fmt.Errorf("%w: --only must name non-empty aliases", ErrInvalidArguments)
+		}
+		o.aliases = append(o.aliases, alias)
+	}
 	return nil
 }
 

@@ -514,7 +514,7 @@ Status: Complete
 - Added strict `exec` parsing for required `--reason`, repeated
   `--secret ALIAS=op://...`, `--` argv boundary, TTLs, `--override-env`, and
   `--force-refresh`; `--json`, shell-string command input, and `--reuse` are
-  rejected.
+  rejected. Added `--only` for profile alias subsets.
 - Added project-local `agent-secret.yml` / `.agent-secret.yml` profile loading
   for named secret bundles, config `default_profile`, profile default reasons,
   profile default TTLs, config/profile/secret account defaults, and nested

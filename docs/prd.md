@@ -183,8 +183,9 @@ agent-secret exec --profile terraform-cloudflare -- terraform plan
 The broker approves the declared refs before the wrapped command runs, avoids
 printing values, and lets CLI `--reason`, `--ttl`, and additional `--secret`
 flags override or extend a named profile for one-off use. Additional explicit
-secrets inherit the loaded profile account. Explicit `--secret`-only
-invocations do not load `default_profile`.
+secrets inherit the loaded profile account. `--only` can filter profile-loaded
+aliases for dynamic subsets before one-off `--secret` refs are added. Explicit
+`--secret`-only invocations do not load `default_profile`.
 
 ### Use Case 4: Git Credential Helper
 

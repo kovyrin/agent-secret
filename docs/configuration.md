@@ -168,6 +168,8 @@ Current flags:
 - `--secret ALIAS=op://vault/item[/section]/field`: explicit secret mapping.
   Repeat for multiple secrets.
 - `--profile NAME`: load a named profile from the project config.
+- `--only ALIAS[,ALIAS...]`: filter loaded profile secrets to selected aliases.
+  Repeat to add more aliases.
 - `--config PATH`: use a specific config file.
 - `--cwd DIR`: run the child process from `DIR`.
 - `--ttl DURATION`: approval TTL. Defaults to profile `ttl` or `2m`; allowed
@@ -185,7 +187,8 @@ Unsupported by design:
 
 Explicit `--secret` flags may be combined with `--profile` for one-off
 additional refs. In that mode, explicit secrets inherit the loaded profile
-account. Explicit `--secret`-only invocations do not load `default_profile`.
+account. `--only` filters profile-loaded aliases before one-off `--secret` refs
+are added. Explicit `--secret`-only invocations do not load `default_profile`.
 
 ## Other Commands
 

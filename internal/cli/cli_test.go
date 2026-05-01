@@ -100,6 +100,98 @@ profiles:
 	}
 }
 
+func TestParseExecFiltersProfileSecretsWithOnly(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "ansible-playbook")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  ansible:
+    account: Ansible Account
+    reason: Profile reason
+    ttl: 10m
+    secrets:
+      A_TOKEN: op://Example/A/token
+      B_TOKEN: op://Example/B/token
+      C_TOKEN: op://Example/C/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--profile", "ansible",
+		"--only", "B_TOKEN,A_TOKEN",
+		"--secret", "EXTRA_TOKEN=op://Example/Extra/token",
+		"--",
+		"ansible-playbook", "site.yml",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 3 {
+		t.Fatalf("secret count = %d, want 3: %+v", len(req.Secrets), req.Secrets)
+	}
+	for index, want := range []string{"A_TOKEN", "B_TOKEN", "EXTRA_TOKEN"} {
+		if req.Secrets[index].Alias != want {
+			t.Fatalf("secret %d alias = %q, want %q: %+v", index, req.Secrets[index].Alias, want, req.Secrets)
+		}
+		if req.Secrets[index].Account != "Ansible Account" {
+			t.Fatalf("secret %d account = %q, want profile account", index, req.Secrets[index].Account)
+		}
+	}
+}
+
+func TestParseExecRejectsInvalidOnlyAlias(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  one:
+    reason: One
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	_, err := parser.Parse([]string{
+		"exec",
+		"--profile", "one",
+		"--only", "MISSING_TOKEN",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, ErrInvalidArguments) {
+		t.Fatalf("expected ErrInvalidArguments for missing --only alias, got %v", err)
+	}
+
+	_, err = parser.Parse([]string{
+		"exec",
+		"--reason", "Explicit only",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--only", "TOKEN",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, ErrInvalidArguments) {
+		t.Fatalf("expected ErrInvalidArguments for --only without loaded profile, got %v", err)
+	}
+}
+
 func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -376,7 +468,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "--only", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",
