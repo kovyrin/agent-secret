@@ -145,8 +145,9 @@ Agent Secret chooses the account for each secret independently:
 1. Secret-level `account`.
 2. Profile-level `account`.
 3. Top-level `account`.
-4. `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT`.
-5. Built-in default `my.1password.com`.
+4. CLI `--account`.
+5. `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT`.
+6. Built-in default `my.1password.com`.
 
 The account is part of the secret identity used for resolution, reusable
 approval matching, and in-memory caching. The same `op://` reference in two
@@ -171,8 +172,11 @@ Current flags:
   with `op://` become approved secret refs; other values are passed to the
   child process as plain environment entries. Repeat for multiple files.
 - `--profile NAME`: load a named profile from the project config.
-- `--only ALIAS[,ALIAS...]`: filter loaded profile secrets to selected aliases.
-  Repeat to add more aliases.
+- `--only ALIAS[,ALIAS...]`: filter loaded profile secrets and env-file secret
+  refs to selected aliases. Repeat to add more aliases. Deliberate one-off
+  `--secret` refs are not filtered.
+- `--account ACCOUNT`: default 1Password account for refs that do not already
+  have a config/profile account.
 - `--config PATH`: use a specific config file.
 - `--cwd DIR`: run the child process from `DIR`.
 - `--ttl DURATION`: approval TTL. Defaults to profile `ttl` or `2m`; allowed
@@ -190,8 +194,9 @@ Unsupported by design:
 
 Explicit `--secret` flags may be combined with `--profile` for one-off
 additional refs. In that mode, explicit secrets inherit the loaded profile
-account. `--only` filters profile-loaded aliases before one-off `--secret` refs
-are added. Explicit `--secret`-only invocations do not load `default_profile`.
+account. `--only` filters profile-loaded aliases and env-file secret refs
+before one-off `--secret` refs are added. Explicit `--secret`-only invocations
+do not load `default_profile`.
 
 `--env-file` may be combined with `--profile` or `--secret`. It is intended for
 migrating `op run --env-file` workflows without rewriting every caller at once:
@@ -206,7 +211,8 @@ Each env file is parsed before approval. Entries whose values start with
 variables and are never sent to the daemon. Later env files override earlier
 files. Env-file keys override the caller environment for the child process, and
 env-file secret aliases are removed from the base child environment before
-approved values are injected.
+approved values are injected. Use `--only` with env files when one file contains
+refs for multiple command surfaces, such as beta and production deploy refs.
 
 ## Other Commands
 

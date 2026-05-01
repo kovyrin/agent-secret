@@ -171,8 +171,11 @@ Current `exec` flags:
   with `op://` become approved secret refs; other values are passed to the
   child process as plain environment entries. Repeat for multiple files.
 - `--profile NAME`: load a named project profile.
-- `--only ALIAS[,ALIAS...]`: filter loaded profile secrets to selected aliases.
-  Repeat to add more aliases.
+- `--only ALIAS[,ALIAS...]`: filter loaded profile secrets and env-file secret
+  refs to selected aliases. Repeat to add more aliases. Deliberate one-off
+  `--secret` refs are not filtered.
+- `--account ACCOUNT`: default 1Password account for refs that do not already
+  have a config/profile account.
 - `--config PATH`: use a specific config file instead of upward discovery.
 - `--cwd DIR`: run the child process from `DIR`.
 - `--ttl DURATION`: approval TTL. Defaults to profile `ttl` or `2m`; allowed
@@ -237,7 +240,7 @@ additions. Included secrets keep the account selected by the profile that
 defined them unless the selected profile overrides that secret alias.
 
 `account` is optional. The precedence is per-secret `account`, then profile
-`account`, then top-level `account`, then `OP_ACCOUNT` /
+`account`, then top-level `account`, then CLI `--account`, then `OP_ACCOUNT` /
 `AGENT_SECRET_1PASSWORD_ACCOUNT`, then `my.1password.com`.
 
 Run a profile with:
@@ -252,8 +255,10 @@ agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- \
 `--secret` flags can be combined with a profile for one-off additional refs; in
 that mode, explicit secrets inherit the loaded profile account. Explicit
 `--secret`-only invocations do not load `default_profile`. CLI `--reason` and
-`--ttl` override profile defaults. `--only` filters profile-loaded aliases
-before one-off `--secret` refs are added.
+`--ttl` override profile defaults. CLI `--account` supplies a default account
+for refs that do not already have a config/profile account. `--only` filters
+profile-loaded aliases and env-file secret refs before one-off `--secret` refs
+are added.
 
 `--env-file` is the migration path for commands that currently use
 `op run --env-file`. It parses dotenv-style entries before approval. Secret refs
@@ -261,7 +266,9 @@ such as `TOKEN=op://Example/Service/token` are requested from the daemon, while
 plain entries such as `RAILS_ENV=production` are passed only to the child
 process. Later env files override earlier files. Env-file keys override the
 caller environment for that child, and env-file secret aliases are removed from
-the base child environment before approved values are injected.
+the base child environment before approved values are injected. `--only` can be
+used with env files to request a subset of their `op://` refs, for example when
+one file contains both beta and production refs.
 
 See [Configuration Reference](docs/configuration.md) for the full config schema,
 discovery rules, account precedence, and command reference.

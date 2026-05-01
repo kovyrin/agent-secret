@@ -209,6 +209,121 @@ NEXT=op://Example/Next/token
 	}
 }
 
+func TestParseExecFiltersEnvFileSecretsWithOnly(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	envPath := filepath.Join(root, ".env")
+	writeConfigFile(t, envPath, `
+BETA_TOKEN=op://Example/Beta/token
+PRODUCTION_TOKEN=op://Example/Production/token
+PLAIN=kept
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("PRODUCTION_TOKEN", "parent-production")
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Env file command",
+		"--env-file", envPath,
+		"--only", "BETA_TOKEN",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "BETA_TOKEN" {
+		t.Fatalf("secrets = %+v, want only BETA_TOKEN", req.Secrets)
+	}
+	if got := lookupTestEnv(req.Env, "PRODUCTION_TOKEN"); got != "" {
+		t.Fatalf("filtered env-file secret alias survived in child base env: PRODUCTION_TOKEN=%q", got)
+	}
+	if got := lookupTestEnv(req.Env, "PLAIN"); got != "kept" {
+		t.Fatalf("PLAIN = %q, want kept", got)
+	}
+}
+
+func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	envPath := filepath.Join(root, ".env")
+	writeConfigFile(t, envPath, "FILE_TOKEN=op://Example/File/token\n")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Account command",
+		"--account", "fixture.1password.com",
+		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
+		"--env-file", envPath,
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 2 {
+		t.Fatalf("secret count = %d, want 2: %+v", len(req.Secrets), req.Secrets)
+	}
+	for _, secret := range req.Secrets {
+		if secret.Account != "fixture.1password.com" {
+			t.Fatalf("%s account = %q, want fixture.1password.com: %+v", secret.Alias, secret.Account, req.Secrets)
+		}
+	}
+}
+
+func TestParseExecAccountAppliesToProfileSecretsWithoutConfigAccount(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy with account flag
+    secrets:
+      PROFILE_TOKEN: op://Example/Profile/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--profile", "deploy",
+		"--account", "fixture.1password.com",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Account != "fixture.1password.com" {
+		t.Fatalf("secrets = %+v, want profile secret with CLI account", req.Secrets)
+	}
+}
+
 func TestParseExecEnvFileSecretsInheritProfileAccount(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -234,6 +349,7 @@ profiles:
 	command, err := parser.Parse([]string{
 		"exec",
 		"--profile", "deploy",
+		"--account", "CLI Account",
 		"--env-file", envPath,
 		"--",
 		"tool",
@@ -524,6 +640,11 @@ func TestParseExecRejectsUnsafeOrUnsupportedForms(t *testing.T) {
 			args: []string{"exec", "--reason", "reason", "--cwd", dir, "--env-file", " ", "--", "tool"},
 			want: ErrInvalidArguments,
 		},
+		{
+			name: "only without bulk source",
+			args: []string{"exec", "--reason", "reason", "--cwd", dir, "--secret", "TOKEN=op://Example/Item/token", "--only", "TOKEN", "--", "tool"},
+			want: ErrInvalidArguments,
+		},
 	}
 
 	for _, tt := range tests {
@@ -577,7 +698,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "--account", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",

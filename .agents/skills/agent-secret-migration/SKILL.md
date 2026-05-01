@@ -100,9 +100,12 @@ agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- \
 ```
 
 Account precedence is per-secret `account`, profile `account`, top-level
-`account`, `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`, then the Agent Secret
-default. Prefer config accounts over shell environment when the project needs a
-specific 1Password account.
+`account`, CLI `--account`, `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`,
+then the Agent Secret default. Prefer config accounts over shell environment
+when the project needs a specific 1Password account. Use `--account` for
+one-off wrappers or env-file migrations that should not require a project
+config yet; it also works with profiles whose config does not already name an
+account.
 
 ## Replacement Patterns
 
@@ -144,6 +147,22 @@ In env files, entries whose values start with `op://` become approved secret
 refs. Other entries are passed only to the child command as plain environment
 variables. Later `--env-file` values override earlier files, matching the usual
 dotenv migration expectation.
+
+Use `--only` when one env file contains refs for multiple command surfaces:
+
+```bash
+agent-secret exec \
+  --reason "Deploy beta" \
+  --account fixture.1password.com \
+  --env-file .env.deploy.op \
+  --only VERCEL_DEPLOY_HOOK_URL_BETA,VERCEL_TOKEN \
+  -- npm run deploy:beta
+```
+
+`--only` filters profile and env-file secret refs. It does not filter deliberate
+one-off `--secret` flags. If an env file has no `op://` refs, skip Agent Secret
+and run the command directly instead of using Agent Secret as a generic dotenv
+runner.
 
 Replace loader scripts by keeping the child command under Agent Secret:
 

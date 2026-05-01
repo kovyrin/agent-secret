@@ -117,9 +117,11 @@ Safety rules:
   - --reason is required, trimmed, and capped at 240 characters.
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
-  - If no --profile or --secret is provided, exec uses default_profile from the discovered project config.
+  - If no --profile, --secret, or secret-bearing --env-file is provided, exec uses default_profile from the discovered project config.
   - --env-file PATH loads dotenv-style KEY=VALUE entries. op:// values become approved secret refs; other values are passed only to the child.
+  - --only filters profile refs and env-file refs, but not deliberate one-off --secret refs.
   - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
+  - --account sets a default 1Password account for CLI-provided refs when config does not already provide one.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
@@ -151,8 +153,9 @@ Required:
 Flags:
 
   --profile NAME      Load a named profile from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
-  --only ALIAS        Keep only selected profile aliases. Repeat or pass comma-separated aliases.
+  --only ALIAS        Keep only selected profile/env-file aliases. Repeat or pass comma-separated aliases.
   --env-file PATH     Load dotenv-style entries. Repeat for multiple files; later files win.
+  --account ACCOUNT   Default 1Password account when config does not provide one.
   --config PATH       Profile config path. Defaults to upward discovery from the current directory.
   --cwd DIR           Child working directory. Defaults to the caller cwd.
   --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
@@ -197,11 +200,14 @@ Project profiles:
   op:// are treated as secret refs; other values are passed to the child as
   plain environment entries. When multiple env files define the same key, the
   later file wins. Env-file keys override the caller environment for that child.
-  --only filters profile-loaded aliases before one-off --secret refs are added.
+  --account applies when a loaded profile, config, or explicit secret entry does
+  not already supply an account default.
+  --only filters profile-loaded aliases and env-file secret aliases before
+  one-off --secret refs are added.
   Explicit --secret-only invocations do not load default_profile.
   CLI --reason and --ttl override profile defaults.
   Account precedence is per-secret account, profile account, top-level account,
-  OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
+  --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
   Included profiles are resolved in order. Later includes and the selected
   profile override earlier secrets with the same alias.
 
@@ -267,6 +273,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	ttl := fs.Duration("ttl", 0, "approval ttl")
 	profileName := fs.String("profile", "", "profile name")
 	configPath := fs.String("config", "", "profile config path")
+	account := fs.String("account", "", "1Password account")
 	overrideEnv := fs.Bool("override-env", false, "override existing env aliases")
 	forceRefresh := fs.Bool("force-refresh", false, "refresh reusable approval values")
 	jsonOutput := fs.Bool("json", false, "unsupported")
@@ -288,20 +295,20 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 	effectiveReason := *reason
 	effectiveTTL := *ttl
-	effectiveSecrets := secrets.specs
 	envFileValues, err := loadEnvFiles(envFiles.paths)
 	if err != nil {
 		return Command{}, err
 	}
-	effectiveSecrets = append(slices.Clone(effectiveSecrets), envFileValues.Secrets...)
 	childEnv := mergeEnv(os.Environ(), envFileValues.Plain)
 	childEnv = removeEnvKeys(childEnv, envFileValues.SecretAliases)
-	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, effectiveSecrets)
+	cliSecrets := append(slices.Clone(secrets.specs), envFileValues.Secrets...)
+	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, cliSecrets)
 	if err != nil {
 		return Command{}, err
 	}
-	if len(only.aliases) > 0 && !loadedProfile {
-		return Command{}, fmt.Errorf("%w: --only requires a profile or default_profile", ErrInvalidArguments)
+	onlyActive := len(only.aliases) > 0
+	if onlyActive && !loadedProfile && len(envFileValues.Secrets) == 0 {
+		return Command{}, fmt.Errorf("%w: --only requires a profile, default_profile, or --env-file secret refs", ErrInvalidArguments)
 	}
 	if loadedProfile && effectiveReason == "" {
 		effectiveReason = profile.Reason
@@ -309,13 +316,26 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if loadedProfile && effectiveTTL == 0 {
 		effectiveTTL = profile.TTL
 	}
+	remainingOnly := newOnlySet(only.aliases)
+	envFileSecrets := filterSecretsByOnly(envFileValues.Secrets, remainingOnly, onlyActive)
+	var profileSecrets []request.SecretSpec
 	if loadedProfile {
-		profileSecrets, err := filterProfileSecrets(profile.Secrets, only.aliases)
-		if err != nil {
-			return Command{}, err
+		profileSecrets = filterSecretsByOnly(profile.Secrets, remainingOnly, onlyActive)
+	}
+	if onlyActive && len(remainingOnly) > 0 {
+		return Command{}, missingOnlyError(remainingOnly)
+	}
+
+	var effectiveSecrets []request.SecretSpec
+	if loadedProfile {
+		profileSecrets = applyDefaultAccount(profileSecrets, *account)
+		cliAccount := profile.Account
+		if strings.TrimSpace(cliAccount) == "" {
+			cliAccount = *account
 		}
-		profileSecrets = append(profileSecrets, applyDefaultAccount(effectiveSecrets, profile.Account)...)
-		effectiveSecrets = profileSecrets
+		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(secrets.specs), envFileSecrets...), cliAccount)...)
+	} else {
+		effectiveSecrets = append(applyDefaultAccount(slices.Clone(secrets.specs), *account), applyDefaultAccount(envFileSecrets, *account)...)
 	}
 
 	req, err := request.NewExec(request.ExecOptions{
@@ -361,6 +381,7 @@ func loadExecProfile(profileName string, configPath string, explicitSecrets []re
 }
 
 func applyDefaultAccount(secrets []request.SecretSpec, account string) []request.SecretSpec {
+	account = strings.TrimSpace(account)
 	if account == "" || len(secrets) == 0 {
 		return secrets
 	}
@@ -372,6 +393,40 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 		updated = append(updated, secret)
 	}
 	return updated
+}
+
+func newOnlySet(aliases []string) map[string]struct{} {
+	if len(aliases) == 0 {
+		return nil
+	}
+	allowed := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		allowed[alias] = struct{}{}
+	}
+	return allowed
+}
+
+func filterSecretsByOnly(secrets []request.SecretSpec, remaining map[string]struct{}, active bool) []request.SecretSpec {
+	if !active {
+		return slices.Clone(secrets)
+	}
+	filtered := make([]request.SecretSpec, 0, len(secrets))
+	for _, secret := range secrets {
+		if _, ok := remaining[secret.Alias]; ok {
+			filtered = append(filtered, secret)
+			delete(remaining, secret.Alias)
+		}
+	}
+	return filtered
+}
+
+func missingOnlyError(remaining map[string]struct{}) error {
+	missing := make([]string, 0, len(remaining))
+	for alias := range remaining {
+		missing = append(missing, alias)
+	}
+	slices.Sort(missing)
+	return fmt.Errorf("%w: --only alias not found in profile or env file: %s", ErrInvalidArguments, strings.Join(missing, ", "))
 }
 
 type envFileValues struct {
@@ -462,34 +517,6 @@ func removeEnvKeys(env []string, keys []string) []string {
 		out = append(out, entry)
 	}
 	return out
-}
-
-func filterProfileSecrets(secrets []request.SecretSpec, aliases []string) ([]request.SecretSpec, error) {
-	if len(aliases) == 0 {
-		return slices.Clone(secrets), nil
-	}
-
-	allowed := make(map[string]struct{}, len(aliases))
-	for _, alias := range aliases {
-		allowed[alias] = struct{}{}
-	}
-
-	filtered := make([]request.SecretSpec, 0, len(allowed))
-	for _, secret := range secrets {
-		if _, ok := allowed[secret.Alias]; ok {
-			filtered = append(filtered, secret)
-			delete(allowed, secret.Alias)
-		}
-	}
-	if len(allowed) > 0 {
-		missing := make([]string, 0, len(allowed))
-		for alias := range allowed {
-			missing = append(missing, alias)
-		}
-		slices.Sort(missing)
-		return nil, fmt.Errorf("%w: --only alias not found in profile: %s", ErrInvalidArguments, strings.Join(missing, ", "))
-	}
-	return filtered, nil
 }
 
 func parseDaemon(args []string) (Command, error) {
