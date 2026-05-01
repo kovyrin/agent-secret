@@ -231,7 +231,7 @@ func (b *Broker) Stop(ctx context.Context) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.active = make(map[string]*activeExec)
-	b.cache = policy.NewSecretCache()
+	b.cache.Clear()
 	b.store = policy.NewStore(b.now)
 }
 
@@ -245,26 +245,14 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 	}
 
 	var values map[string]string
+	var valueErr error
 	if req.ForceRefresh {
-		refValues, err := b.resolveUniqueRefs(ctx, req.Secrets)
-		if err != nil {
-			return ExecGrant{}, err
-		}
-		values = fanoutValues(req.Secrets, refValues)
-		for identity, value := range refValues {
-			b.cache.Put(approval.ID, identity.ref, identity.account, value)
-		}
-		event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
-		event.ApprovalID = approval.ID
-		if err := b.audit.Record(ctx, event); err != nil {
-			return ExecGrant{}, fmt.Errorf("%w: %w", ErrAuditRequired, err)
-		}
+		values, valueErr = b.refreshedReusableValues(ctx, approval.ID, req)
 	} else {
-		var err error
-		values, err = b.cachedValues(approval.ID, req.Secrets)
-		if err != nil {
-			return ExecGrant{}, err
-		}
+		values, valueErr = b.cachedValues(approval.ID, req.Secrets)
+	}
+	if valueErr != nil {
+		return ExecGrant{}, valueErr
 	}
 
 	return ExecGrant{
@@ -314,8 +302,9 @@ func (b *Broker) freshGrant(
 			return ExecGrant{}, err
 		}
 		approvalID = approval.ID
-		for identity, value := range refValues {
-			b.cache.Put(approvalID, identity.ref, identity.account, value)
+		if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
+			b.cache.ClearScope(approvalID)
+			return ExecGrant{}, err
 		}
 	}
 
@@ -355,6 +344,37 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, secrets []request.Secret
 	}
 
 	return resolved, nil
+}
+
+func (b *Broker) refreshedReusableValues(
+	ctx context.Context,
+	approvalID string,
+	req request.ExecRequest,
+) (map[string]string, error) {
+	refValues, err := b.resolveUniqueRefs(ctx, req.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	values := fanoutValues(req.Secrets, refValues)
+	if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
+		b.cache.ClearScope(approvalID)
+		return nil, err
+	}
+	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
+	event.ApprovalID = approvalID
+	if err := b.audit.Record(ctx, event); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	}
+	return values, nil
+}
+
+func (b *Broker) cacheResolvedValues(approvalID string, refValues map[secretIdentity]string) error {
+	for identity, value := range refValues {
+		if err := b.cache.Put(approvalID, identity.ref, identity.account, value); err != nil {
+			return fmt.Errorf("cache approved secret in locked memory: %w", err)
+		}
+	}
+	return nil
 }
 
 func (b *Broker) cachedValues(approvalID string, secrets []request.Secret) (map[string]string, error) {

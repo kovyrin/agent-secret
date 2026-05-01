@@ -12,6 +12,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
+	"github.com/kovyrin/agent-secret/internal/processhardening"
 )
 
 func main() {
@@ -19,6 +20,11 @@ func main() {
 }
 
 func run() int {
+	if err := processhardening.DisableCoreDumps(); err != nil {
+		stderrf("agent-secretd: harden process: %v\n", err)
+		return 1
+	}
+
 	socketPath, err := daemon.DefaultSocketPath()
 	if err != nil {
 		stderrf("agent-secretd: resolve default socket path: %v\n", err)

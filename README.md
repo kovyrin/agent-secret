@@ -251,18 +251,74 @@ before one-off `--secret` refs are added.
 See [Configuration Reference](docs/configuration.md) for the full config schema,
 discovery rules, account precedence, and command reference.
 
+## Security Model
+
+Agent Secret is designed to keep raw secret values away from coding agents while
+still letting a human approve narrowly scoped commands. It is a local broker, not
+a sandbox. The approved child process receives the secret and can use, print, or
+forward it like any other process environment value.
+
+### Trusted Components
+
+- 1Password remains the source of truth for secret storage and account
+  authentication.
+- `agent-secretd` owns approvals, policy checks, 1Password SDK access, and
+  reusable in-memory secret cache entries.
+- The native macOS approver is trusted UI. It shows the command name, full
+  command details, working directory, reason, requested refs, TTL, and reusable
+  approval scope before a value is fetched.
+- The CLI is a trusted launcher. In `exec` mode it asks the daemon for approved
+  values, starts the child process, and passes stdout/stderr through unchanged.
+
+### What Is Protected
+
+- Project config and command flags contain 1Password refs only, never resolved
+  values.
+- Audit logs contain metadata only: command, cwd, reason, aliases, refs, policy
+  decision, PID, exit status, and timing. They never contain secret values.
+- The daemon and CLI disable core dumps on startup with `RLIMIT_CORE=0`. Child
+  commands launched through `agent-secret exec` inherit that no-core-dump limit.
+- Reusable approval cache values are stored in daemon memory backed by anonymous
+  `mmap`, pinned with `mlock`, and zeroed before `munlock`/`munmap`.
+- Reusable approvals fail closed if the daemon cannot put a cached secret into
+  locked memory. The daemon does not silently fall back to a plain Go string
+  cache.
+- Cached values are cleared when their reusable approval scope is replaced,
+  cleared, refreshed, or when the daemon stops.
+
+### Remaining Plaintext Boundaries
+
+Some plaintext copies are still unavoidable in the current `exec` design:
+
+- The 1Password Go SDK returns resolved values as Go strings.
+- The daemon protocol currently serializes approved env values to the CLI.
+- `exec.Cmd.Env` ultimately needs `KEY=value` strings so the operating system
+  can give the child process its environment.
+- Once the child starts, the child process and its descendants can read the
+  approved environment values.
+
+The locked-memory cache reduces the lifetime and swap/core-dump exposure of
+daemon-held reusable values. It does not make Go string copies, JSON protocol
+payloads, or child-process environments magically secret.
+
+### Out Of Scope
+
+- A compromised macOS user session, root account, kernel, 1Password app, or
+  approved child process can still exfiltrate secrets.
+- Agent Secret does not police what an approved command does after launch.
+- Agent Secret does not hide values from the operating system APIs required to
+  create the approved child environment.
+- Agent Secret does not persist approval state or secret values. The audit log is
+  the only durable state.
+
 ## Default Safety Posture
 
-- 1Password remains the source of truth for storage and account authentication.
-- The broker enforces request-level policy: exact refs, reason, command, cwd,
-  TTL, max reads, and delivery mode.
 - Default delivery is CLI-supervised `exec` mode.
-- Raw secret output is not provided.
-- Audit logs contain metadata only and never secret values.
-- The macOS approver should also emit non-secret diagnostics to Apple Unified
-  Logging for local troubleshooting.
-- `agent-secret --help` should be detailed enough for coding agents to discover
-  safe usage without reading these docs.
+- Raw secret output is not provided by the broker.
+- The macOS approver emits non-secret diagnostics to Apple Unified Logging for
+  local troubleshooting.
+- `agent-secret --help` is detailed enough for coding agents to discover safe
+  usage without reading these docs.
 - Future Go code must be covered by project lint and pre-commit paths.
 - Integration tests must use real captured API and OS error shapes, but captured
   fixtures must not contain secret values.
