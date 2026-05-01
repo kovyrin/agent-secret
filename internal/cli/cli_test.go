@@ -149,6 +149,110 @@ profiles:
 	}
 }
 
+func TestParseExecBuildsRequestFromEnvFiles(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	firstEnv := filepath.Join(root, "first.env")
+	secondEnv := filepath.Join(root, "second.env")
+	writeConfigFile(t, firstEnv, `
+TOKEN=op://Example/Item/token
+PLAIN=first
+OVERRIDE=first
+REMOVED=op://Example/Old/token
+`)
+	writeConfigFile(t, secondEnv, `
+OVERRIDE=second
+REMOVED=plain-now
+NEXT=op://Example/Next/token
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("TOKEN", "parent-token")
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Env file command",
+		"--env-file", firstEnv,
+		"--env-file", secondEnv,
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 2 {
+		t.Fatalf("secret count = %d, want 2: %+v", len(req.Secrets), req.Secrets)
+	}
+	for index, want := range []string{"NEXT", "TOKEN"} {
+		if req.Secrets[index].Alias != want {
+			t.Fatalf("secret %d alias = %q, want %q: %+v", index, req.Secrets[index].Alias, want, req.Secrets)
+		}
+	}
+	if got := lookupTestEnv(req.Env, "TOKEN"); got != "" {
+		t.Fatalf("env-file secret alias survived in child base env: TOKEN=%q", got)
+	}
+	if got := lookupTestEnv(req.Env, "PLAIN"); got != "first" {
+		t.Fatalf("PLAIN = %q, want first", got)
+	}
+	if got := lookupTestEnv(req.Env, "OVERRIDE"); got != "second" {
+		t.Fatalf("OVERRIDE = %q, want second", got)
+	}
+	if got := lookupTestEnv(req.Env, "REMOVED"); got != "plain-now" {
+		t.Fatalf("REMOVED = %q, want plain-now", got)
+	}
+}
+
+func TestParseExecEnvFileSecretsInheritProfileAccount(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  deploy:
+    account: Deploy Account
+    reason: Deploy with env file
+    secrets:
+      PROFILE_TOKEN: op://Example/Profile/token
+`)
+	envPath := filepath.Join(root, ".env")
+	writeConfigFile(t, envPath, "FILE_TOKEN=op://Example/File/token\n")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--profile", "deploy",
+		"--env-file", envPath,
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 2 {
+		t.Fatalf("secret count = %d, want 2: %+v", len(req.Secrets), req.Secrets)
+	}
+	for _, secret := range req.Secrets {
+		if secret.Account != "Deploy Account" {
+			t.Fatalf("%s account = %q, want Deploy Account: %+v", secret.Alias, secret.Account, req.Secrets)
+		}
+	}
+}
+
 func TestParseExecRejectsInvalidOnlyAlias(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -415,6 +519,11 @@ func TestParseExecRejectsUnsafeOrUnsupportedForms(t *testing.T) {
 			args: []string{"exec", "--reason", "reason", "--cwd", dir, "--secret", "TOKEN", "--", "tool"},
 			want: ErrInvalidArguments,
 		},
+		{
+			name: "blank env file",
+			args: []string{"exec", "--reason", "reason", "--cwd", dir, "--env-file", " ", "--", "tool"},
+			want: ErrInvalidArguments,
+		},
 	}
 
 	for _, tt := range tests {
@@ -468,7 +577,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "--only", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "daemon",
@@ -519,4 +628,14 @@ func writeConfigFile(t *testing.T, path string, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
+}
+
+func lookupTestEnv(env []string, key string) string {
+	for _, entry := range env {
+		gotKey, value, ok := strings.Cut(entry, "=")
+		if ok && gotKey == key {
+			return value
+		}
+	}
+	return ""
 }

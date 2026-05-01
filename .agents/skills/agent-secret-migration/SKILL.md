@@ -1,6 +1,6 @@
 ---
 name: agent-secret-migration
-description: Migrate a project from direct 1Password CLI usage to Agent Secret. Use when replacing op, op run, op read, exported secret variables, or repeated secret wrapper scripts with agent-secret exec, project profiles, and safe verification.
+description: Migrate a project from direct 1Password CLI usage to Agent Secret. Use when replacing op, op run, op run --env-file, op read, exported secret variables, or repeated secret wrapper scripts with agent-secret exec, project profiles, env-file migration, and safe verification.
 ---
 
 # Agent Secret Migration
@@ -16,6 +16,8 @@ preserving the existing command behavior. The target state is:
 - Agents do not run `op`.
 - Agents do not print or write secret values.
 - Repeated multi-secret commands use project-local `agent-secret.yml` profiles.
+- Existing `op run --env-file` workflows move to `agent-secret exec
+  --env-file` when that keeps the migration smaller and safer.
 - One-off single-secret commands may use explicit `--secret ALIAS=op://...`
   flags.
 - Commands still receive secrets as environment variables only inside the
@@ -43,6 +45,8 @@ preserving the existing command behavior. The target state is:
      `agent-secret exec`.
    - `op run -- COMMAND`: replace with `agent-secret exec --profile NAME --
      COMMAND`.
+   - `op run --env-file FILE -- COMMAND`: replace with `agent-secret exec
+     --env-file FILE -- COMMAND`; add `--reason` unless a profile supplies it.
    - `op inject`: convert the template inputs to env aliases or ask the user
      before writing rendered secret-bearing files.
    - Secret loader scripts: replace their internals with `agent-secret exec` or
@@ -125,6 +129,22 @@ op run -- ansible-playbook site.yml
 agent-secret exec --profile ansible -- ansible-playbook site.yml
 ```
 
+Replace `op run --env-file`:
+
+```bash
+# Before
+op run --env-file .env.deploy -- npm run deploy
+
+# After
+agent-secret exec --reason "Deploy application" --env-file .env.deploy -- \
+  npm run deploy
+```
+
+In env files, entries whose values start with `op://` become approved secret
+refs. Other entries are passed only to the child command as plain environment
+variables. Later `--env-file` values override earlier files, matching the usual
+dotenv migration expectation.
+
 Replace loader scripts by keeping the child command under Agent Secret:
 
 ```bash
@@ -149,6 +169,9 @@ Before reporting success, prove the migrated path works:
   metadata over `env`.
 - For profile changes, test at least one full-profile invocation and any
   `--only` wrapper that filters aliases.
+- For `--env-file` migrations, test that the real command receives both a
+  secret-backed variable and at least one plain env-file variable without
+  printing either secret value.
 - If approval UI appears, confirm the requested command, reason, refs, and TTL
   match the migration.
 

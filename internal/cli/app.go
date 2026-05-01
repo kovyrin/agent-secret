@@ -105,6 +105,7 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		Path:          command.ExecRequest.ResolvedExecutable,
 		Args:          command.ExecRequest.Command[1:],
 		Dir:           command.ExecRequest.CWD,
+		BaseEnv:       command.ExecRequest.Env,
 		Env:           payload.Env,
 		SecretAliases: payload.SecretAliases,
 		OverrideEnv:   command.ExecRequest.OverrideEnv,

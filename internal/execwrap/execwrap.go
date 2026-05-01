@@ -35,6 +35,7 @@ type Spec struct {
 	Path          string
 	Args          []string
 	Dir           string
+	BaseEnv       []string
 	Env           map[string]string
 	SecretAliases []string
 	OverrideEnv   bool
@@ -54,7 +55,13 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 		return Result{}, errors.New("command path is required")
 	}
 
-	env, err := MergeEnv(os.Environ(), spec.Env, spec.OverrideEnv)
+	baseEnv := spec.BaseEnv
+	if baseEnv == nil {
+		baseEnv = os.Environ()
+	} else {
+		baseEnv = slices.Clone(baseEnv)
+	}
+	env, err := MergeEnv(baseEnv, spec.Env, spec.OverrideEnv)
 	if err != nil {
 		return Result{}, err
 	}

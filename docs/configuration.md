@@ -167,6 +167,9 @@ Current flags:
   unless the selected profile provides `reason`.
 - `--secret ALIAS=op://vault/item[/section]/field`: explicit secret mapping.
   Repeat for multiple secrets.
+- `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
+  with `op://` become approved secret refs; other values are passed to the
+  child process as plain environment entries. Repeat for multiple files.
 - `--profile NAME`: load a named profile from the project config.
 - `--only ALIAS[,ALIAS...]`: filter loaded profile secrets to selected aliases.
   Repeat to add more aliases.
@@ -189,6 +192,21 @@ Explicit `--secret` flags may be combined with `--profile` for one-off
 additional refs. In that mode, explicit secrets inherit the loaded profile
 account. `--only` filters profile-loaded aliases before one-off `--secret` refs
 are added. Explicit `--secret`-only invocations do not load `default_profile`.
+
+`--env-file` may be combined with `--profile` or `--secret`. It is intended for
+migrating `op run --env-file` workflows without rewriting every caller at once:
+
+```bash
+agent-secret exec --reason "Deploy from env file" --env-file .env.deploy -- \
+  npm run deploy
+```
+
+Each env file is parsed before approval. Entries whose values start with
+`op://` become secret refs. Other entries are plain child-process environment
+variables and are never sent to the daemon. Later env files override earlier
+files. Env-file keys override the caller environment for the child process, and
+env-file secret aliases are removed from the base child environment before
+approved values are injected.
 
 ## Other Commands
 

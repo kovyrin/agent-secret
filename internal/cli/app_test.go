@@ -54,6 +54,48 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 	}
 }
 
+func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	ref := "op://Example/Item/token"
+	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
+		Audit:    &appAudit{},
+	})
+	defer cleanup()
+	envFilePath := filepath.Join(t.TempDir(), ".env")
+	envFile := "TOKEN=" + ref + "\nPLAIN_ENV=from-file\n"
+	if err := os.WriteFile(envFilePath, []byte(envFile), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+	t.Setenv("AGENT_SECRET_APP_EXPECT_PLAIN", "from-file")
+	t.Setenv("TOKEN", "parent-token")
+	t.Setenv("PLAIN_ENV", "parent")
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--reason", "Run helper",
+		"--env-file", envFilePath,
+		"--",
+		os.Args[0], "-test.run=TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "env-ok" {
+		t.Fatalf("stdout = %q, want env-ok", stdout.String())
+	}
+}
+
 func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
 		runAppExecHelper()
@@ -222,6 +264,12 @@ func runAppExecHelper() {
 	if os.Getenv("TOKEN") != "synthetic-secret-value" {
 		fmt.Println("env-missing")
 		os.Exit(42)
+	}
+	if expectedPlain := os.Getenv("AGENT_SECRET_APP_EXPECT_PLAIN"); expectedPlain != "" {
+		if os.Getenv("PLAIN_ENV") != expectedPlain {
+			fmt.Println("plain-env-missing")
+			os.Exit(43)
+		}
 	}
 	fmt.Println("env-ok")
 	os.Exit(0)

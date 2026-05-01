@@ -155,6 +155,10 @@ agent-secret exec --reason "Terraform plan" \
 agent-secret exec -- terraform plan
 
 agent-secret exec --profile terraform-cloudflare -- terraform plan
+
+agent-secret exec --reason "Run legacy dotenv deploy" \
+  --env-file .env.deploy \
+  -- npm run deploy
 ```
 
 Current `exec` flags:
@@ -163,6 +167,9 @@ Current `exec` flags:
   profile provides `reason`.
 - `--secret ALIAS=op://vault/item[/section]/field`: explicit secret mapping.
   Repeat for multiple secrets.
+- `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
+  with `op://` become approved secret refs; other values are passed to the
+  child process as plain environment entries. Repeat for multiple files.
 - `--profile NAME`: load a named project profile.
 - `--only ALIAS[,ALIAS...]`: filter loaded profile secrets to selected aliases.
   Repeat to add more aliases.
@@ -247,6 +254,14 @@ that mode, explicit secrets inherit the loaded profile account. Explicit
 `--secret`-only invocations do not load `default_profile`. CLI `--reason` and
 `--ttl` override profile defaults. `--only` filters profile-loaded aliases
 before one-off `--secret` refs are added.
+
+`--env-file` is the migration path for commands that currently use
+`op run --env-file`. It parses dotenv-style entries before approval. Secret refs
+such as `TOKEN=op://Example/Service/token` are requested from the daemon, while
+plain entries such as `RAILS_ENV=production` are passed only to the child
+process. Later env files override earlier files. Env-file keys override the
+caller environment for that child, and env-file secret aliases are removed from
+the base child environment before approved values are injected.
 
 See [Configuration Reference](docs/configuration.md) for the full config schema,
 discovery rules, account precedence, and command reference.

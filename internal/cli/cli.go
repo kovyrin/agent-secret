@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/envfile"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -102,6 +104,10 @@ Common examples:
     --secret ANSIBLE_VAULT_PASSWORD=op://Example/Ansible/password \
     -- ansible-playbook site.yml
 
+  agent-secret exec --reason "Run legacy dotenv command" \
+    --env-file .env \
+    -- npm run deploy
+
   agent-secret exec --reason "Use a deliberate shell wrapper" \
     --secret TOKEN=op://Example/Item/token \
     -- sh -c 'echo "$TOKEN" >/dev/null'
@@ -112,6 +118,7 @@ Safety rules:
   - --secret must be ALIAS=op://vault/item[/section]/field.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   - If no --profile or --secret is provided, exec uses default_profile from the discovered project config.
+  - --env-file PATH loads dotenv-style KEY=VALUE entries. op:// values become approved secret refs; other values are passed only to the child.
   - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
@@ -133,6 +140,7 @@ Usage:
 
   agent-secret exec --reason TEXT --secret ALIAS=op://vault/item/field [flags] -- COMMAND [ARG...]
   agent-secret exec --profile NAME [flags] -- COMMAND [ARG...]
+  agent-secret exec --reason TEXT --env-file PATH [flags] -- COMMAND [ARG...]
 
 Required:
 
@@ -144,6 +152,7 @@ Flags:
 
   --profile NAME      Load a named profile from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   --only ALIAS        Keep only selected profile aliases. Repeat or pass comma-separated aliases.
+  --env-file PATH     Load dotenv-style entries. Repeat for multiple files; later files win.
   --config PATH       Profile config path. Defaults to upward discovery from the current directory.
   --cwd DIR           Child working directory. Defaults to the caller cwd.
   --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
@@ -184,6 +193,10 @@ Project profiles:
     agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- ansible-playbook site.yml
 
   --secret flags may be combined with --profile for one-off additional refs.
+  --env-file may be combined with --profile or --secret. Values that start with
+  op:// are treated as secret refs; other values are passed to the child as
+  plain environment entries. When multiple env files define the same key, the
+  later file wins. Env-file keys override the caller environment for that child.
   --only filters profile-loaded aliases before one-off --secret refs are added.
   Explicit --secret-only invocations do not load default_profile.
   CLI --reason and --ttl override profile defaults.
@@ -246,6 +259,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 
 	var secrets secretFlags
 	var only onlyFlags
+	var envFiles envFileFlags
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	reason := fs.String("reason", "", "approval reason")
@@ -259,6 +273,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&secrets, "secret", "secret mapping")
 	fs.Var(&only, "only", "profile alias filter")
+	fs.Var(&envFiles, "env-file", "dotenv env file")
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
@@ -274,6 +289,13 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	effectiveReason := *reason
 	effectiveTTL := *ttl
 	effectiveSecrets := secrets.specs
+	envFileValues, err := loadEnvFiles(envFiles.paths)
+	if err != nil {
+		return Command{}, err
+	}
+	effectiveSecrets = append(slices.Clone(effectiveSecrets), envFileValues.Secrets...)
+	childEnv := mergeEnv(os.Environ(), envFileValues.Plain)
+	childEnv = removeEnvKeys(childEnv, envFileValues.SecretAliases)
 	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, effectiveSecrets)
 	if err != nil {
 		return Command{}, err
@@ -300,6 +322,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		Reason:       effectiveReason,
 		Command:      command,
 		CWD:          *cwd,
+		Env:          childEnv,
 		Secrets:      effectiveSecrets,
 		TTL:          effectiveTTL,
 		ReceivedAt:   p.now(),
@@ -349,6 +372,96 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 		updated = append(updated, secret)
 	}
 	return updated
+}
+
+type envFileValues struct {
+	Plain         map[string]string
+	Secrets       []request.SecretSpec
+	SecretAliases []string
+}
+
+func loadEnvFiles(paths []string) (envFileValues, error) {
+	values := envFileValues{
+		Plain: make(map[string]string),
+	}
+	secretByAlias := make(map[string]request.SecretSpec)
+	for _, path := range paths {
+		entries, err := envfile.Load(path)
+		if err != nil {
+			return envFileValues{}, err
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Value, "op://") {
+				delete(values.Plain, entry.Key)
+				secretByAlias[entry.Key] = request.SecretSpec{Alias: entry.Key, Ref: entry.Value}
+				continue
+			}
+			delete(secretByAlias, entry.Key)
+			values.Plain[entry.Key] = entry.Value
+		}
+	}
+	aliases := make([]string, 0, len(secretByAlias))
+	for alias := range secretByAlias {
+		aliases = append(aliases, alias)
+	}
+	slices.Sort(aliases)
+	for _, alias := range aliases {
+		secret := secretByAlias[alias]
+		values.Secrets = append(values.Secrets, secret)
+		values.SecretAliases = append(values.SecretAliases, alias)
+	}
+	return values, nil
+}
+
+func mergeEnv(base []string, overlay map[string]string) []string {
+	if len(overlay) == 0 {
+		return slices.Clone(base)
+	}
+	positions := make(map[string]int, len(base))
+	out := slices.Clone(base)
+	for index, entry := range out {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			positions[key] = index
+		}
+	}
+	keys := make([]string, 0, len(overlay))
+	for key := range overlay {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		entry := key + "=" + overlay[key]
+		if index, ok := positions[key]; ok {
+			out[index] = entry
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func removeEnvKeys(env []string, keys []string) []string {
+	if len(keys) == 0 {
+		return env
+	}
+	remove := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		remove[key] = struct{}{}
+	}
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			out = append(out, entry)
+			continue
+		}
+		if _, found := remove[key]; found {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func filterProfileSecrets(secrets []request.SecretSpec, aliases []string) ([]request.SecretSpec, error) {
@@ -456,6 +569,23 @@ type onlyFlags struct {
 
 func (o *onlyFlags) String() string {
 	return strings.Join(o.aliases, ",")
+}
+
+type envFileFlags struct {
+	paths []string
+}
+
+func (e *envFileFlags) String() string {
+	return strings.Join(e.paths, ",")
+}
+
+func (e *envFileFlags) Set(value string) error {
+	path := strings.TrimSpace(value)
+	if path == "" {
+		return fmt.Errorf("%w: --env-file requires a path", ErrInvalidArguments)
+	}
+	e.paths = append(e.paths, path)
+	return nil
 }
 
 func (o *onlyFlags) Set(value string) error {
