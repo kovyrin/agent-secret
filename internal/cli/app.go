@@ -24,6 +24,7 @@ type App struct {
 	Manager      daemon.Manager
 	InstallCLI   func(install.CLIOptions) (install.CLIResult, error)
 	InstallSkill func(install.SkillOptions) (install.SkillResult, error)
+	RandomReader io.Reader
 	Stdout       io.Writer
 	Stderr       io.Writer
 }
@@ -40,6 +41,7 @@ func NewApp(manager daemon.Manager, stdout io.Writer, stderr io.Writer) App {
 		Manager:      manager,
 		InstallCLI:   install.InstallCLI,
 		InstallSkill: install.InstallSkill,
+		RandomReader: rand.Reader,
 		Stdout:       stdout,
 		Stderr:       stderr,
 	}
@@ -92,8 +94,16 @@ func (a App) runExec(ctx context.Context, command Command) int {
 	}
 	defer func() { _ = client.Close() }()
 
-	requestID := randomID("req")
-	nonce := randomID("nonce")
+	requestID, err := a.randomID("req")
+	if err != nil {
+		a.stderrf("agent-secret: generate request id: %v\n", err)
+		return 1
+	}
+	nonce, err := a.randomID("nonce")
+	if err != nil {
+		a.stderrf("agent-secret: generate request nonce: %v\n", err)
+		return 1
+	}
 	payload, err := client.RequestExec(ctx, requestID, nonce, command.ExecRequest)
 	if err != nil {
 		a.stderrf("agent-secret: request rejected: %v\n", err)
@@ -255,10 +265,17 @@ func isProtocolFailure(err error) bool {
 	return errors.As(err, &protocolErr)
 }
 
-func randomID(prefix string) string {
-	var data [16]byte
-	if _, err := rand.Read(data[:]); err != nil {
-		panic(fmt.Sprintf("generate random id: %v", err))
+func (a App) randomID(prefix string) (string, error) {
+	return randomID(a.RandomReader, prefix)
+}
+
+func randomID(reader io.Reader, prefix string) (string, error) {
+	if reader == nil {
+		reader = rand.Reader
 	}
-	return prefix + "_" + hex.EncodeToString(data[:])
+	var data [16]byte
+	if _, err := io.ReadFull(reader, data[:]); err != nil {
+		return "", fmt.Errorf("generate random id: %w", err)
+	}
+	return prefix + "_" + hex.EncodeToString(data[:]), nil
 }

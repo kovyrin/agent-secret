@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"sync"
 	"time"
@@ -39,6 +40,7 @@ type ReuseAuditEvent struct {
 type Store struct {
 	mu        sync.Mutex
 	now       func() time.Time
+	random    io.Reader
 	approvals map[string]*ReusableApproval
 	sessions  map[string]*Session
 }
@@ -106,6 +108,7 @@ func NewStore(now func() time.Time) *Store {
 
 	return &Store{
 		now:       now,
+		random:    rand.Reader,
 		approvals: make(map[string]*ReusableApproval),
 		sessions:  make(map[string]*Session),
 	}
@@ -116,10 +119,18 @@ func (s *Store) AddReusable(req request.ExecRequest, id string, nonce string) (R
 	defer s.mu.Unlock()
 
 	if id == "" {
-		id = randomID("appr")
+		var err error
+		id, err = s.randomID("appr")
+		if err != nil {
+			return ReusableApproval{}, fmt.Errorf("generate reusable approval id: %w", err)
+		}
 	}
 	if nonce == "" {
-		nonce = randomID("nonce")
+		var err error
+		nonce, err = s.randomID("nonce")
+		if err != nil {
+			return ReusableApproval{}, fmt.Errorf("generate reusable approval nonce: %w", err)
+		}
 	}
 
 	approval := &ReusableApproval{
@@ -204,19 +215,30 @@ func (s *Store) CreateSession(id string, nonce string, expiresAt time.Time, gran
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if id == "" {
-		id = randomID("sess")
-	}
-	if nonce == "" {
-		nonce = randomID("nonce")
-	}
 	if maxReads <= 0 {
 		return Session{}, ErrReadExhausted
+	}
+	if id == "" {
+		var err error
+		id, err = s.randomID("sess")
+		if err != nil {
+			return Session{}, fmt.Errorf("generate session id: %w", err)
+		}
+	}
+	if nonce == "" {
+		var err error
+		nonce, err = s.randomID("nonce")
+		if err != nil {
+			return Session{}, fmt.Errorf("generate session nonce: %w", err)
+		}
 	}
 
 	handles := make(map[string]*Handle, len(grants))
 	for _, grant := range grants {
-		handleID := randomID("h")
+		handleID, err := s.randomID("h")
+		if err != nil {
+			return Session{}, fmt.Errorf("generate secret handle id: %w", err)
+		}
 		handles[handleID] = &Handle{
 			ID:       handleID,
 			Alias:    grant.Alias,
@@ -425,10 +447,17 @@ func cloneSession(session *Session) Session {
 	return clone
 }
 
-func randomID(prefix string) string {
-	var data [16]byte
-	if _, err := rand.Read(data[:]); err != nil {
-		panic(fmt.Sprintf("generate random id: %v", err))
+func (s *Store) randomID(prefix string) (string, error) {
+	return randomID(s.random, prefix)
+}
+
+func randomID(reader io.Reader, prefix string) (string, error) {
+	if reader == nil {
+		reader = rand.Reader
 	}
-	return prefix + "_" + hex.EncodeToString(data[:])
+	var data [16]byte
+	if _, err := io.ReadFull(reader, data[:]); err != nil {
+		return "", fmt.Errorf("generate random id: %w", err)
+	}
+	return prefix + "_" + hex.EncodeToString(data[:]), nil
 }

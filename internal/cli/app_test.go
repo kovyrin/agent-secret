@@ -281,6 +281,43 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 	}
 }
 
+func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
+	ref := "op://Example/Item/token"
+	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
+		Audit:    &appAudit{},
+	})
+	defer cleanup()
+
+	entropyErr := errors.New("entropy unavailable")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app.RandomReader = failingRandomReader{err: entropyErr}
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--reason", "Run helper",
+		"--secret", "TOKEN=" + ref,
+		"--",
+		os.Args[0], "-test.run=TestAppExecReportsRandomIDFailureBeforeRequest", "--", "child",
+	})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "generate request id") || !strings.Contains(stderr.String(), entropyErr.Error()) {
+		t.Fatalf("stderr = %q, want random id failure", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("stderr leaked secret: %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want no child output", stdout.String())
+	}
+}
+
 func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
 	app := NewApp(daemon.Manager{}, nil, nil)
 	if app.Stdout == nil || app.Stderr == nil {
@@ -364,6 +401,14 @@ func (a *appAudit) ApprovalReused(_ context.Context, _ policy.ReuseAuditEvent) e
 
 func (a *appAudit) Preflight(context.Context) error {
 	return nil
+}
+
+type failingRandomReader struct {
+	err error
+}
+
+func (r failingRandomReader) Read(_ []byte) (int, error) {
+	return 0, r.err
 }
 
 type appAllowPeer struct{}
