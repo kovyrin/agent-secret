@@ -25,7 +25,7 @@ if [ ! -x node_modules/.bin/markdownlint ]; then
   npm ci --ignore-scripts --no-audit --no-fund
 fi
 
-shellcheck scripts/*.sh approver/scripts/*.sh
+shellcheck install.sh uninstall.sh scripts/*.sh approver/scripts/*.sh
 scripts/check-format.sh shell
 if [ -d .github/workflows ]; then
   workflow_files=()
