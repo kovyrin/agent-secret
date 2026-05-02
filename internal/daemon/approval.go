@@ -229,6 +229,7 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 	}
 	executable = identity.ExecutablePath
 
+	//nolint:gosec // G204: executable was canonicalized and validated by the approver identity policy above.
 	cmd := exec.CommandContext(ctx, executable, "--socket", socketPath)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {

@@ -81,6 +81,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 	if ctx != nil {
 		commandContext = context.WithoutCancel(ctx)
 	}
+	//nolint:gosec // G204: command path and argv come from a daemon-approved ExecSpec after request validation and audit.
 	cmd := exec.CommandContext(commandContext, spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = env

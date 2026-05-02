@@ -77,6 +77,7 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 		return err
 	}
 	defer func() { _ = listener.Close() }()
+	//nolint:gosec // G703: path is the socket just created by ListenUnix after private-directory validation.
 	defer func() { _ = os.Remove(path) }()
 	return s.Serve(ctx, listener)
 }
