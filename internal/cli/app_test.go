@@ -335,7 +335,11 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 	if err != nil {
 		t.Fatalf("NewBroker returned error: %v", err)
 	}
-	server, err := daemon.NewServer(daemon.ServerOptions{Broker: broker, Validator: appAllowPeer{}})
+	server, err := daemon.NewServer(daemon.ServerOptions{
+		Broker:        broker,
+		Validator:     appAllowPeer{},
+		ExecValidator: daemon.NewTrustedExecutableValidator(daemon.CurrentExecutableTrustedClientPaths()),
+	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
 	}

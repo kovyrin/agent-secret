@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -166,6 +167,71 @@ func TestNewExecRecordsOverrideAliases(t *testing.T) {
 	}
 }
 
+func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir)
+
+	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
+		o.Env = append(o.Env, "TOKEN=already")
+		o.OverrideEnv = true
+	}))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		t.Fatalf("ValidateForDaemon returned error: %v", err)
+	}
+}
+
+func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir)
+	req, err := NewExec(baseOptions(dir, "reason"))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ExecRequest)
+		want   error
+	}{
+		{name: "unnormalized reason", mutate: func(r *ExecRequest) { r.Reason = " reason " }, want: ErrInvalidReason},
+		{name: "ttl outside bounds", mutate: func(r *ExecRequest) { r.TTL = time.Second }, want: ErrInvalidTTL},
+		{name: "expiration mismatch", mutate: func(r *ExecRequest) { r.ExpiresAt = r.ExpiresAt.Add(time.Second) }, want: ErrInvalidTTL},
+		{name: "relative cwd", mutate: func(r *ExecRequest) { r.CWD = "project" }, want: ErrInvalidRequest},
+		{name: "relative resolved executable", mutate: func(r *ExecRequest) { r.ResolvedExecutable = "tool" }, want: ErrInvalidRequest},
+		{name: "missing command", mutate: func(r *ExecRequest) { r.Command = nil }, want: ErrInvalidCommand},
+		{name: "tampered ref metadata", mutate: func(r *ExecRequest) { r.Secrets[0].Ref.Field = "other" }, want: ErrInvalidReference},
+		{name: "duplicate alias", mutate: func(r *ExecRequest) {
+			r.Secrets = append(r.Secrets, r.Secrets[0])
+		}, want: ErrInvalidAlias},
+		{name: "unknown overridden alias", mutate: func(r *ExecRequest) {
+			r.OverrideEnv = true
+			r.OverriddenAliases = []string{"OTHER"}
+		}, want: ErrInvalidAlias},
+		{name: "override aliases without override", mutate: func(r *ExecRequest) {
+			r.OverriddenAliases = []string{"TOKEN"}
+		}, want: ErrInvalidAlias},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := cloneRequest(req)
+			tt.mutate(&got)
+			if err := got.ValidateForDaemon(); !errors.Is(err, tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestExecRequestExpiryUsesDaemonReceiptTTL(t *testing.T) {
 	t.Parallel()
 
@@ -215,6 +281,14 @@ func baseOptions(dir string, reason string) ExecOptions {
 func mutate(opts ExecOptions, fn func(*ExecOptions)) ExecOptions {
 	fn(&opts)
 	return opts
+}
+
+func cloneRequest(req ExecRequest) ExecRequest {
+	req.Command = slices.Clone(req.Command)
+	req.Env = slices.Clone(req.Env)
+	req.Secrets = slices.Clone(req.Secrets)
+	req.OverriddenAliases = slices.Clone(req.OverriddenAliases)
+	return req
 }
 
 func writeExecutable(t *testing.T, dir string) string {

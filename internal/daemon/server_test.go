@@ -328,6 +328,69 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	}
 }
 
+func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
+	t.Parallel()
+
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
+	client, cleanup := startTestServer(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req.Reason = "  fabricated metadata  "
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
+		t.Fatalf("expected bad_request protocol error, got %v", err)
+	}
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+}
+
+func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
+	path, stop := startRawServerWithBrokerAndExecValidator(
+		t,
+		newTestBroker(t, BrokerOptions{
+			Approver: approver,
+			Resolver: resolver,
+			Audit:    &memoryAudit{},
+		}),
+		nil,
+		staticPeerValidator{info: peer},
+		NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+	)
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	client := NewClient(conn)
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "untrusted_client") {
+		t.Fatalf("expected untrusted_client protocol error, got %v", err)
+	}
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+}
+
 func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 	t.Parallel()
 
@@ -421,6 +484,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrNoPendingApproval, want: "no_pending_approval"},
 		{err: ErrRequestExpired, want: "request_expired"},
 		{err: ErrStaleApproval, want: "stale_approval"},
+		{err: ErrUntrustedClient, want: "untrusted_client"},
 		{err: errors.New("other"), want: "request_failed"},
 	}
 	for _, tt := range tests {
@@ -504,6 +568,23 @@ func startRawServerWithBroker(
 	validator PeerValidator,
 ) (string, func()) {
 	t.Helper()
+	return startRawServerWithBrokerAndExecValidator(
+		t,
+		broker,
+		approvals,
+		validator,
+		NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+	)
+}
+
+func startRawServerWithBrokerAndExecValidator(
+	t *testing.T,
+	broker *Broker,
+	approvals ApprovalEndpoint,
+	validator PeerValidator,
+	execValidator ExecPeerValidator,
+) (string, func()) {
+	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-test-")
 	if err != nil {
 		t.Fatalf("MkdirTemp returned error: %v", err)
@@ -513,7 +594,12 @@ func startRawServerWithBroker(
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
-	server, err := NewServer(ServerOptions{Broker: broker, Approvals: approvals, Validator: validator})
+	server, err := NewServer(ServerOptions{
+		Broker:        broker,
+		Approvals:     approvals,
+		Validator:     validator,
+		ExecValidator: execValidator,
+	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
 	}
@@ -541,4 +627,13 @@ func startRawServerWithBroker(
 func testSocketPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "missing.sock")
+}
+
+func writeExecutableAt(t *testing.T, dir string, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+	return path
 }
