@@ -86,6 +86,7 @@ bundle_id="com.kovyrin.agent-secret"
 daemon_bundle_id="com.kovyrin.agent-secret.daemon"
 app_bundle="$output_dir/Agent Secret.app"
 daemon_bundle="$tmp_dir/AgentSecretDaemon.app"
+skill_source="$project_root/.agents/skills/agent-secret"
 icon_png="$tmp_dir/AppIcon.png"
 iconset="$tmp_dir/AppIcon.iconset"
 
@@ -207,9 +208,15 @@ rm -rf "$app_bundle"
 mkdir -p \
   "$app_bundle/Contents/MacOS" \
   "$app_bundle/Contents/Resources/bin" \
+  "$app_bundle/Contents/Resources/skills" \
   "$app_bundle/Contents/Library/Helpers"
 install -m 0755 "$approver_binary" "$app_bundle/Contents/MacOS/Agent Secret"
 install -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
+if [[ ! -f "$skill_source/SKILL.md" ]]; then
+  echo "build-app-bundle: missing bundled skill at $skill_source" >&2
+  exit 1
+fi
+cp -R "$skill_source" "$app_bundle/Contents/Resources/skills/agent-secret"
 cp "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/AppIcon.icns"
 cp -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 

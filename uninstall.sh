@@ -3,11 +3,13 @@ set -eu
 
 app_dir="${AGENT_SECRET_APP_DIR:-/Applications}"
 bin_dir="${AGENT_SECRET_BIN_DIR:-$HOME/.local/bin}"
+skills_dir="${AGENT_SECRET_SKILLS_DIR:-$HOME/.agents/skills}"
 remove_audit_logs="${AGENT_SECRET_REMOVE_AUDIT_LOGS:-0}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
 
 target_app="$app_dir/Agent Secret.app"
 cli_link="$bin_dir/agent-secret"
+skill_link="$skills_dir/agent-secret"
 app_support_dir="${AGENT_SECRET_SUPPORT_DIR:-$HOME/Library/Application Support/agent-secret}"
 audit_dir="${AGENT_SECRET_AUDIT_DIR:-$HOME/Library/Logs/agent-secret}"
 
@@ -49,8 +51,28 @@ remove_cli_link() {
   esac
 }
 
+remove_skill_link() {
+  if [ ! -L "$skill_link" ]; then
+    if [ -e "$skill_link" ]; then
+      echo "agent-secret uninstall: leaving non-symlink $skill_link in place" >&2
+    fi
+    return
+  fi
+
+  target="$(readlink "$skill_link")"
+  case "$target" in
+    *"Agent Secret.app/Contents/Resources/skills/agent-secret")
+      rm -f "$skill_link"
+      ;;
+    *)
+      echo "agent-secret uninstall: leaving unrelated symlink $skill_link -> $target in place" >&2
+      ;;
+  esac
+}
+
 stop_existing_daemon
 remove_cli_link
+remove_skill_link
 
 echo "Removing $target_app"
 rm -rf "$target_app"

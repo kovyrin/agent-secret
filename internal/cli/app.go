@@ -20,11 +20,12 @@ import (
 )
 
 type App struct {
-	Parser     Parser
-	Manager    daemon.Manager
-	InstallCLI func(install.CLIOptions) (install.CLIResult, error)
-	Stdout     io.Writer
-	Stderr     io.Writer
+	Parser       Parser
+	Manager      daemon.Manager
+	InstallCLI   func(install.CLIOptions) (install.CLIResult, error)
+	InstallSkill func(install.SkillOptions) (install.SkillResult, error)
+	Stdout       io.Writer
+	Stderr       io.Writer
 }
 
 func NewApp(manager daemon.Manager, stdout io.Writer, stderr io.Writer) App {
@@ -35,11 +36,12 @@ func NewApp(manager daemon.Manager, stdout io.Writer, stderr io.Writer) App {
 		stderr = os.Stderr
 	}
 	return App{
-		Parser:     NewParser(time.Now),
-		Manager:    manager,
-		InstallCLI: install.InstallCLI,
-		Stdout:     stdout,
-		Stderr:     stderr,
+		Parser:       NewParser(time.Now),
+		Manager:      manager,
+		InstallCLI:   install.InstallCLI,
+		InstallSkill: install.InstallSkill,
+		Stdout:       stdout,
+		Stderr:       stderr,
 	}
 }
 
@@ -70,6 +72,8 @@ func (a App) Run(ctx context.Context, args []string) int {
 		return a.runDoctor(ctx)
 	case KindInstallCLI:
 		return a.runInstallCLI(command)
+	case KindSkillInstall:
+		return a.runSkillInstall(command)
 	default:
 		a.stderrf("agent-secret: unsupported command %s\n", command.Kind)
 		return 2
@@ -187,6 +191,20 @@ func (a App) runInstallCLI(command Command) int {
 		return 1
 	}
 	a.stdoutf("agent-secret command installed: %s -> %s\n", result.LinkPath, result.TargetPath)
+	return 0
+}
+
+func (a App) runSkillInstall(command Command) int {
+	installSkill := a.InstallSkill
+	if installSkill == nil {
+		installSkill = install.InstallSkill
+	}
+	result, err := installSkill(command.InstallSkillOpts)
+	if err != nil {
+		a.stderrf("agent-secret: skill-install: %v\n", err)
+		return 1
+	}
+	a.stdoutf("agent-secret skill installed: %s -> %s\n", result.LinkPath, result.TargetPath)
 	return 0
 }
 

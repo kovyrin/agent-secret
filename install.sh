@@ -6,6 +6,7 @@ github_url="${AGENT_SECRET_GITHUB_URL:-https://github.com}"
 github_api="${AGENT_SECRET_GITHUB_API:-https://api.github.com}"
 app_dir="${AGENT_SECRET_APP_DIR:-/Applications}"
 bin_dir="${AGENT_SECRET_BIN_DIR:-$HOME/.local/bin}"
+skills_dir="${AGENT_SECRET_SKILLS_DIR:-$HOME/.agents/skills}"
 version="${AGENT_SECRET_VERSION:-}"
 local_dmg="${AGENT_SECRET_DMG:-}"
 local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
@@ -150,6 +151,9 @@ mv "$tmp_app" "$target_app"
 
 echo "Installing command symlink into $bin_dir"
 "$target_app/Contents/Resources/bin/agent-secret" install-cli --bin-dir "$bin_dir"
+
+echo "Installing Agent Secret skill"
+"$target_app/Contents/Resources/bin/agent-secret" skill-install --skills-dir "$skills_dir" --force
 
 echo "Running diagnostics"
 "$bin_dir/agent-secret" doctor

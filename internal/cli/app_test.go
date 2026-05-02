@@ -181,28 +181,54 @@ func TestAppDaemonStartAndStopCommands(t *testing.T) {
 	}
 }
 
-func TestAppInstallCLICommand(t *testing.T) {
+func TestAppInstallCommands(t *testing.T) {
+	t.Run("cli", func(t *testing.T) {
+		var gotOptions install.CLIOptions
+		runInstallCommandTest(t, []string{"install-cli", "--bin-dir", "/tmp/bin", "--force"}, func(app *App) {
+			app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+				gotOptions = options
+				return install.CLIResult{
+					LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+					TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+				}, nil
+			}
+		}, "/tmp/bin/agent-secret")
+		if gotOptions.BinDir != "/tmp/bin" || !gotOptions.Force {
+			t.Fatalf("install-cli options = %+v", gotOptions)
+		}
+	})
+
+	t.Run("skill", func(t *testing.T) {
+		var gotOptions install.SkillOptions
+		runInstallCommandTest(t, []string{"skill-install", "--skills-dir", "/tmp/skills", "--force"}, func(app *App) {
+			app.InstallSkill = func(options install.SkillOptions) (install.SkillResult, error) {
+				gotOptions = options
+				return install.SkillResult{
+					LinkPath:   filepath.Join(options.SkillsDir, "agent-secret"),
+					TargetPath: "/Applications/Agent Secret.app/Contents/Resources/skills/agent-secret",
+				}, nil
+			}
+		}, "/tmp/skills/agent-secret")
+		if gotOptions.SkillsDir != "/tmp/skills" || !gotOptions.Force {
+			t.Fatalf("skill-install options = %+v", gotOptions)
+		}
+	})
+}
+
+func runInstallCommandTest(t *testing.T, args []string, configure func(*App), stdoutWant string) {
+	t.Helper()
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	var gotOptions install.CLIOptions
 	app := NewApp(daemon.Manager{}, &stdout, &stderr)
-	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
-		gotOptions = options
-		return install.CLIResult{
-			LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
-			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
-		}, nil
-	}
+	configure(&app)
 
-	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", "/tmp/bin", "--force"})
+	code := app.Run(context.Background(), args)
 	if code != 0 {
-		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		t.Fatalf("%v exit=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
 	}
-	if gotOptions.BinDir != "/tmp/bin" || !gotOptions.Force {
-		t.Fatalf("install-cli options = %+v", gotOptions)
-	}
-	if !strings.Contains(stdout.String(), "/tmp/bin/agent-secret") {
-		t.Fatalf("install-cli stdout = %q", stdout.String())
+	if !strings.Contains(stdout.String(), stdoutWant) {
+		t.Fatalf("%v stdout = %q, want %q", args, stdout.String(), stdoutWant)
 	}
 }
 

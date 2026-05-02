@@ -120,12 +120,19 @@ The intended macOS install shape is one app bundle:
   Contents/MacOS/Agent Secret
   Contents/Library/Helpers/AgentSecretDaemon.app
   Contents/Resources/bin/agent-secret
+  Contents/Resources/skills/agent-secret
 ```
 
 The command-line entry point is a user-level symlink:
 
 ```text
 ~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+```
+
+The bundled coding-agent skill is installed as a user-level symlink:
+
+```text
+~/.agents/skills/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
 ```
 
 Human install flow:
@@ -153,6 +160,7 @@ Useful installer environment variables:
 AGENT_SECRET_VERSION=v0.3.1
 AGENT_SECRET_APP_DIR="$HOME/Applications"
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
+AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
 ```
 
 Unattended uninstall:
@@ -162,9 +170,9 @@ curl -fsSL \
   https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
 ```
 
-By default uninstall removes the app, CLI symlink, and application support
-state, but leaves `~/Library/Logs/agent-secret` audit logs in place. Set
-`AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
+By default uninstall removes the app, CLI symlink, skill symlink, and
+application support state, but leaves `~/Library/Logs/agent-secret` audit logs
+in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
 
 ## Development Install
 
@@ -178,6 +186,8 @@ By default this installs:
 
 - `~/Applications/Agent Secret.app`.
 - `~/.local/bin/agent-secret` as a symlink into the app bundle.
+- `~/.agents/skills/agent-secret` as a symlink to the bundled Agent Secret
+  skill.
 
 Override the install locations with `--bin-dir`, `--app-dir`,
 `AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
@@ -288,11 +298,25 @@ agent-secret daemon start
 agent-secret daemon stop
 agent-secret doctor
 agent-secret install-cli
+agent-secret skill-install
 ```
 
 `agent-secret install-cli` installs or repairs the `agent-secret` symlink for
 the current user. It refuses to replace an unrelated regular file unless
 `--force` is passed.
+
+`agent-secret skill-install` installs or repairs the bundled coding-agent skill
+for the current user:
+
+```bash
+agent-secret skill-install
+agent-secret skill-install --skills-dir "$HOME/.agents/skills"
+agent-secret skill-install --force
+```
+
+The skill covers general Agent Secret usage, profiles, env files, safe
+verification, and migration from direct 1Password CLI usage. It is bundled in
+the app so upgrades keep the installed skill in sync with the installed CLI.
 
 ## Project Profiles
 

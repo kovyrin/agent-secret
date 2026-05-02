@@ -31,6 +31,7 @@ const (
 	KindExec         Kind = "exec"
 	KindDoctor       Kind = "doctor"
 	KindInstallCLI   Kind = "install_cli"
+	KindSkillInstall Kind = "skill_install"
 	KindDaemonStart  Kind = "daemon_start"
 	KindDaemonStop   Kind = "daemon_stop"
 	KindDaemonStatus Kind = "daemon_status"
@@ -40,6 +41,7 @@ type Command struct {
 	Kind              Kind
 	ExecRequest       request.ExecRequest
 	InstallCLIOptions install.CLIOptions
+	InstallSkillOpts  install.SkillOptions
 	HelpText          string
 }
 
@@ -70,6 +72,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseDoctor(args[1:])
 	case "install-cli":
 		return parseInstallCLI(args[1:])
+	case "skill-install":
+		return parseSkillInstall(args[1:])
 	default:
 		return Command{}, fmt.Errorf("%w: unknown command %q", ErrInvalidArguments, args[0])
 	}
@@ -91,6 +95,7 @@ Commands:
 
   exec       Run a command with approved secrets injected as environment variables.
   install-cli Install or repair the agent-secret command symlink for this user.
+  skill-install Install or repair the Agent Secret agent skill for this user.
   daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
   doctor    Print non-secret local diagnostics for setup troubleshooting.
   help      Show this help.
@@ -133,6 +138,7 @@ Safety rules:
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - exec has no --json mode and never prints secret values.
   - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
+  - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
   - Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
   - Non-zero child exits are returned as child exits, not as broker failures.
@@ -584,6 +590,29 @@ func parseInstallCLI(args []string) (Command, error) {
 	}, nil
 }
 
+func parseSkillInstall(args []string) (Command, error) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return Command{Kind: KindHelp, HelpText: SkillInstallHelp()}, ErrHelpRequested
+	}
+	fs := flag.NewFlagSet("skill-install", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	skillsDir := fs.String("skills-dir", "", "agent skills directory")
+	force := fs.Bool("force", false, "replace an existing non-symlink skill path")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 0 {
+		return Command{}, fmt.Errorf("%w: skill-install accepts no positional arguments", ErrInvalidArguments)
+	}
+	return Command{
+		Kind: KindSkillInstall,
+		InstallSkillOpts: install.SkillOptions{
+			SkillsDir: *skillsDir,
+			Force:     *force,
+		},
+	}, nil
+}
+
 func DaemonHelp() string {
 	return strings.TrimSpace(`
 agent-secret daemon is for troubleshooting the hidden per-user daemon.
@@ -626,6 +655,30 @@ Flags:
 
   --bin-dir DIR  Directory that should contain the agent-secret command. Defaults to ~/.local/bin.
   --force        Replace an existing non-symlink file at DIR/agent-secret.
+`)
+}
+
+func SkillInstallHelp() string {
+	return strings.TrimSpace(`
+agent-secret skill-install installs or repairs the Agent Secret coding-agent skill for the current user.
+
+Usage:
+
+  agent-secret skill-install [--skills-dir DIR] [--force]
+
+The command creates:
+
+  ~/.agents/skills/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
+
+The skill covers general Agent Secret usage, project profiles, env-file usage,
+safe verification, and migration from direct 1Password CLI access. When run
+from a development or test build, it links to the bundled skill next to the
+currently running agent-secret executable.
+
+Flags:
+
+  --skills-dir DIR  Directory that should contain the agent-secret skill. Defaults to ~/.agents/skills.
+  --force           Replace an existing non-symlink path at DIR/agent-secret.
 `)
 }
 

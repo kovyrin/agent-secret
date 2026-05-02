@@ -249,3 +249,21 @@ agent-secret install-cli --force
 
 `install-cli` creates or repairs the user-level `agent-secret` command symlink.
 It refuses to replace an unrelated regular file unless `--force` is passed.
+
+Skill installation:
+
+```bash
+agent-secret skill-install
+agent-secret skill-install --skills-dir "$HOME/.agents/skills"
+agent-secret skill-install --force
+```
+
+`skill-install` creates or repairs the user-level Agent Secret coding-agent
+skill symlink:
+
+```text
+~/.agents/skills/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
+```
+
+The bundled skill covers general usage, project profiles, env-file use, safe
+verification, and migration from direct 1Password CLI access.

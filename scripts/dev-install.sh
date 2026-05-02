@@ -11,6 +11,7 @@ Build and install the current development version for the current macOS user.
 Defaults:
   app:      ~/Applications/Agent Secret.app
   command:  ~/.local/bin/agent-secret -> ~/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+  skill:    ~/.agents/skills/agent-secret -> ~/Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
 
 Flags:
   --bin-dir DIR        Install the agent-secret command symlink into DIR.
@@ -140,6 +141,10 @@ if [[ ! -d "$source_app/Contents/Library/Helpers/AgentSecretDaemon.app" ]]; then
   echo "dev-install: build did not produce bundled daemon helper app" >&2
   exit 1
 fi
+if [[ ! -f "$source_app/Contents/Resources/skills/agent-secret/SKILL.md" ]]; then
+  echo "dev-install: build did not produce bundled agent-secret skill" >&2
+  exit 1
+fi
 
 echo "Installing app into $app_dir..."
 install -d -m 0755 "$app_dir"
@@ -154,6 +159,9 @@ echo "Installing command symlink into $bin_dir..."
 install -d -m 0755 "$bin_dir"
 "$target_cli" install-cli --bin-dir "$bin_dir" --force >/dev/null
 
+echo "Installing Agent Secret skill..."
+"$target_cli" skill-install --force >/dev/null
+
 if ! path_contains "$bin_dir"; then
   echo "dev-install: warning: $bin_dir is not on PATH for this shell" >&2
 fi
@@ -161,3 +169,4 @@ fi
 echo "Installed:"
 echo "  $target_app"
 echo "  $bin_dir/agent-secret -> $target_cli"
+echo "  $HOME/.agents/skills/agent-secret -> $target_app/Contents/Resources/skills/agent-secret"
