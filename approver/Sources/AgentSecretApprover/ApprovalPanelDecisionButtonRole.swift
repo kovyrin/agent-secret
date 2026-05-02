@@ -3,7 +3,7 @@ import Foundation
 #if canImport(SwiftUI)
     import SwiftUI
 
-    enum ApprovalPanelDecisionButtonRole {
+    enum ApprovalPanelDecisionButtonRole: Equatable {
         case primary
         case secondary
     }
