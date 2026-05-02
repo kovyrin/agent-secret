@@ -20,6 +20,7 @@ place. Session/socket secret reads are next.
 - [Product Requirements](docs/prd.md)
 - [Implementation Plan](docs/implementation-plan.md)
 - [Configuration Reference](docs/configuration.md)
+- [macOS Distribution Plan](docs/macos-distribution-plan.md)
 - [Code Layout](docs/code-layout.md)
 - [Epic 2 Spike Notes](docs/epic-2-spikes.md)
 

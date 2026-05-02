@@ -1,0 +1,464 @@
+# macOS Distribution Plan
+
+## Goal
+
+Ship Agent Secret as a macOS-first tool that a teammate can install, update, and
+use without building from source.
+
+The product should feel like one app:
+
+- One `Agent Secret.app` bundle is the canonical installation.
+- The CLI lives inside that app bundle.
+- The daemon lives inside that app bundle as a nested helper app.
+- The user can install the command-line shim from the app on first launch.
+- Agents and automation can install or upgrade with an unattended `curl | bash`
+  flow.
+
+## Non-Goals
+
+- No Linux or Windows packaging.
+- No system-wide privileged installer for v1.
+- No Mac App Store distribution.
+- No private distribution channel. The repository and release artifacts can stay
+  public.
+- No automatic background updater in v1. Re-running the installer or using
+  Homebrew later is enough.
+
+## Assumptions
+
+- A paid Apple Developer Program account is available.
+- Team-ready releases should be Developer ID signed and notarized before they
+  are announced for daily use.
+- Unsigned local DMGs are still useful as an intermediate implementation
+  checkpoint, but they are not the final team distribution target.
+
+## Target Install Shape
+
+```text
+/Applications/Agent Secret.app
+  Contents/MacOS/Agent Secret
+  Contents/Library/Helpers/AgentSecretDaemon.app
+    Contents/MacOS/Agent Secret
+  Contents/Resources/bin/agent-secret
+```
+
+The CLI shim is a symlink:
+
+```text
+~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+```
+
+The app bundle is the version boundary. Updating `Agent Secret.app` updates the
+approval UI, daemon, and CLI together.
+
+## User Flows
+
+### Interactive Install
+
+1. User downloads `Agent-Secret-vX.Y.Z.dmg` from GitHub Releases.
+2. User opens the DMG and drags `Agent Secret.app` into `/Applications`.
+3. User launches `Agent Secret.app`.
+4. App shows setup status and offers an `Install Command Line Tool` action.
+5. The action creates or refreshes the `~/.local/bin/agent-secret` symlink.
+6. App verifies the shim and shows the command to run:
+
+   ```bash
+   agent-secret doctor
+   ```
+
+### Unattended Install
+
+Agents and setup scripts use:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+```
+
+The installer should:
+
+1. Detect `arm64` or `x86_64`.
+2. Resolve the latest release unless `AGENT_SECRET_VERSION` is set.
+3. Download the matching release artifact.
+4. Verify the checksum.
+5. Stop the old per-user daemon if it is running.
+6. Copy `Agent Secret.app` to `/Applications` by default.
+7. Create or refresh the CLI symlink in `~/.local/bin`.
+8. Run `agent-secret doctor`.
+
+Useful installer options:
+
+```bash
+AGENT_SECRET_VERSION=v0.3.1 install.sh
+AGENT_SECRET_APP_DIR="$HOME/Applications" install.sh
+AGENT_SECRET_BIN_DIR="$HOME/.local/bin" install.sh
+```
+
+### Upgrade
+
+The upgrade path is intentionally the same as install:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+```
+
+The installer replaces the app bundle atomically enough for a user-level tool:
+stop daemon, write a temporary app bundle next to the target, move it into
+place, recreate the symlink, run diagnostics.
+
+### Uninstall
+
+Users should have both a manual uninstall and an unattended uninstall path.
+
+Manual uninstall:
+
+```bash
+agent-secret daemon stop || true
+rm -f ~/.local/bin/agent-secret
+rm -rf "/Applications/Agent Secret.app"
+rm -rf "$HOME/Library/Application Support/agent-secret"
+```
+
+Unattended uninstall:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
+```
+
+The uninstall script should:
+
+1. Stop the per-user daemon if it is running.
+2. Remove the Agent Secret CLI symlink if it points at an Agent Secret app.
+3. Remove `Agent Secret.app` from the configured app directory.
+4. Remove `~/Library/Application Support/agent-secret`.
+5. Leave audit logs in place unless explicitly requested.
+
+Useful uninstall options:
+
+```bash
+AGENT_SECRET_APP_DIR="$HOME/Applications" uninstall.sh
+AGENT_SECRET_BIN_DIR="$HOME/.local/bin" uninstall.sh
+AGENT_SECRET_REMOVE_AUDIT_LOGS=1 uninstall.sh
+```
+
+Audit logs are durable by design and should require an explicit separate
+removal command:
+
+```bash
+rm -rf "$HOME/Library/Logs/agent-secret"
+```
+
+## Release Artifact Shape
+
+Each GitHub release should publish:
+
+```text
+Agent-Secret-vX.Y.Z-macos-arm64.dmg
+Agent-Secret-vX.Y.Z-macos-x86_64.dmg
+checksums.txt
+```
+
+Initial implementation can publish only `arm64` if that matches the first team
+rollout. The release workflow should make the missing architecture explicit in
+the README instead of silently pretending it exists.
+
+The DMG should contain:
+
+```text
+Agent Secret.app
+Applications -> /Applications
+```
+
+The ZIP artifact is optional. DMG is the human-friendly install surface; the
+unattended installer can also download a ZIP if that is simpler to unpack
+reliably in shell.
+
+## Code Changes
+
+### Bundle Layout
+
+- Replace the separate development install layout with one top-level
+  `Agent Secret.app`.
+- Build the Go CLI to `Contents/Resources/bin/agent-secret`.
+- Build the daemon binary into `AgentSecretDaemon.app`.
+- Place `AgentSecretDaemon.app` in `Contents/Library/Helpers`.
+- Keep the daemon as an app, not a raw background binary, so 1Password Desktop
+  sees a stable Agent Secret app identity.
+
+### CLI Discovery
+
+The CLI must be able to find the nested daemon helper relative to itself.
+
+Expected lookup order:
+
+1. If running from inside `Agent Secret.app`, use:
+
+   ```text
+   ../../Library/Helpers/AgentSecretDaemon.app
+   ```
+
+2. If running through the symlink, resolve the symlink and then use the same
+   app-relative path.
+3. In development, keep the current fallback to `~/Applications` or PATH so
+   local builds remain easy to test.
+
+### App Setup UI
+
+The app should expose a small setup screen:
+
+- CLI installed: yes/no.
+- CLI path.
+- Installed app path.
+- Daemon status.
+- Button: `Install Command Line Tool`.
+- Button: `Run Diagnostics`.
+
+The setup UI must not require any 1Password access.
+
+### CLI Install Command
+
+Add an unattended command for scripts:
+
+```bash
+agent-secret install-cli
+```
+
+Behavior:
+
+- Create parent directory for the target symlink.
+- Replace an existing Agent Secret symlink.
+- Refuse to overwrite an unrelated regular file unless `--force` is passed.
+- Default target: `~/.local/bin/agent-secret`.
+- Support:
+
+  ```bash
+  agent-secret install-cli --bin-dir ~/.local/bin
+  agent-secret install-cli --force
+  ```
+
+The app button should call the same internal implementation.
+
+### Installer Script
+
+Add `install.sh` at repo root.
+
+Responsibilities:
+
+- Download release metadata from GitHub.
+- Select the artifact for the local architecture.
+- Verify checksum.
+- Mount or unpack the artifact.
+- Copy the app bundle.
+- Run the bundled CLI's `install-cli`.
+- Run `agent-secret doctor`.
+
+The installer must not depend on Homebrew, 1Password CLI, or repo checkout
+state.
+
+## Signing and Notarization
+
+For local development, ad hoc signing is acceptable.
+
+For team distribution, release artifacts must be Developer ID signed and
+notarized before the DMG is published. The project has access to a paid Apple
+Developer Program account, so signing and notarization should be part of the
+release-ready path rather than a vague future option. Current Apple guidance for
+software outside the Mac App Store is to use Developer ID signing and
+notarization so Gatekeeper can verify the app under default macOS settings.
+
+Release CI will need:
+
+- Developer ID Application certificate.
+- Apple notarization credentials stored as GitHub Actions secrets. Prefer an
+  App Store Connect API key for CI over an Apple ID password.
+- Apple Team ID, key ID, issuer ID, and private API key material.
+- Hardened runtime entitlements if required by the app bundle.
+- A release job that signs nested code from the inside out:
+  - Go binaries.
+  - Nested daemon helper app.
+  - Main app bundle.
+  - DMG.
+- Notarization submission.
+- Stapling to the app or DMG.
+- Verification with `spctl` and `stapler`.
+
+The first release epic can still produce unsigned local artifacts to prove the
+bundle layout and installer flow. The first release intended for team use should
+complete signing, notarization, stapling, and Gatekeeper verification.
+
+## Homebrew Later
+
+Homebrew should come after GitHub Releases are reliable.
+
+Preferred shape:
+
+```bash
+brew tap kovyrin/agent-secret
+brew install --cask agent-secret
+brew upgrade agent-secret
+```
+
+The cask should install the same signed/notarized app bundle from GitHub
+Releases and run the CLI symlink step as a post-install action only if Homebrew
+allows it cleanly. If that becomes messy, the cask can install only the app and
+the README can tell users to run:
+
+```bash
+agent-secret install-cli
+```
+
+## Implementation Epics
+
+### Epic 1: App Bundle Reshape
+
+Status: Not started
+
+Deliverables:
+
+- Build script creates one top-level `Agent Secret.app`.
+- CLI binary is embedded in the app bundle.
+- Daemon helper app is embedded in the app bundle.
+- Existing `mise run dev:install` installs the new app-bundle layout.
+- Existing local `agent-secret exec` smoke still works.
+
+Acceptance checks:
+
+```bash
+mise run lint
+mise run build
+mise run dev:install
+agent-secret doctor
+agent-secret exec \
+  --reason "Install smoke" \
+  --secret TOKEN=op://Example/Item/token \
+  -- env
+```
+
+The smoke should use a real test-only ref locally and must not print the secret
+value.
+
+### Epic 2: CLI Symlink Installation
+
+Status: Not started
+
+Deliverables:
+
+- `agent-secret install-cli`.
+- App setup UI can install the CLI.
+- Help and README document install and upgrade.
+- Tests cover symlink creation, replacement, and refusal to overwrite unrelated
+  files.
+
+Acceptance checks:
+
+```bash
+agent-secret install-cli --bin-dir "$TMPDIR/agent-secret-bin"
+"$TMPDIR/agent-secret-bin/agent-secret" doctor
+```
+
+### Epic 3: Release Artifact Builder
+
+Status: Not started
+
+Deliverables:
+
+- Script to produce `Agent-Secret-vX.Y.Z-macos-arm64.dmg`.
+- DMG contains app bundle and `/Applications` symlink.
+- Checksums are generated.
+- CI can build artifacts on tag push.
+
+Acceptance checks:
+
+```bash
+scripts/build-release.sh v0.0.0-dev
+shasum -a 256 dist/*
+hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
+```
+
+### Epic 4: Signed and Notarized Releases
+
+Status: Not started
+
+Deliverables:
+
+- Developer ID signing in release CI.
+- Notarization in release CI using App Store Connect API key credentials.
+- Stapled artifact.
+- Gatekeeper verification documented and automated where possible.
+
+Acceptance checks:
+
+```bash
+codesign --verify --deep --strict "/Applications/Agent Secret.app"
+spctl --assess --type execute --verbose "/Applications/Agent Secret.app"
+xcrun stapler validate "/Applications/Agent Secret.app"
+```
+
+### Epic 5: Unattended Installer
+
+Status: Not started
+
+Deliverables:
+
+- Root `install.sh`.
+- Root `uninstall.sh`.
+- Version pin support.
+- Custom app/bin dir support.
+- Checksum verification.
+- Clean failure messages for unsupported architecture, missing release, and
+  checksum mismatch.
+- Uninstall removes app, shim, and application support state while preserving
+  audit logs by default.
+
+Acceptance checks:
+
+```bash
+AGENT_SECRET_VERSION=v0.0.0-dev ./install.sh
+agent-secret doctor
+./uninstall.sh
+test ! -e ~/.local/bin/agent-secret
+```
+
+### Epic 6: Homebrew Cask
+
+Status: Deferred
+
+Deliverables:
+
+- Public tap or cask formula.
+- README installation section.
+- Upgrade instructions.
+
+Acceptance checks:
+
+```bash
+brew install --cask kovyrin/agent-secret/agent-secret
+agent-secret doctor
+brew upgrade agent-secret
+```
+
+## Risks and Decisions
+
+- `/Applications` may require admin permissions on some managed machines. The
+  installer should support `~/Applications` as a fallback.
+- Shell PATH setup is not solved by installing the symlink. The app and
+  installer should warn if the selected bin directory is not on PATH.
+- Signing requires careful GitHub Actions secret management, certificate
+  import, and keychain cleanup.
+- Nested helper signing order matters. Release automation should make signing
+  deterministic rather than relying on manual Xcode export behavior.
+- The daemon helper must retain the app identity that 1Password Desktop shows
+  in the approval prompt.
+- DMG is the human surface. The unattended installer can use a ZIP internally if
+  it makes checksum and extraction simpler.
+
+## References
+
+- Apple Developer ID overview:
+  <https://developer.apple.com/support/developer-id/>
+- Apple packaging guidance for direct Mac distribution:
+  <https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution>
+- Apple notarization guidance:
+  <https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution>
