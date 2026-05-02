@@ -11,7 +11,7 @@ import (
 func TestLoadFindsProfileInParentAndSortsSecrets(t *testing.T) {
 	root := t.TempDir()
 	child := filepath.Join(root, "infra", "terraform")
-	if err := os.MkdirAll(child, 0o755); err != nil {
+	if err := os.MkdirAll(child, 0o750); err != nil {
 		t.Fatalf("create child dir: %v", err)
 	}
 	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
@@ -420,7 +420,7 @@ profiles:
 func writeConfig(t *testing.T, path string, contents string) {
 	t.Helper()
 
-	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 }

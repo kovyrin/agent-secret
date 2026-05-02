@@ -148,7 +148,7 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o755); err != nil {
+	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: this test intentionally creates a permissive custom socket directory.
 		t.Fatalf("chmod custom dir: %v", err)
 	}
 	manager := Manager{
@@ -178,7 +178,7 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 		"Helpers",
 		"AgentSecretDaemon.app",
 	)
-	if err := os.MkdirAll(daemonAppPath, 0o755); err != nil {
+	if err := os.MkdirAll(daemonAppPath, 0o750); err != nil {
 		t.Fatalf("mkdir daemon app: %v", err)
 	}
 	t.Setenv("AGENT_SECRET_DAEMON_APP_PATH", "/tmp/PoisonDaemon.app")
@@ -233,13 +233,13 @@ func TestDaemonAppPathForBundledExecutable(t *testing.T) {
 	appPath := filepath.Join(root, "Agent Secret.app")
 	cliPath := filepath.Join(appPath, "Contents", "Resources", "bin", "agent-secret")
 	daemonAppPath := filepath.Join(appPath, "Contents", "Library", "Helpers", "AgentSecretDaemon.app")
-	if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cliPath), 0o750); err != nil {
 		t.Fatalf("create cli dir: %v", err)
 	}
-	if err := os.MkdirAll(daemonAppPath, 0o755); err != nil {
+	if err := os.MkdirAll(daemonAppPath, 0o750); err != nil {
 		t.Fatalf("create daemon app: %v", err)
 	}
-	if err := os.WriteFile(cliPath, []byte("test"), 0o755); err != nil {
+	if err := os.WriteFile(cliPath, []byte("test"), 0o755); err != nil { //nolint:gosec // G306: bundled daemon path tests need a runnable CLI fixture.
 		t.Fatalf("write cli: %v", err)
 	}
 
@@ -249,7 +249,7 @@ func TestDaemonAppPathForBundledExecutable(t *testing.T) {
 	}
 
 	symlinkPath := filepath.Join(root, "bin", "agent-secret")
-	if err := os.MkdirAll(filepath.Dir(symlinkPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(symlinkPath), 0o750); err != nil {
 		t.Fatalf("create symlink dir: %v", err)
 	}
 	if err := os.Symlink(cliPath, symlinkPath); err != nil {

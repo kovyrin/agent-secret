@@ -49,7 +49,7 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 func TestParseExecBuildsRequestFromProfile(t *testing.T) {
 	root := t.TempDir()
 	infraDir := filepath.Join(root, "infra")
-	if err := os.MkdirAll(infraDir, 0o755); err != nil {
+	if err := os.MkdirAll(infraDir, 0o750); err != nil {
 		t.Fatalf("create infra dir: %v", err)
 	}
 	writeExecutable(t, infraDir, "terraform")
@@ -103,7 +103,7 @@ profiles:
 func TestParseExecFiltersProfileSecretsWithOnly(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "ansible-playbook")
@@ -152,7 +152,7 @@ profiles:
 func TestParseExecBuildsRequestFromEnvFiles(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -212,7 +212,7 @@ NEXT=op://Example/Next/token
 func TestParseExecEnvFileDoesNotLoadDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -246,7 +246,7 @@ profiles:
 func TestParseExecFiltersEnvFileSecretsWithOnly(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -288,7 +288,7 @@ PLAIN=kept
 func TestParseExecCombinesProfileEnvFileSecretAndOnlyPredictably(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -345,7 +345,7 @@ PLAIN=kept
 func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -382,7 +382,7 @@ func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
 func TestParseExecAccountPrecedenceInCombinedSources(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -436,7 +436,7 @@ profiles:
 func TestParseExecAccountAppliesToProfileSecretsWithoutConfigAccount(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -472,7 +472,7 @@ profiles:
 func TestParseExecEnvFileSecretsInheritProfileAccount(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -517,7 +517,7 @@ profiles:
 func TestParseExecRejectsInvalidOnlyAlias(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -560,7 +560,7 @@ profiles:
 func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "terraform")
@@ -607,7 +607,7 @@ func TestParseExecBuildsDefaultProfileFromExplicitConfigPath(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "custom-agent-secret.yml")
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "terraform")
@@ -646,7 +646,7 @@ profiles:
 func TestParseExecExplicitSecretsDoNotLoadDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "tool")
@@ -687,7 +687,7 @@ profiles:
 func TestParseExecMergesProfileAndExplicitSecretsWithOverrides(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
 	writeExecutable(t, binDir, "ansible-playbook")
@@ -927,7 +927,7 @@ func writeExecutable(t *testing.T, dir string, name string) {
 	t.Helper()
 
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: CLI parser tests need runnable fixture commands on PATH.
 		t.Fatalf("write executable: %v", err)
 	}
 }
@@ -941,7 +941,7 @@ func writeProfileConfig(t *testing.T, dir string, contents string) {
 func writeConfigFile(t *testing.T, path string, contents string) {
 	t.Helper()
 
-	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 }

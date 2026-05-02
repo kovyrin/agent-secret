@@ -218,7 +218,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan Envelope, func()) 
 	if err != nil {
 		t.Fatalf("MkdirTemp returned error: %v", err)
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: socket tests need an owner-searchable private listener directory.
 		_ = os.RemoveAll(dir)
 		t.Fatalf("secure socket test directory: %v", err)
 	}
