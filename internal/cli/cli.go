@@ -630,8 +630,8 @@ Daemon stop clears daemon-owned in-memory approvals, sessions, counters, nonces,
 
 func DoctorHelp() string {
 	return strings.TrimSpace(`
-agent-secret doctor prints non-secret local diagnostics: expected daemon socket path, audit log path, current platform, and whether the daemon responds.
-It never prints secret values or reads 1Password items.
+agent-secret doctor starts the daemon if needed and prints non-secret local diagnostics: platform, socket directory privacy, audit log writability, daemon status, native approver health, and 1Password desktop integration readiness.
+It never prints secret values or resolves 1Password item references.
 `)
 }
 

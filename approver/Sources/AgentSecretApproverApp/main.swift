@@ -20,6 +20,10 @@ private let kUsageExitCode: Int32 = 64
 private let kArguments: [String] = Array(CommandLine.arguments.dropFirst())
 
 do {
+    if kArguments == ["--health-check"] {
+        print("agent-secret-approver: ok")
+        exit(0)
+    }
     guard let socketPath: String = try socketPath(from: kArguments) else {
         MainActor.assumeIsolated {
             runSetupDialog()

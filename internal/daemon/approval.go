@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -216,6 +218,42 @@ func (a *SocketApprover) SubmitDecision(
 type ProcessApproverLauncher struct {
 	AppPath        string
 	IdentityPolicy ApproverIdentityPolicy
+}
+
+func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
+	executable, err := l.executablePath()
+	if err != nil {
+		return err
+	}
+	identity, err := l.identityPolicy().ValidateApproverExecutable(executable)
+	if err != nil {
+		return err
+	}
+
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	//nolint:gosec // G204: executable was canonicalized and validated by the approver identity policy above.
+	cmd := exec.CommandContext(checkCtx, identity.ExecutablePath, "--health-check")
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("%w: open /dev/null: %w", ErrApproverLaunchFailed, err)
+	}
+	defer func() { _ = devNull.Close() }()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdin = devNull
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("%w: health check timed out", ErrApproverLaunchFailed)
+		}
+		return fmt.Errorf("%w: health check failed: %w", ErrApproverLaunchFailed, err)
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "agent-secret-approver: ok" {
+		return fmt.Errorf("%w: unexpected health check response %q", ErrApproverLaunchFailed, got)
+	}
+	return nil
 }
 
 func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, _ ApprovalRequestPayload) (ExpectedApprover, error) {

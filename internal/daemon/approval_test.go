@@ -375,6 +375,40 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	}
 }
 
+func TestProcessApproverLauncherHealthCheck(t *testing.T) {
+	t.Parallel()
+
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'agent-secret-approver: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	err := (ProcessApproverLauncher{
+		AppPath:        helper,
+		IdentityPolicy: allowApproverIdentityPolicy{},
+	}).CheckHealth(context.Background())
+	if err != nil {
+		t.Fatalf("CheckHealth returned error: %v", err)
+	}
+}
+
+func TestProcessApproverLauncherHealthCheckRejectsUnexpectedOutput(t *testing.T) {
+	t.Parallel()
+
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\necho nope\n"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	err := (ProcessApproverLauncher{
+		AppPath:        helper,
+		IdentityPolicy: allowApproverIdentityPolicy{},
+	}).CheckHealth(context.Background())
+	if !errors.Is(err, ErrApproverLaunchFailed) {
+		t.Fatalf("CheckHealth error = %v, want ErrApproverLaunchFailed", err)
+	}
+}
+
 func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
 	t.Parallel()
 
