@@ -86,6 +86,29 @@ func TestResolveReturnsValueWithoutLoggingIt(t *testing.T) {
 	}
 }
 
+func TestResolvePreservesMultilineTextValue(t *testing.T) {
+	t.Parallel()
+
+	const textSecret = "-----BEGIN PRIVATE KEY-----\nline one\nline two\n-----END PRIVATE KEY-----\n"
+	fake := &fakeSecretsAPI{value: textSecret}
+	resolver, err := NewResolver(fake)
+	if err != nil {
+		t.Fatalf("NewResolver returned error: %v", err)
+	}
+
+	secret, err := resolver.Resolve(context.Background(), "op://Example Vault/Document Item/key.pem")
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+
+	if secret.Value() != textSecret {
+		t.Fatal("resolved multiline value was not preserved exactly")
+	}
+	if metadata := secret.Metadata(); metadata.Length != len(textSecret) {
+		t.Fatalf("metadata length = %d, want %d", metadata.Length, len(textSecret))
+	}
+}
+
 func TestResolveWrapsSDKError(t *testing.T) {
 	t.Parallel()
 

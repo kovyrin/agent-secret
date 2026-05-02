@@ -165,8 +165,8 @@ Current `exec` flags:
 
 - `--reason TEXT`: reason shown to the approver. Required unless the selected
   profile provides `reason`.
-- `--secret ALIAS=op://vault/item[/section]/field`: explicit secret mapping.
-  Repeat for multiple secrets.
+- `--secret ALIAS=op://vault/item[/section]/field-or-text-file`: explicit
+  secret mapping. Repeat for multiple secrets.
 - `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
   with `op://` become approved secret refs; other values are passed to the
   child process as plain environment entries. Repeat for multiple files.
@@ -187,6 +187,13 @@ Current `exec` flags:
 
 The command to run must appear after `--` as argv. `agent-secret exec` has no
 `--json` mode and does not parse shell strings.
+
+1Password file attachments and Document items are supported when the SDK can
+resolve them as text. For example, a ref such as
+`op://Example/GitHub App/key.pem` injects the file contents into the alias env
+var, preserving multiline text such as PEM keys. Agent Secret does not write the
+value to a temp file and does not print it. Binary attachments with NUL bytes
+are not supported by env-var delivery.
 
 Daemon management and diagnostics:
 

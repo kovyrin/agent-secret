@@ -120,7 +120,7 @@ func ValidateReference(ref string) error {
 
 	parts := strings.Split(strings.TrimPrefix(ref, "op://"), "/")
 	if len(parts) < 3 || len(parts) > 4 {
-		return fmt.Errorf("%w: expected op://vault/item[/section]/field", ErrInvalidReference)
+		return fmt.Errorf("%w: expected op://vault/item[/section]/field-or-text-file", ErrInvalidReference)
 	}
 
 	if slices.Contains(parts, "") {

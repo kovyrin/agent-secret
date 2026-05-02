@@ -17,7 +17,10 @@ import (
 	"time"
 )
 
-const syntheticSecret = "synthetic-secret-value"
+const (
+	syntheticSecret        = "synthetic-secret-value"
+	syntheticMultilineText = "-----BEGIN PRIVATE KEY-----\nline one\nline two\n-----END PRIVATE KEY-----\n"
+)
 
 type memoryAudit struct {
 	mu     sync.Mutex
@@ -106,6 +109,29 @@ func TestRunInjectsEnvOnlyIntoChildAndRecordsMetadata(t *testing.T) {
 	}
 	if bytes.Contains(encoded, []byte(syntheticSecret)) {
 		t.Fatalf("audit events contain synthetic secret: %s", encoded)
+	}
+}
+
+func TestRunPreservesMultilineSecretEnvValue(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	result, err := Run(context.Background(), Spec{
+		Path:          os.Args[0],
+		Args:          []string{"-test.run=TestExecHelperProcess", "--", "check-multiline-env"},
+		Env:           helperEnv("AGENT_SECRET_MULTILINE", syntheticMultilineText),
+		SecretAliases: []string{"AGENT_SECRET_MULTILINE"},
+		OverrideEnv:   true,
+		Stdout:        &stdout,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%q", result.ExitCode, stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "multiline-env-ok" {
+		t.Fatalf("stdout = %q, want multiline-env-ok", stdout.String())
 	}
 }
 
@@ -285,6 +311,13 @@ func TestExecHelperProcess(t *testing.T) {
 			os.Exit(42)
 		}
 		fmt.Println("env-ok")
+		os.Exit(0)
+	case "check-multiline-env":
+		if os.Getenv("AGENT_SECRET_MULTILINE") != syntheticMultilineText {
+			fmt.Println("multiline-env-mismatch")
+			os.Exit(42)
+		}
+		fmt.Println("multiline-env-ok")
 		os.Exit(0)
 	case "echo-stdin":
 		if _, err := io.Copy(os.Stdout, os.Stdin); err != nil {

@@ -122,6 +122,26 @@ agent-secret exec \
   -- terraform plan
 ```
 
+Replace `op read` for a text file attachment or Document item when the child
+expects the file contents in an environment variable:
+
+```bash
+# Before
+PRIVATE_KEY="$(op read op://Example/GitHub App/key.pem)" deploy-tool
+
+# After
+agent-secret exec \
+  --reason "Deploy with GitHub App key" \
+  --secret PRIVATE_KEY=op://Example/GitHub\ App/key.pem \
+  -- deploy-tool
+```
+
+This is text-secret support. Multiline text such as PEM keys and JSON blobs is
+preserved in the env var. Do not migrate binary attachments this way; env vars
+cannot carry NUL bytes. If the existing script expects a file path, prefer
+passing contents to its env-first path and let the approved child process create
+any temp file it already owns.
+
 Replace `op run`:
 
 ```bash

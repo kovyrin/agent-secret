@@ -166,8 +166,8 @@ Current flags:
 
 - `--reason TEXT`: human-readable reason shown in the approval UI. Required
   unless the selected profile provides `reason`.
-- `--secret ALIAS=op://vault/item[/section]/field`: explicit secret mapping.
-  Repeat for multiple secrets.
+- `--secret ALIAS=op://vault/item[/section]/field-or-text-file`: explicit
+  secret mapping. Repeat for multiple secrets.
 - `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
   with `op://` become approved secret refs; other values are passed to the
   child process as plain environment entries. Repeat for multiple files.
@@ -213,6 +213,12 @@ files. Env-file keys override the caller environment for the child process, and
 env-file secret aliases are removed from the base child environment before
 approved values are injected. Use `--only` with env files when one file contains
 refs for multiple command surfaces, such as beta and production deploy refs.
+
+1Password file attachments and Document items are supported as text refs. Use
+the same shape as `op read`, for example `op://Example/GitHub App/key.pem`.
+The resolved file contents are injected into the alias environment variable
+with multiline text preserved. Agent Secret does not create a temp file for the
+value and env-var delivery does not support binary attachments with NUL bytes.
 
 ## Other Commands
 

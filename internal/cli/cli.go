@@ -115,7 +115,7 @@ Common examples:
 Safety rules:
 
   - --reason is required, trimmed, and capped at 240 characters.
-  - --secret must be ALIAS=op://vault/item[/section]/field.
+  - --secret must be ALIAS=op://vault/item[/section]/field-or-text-file.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   - If no --profile, --secret, or --env-file is provided, exec uses default_profile from the discovered project config.
   - --env-file PATH loads dotenv-style KEY=VALUE entries. op:// values become approved secret refs; other values are passed only to the child.
@@ -126,6 +126,7 @@ Safety rules:
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - exec has no --json mode and never prints secret values.
+  - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
   - Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
   - Non-zero child exits are returned as child exits, not as broker failures.
@@ -140,14 +141,14 @@ agent-secret exec validates a command request, asks the local daemon for approve
 
 Usage:
 
-  agent-secret exec --reason TEXT --secret ALIAS=op://vault/item/field [flags] -- COMMAND [ARG...]
+  agent-secret exec --reason TEXT --secret ALIAS=op://vault/item/field-or-text-file [flags] -- COMMAND [ARG...]
   agent-secret exec --profile NAME [flags] -- COMMAND [ARG...]
   agent-secret exec --reason TEXT --env-file PATH [flags] -- COMMAND [ARG...]
 
 Required:
 
   --reason TEXT       Human-readable reason shown to the approver and used for reuse matching. Required unless the profile sets reason.
-  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field. Required unless a profile, default_profile, or --env-file supplies secret refs.
+  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field-or-text-file. Required unless a profile, default_profile, or --env-file supplies secret refs.
   -- COMMAND [ARG...] Command argv to execute. The -- boundary is required.
 
 Flags:
@@ -210,6 +211,9 @@ Project profiles:
   --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
   Included profiles are resolved in order. Later includes and the selected
   profile override earlier secrets with the same alias.
+  1Password text file/document refs are resolved into the alias env value with
+  multiline text preserved. Binary attachments are not supported by env-var
+  delivery.
 
 Environment:
 
