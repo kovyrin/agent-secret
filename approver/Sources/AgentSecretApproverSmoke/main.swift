@@ -14,7 +14,8 @@ private let kRequest: ApprovalRequest = .init(
     secrets: [
         RequestedSecret(
             alias: "EXAMPLE_TOKEN",
-            ref: "op://Example Vault/Example Item/token"
+            ref: "op://Example Vault/Example Item/token",
+            account: "Work"
         )
     ]
 )

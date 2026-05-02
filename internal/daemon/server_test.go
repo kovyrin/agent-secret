@@ -233,7 +233,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: approver,
-		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
 	client, cleanup := startTestServerWithBroker(t, broker, approver, staticPeerValidator{info: peer})

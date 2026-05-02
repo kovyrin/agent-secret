@@ -103,7 +103,8 @@ private func requestFromArguments(_ arguments: [String]) throws -> ApprovalReque
         secrets: [
             RequestedSecret(
                 alias: "EXAMPLE_TOKEN",
-                ref: "op://Example Vault/Example Item/token"
+                ref: "op://Example Vault/Example Item/token",
+                account: "Work"
             )
         ]
     )

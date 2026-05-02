@@ -26,6 +26,12 @@ import Foundation
                         .font(.system(size: Metric.detailTitleFontSize, design: .monospaced))
                         .lineLimit(Metric.twoLineLimit)
                         .truncationMode(.middle)
+                    if let accountLabel: String = secret.accountLabel {
+                        Text(accountLabel)
+                            .font(.system(size: Metric.detailSubtitleFontSize))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(Metric.singleLineLimit)
+                    }
                 }
             }
         }

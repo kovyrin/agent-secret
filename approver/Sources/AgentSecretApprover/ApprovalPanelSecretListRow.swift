@@ -15,12 +15,20 @@ import Foundation
                     .font(.system(size: Metric.secretListAliasFontSize, weight: .semibold, design: .monospaced))
                     .lineLimit(Metric.singleLineLimit)
                     .frame(width: Metric.secretListAliasWidth, alignment: .leading)
-                Text(secret.ref)
-                    .font(.system(size: Metric.secretListRefFontSize, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(Metric.singleLineLimit)
-                    .truncationMode(.middle)
-                    .layoutPriority(Metric.refLayoutPriority)
+                VStack(alignment: .leading, spacing: Metric.rowTextSpacing) {
+                    Text(secret.ref)
+                        .font(.system(size: Metric.secretListRefFontSize, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(Metric.singleLineLimit)
+                        .truncationMode(.middle)
+                    if let accountLabel: String = secret.accountLabel {
+                        Text(accountLabel)
+                            .font(.system(size: Metric.secretListRefFontSize))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(Metric.singleLineLimit)
+                    }
+                }
+                .layoutPriority(Metric.refLayoutPriority)
             }
         }
 

@@ -17,6 +17,7 @@
   "secrets": [
     {
       "alias": "EXAMPLE_TOKEN",
+      "account": "Work",
       "ref": "op://Example Vault/Example Item/token"
     }
   ]

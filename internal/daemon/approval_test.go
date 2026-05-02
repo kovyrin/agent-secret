@@ -58,6 +58,9 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 	if approvalRequest.Secrets[0].Ref != "op://Example Vault/Example Item/token" {
 		t.Fatalf("unexpected secret ref: %+v", approvalRequest.Secrets)
 	}
+	if approvalRequest.Secrets[0].Account != "Work" {
+		t.Fatalf("unexpected secret account: %+v", approvalRequest.Secrets)
+	}
 
 	decisionData := readFixture(t, "approval_decision.json")
 	var decision ApprovalDecisionPayload
@@ -95,6 +98,9 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	}
 	if payload.RequestID != "req_1" || payload.Nonce != "nonce_1" {
 		t.Fatalf("unexpected payload identifiers: %+v", payload)
+	}
+	if payload.Secrets[0].Account != "Work" {
+		t.Fatalf("payload secret account = %q, want Work", payload.Secrets[0].Account)
 	}
 	uses := 3
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
@@ -429,7 +435,7 @@ func approvalTestRequest(t *testing.T, expiresAt time.Time) request.ExecRequest 
 		Command:            []string{"terraform", "plan"},
 		ResolvedExecutable: "/opt/homebrew/bin/terraform",
 		CWD:                "/tmp/project",
-		Secrets:            []request.Secret{{Alias: "TOKEN", Ref: ref}},
+		Secrets:            []request.Secret{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
 		ReceivedAt:         expiresAt.Add(-request.DefaultExecTTL),
 		ExpiresAt:          expiresAt,
 		TTL:                request.DefaultExecTTL,
