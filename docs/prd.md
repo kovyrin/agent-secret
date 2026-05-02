@@ -1173,8 +1173,12 @@ Exit criteria:
 
 ### Audit Criteria
 
-- Approval, denial, fetch, resolve, expiry, destroy, and command completion
-  events are logged.
+- V1 `exec` logs approval request, approval grant, approval denial, approval
+  timeout, reusable approval reuse/refresh, secret fetch attempt, secret fetch
+  failure, command start/start-complete/completion, post-payload disconnect, and
+  daemon stop events.
+- Future handle/session delivery APIs must add expiry and destroy audit events
+  before those APIs are considered complete.
 - Logs contain refs and aliases but no values.
 - Logs are readable only by the current user by default.
 

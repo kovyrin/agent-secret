@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -61,18 +62,17 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 		t.Fatalf("ReportCompleted returned error: %v", err)
 	}
 
-	got := []audit.EventType{}
-	for _, event := range aud.Events() {
-		got = append(got, event.Type)
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventCommandStarting,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
 	}
-	want := []audit.EventType{audit.EventCommandStarting, audit.EventCommandStarted, audit.EventCommandCompleted}
-	if len(got) != len(want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("audit events = %v, want %v", got, want)
-		}
 	}
 }
 

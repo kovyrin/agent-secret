@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -14,6 +16,8 @@ import (
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
+
+const canarySecretValue = "synthetic-secret-value"
 
 type mockApprover struct {
 	decision ApprovalDecision
@@ -144,7 +148,7 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}, order: &order},
 		Resolver: &mockResolver{values: map[string]string{
-			"op://Example/Item/token": "synthetic-secret-value",
+			"op://Example/Item/token": canarySecretValue,
 		}, order: &order},
 		Audit: aud,
 	})
@@ -153,25 +157,61 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleExec returned error: %v", err)
 	}
-	if got := grant.Env["TOKEN"]; got != "synthetic-secret-value" {
+	if got := grant.Env["TOKEN"]; got != canarySecretValue {
 		t.Fatalf("env TOKEN = %q", got)
 	}
 	if !reflect.DeepEqual(order, []string{"approve", "resolve:op://Example/Item/token"}) {
 		t.Fatalf("unexpected operation order: %v", order)
 	}
 	events := aud.Events()
-	if len(events) != 1 || events[0].Type != audit.EventCommandStarting {
-		t.Fatalf("expected command_starting audit before payload, got %+v", events)
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventCommandStarting,
 	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	assertAuditEventsValueFree(t, events)
 }
 
-func TestBrokerDenialDoesNotResolveOrAuditCommandStarting(t *testing.T) {
+func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 
-	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
+	assertApprovalFailureAudited(t, approvalFailureAuditCase{
+		name:      "denial",
+		err:       ErrApprovalDenied,
+		eventType: audit.EventApprovalDenied,
+		errorCode: "approval_denied",
+	})
+}
+
+func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
+	t.Parallel()
+
+	assertApprovalFailureAudited(t, approvalFailureAuditCase{
+		name:      "timeout",
+		err:       ErrRequestExpired,
+		eventType: audit.EventApprovalTimedOut,
+		errorCode: "request_expired",
+	})
+}
+
+type approvalFailureAuditCase struct {
+	name      string
+	err       error
+	eventType audit.EventType
+	errorCode string
+}
+
+func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
+	t.Helper()
+
+	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": canarySecretValue}}
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: false}},
+		Approver: &mockApprover{err: tc.err},
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -179,15 +219,21 @@ func TestBrokerDenialDoesNotResolveOrAuditCommandStarting(t *testing.T) {
 	_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	}))
-	if !errors.Is(err, ErrApprovalDenied) {
-		t.Fatalf("expected denial, got %v", err)
+	if !errors.Is(err, tc.err) {
+		t.Fatalf("expected approval %s, got %v", tc.name, err)
 	}
 	if len(resolver.Calls()) != 0 {
-		t.Fatalf("resolver was called after denial: %v", resolver.Calls())
+		t.Fatalf("resolver was called after approval %s: %v", tc.name, resolver.Calls())
 	}
-	if events := aud.Events(); len(events) != 0 {
-		t.Fatalf("audit wrote command events after denial: %+v", events)
+	events := aud.Events()
+	want := []audit.EventType{audit.EventApprovalRequested, tc.eventType}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
 	}
+	if events[1].ErrorCode != tc.errorCode {
+		t.Fatalf("approval %s error code = %q", tc.name, events[1].ErrorCode)
+	}
+	assertAuditEventsValueFree(t, events)
 }
 
 func TestBrokerDeduplicatesRefsAndPreservesEmptyValues(t *testing.T) {
@@ -256,8 +302,8 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
 		Resolver: &mockResolver{
-			values: map[string]string{"op://Example/Item/token": "value"},
-			errs:   map[string]error{failingRef: errors.New("unreadable")},
+			values: map[string]string{"op://Example/Item/token": canarySecretValue},
+			errs:   map[string]error{failingRef: fmt.Errorf("unreadable %s", canarySecretValue)},
 		},
 		Audit: aud,
 	})
@@ -269,9 +315,24 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected partial fetch failure")
 	}
-	if events := aud.Events(); len(events) != 0 {
-		t.Fatalf("command_starting audit should not be written after fetch failure: %+v", events)
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSecretFetchFailed,
 	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	failure := events[len(events)-1]
+	if failure.ErrorCode != "resolve_failed" {
+		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
+	}
+	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failingRef {
+		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
+	}
+	assertAuditEventsValueFree(t, events)
 	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
 		t.Fatalf("request should not become active after failed fetch, got %v", err)
 	}
@@ -513,7 +574,14 @@ func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
 	for _, event := range aud.Events() {
 		got = append(got, event.Type)
 	}
-	want := []audit.EventType{audit.EventCommandStarting, audit.EventCommandStarted, audit.EventCommandCompleted}
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventCommandStarting,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
@@ -539,7 +607,7 @@ func TestBrokerClientDisconnectAfterPayloadAuditsWithoutKillingProcess(t *testin
 	broker.ClientDisconnected(context.Background(), "req_1")
 
 	events := aud.Events()
-	if len(events) != 2 || events[1].Type != audit.EventExecClientDisconnectedAfterPayload {
+	if len(events) != 5 || events[4].Type != audit.EventExecClientDisconnectedAfterPayload {
 		t.Fatalf("expected disconnect audit, got %+v", events)
 	}
 }
@@ -617,4 +685,23 @@ func containsAuditEvent(events []audit.Event, eventType audit.EventType) bool {
 		}
 	}
 	return false
+}
+
+func auditEventTypes(events []audit.Event) []audit.EventType {
+	types := make([]audit.EventType, 0, len(events))
+	for _, event := range events {
+		types = append(types, event.Type)
+	}
+	return types
+}
+
+func assertAuditEventsValueFree(t *testing.T, events []audit.Event) {
+	t.Helper()
+	encoded, err := json.Marshal(events)
+	if err != nil {
+		t.Fatalf("marshal audit events: %v", err)
+	}
+	if bytes.Contains(encoded, []byte(canarySecretValue)) {
+		t.Fatalf("audit events contain secret value %q: %s", canarySecretValue, encoded)
+	}
 }
