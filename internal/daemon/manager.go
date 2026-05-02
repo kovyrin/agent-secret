@@ -26,14 +26,6 @@ func NewManager(socketPath string) (Manager, error) {
 			return Manager{}, err
 		}
 	}
-	if daemonPath := strings.TrimSpace(os.Getenv("AGENT_SECRET_DAEMON_PATH")); daemonPath != "" {
-		return Manager{
-			SocketPath:         socketPath,
-			DaemonPath:         daemonPath,
-			TrustedClientPaths: CurrentExecutableTrustedClientPaths(),
-			StartupTimeout:     3 * time.Second,
-		}, nil
-	}
 	daemonPath, err := defaultDaemonPath()
 	if err != nil {
 		return Manager{}, err

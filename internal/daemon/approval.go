@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrApproverLaunchFailed = errors.New("approver launch failed")
+	ErrApproverIdentity     = errors.New("approver identity mismatch")
 	ErrApproverPeerMismatch = errors.New("approver peer identity mismatch")
 	ErrNoPendingApproval    = errors.New("no pending approval request")
 	ErrStaleApproval        = errors.New("stale approval response")
@@ -55,6 +56,17 @@ type ApprovalEndpoint interface {
 
 type ApproverLauncher interface {
 	Launch(ctx context.Context, socketPath string, payload ApprovalRequestPayload) (ExpectedApprover, error)
+}
+
+type ApproverIdentityPolicy interface {
+	ValidateApproverExecutable(path string) (ApproverIdentity, error)
+}
+
+type ApproverIdentity struct {
+	ExecutablePath string
+	BundlePath     string
+	BundleID       string
+	TeamID         string
 }
 
 type ExpectedApprover struct {
@@ -201,7 +213,8 @@ func (a *SocketApprover) SubmitDecision(
 }
 
 type ProcessApproverLauncher struct {
-	AppPath string
+	AppPath        string
+	IdentityPolicy ApproverIdentityPolicy
 }
 
 func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, _ ApprovalRequestPayload) (ExpectedApprover, error) {
@@ -209,6 +222,11 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 	if err != nil {
 		return ExpectedApprover{}, err
 	}
+	identity, err := l.identityPolicy().ValidateApproverExecutable(executable)
+	if err != nil {
+		return ExpectedApprover{}, err
+	}
+	executable = identity.ExecutablePath
 
 	cmd := exec.CommandContext(ctx, executable, "--socket", socketPath)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
@@ -240,6 +258,13 @@ func (l ProcessApproverLauncher) executablePath() (string, error) {
 		return filepath.Join(l.AppPath, "Contents", "MacOS", "agent-secret-approver"), nil
 	}
 	return l.AppPath, nil
+}
+
+func (l ProcessApproverLauncher) identityPolicy() ApproverIdentityPolicy {
+	if l.IdentityPolicy != nil {
+		return l.IdentityPolicy
+	}
+	return DefaultApproverIdentityPolicy()
 }
 
 func approvalPayload(requestID string, nonce string, req request.ExecRequest) ApprovalRequestPayload {

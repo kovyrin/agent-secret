@@ -187,6 +187,42 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	}
 }
 
+func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	path, stop := startRawServerWithBrokerAndExecValidator(
+		t,
+		newTestBroker(t, BrokerOptions{
+			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		nil,
+		staticPeerValidator{info: peer},
+		NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+	)
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	client := NewClient(conn)
+	defer func() { _ = client.Close() }()
+
+	if _, err := client.Status(context.Background()); err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+	if _, err := client.Stop(context.Background()); !IsProtocolError(err, "untrusted_client") {
+		t.Fatalf("expected untrusted_client stop error, got %v", err)
+	}
+	if _, err := client.Status(context.Background()); err != nil {
+		t.Fatalf("daemon stopped after rejected stop: %v", err)
+	}
+}
+
 func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	t.Parallel()
 
@@ -481,6 +517,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrAuditRequired, want: "audit_failed"},
 		{err: ErrInvalidNonce, want: "invalid_nonce"},
 		{err: ErrApproverPeerMismatch, want: "approver_peer_mismatch"},
+		{err: ErrApproverIdentity, want: "approver_identity_mismatch"},
 		{err: ErrNoPendingApproval, want: "no_pending_approval"},
 		{err: ErrRequestExpired, want: "request_expired"},
 		{err: ErrStaleApproval, want: "stale_approval"},

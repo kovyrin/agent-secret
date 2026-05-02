@@ -75,7 +75,11 @@ func runDaemonManagerHelper(t *testing.T) {
 		_, _ = fmt.Fprintf(os.Stderr, "new broker: %v\n", err)
 		os.Exit(70)
 	}
-	server, err := NewServer(ServerOptions{Broker: broker, Validator: allowPeerValidator{}})
+	server, err := NewServer(ServerOptions{
+		Broker:        broker,
+		Validator:     allowPeerValidator{},
+		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+	})
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "new server: %v\n", err)
 		os.Exit(70)
@@ -102,7 +106,7 @@ func waitForStatusFailure(t *testing.T, manager Manager) {
 	t.Fatal("daemon still responded after stop")
 }
 
-func TestNewManagerUsesDefaultSocketAndDaemonPathOverride(t *testing.T) {
+func TestNewManagerIgnoresDaemonPathEnvironmentOverride(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("AGENT_SECRET_DAEMON_PATH", "/tmp/agent-secretd-test")
@@ -115,8 +119,8 @@ func TestNewManagerUsesDefaultSocketAndDaemonPathOverride(t *testing.T) {
 	if manager.SocketPath != wantSocket {
 		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath, wantSocket)
 	}
-	if manager.DaemonPath != "/tmp/agent-secretd-test" {
-		t.Fatalf("DaemonPath = %q, want env override", manager.DaemonPath)
+	if manager.DaemonPath == "/tmp/agent-secretd-test" {
+		t.Fatalf("DaemonPath honored requester-controlled env override: %q", manager.DaemonPath)
 	}
 	if !slices.Equal(manager.TrustedClientPaths, CurrentExecutableTrustedClientPaths()) {
 		t.Fatalf("TrustedClientPaths = %v, want current executable", manager.TrustedClientPaths)
@@ -156,14 +160,20 @@ func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 }
 
 func TestDaemonAppPathAndStartCommand(t *testing.T) {
-	t.Setenv("AGENT_SECRET_DAEMON_APP_PATH", "/tmp/AgentSecretDaemon.app")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	daemonAppPath := filepath.Join(home, "Applications", "AgentSecretDaemon.app")
+	if err := os.MkdirAll(daemonAppPath, 0o755); err != nil {
+		t.Fatalf("mkdir daemon app: %v", err)
+	}
+	t.Setenv("AGENT_SECRET_DAEMON_APP_PATH", "/tmp/PoisonDaemon.app")
 	t.Setenv("OP_ACCOUNT", "DefaultFixture")
 	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
-	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/Applications/AgentSecretApprover.app")
+	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/tmp/PoisonApprover.app")
 
 	appPath, ok := defaultDaemonAppPath()
 	if runtime.GOOS == "darwin" {
-		if !ok || appPath != "/tmp/AgentSecretDaemon.app" {
+		if !ok || appPath != daemonAppPath {
 			t.Fatalf("default daemon app path = %q, %v", appPath, ok)
 		}
 		cmd := daemonStartCommand(context.Background(), appPath, []string{"--socket", "/tmp/d.sock"})
@@ -178,7 +188,6 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 			"OP_ACCOUNT=DefaultFixture",
 			"--env",
 			"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
-			"AGENT_SECRET_APPROVER_PATH=/Applications/AgentSecretApprover.app",
 			"--args",
 			"--socket",
 			"/tmp/d.sock",
@@ -186,6 +195,9 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 			if !slices.Contains(cmd.Args, want) {
 				t.Fatalf("darwin app command args %v missing %q", cmd.Args, want)
 			}
+		}
+		if slices.Contains(cmd.Args, "AGENT_SECRET_APPROVER_PATH=/tmp/PoisonApprover.app") {
+			t.Fatalf("darwin app command args forwarded poisoned approver path: %v", cmd.Args)
 		}
 		return
 	}

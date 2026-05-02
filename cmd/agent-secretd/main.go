@@ -36,7 +36,7 @@ func run() int {
 	flags.StringVar(&socketPath, "socket", socketPath, "daemon socket path")
 	var trustedClients stringListFlag
 	flags.Var(&trustedClients, "trusted-client", "trusted agent-secret executable path; repeatable")
-	approverPath := flags.String("approver", os.Getenv("AGENT_SECRET_APPROVER_PATH"), "approver executable or .app path")
+	approverPath := flags.String("approver", defaultApproverFlagValue(), "approver executable or .app path")
 	accountName := flags.String("account", os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"), "1Password account sign-in address, name, or UUID; empty uses OP_ACCOUNT or my.1password.com")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		stderrf("agent-secretd: parse flags: %v\n", err)
@@ -91,6 +91,10 @@ func run() int {
 
 func stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, args...)
+}
+
+func defaultApproverFlagValue() string {
+	return ""
 }
 
 type stringListFlag []string

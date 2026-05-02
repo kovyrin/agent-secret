@@ -22,6 +22,12 @@ type recordingLauncher struct {
 	err      error
 }
 
+type allowApproverIdentityPolicy struct{}
+
+func (allowApproverIdentityPolicy) ValidateApproverExecutable(path string) (ApproverIdentity, error) {
+	return ApproverIdentity{ExecutablePath: path}, nil
+}
+
 func (l *recordingLauncher) Launch(_ context.Context, _ string, payload ApprovalRequestPayload) (ExpectedApprover, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -292,7 +298,10 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 		t.Fatalf("write helper: %v", err)
 	}
 
-	expected, err := (ProcessApproverLauncher{AppPath: helper}).Launch(
+	expected, err := (ProcessApproverLauncher{
+		AppPath:        helper,
+		IdentityPolicy: allowApproverIdentityPolicy{},
+	}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
 		ApprovalRequestPayload{},
@@ -308,16 +317,67 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	}
 }
 
+func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
+	t.Parallel()
+
+	helper := filepath.Join(t.TempDir(), "agent-secret-approver")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	_, err := (ProcessApproverLauncher{AppPath: helper}).Launch(
+		context.Background(),
+		"/tmp/agent-secret-test.sock",
+		ApprovalRequestPayload{},
+	)
+	if !errors.Is(err, ErrApproverIdentity) {
+		t.Fatalf("expected approver identity error, got %v", err)
+	}
+}
+
 func TestProcessApproverLauncherWrapsStartFailure(t *testing.T) {
 	t.Parallel()
 
-	_, err := (ProcessApproverLauncher{AppPath: filepath.Join(t.TempDir(), "missing")}).Launch(
+	_, err := (ProcessApproverLauncher{
+		AppPath:        filepath.Join(t.TempDir(), "missing"),
+		IdentityPolicy: allowApproverIdentityPolicy{},
+	}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
 		ApprovalRequestPayload{},
 	)
 	if !errors.Is(err, ErrApproverLaunchFailed) {
 		t.Fatalf("expected launch failure, got %v", err)
+	}
+}
+
+func TestBundleApproverIdentityPolicyValidatesBundleMetadata(t *testing.T) {
+	t.Parallel()
+
+	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	identity, err := (BundleApproverIdentityPolicy{VerifySignature: false}).ValidateApproverExecutable(executable)
+	if err != nil {
+		t.Fatalf("ValidateApproverExecutable returned error: %v", err)
+	}
+	wantExecutable, err := comparableApproverPath(executable)
+	if err != nil {
+		t.Fatalf("comparableApproverPath returned error: %v", err)
+	}
+	if identity.ExecutablePath != wantExecutable {
+		t.Fatalf("identity executable = %q, want %q", identity.ExecutablePath, wantExecutable)
+	}
+	if identity.BundleID != DefaultApproverBundleID {
+		t.Fatalf("identity bundle id = %q", identity.BundleID)
+	}
+}
+
+func TestBundleApproverIdentityPolicyRejectsWrongBundleID(t *testing.T) {
+	t.Parallel()
+
+	executable := writeApproverBundle(t, t.TempDir(), "com.example.fake", DefaultApproverExecutable)
+	_, err := (BundleApproverIdentityPolicy{VerifySignature: false}).ValidateApproverExecutable(executable)
+	if !errors.Is(err, ErrApproverIdentity) {
+		t.Fatalf("expected approver identity error, got %v", err)
 	}
 }
 
@@ -328,6 +388,34 @@ func newSocketApproverForTest(t *testing.T, launcher ApproverLauncher, now func(
 		t.Fatalf("NewSocketApprover returned error: %v", err)
 	}
 	return approver
+}
+
+func writeApproverBundle(t *testing.T, dir string, bundleID string, executableName string) string {
+	t.Helper()
+	bundlePath := filepath.Join(dir, "AgentSecretApprover.app")
+	macOSPath := filepath.Join(bundlePath, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSPath, 0o755); err != nil {
+		t.Fatalf("mkdir bundle: %v", err)
+	}
+	executablePath := filepath.Join(macOSPath, executableName)
+	if err := os.WriteFile(executablePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+	info := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>` + bundleID + `</string>
+  <key>CFBundleExecutable</key>
+  <string>` + executableName + `</string>
+</dict>
+</plist>
+`
+	if err := os.WriteFile(filepath.Join(bundlePath, "Contents", "Info.plist"), []byte(info), 0o644); err != nil {
+		t.Fatalf("write Info.plist: %v", err)
+	}
+	return executablePath
 }
 
 func approvalTestRequest(t *testing.T, expiresAt time.Time) request.ExecRequest {
