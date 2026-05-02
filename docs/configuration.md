@@ -238,3 +238,14 @@ agent-secret doctor
 
 `doctor` prints non-secret setup diagnostics. It should not require or resolve
 real secret values.
+
+CLI installation:
+
+```bash
+agent-secret install-cli
+agent-secret install-cli --bin-dir "$HOME/.local/bin"
+agent-secret install-cli --force
+```
+
+`install-cli` creates or repairs the user-level `agent-secret` command symlink.
+It refuses to replace an unrelated regular file unless `--force` is passed.

@@ -94,6 +94,9 @@ AGENT_SECRET_APP_DIR="$HOME/Applications" install.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" install.sh
 ```
 
+For local smoke tests, `AGENT_SECRET_DMG` and
+`AGENT_SECRET_CHECKSUMS_FILE` can point at a locally built artifact.
+
 ### Upgrade
 
 The upgrade path is intentionally the same as install:
@@ -142,6 +145,9 @@ AGENT_SECRET_APP_DIR="$HOME/Applications" uninstall.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" uninstall.sh
 AGENT_SECRET_REMOVE_AUDIT_LOGS=1 uninstall.sh
 ```
+
+For isolated tests, `AGENT_SECRET_SUPPORT_DIR` and `AGENT_SECRET_AUDIT_DIR`
+override the state/log directories.
 
 Audit logs are durable by design and should require an explicit separate
 removal command:
@@ -313,7 +319,7 @@ agent-secret install-cli
 
 ### Epic 1: App Bundle Reshape
 
-Status: Not started
+Status: Implemented
 
 Deliverables:
 
@@ -341,7 +347,7 @@ value.
 
 ### Epic 2: CLI Symlink Installation
 
-Status: Not started
+Status: Implemented
 
 Deliverables:
 
@@ -360,7 +366,7 @@ agent-secret install-cli --bin-dir "$TMPDIR/agent-secret-bin"
 
 ### Epic 3: Release Artifact Builder
 
-Status: Not started
+Status: Implemented for unsigned/ad-hoc artifacts
 
 Deliverables:
 
@@ -379,7 +385,7 @@ hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
 
 ### Epic 4: Signed and Notarized Releases
 
-Status: Not started
+Status: Not started; blocked on Developer ID signing and notarization secrets
 
 Deliverables:
 
@@ -398,7 +404,7 @@ xcrun stapler validate "/Applications/Agent Secret.app"
 
 ### Epic 5: Unattended Installer
 
-Status: Not started
+Status: Implemented
 
 Deliverables:
 

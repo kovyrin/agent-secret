@@ -13,7 +13,9 @@ This repository is designed as a standalone open-source project.
 
 Planning scaffold, research spikes, Epic 3 core Go packages, the Epic 4
 CLI/daemon/exec path, and the Epic 5 native approver socket integration are in
-place. Session/socket secret reads are next.
+place. The macOS app bundle, development installer, local DMG builder, and
+unattended install/uninstall scripts are in progress on the distribution PR.
+Session/socket secret reads are next.
 
 ## Current Documents
 
@@ -40,7 +42,7 @@ agent-secret/
   cmd/agent-secret/              # Go CLI
   cmd/agent-secretd/             # Go daemon
   internal/                      # Go broker, policy, socket, audit packages
-  approver/                      # Swift macOS approval helper
+  approver/                      # Swift macOS approval/setup app
   docs/                          # Product, architecture, and implementation docs
 ```
 
@@ -66,7 +68,8 @@ go test ./...
 go test -tags integration ./...
 go build ./cmd/agent-secret ./cmd/agent-secretd
 cd approver && swift test
-cd approver && ./scripts/build-app.sh
+scripts/build-app-bundle.sh
+scripts/build-release.sh v0.0.0-dev
 swift run agent-secret-approver-smoke
 ```
 
@@ -108,6 +111,61 @@ mise run test:race
 mise run test:coverage
 ```
 
+## Install From A Release
+
+The intended macOS install shape is one app bundle:
+
+```text
+/Applications/Agent Secret.app
+  Contents/MacOS/Agent Secret
+  Contents/Library/Helpers/AgentSecretDaemon.app
+  Contents/Resources/bin/agent-secret
+```
+
+The command-line entry point is a user-level symlink:
+
+```text
+~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+```
+
+Human install flow:
+
+1. Download `Agent-Secret-vX.Y.Z-macos-arm64.dmg` from GitHub Releases.
+2. Open the DMG and drag `Agent Secret.app` into `/Applications`.
+3. Open `Agent Secret.app`.
+4. Click `Install Command Line Tool`.
+5. Run:
+
+   ```bash
+   agent-secret doctor
+   ```
+
+Unattended install and upgrade use the same script:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+```
+
+Useful installer environment variables:
+
+```bash
+AGENT_SECRET_VERSION=v0.3.1
+AGENT_SECRET_APP_DIR="$HOME/Applications"
+AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
+```
+
+Unattended uninstall:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
+```
+
+By default uninstall removes the app, CLI symlink, and application support
+state, but leaves `~/Library/Logs/agent-secret` audit logs in place. Set
+`AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
+
 ## Development Install
 
 To use the current development build from any project on the same machine:
@@ -118,24 +176,34 @@ mise dev:install
 
 By default this installs:
 
-- `agent-secret`, `agent-secretd`, and an `agent-secret-approver` shim into
-  `~/.local/bin`.
-- `AgentSecretDaemon.app` and `AgentSecretApprover.app` into
-  `~/Applications`.
+- `~/Applications/Agent Secret.app`.
+- `~/.local/bin/agent-secret` as a symlink into the app bundle.
 
 Override the install locations with `--bin-dir`, `--app-dir`,
 `AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
-one-off flags, run `./scripts/dev-install.sh` directly.
+one-off flags, run `./scripts/dev-install.sh` directly. The dev installer also
+removes the old split-app development artifacts if they are present.
 
 By default, `agent-secret` uses the personal 1Password sign-in address
 `my.1password.com`. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` in the
 shell that will run `agent-secret exec` only when you want to force a specific
 account; the daemon inherits that value when it auto-starts. Project config can
 also set `account` globally, per profile, or per secret, and those config values
-take precedence for the affected secret refs.
-On macOS, `agent-secret` starts the daemon through `AgentSecretDaemon.app` so
-1Password sees the SDK caller as Agent Secret instead of the terminal or agent
-desktop app that launched the CLI.
+take precedence for the affected secret refs. On macOS, `agent-secret` starts
+the daemon through the nested `AgentSecretDaemon.app` inside `Agent Secret.app`
+so 1Password sees the SDK caller as Agent Secret instead of the terminal or
+agent desktop app that launched the CLI.
+
+Local release artifact build:
+
+```bash
+scripts/build-release.sh v0.0.0-dev
+```
+
+That produces a DMG and `checksums.txt` in `dist/`.
+Tag pushes matching `v*` build the same artifacts in CI and attach them to a
+draft GitHub Release. The artifacts are ad-hoc signed until Developer ID
+signing and notarization are configured.
 
 ## Command Usage
 
@@ -203,7 +271,12 @@ agent-secret daemon status
 agent-secret daemon start
 agent-secret daemon stop
 agent-secret doctor
+agent-secret install-cli
 ```
+
+`agent-secret install-cli` installs or repairs the `agent-secret` symlink for
+the current user. It refuses to replace an unrelated regular file unless
+`--force` is passed.
 
 ## Project Profiles
 

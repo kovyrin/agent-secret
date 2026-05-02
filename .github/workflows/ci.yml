@@ -4,10 +4,15 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
 
 jobs:
   lint-test-build:
@@ -34,3 +39,45 @@ jobs:
 
       - name: Build commands and app bundle
         run: mise run build
+
+  draft-release-artifacts:
+    name: Draft Release Artifacts
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Trust mise config
+        run: mise trust --yes
+
+      - name: Install project dependencies
+        run: mise run setup
+
+      - name: Build release artifacts
+        run: scripts/build-release.sh "$GITHUB_REF_NAME"
+
+      - name: Create or update draft release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          artifact="dist/Agent-Secret-${GITHUB_REF_NAME}-macos-$(uname -m).dmg"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$artifact" dist/checksums.txt --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "$artifact" \
+              dist/checksums.txt \
+              --draft \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Unsigned macOS artifacts built from $GITHUB_SHA."
+          fi
