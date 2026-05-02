@@ -219,50 +219,18 @@ import Foundation
 
         private var decisionButtons: some View {
             HStack(spacing: Metric.buttonSpacing) {
-                denyButton
+                ForEach(decisionButtonSpecs, id: \.decision) { spec in
+                    ApprovalPanelDecisionButton(spec: spec) {
+                        decide(spec.decision)
+                    }
                     .frame(width: Metric.decisionButtonWidth)
-                allowOnceButton
-                    .frame(width: Metric.decisionButtonWidth)
-                allowReusableButton
-                    .frame(width: Metric.decisionButtonWidth)
+                }
             }
             .frame(height: Metric.buttonHeight)
         }
 
-        private var denyButton: some View {
-            ApprovalPanelDecisionButton(
-                icon: "shield.slash",
-                title: "Deny",
-                subtitle: "Default action",
-                role: .secondary,
-                keyboardShortcut: .cancelAction
-            ) {
-                decide(.deny)
-            }
-        }
-
-        private var allowOnceButton: some View {
-            ApprovalPanelDecisionButton(
-                icon: "clock",
-                title: "Allow once",
-                subtitle: "This time only",
-                role: .secondary,
-                keyboardShortcut: .defaultAction
-            ) {
-                decide(.approveOnce)
-            }
-        }
-
-        private var allowReusableButton: some View {
-            ApprovalPanelDecisionButton(
-                icon: "checkmark.shield",
-                title: "Allow same command briefly",
-                subtitle: "\(viewModel.compactTimeRemaining) or \(viewModel.reusableUses) uses",
-                role: .primary,
-                keyboardShortcut: nil
-            ) {
-                decide(.approveReusable)
-            }
+        private var decisionButtonSpecs: [ApprovalPanelDecisionButtonSpec] {
+            ApprovalPanelDecisionButtonSpec.makeAll(viewModel: viewModel)
         }
 
         private var footer: some View {

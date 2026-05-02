@@ -6,25 +6,21 @@ import Foundation
     struct ApprovalPanelDecisionButton: View {
         private typealias Metric = ApprovalPanelStyle.Metric
 
-        let icon: String
-        let title: String
-        let subtitle: String
-        let role: ApprovalPanelDecisionButtonRole
-        let keyboardShortcut: KeyboardShortcut?
+        let spec: ApprovalPanelDecisionButtonSpec
         let action: () -> Void
 
         var body: some View {
             let button = Button(action: action) {
                 HStack(spacing: Metric.cautionSpacing) {
-                    Image(systemName: icon)
+                    Image(systemName: spec.icon)
                         .font(.system(size: Metric.buttonIconSize, weight: .semibold))
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: Metric.detailLabelSpacing) {
-                        Text(title)
+                        Text(spec.title)
                             .font(.system(size: Metric.buttonTitleFontSize, weight: .bold))
                             .lineLimit(titleLineLimit)
                             .minimumScaleFactor(Metric.minimumScaleFactor)
-                        Text(subtitle)
+                        Text(spec.subtitle)
                             .font(.system(size: Metric.buttonSubtitleFontSize, weight: .medium))
                             .lineLimit(Metric.singleLineLimit)
                             .minimumScaleFactor(Metric.minimumScaleFactor)
@@ -37,15 +33,15 @@ import Foundation
             }
             .buttonStyle(.plain)
 
-            if let keyboardShortcut: KeyboardShortcut {
-                button.keyboardShortcut(keyboardShortcut)
+            if let keyboardShortcut: ApprovalPanelKeyboardShortcut = spec.keyboardShortcut {
+                button.keyboardShortcut(keyboardShortcut.keyboardShortcut)
             } else {
                 button
             }
         }
 
         private var foregroundColor: Color {
-            switch role {
+            switch spec.role {
             case .primary:
                 .white
 
@@ -55,7 +51,7 @@ import Foundation
         }
 
         private var titleLineLimit: Int {
-            switch role {
+            switch spec.role {
             case .primary:
                 Metric.buttonTitleLineLimit
 
@@ -80,7 +76,7 @@ import Foundation
         }
 
         private var backgroundFill: Color {
-            switch role {
+            switch spec.role {
             case .primary:
                 Color.green
 
@@ -90,7 +86,7 @@ import Foundation
         }
 
         private var borderColor: Color {
-            switch role {
+            switch spec.role {
             case .primary:
                 Color.green.opacity(Metric.primaryBorderOpacity)
 
