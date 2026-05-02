@@ -73,6 +73,10 @@ run = "go test -race ./..."
 description = "Run Go tests with coverage floors for internal packages"
 run = "scripts/check-go-coverage.sh"
 
+[tasks."test:smoke"]
+description = "Run non-secret smoke tests"
+run = "cd approver && swift run agent-secret-approver-smoke"
+
 [tasks.build]
 description = "Build the unified macOS Agent Secret app bundle"
 run = "AGENT_SECRET_IN_MISE=1 scripts/build-app-bundle.sh"

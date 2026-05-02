@@ -54,32 +54,62 @@ internals, but the repository boundary and module path should remain stable.
 
 ## Current Verification
 
-The current project-local checks are:
+The default local checks match pull request CI:
 
 ```bash
 mise run setup
 mise run lint
 mise run build
+mise run test:smoke
 ```
 
-The underlying commands are:
+`mise run lint` runs the normal static and test gates:
 
 ```bash
 scripts/lint.sh
 go test ./...
-go test -tags integration ./...
-go build ./cmd/agent-secret ./cmd/agent-secretd
+go test -race ./...
+scripts/check-go-coverage.sh
+govulncheck ./...
+gitleaks dir . --redact --no-banner
+shellcheck scripts/*.sh approver/scripts/*.sh
+actionlint .github/workflows/*.yml
+swiftlint lint --strict --no-cache
+npx --no-install markdownlint '**/*.md'
 cd approver && swift test
+```
+
+`mise run build` runs the app bundle build:
+
+```bash
 scripts/build-app-bundle.sh
-scripts/build-release.sh v0.0.0-dev
+```
+
+`mise run test:smoke` runs the non-secret approver smoke executable:
+
+```bash
 swift run agent-secret-approver-smoke
 ```
 
-The integration test skips unless `AGENT_SECRET_LIVE_REF` points at a test-only
-1Password reference. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only
-when you want to force a specific 1Password account instead of
-`my.1password.com`. Project config accounts override those defaults for the
-secrets that declare them.
+Live 1Password integration tests are intentionally opt-in and are not part of
+normal pull request CI. Run them only with a test-only reference and Desktop App
+Integration enabled:
+
+```bash
+AGENT_SECRET_LIVE_REF="op://Test Vault/Test Item/token" \
+  go test -tags integration ./...
+```
+
+Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when you want to
+force a specific 1Password account instead of `my.1password.com`. Project
+config accounts override those defaults for the secrets that declare them.
+
+Release artifact verification is separate from pull request CI. For a local
+release-candidate check, run:
+
+```bash
+scripts/build-release.sh v0.0.0-dev
+```
 
 ## Development Toolchain
 
