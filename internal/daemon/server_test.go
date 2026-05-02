@@ -284,6 +284,65 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	t.Fatalf("disconnect audit was not recorded: %+v", aud.Events())
 }
 
+func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	aud := &memoryAudit{}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	path, stop := startRawTestServer(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	encoder := json.NewEncoder(conn)
+	decoder := json.NewDecoder(conn)
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	writeRawExecRequest(t, encoder, "req_1", "nonce_1", req)
+	first := readRawEnvelope(t, decoder)
+	if first.Type != TypeOK {
+		t.Fatalf("first exec response type = %q, want %q", first.Type, TypeOK)
+	}
+
+	writeRawExecRequest(t, encoder, "req_2", "nonce_2", req)
+	second := readRawEnvelope(t, decoder)
+	if second.Type != TypeError {
+		t.Fatalf("second exec response type = %q, want %q", second.Type, TypeError)
+	}
+	errorPayload, err := DecodePayload[ErrorPayload](second)
+	if err != nil {
+		t.Fatalf("decode second exec error: %v", err)
+	}
+	if errorPayload.Code != "request_active" {
+		t.Fatalf("second exec error code = %q, want request_active", errorPayload.Code)
+	}
+
+	_ = conn.Close()
+	event := waitForAuditEvent(t, aud, audit.EventExecClientDisconnectedAfterPayload, "req_1")
+	if event.RequestID != "req_1" {
+		t.Fatalf("disconnect request id = %q, want req_1", event.RequestID)
+	}
+	if approver.calls != 1 {
+		t.Fatalf("approver calls = %d, want 1", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 1 {
+		t.Fatalf("resolver calls = %v, want one call for first request", calls)
+	}
+	for _, event := range aud.Events() {
+		if event.RequestID == "req_2" {
+			t.Fatalf("second request produced audit event: %+v", event)
+		}
+	}
+}
+
 func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -795,6 +854,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrApproverPeerMismatch, want: "approver_peer_mismatch"},
 		{err: ErrApproverIdentity, want: "approver_identity_mismatch"},
 		{err: ErrNoPendingApproval, want: "no_pending_approval"},
+		{err: ErrRequestAlreadyActive, want: "request_active"},
 		{err: ErrRequestExpired, want: "request_expired"},
 		{err: ErrStaleApproval, want: "stale_approval"},
 		{err: ErrUntrustedClient, want: "untrusted_client"},
@@ -945,6 +1005,55 @@ func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()
 func testSocketPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "missing.sock")
+}
+
+func writeRawExecRequest(
+	t *testing.T,
+	encoder *json.Encoder,
+	requestID string,
+	nonce string,
+	req request.ExecRequest,
+) {
+	t.Helper()
+
+	env, err := NewEnvelope(TypeRequestExec, requestID, nonce, req)
+	if err != nil {
+		t.Fatalf("create exec envelope: %v", err)
+	}
+	if err := encoder.Encode(env); err != nil {
+		t.Fatalf("encode exec envelope: %v", err)
+	}
+}
+
+func readRawEnvelope(t *testing.T, decoder *json.Decoder) Envelope {
+	t.Helper()
+
+	var env Envelope
+	if err := decoder.Decode(&env); err != nil {
+		t.Fatalf("decode raw envelope: %v", err)
+	}
+	return env
+}
+
+func waitForAuditEvent(
+	t *testing.T,
+	aud *memoryAudit,
+	eventType audit.EventType,
+	requestID string,
+) audit.Event {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, event := range aud.Events() {
+			if event.Type == eventType && event.RequestID == requestID {
+				return event
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("audit event %s for request %s was not recorded: %+v", eventType, requestID, aud.Events())
+	return audit.Event{}
 }
 
 func writeExecutableAt(t *testing.T, dir string, name string) string {

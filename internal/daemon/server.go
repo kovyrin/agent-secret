@@ -220,6 +220,10 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 			_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
 		case TypeRequestExec:
+			if activeRequestID != "" {
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+				continue
+			}
 			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
 				activeRequestID = requestID
 			}
@@ -392,6 +396,8 @@ func codeForError(err error) string {
 		return "approver_identity_mismatch"
 	case errors.Is(err, ErrNoPendingApproval):
 		return "no_pending_approval"
+	case errors.Is(err, ErrRequestAlreadyActive):
+		return "request_active"
 	case errors.Is(err, ErrRequestExpired):
 		return "request_expired"
 	case errors.Is(err, ErrStaleApproval):
