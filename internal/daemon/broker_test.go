@@ -612,6 +612,47 @@ func TestBrokerClientDisconnectAfterPayloadAuditsWithoutKillingProcess(t *testin
 	}
 }
 
+func TestBrokerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T) {
+	t.Parallel()
+
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": canarySecretValue}},
+		Audit:    aud,
+	})
+	if _, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
+	})); err != nil {
+		t.Fatalf("HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+	if err := broker.ReportStarted(context.Background(), "req_1", "nonce_1", 1234); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	broker.ClientDisconnected(context.Background(), "req_1")
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventCommandStarting,
+		audit.EventCommandStarted,
+		audit.EventExecClientDisconnectedAfterStart,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	disconnect := events[len(events)-1]
+	if disconnect.ChildPID == nil || *disconnect.ChildPID != 1234 {
+		t.Fatalf("disconnect child pid = %v, want 1234", disconnect.ChildPID)
+	}
+	assertAuditEventsValueFree(t, events)
+}
+
 func TestBrokerAuditFailureStopsBeforePayload(t *testing.T) {
 	t.Parallel()
 
