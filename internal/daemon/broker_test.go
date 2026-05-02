@@ -542,6 +542,40 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	}
 }
 
+func TestBrokerReusableCacheExpiresWithoutMatchingRequest(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	broker, err := NewBroker(BrokerOptions{
+		Now:      time.Now,
+		Cache:    cache,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    &memoryAudit{},
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.TTL = 100 * time.Millisecond
+	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+
+	grant, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+	if _, ok := cache.Get(grant.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected reusable value in cache before expiry")
+	}
+
+	waitForCacheScopeCleared(t, cache, grant.ApprovalID, ref, "")
+}
+
 func TestBrokerClearsReusableCacheOnUseExhaustion(t *testing.T) {
 	t.Parallel()
 
@@ -838,6 +872,18 @@ func containsAuditEvent(events []audit.Event, eventType audit.EventType) bool {
 		}
 	}
 	return false
+}
+
+func waitForCacheScopeCleared(t *testing.T, cache SecretCache, scopeID string, ref string, account string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := cache.Get(scopeID, ref, account); !ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("cache scope %q still contained %s after expiry", scopeID, ref)
 }
 
 func receiveBrokerSignal(t *testing.T, ch <-chan struct{}, message string) {
