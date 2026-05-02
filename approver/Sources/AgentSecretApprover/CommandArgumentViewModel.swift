@@ -10,7 +10,8 @@ struct CommandArgumentViewModel: Equatable {
         static let escape: UInt32 = 27
         static let horizontalTab: UInt32 = 9
         static let lineFeed: UInt32 = 10
-        static let printableHighStart: UInt32 = 128
+        static let maxByteEscapeScalar: UInt32 = 0xFF
+        static let maxFourDigitEscapeScalar: UInt32 = 0xFFFF
         static let printablePrefixEnd: UInt32 = 38
         static let printablePrefixStart: UInt32 = 32
         static let printableSuffixEnd: UInt32 = 126
@@ -40,7 +41,7 @@ struct CommandArgumentViewModel: Equatable {
         if value.isEmpty {
             return "''"
         }
-        if value.unicodeScalars.contains(where: { scalar in Self.isASCIIControlCharacter(scalar) }) {
+        if value.unicodeScalars.contains(where: requiresANSICEscaping) {
             return "$'\(ansiCEscaped(value))'"
         }
         return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
@@ -77,7 +78,7 @@ struct CommandArgumentViewModel: Equatable {
                 if Self.isPrintableLiteral(scalar) {
                     return String(scalar)
                 }
-                return String(format: "\\x%02X", scalar.value)
+                return Self.unicodeEscape(scalar)
             }
         }
         return escaped.joined()
@@ -90,18 +91,46 @@ struct CommandArgumentViewModel: Equatable {
         let shellMetacharacters = CharacterSet(charactersIn: "|&;<>()$`\\\"'*!?[]{}")
         return value.rangeOfCharacter(from: .whitespacesAndNewlines) != nil ||
             value.rangeOfCharacter(from: .controlCharacters) != nil ||
+            value.unicodeScalars.contains(where: Self.requiresANSICEscaping) ||
             value.rangeOfCharacter(from: shellMetacharacters) != nil
+    }
+
+    private static func requiresANSICEscaping(_ scalar: Unicode.Scalar) -> Bool {
+        isASCIIControlCharacter(scalar) || isUnsafeUnicodeCategory(scalar)
     }
 
     private static func isASCIIControlCharacter(_ scalar: Unicode.Scalar) -> Bool {
         scalar.value < ScalarCode.printablePrefixStart || scalar.value == ScalarCode.controlDelete
     }
 
+    private static func isUnsafeUnicodeCategory(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .surrogate, .unassigned:
+            true
+
+        default:
+            false
+        }
+    }
+
     private static func isPrintableLiteral(_ scalar: Unicode.Scalar) -> Bool {
         let value = scalar.value
+        if isUnsafeUnicodeCategory(scalar) {
+            return false
+        }
         return (ScalarCode.printablePrefixStart ... ScalarCode.printablePrefixEnd).contains(value) ||
             (ScalarCode.printableWithoutBackslashStart ... ScalarCode.printableWithoutBackslashEnd).contains(value) ||
             (ScalarCode.printableSuffixStart ... ScalarCode.printableSuffixEnd).contains(value) ||
-            value >= ScalarCode.printableHighStart
+            value >= ScalarCode.controlDelete + 1
+    }
+
+    private static func unicodeEscape(_ scalar: Unicode.Scalar) -> String {
+        if scalar.value <= ScalarCode.maxByteEscapeScalar {
+            return String(format: "\\x%02X", scalar.value)
+        }
+        if scalar.value <= ScalarCode.maxFourDigitEscapeScalar {
+            return String(format: "\\u%04X", scalar.value)
+        }
+        return String(format: "\\U%08X", scalar.value)
     }
 }
