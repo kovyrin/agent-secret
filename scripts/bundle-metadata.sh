@@ -12,3 +12,9 @@ AGENT_SECRET_MIN_MACOS_VERSION="14.0"
 AGENT_SECRET_INFO_DICTIONARY_VERSION="6.0"
 AGENT_SECRET_DEFAULT_VERSION="0.1.0"
 AGENT_SECRET_DEFAULT_BUNDLE_VERSION="1"
+
+agent_secret_normalize_short_version() {
+  local release_version="$1"
+
+  printf '%s\n' "${release_version#v}"
+}
