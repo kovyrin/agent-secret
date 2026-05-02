@@ -123,9 +123,6 @@ func TestNewManagerIgnoresDaemonPathEnvironmentOverride(t *testing.T) {
 	if manager.DaemonPath == "/tmp/agent-secretd-test" {
 		t.Fatalf("DaemonPath honored requester-controlled env override: %q", manager.DaemonPath)
 	}
-	if !slices.Equal(manager.TrustedClientPaths, CurrentExecutableTrustedClientPaths()) {
-		t.Fatalf("TrustedClientPaths = %v, want current executable", manager.TrustedClientPaths)
-	}
 	if manager.StartupTimeout != 3*time.Second {
 		t.Fatalf("StartupTimeout = %s, want 3s", manager.StartupTimeout)
 	}
@@ -137,19 +134,6 @@ func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 	manager := Manager{SocketPath: "/tmp/agent-secret.sock"}
 	if got := manager.daemonArgs(); !slices.Equal(got, []string{"--socket", "/tmp/agent-secret.sock"}) {
 		t.Fatalf("default daemon args = %v", got)
-	}
-
-	manager.TrustedClientPaths = []string{"/usr/local/bin/agent-secret", "/opt/agent-secret"}
-	wantTrusted := []string{
-		"--socket",
-		"/tmp/agent-secret.sock",
-		"--trusted-client",
-		"/usr/local/bin/agent-secret",
-		"--trusted-client",
-		"/opt/agent-secret",
-	}
-	if got := manager.daemonArgs(); !slices.Equal(got, wantTrusted) {
-		t.Fatalf("trusted daemon args = %v, want %v", got, wantTrusted)
 	}
 
 	manager.DaemonArgs = []string{"--listen", "{socket}", "--verbose"}

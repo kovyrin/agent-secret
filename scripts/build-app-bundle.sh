@@ -18,6 +18,7 @@ USAGE
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 # shellcheck source=scripts/bundle-metadata.sh
+# shellcheck disable=SC1091
 source "$project_root/scripts/bundle-metadata.sh"
 
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
@@ -135,6 +136,17 @@ sign_path() {
   codesign "${args[@]}" >/dev/null
 }
 
+codesign_team_id() {
+  local identity="$1"
+
+  if [[ "$identity" =~ \(([A-Za-z0-9]+)\)$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return
+  fi
+
+  return 1
+}
+
 build_daemon_app() {
   local binary_path="$1"
   local bundle="$2"
@@ -185,8 +197,16 @@ PLIST
 
 echo "Building Go commands..."
 cd "$project_root"
-go build -trimpath -o "$tmp_dir/agent-secret" ./cmd/agent-secret
-go build -trimpath -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
+go_build_flags=(-trimpath)
+if [[ "$codesign_identity" != "-" ]]; then
+  approver_team_id="$(codesign_team_id "$codesign_identity")" || {
+    echo "build-app-bundle: codesign identity must end with a Team ID in parentheses" >&2
+    exit 1
+  }
+  go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultApproverExpectedTeamID=$approver_team_id")
+fi
+go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
+go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
 
 echo "Building Swift app executable..."
 cd "$project_root/approver"

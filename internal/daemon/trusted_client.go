@@ -45,12 +45,23 @@ func DefaultTrustedClientPaths() []string {
 	if err != nil {
 		return nil
 	}
+	home := ""
+	if userHome, err := os.UserHomeDir(); err == nil {
+		home = userHome
+	}
+	return trustedClientPathsForExecutable(exe, home)
+}
+
+func trustedClientPathsForExecutable(exe string, home string) []string {
 	dir := filepath.Dir(exe)
 	paths := []string{filepath.Join(dir, "agent-secret")}
 	if filepath.Base(exe) == "agent-secret" {
 		paths = append(paths, exe)
 	}
-	if home, err := os.UserHomeDir(); err == nil {
+	if bundledCLI, ok := bundledCLIPathForDaemonExecutable(exe); ok {
+		paths = append(paths, bundledCLI)
+	}
+	if home != "" {
 		paths = append(paths, filepath.Join(home, ".local", "bin", "agent-secret"))
 	}
 	return paths
@@ -62,6 +73,32 @@ func CurrentExecutableTrustedClientPaths() []string {
 		return nil
 	}
 	return []string{exe}
+}
+
+func bundledCLIPathForDaemonExecutable(exe string) (string, bool) {
+	bundlePath, ok := containingAppBundlePath(exe)
+	if !ok || filepath.Base(bundlePath) != "AgentSecretDaemon.app" {
+		return "", false
+	}
+	hostApp := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(bundlePath))))
+	if filepath.Ext(hostApp) != ".app" {
+		return "", false
+	}
+	return filepath.Join(hostApp, "Contents", "Resources", "bin", "agent-secret"), true
+}
+
+func containingAppBundlePath(path string) (string, bool) {
+	dir := filepath.Dir(path)
+	for {
+		if filepath.Ext(dir) == ".app" {
+			return filepath.Clean(dir), true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
 func (v TrustedExecutableValidator) ValidateExecPeer(info peercred.Info) error {
