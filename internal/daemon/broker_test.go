@@ -143,10 +143,11 @@ func resolverCallKey(ref string, account string) string {
 }
 
 type memoryAudit struct {
-	mu     sync.Mutex
-	err    error
-	events []audit.Event
-	reuses []policy.ReuseAuditEvent
+	mu        sync.Mutex
+	err       error
+	errByType map[audit.EventType]error
+	events    []audit.Event
+	reuses    []policy.ReuseAuditEvent
 }
 
 func (m *memoryAudit) Record(_ context.Context, event audit.Event) error {
@@ -154,6 +155,9 @@ func (m *memoryAudit) Record(_ context.Context, event audit.Event) error {
 	defer m.mu.Unlock()
 	if m.err != nil {
 		return m.err
+	}
+	if err := m.errByType[event.Type]; err != nil {
+		return err
 	}
 	m.events = append(m.events, event)
 	return nil
@@ -687,6 +691,104 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	}
 	if grant.ApprovalID == "" {
 		t.Fatal("retry should create a usable reusable approval")
+	}
+}
+
+func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	store := policy.NewStore(func() time.Time { return now })
+	cache := newFailingSecretCache(nil, 0)
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	broker := newTestBroker(t, BrokerOptions{
+		Store:    store,
+		Cache:    cache,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit: &memoryAudit{errByType: map[audit.EventType]error{
+			audit.EventCommandStarting: errors.New("disk full"),
+		}},
+	})
+
+	_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if !errors.Is(err, ErrAuditRequired) {
+		t.Fatalf("expected command_starting audit failure, got %v", err)
+	}
+	if len(cache.clearedScopes) != 1 {
+		t.Fatalf("cleared scopes = %v, want one command_starting rollback clear", cache.clearedScopes)
+	}
+	if _, ok := cache.Get(cache.clearedScopes[0], ref, ""); ok {
+		t.Fatal("reusable cache scope survived command_starting audit failure")
+	}
+	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+		t.Fatalf("reusable approval survived command_starting audit failure: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("request should not become active after command_starting audit failure, got %v", err)
+	}
+}
+
+func TestBrokerRollsBackForceRefreshWhenRefreshAuditFails(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Cache:    cache,
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("initial HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("initial MarkPayloadDelivered returned error: %v", err)
+	}
+	if value, ok := cache.Get(first.ApprovalID, ref, ""); !ok || value != "first" {
+		t.Fatalf("initial cache value = %q, %v; want first, true", value, ok)
+	}
+
+	aud.errByType = map[audit.EventType]error{audit.EventApprovalRefreshed: errors.New("disk full")}
+	resolver.values[ref] = "second"
+	force := req
+	force.ForceRefresh = true
+	_, err = broker.HandleExec(context.Background(), "req_2", "nonce_2", force)
+	if !errors.Is(err, ErrAuditRequired) {
+		t.Fatalf("expected approval_refreshed audit failure, got %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("force-refresh cache scope survived refresh audit failure")
+	}
+	if _, err := broker.store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+		t.Fatalf("reusable approval survived refresh audit failure: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_2"); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("request should not become active after refresh audit failure, got %v", err)
+	}
+
+	aud.errByType = nil
+	resolver.values[ref] = "third"
+	retry, err := broker.HandleExec(context.Background(), "req_3", "nonce_3", req)
+	if err != nil {
+		t.Fatalf("fresh retry after refresh audit failure returned error: %v", err)
+	}
+	if retry.ApprovalID == "" || retry.ApprovalID == first.ApprovalID {
+		t.Fatalf("retry approval id = %q, first = %q; want fresh reusable approval", retry.ApprovalID, first.ApprovalID)
+	}
+	if retry.Env["TOKEN"] != "third" {
+		t.Fatalf("retry grant = %+v, want refreshed resolver value", retry)
+	}
+	if approver.calls != 2 {
+		t.Fatalf("retry should require a fresh approval; approver calls = %d, want 2", approver.calls)
 	}
 }
 

@@ -63,9 +63,10 @@ type Broker struct {
 }
 
 type ExecGrant struct {
-	Env           map[string]string
-	SecretAliases []string
-	ApprovalID    string
+	Env                map[string]string
+	SecretAliases      []string
+	ApprovalID         string
+	reusableMutationID string
 }
 
 type activeExec struct {
@@ -151,6 +152,7 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
 	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		b.rollbackReusableApproval(grant.reusableMutationID)
 		return ExecGrant{}, err
 	}
 
@@ -294,9 +296,10 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 	}
 
 	return ExecGrant{
-		Env:           values,
-		SecretAliases: aliases(req.Secrets),
-		ApprovalID:    approval.ID,
+		Env:                values,
+		SecretAliases:      aliases(req.Secrets),
+		ApprovalID:         approval.ID,
+		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
 	}, nil
 }
 
@@ -353,18 +356,33 @@ func (b *Broker) freshGrant(
 		}
 		approvalID = approval.ID
 		if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
-			b.clearReusableCacheScope(approvalID)
-			b.store.RemoveReusable(approvalID)
+			b.rollbackReusableApproval(approvalID)
 			return ExecGrant{}, err
 		}
 		b.scheduleReusableExpiry(approval.ID, approval.ExpiresAt)
 	}
 
 	return ExecGrant{
-		Env:           values,
-		SecretAliases: aliases(req.Secrets),
-		ApprovalID:    approvalID,
+		Env:                values,
+		SecretAliases:      aliases(req.Secrets),
+		ApprovalID:         approvalID,
+		reusableMutationID: approvalID,
 	}, nil
+}
+
+func reusableMutationID(mutated bool, approvalID string) string {
+	if !mutated {
+		return ""
+	}
+	return approvalID
+}
+
+func (b *Broker) rollbackReusableApproval(approvalID string) {
+	if approvalID == "" {
+		return
+	}
+	b.store.RemoveReusable(approvalID)
+	b.clearReusableCacheScope(approvalID)
 }
 
 func (b *Broker) scheduleReusableExpiry(approvalID string, expiresAt time.Time) {
@@ -476,13 +494,13 @@ func (b *Broker) refreshedReusableValues(
 	}
 	values := fanoutValues(req.Secrets, refValues)
 	if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
-		b.cache.ClearScope(approvalID)
-		b.store.RemoveReusable(approvalID)
+		b.rollbackReusableApproval(approvalID)
 		return nil, err
 	}
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 	event.ApprovalID = approvalID
 	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		b.rollbackReusableApproval(approvalID)
 		return nil, err
 	}
 	return values, nil
