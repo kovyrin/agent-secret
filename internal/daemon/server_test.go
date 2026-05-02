@@ -210,12 +210,28 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
-		Audit:    &memoryAudit{},
-	})
-	defer cleanup()
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	aud := &memoryAudit{}
+	path, stop := startRawServerWithBrokerAndExecValidator(
+		t,
+		newTestBroker(t, BrokerOptions{
+			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    aud,
+		}),
+		nil,
+		staticPeerValidator{info: peer},
+		NewTrustedExecutableValidator([]string{exe}),
+	)
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	client := NewClient(conn)
+	defer func() { _ = client.Close() }()
 
 	if _, err := client.Status(context.Background()); err != nil {
 		t.Fatalf("Status returned error: %v", err)
@@ -223,6 +239,11 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	if _, err := client.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop returned error: %v", err)
 	}
+	events := aud.Events()
+	if len(events) != 1 || events[0].Type != audit.EventDaemonStop {
+		t.Fatalf("stop audit events = %+v", events)
+	}
+	assertRequesterAudit(t, events[0], peer, "")
 }
 
 func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
@@ -230,12 +251,13 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
+	aud := &memoryAudit{}
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
 		newTestBroker(t, BrokerOptions{
 			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
-			Audit:    &memoryAudit{},
+			Audit:    aud,
 		}),
 		nil,
 		staticPeerValidator{info: peer},
@@ -259,6 +281,11 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	if _, err := client.Status(context.Background()); err != nil {
 		t.Fatalf("daemon stopped after rejected stop: %v", err)
 	}
+	events := aud.Events()
+	if len(events) != 1 || events[0].Type != audit.EventDaemonStop {
+		t.Fatalf("stop audit events = %+v", events)
+	}
+	assertRequesterAudit(t, events[0], peer, "untrusted_client")
 }
 
 func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
@@ -711,4 +738,21 @@ func writeExecutableAt(t *testing.T, dir string, name string) string {
 		t.Fatalf("write executable: %v", err)
 	}
 	return path
+}
+
+func assertRequesterAudit(t *testing.T, event audit.Event, peer peercred.Info, wantErrorCode string) {
+	t.Helper()
+
+	if event.RequesterPID == nil || *event.RequesterPID != peer.PID {
+		t.Fatalf("requester pid = %v, want %d", event.RequesterPID, peer.PID)
+	}
+	if event.RequesterUID == nil || *event.RequesterUID != peer.UID {
+		t.Fatalf("requester uid = %v, want %d", event.RequesterUID, peer.UID)
+	}
+	if event.RequesterPath != peer.ExecutablePath {
+		t.Fatalf("requester path = %q, want %q", event.RequesterPath, peer.ExecutablePath)
+	}
+	if event.ErrorCode != wantErrorCode {
+		t.Fatalf("stop error code = %q, want %q", event.ErrorCode, wantErrorCode)
+	}
 }

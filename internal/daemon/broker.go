@@ -245,12 +245,23 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 }
 
 func (b *Broker) Stop(ctx context.Context) {
-	_ = b.audit.Record(ctx, audit.Event{Type: audit.EventDaemonStop})
+	b.stopWithAudit(ctx, audit.Event{Type: audit.EventDaemonStop})
+}
+
+func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
+	b.recordDaemonStopAttempt(ctx, event)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.active = make(map[string]*activeExec)
 	b.cache.Clear()
 	b.store = policy.NewStore(b.now)
+}
+
+func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event) {
+	if event.Type == "" {
+		event.Type = audit.EventDaemonStop
+	}
+	_ = b.audit.Record(ctx, event)
 }
 
 func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (ExecGrant, error) {
