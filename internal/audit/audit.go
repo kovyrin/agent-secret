@@ -24,8 +24,14 @@ var (
 type EventType string
 
 const (
+	EventApprovalRequested                  EventType = "approval_requested"
+	EventApprovalGranted                    EventType = "approval_granted"
+	EventApprovalDenied                     EventType = "approval_denied"
+	EventApprovalTimedOut                   EventType = "approval_timed_out"
 	EventApprovalReused                     EventType = "approval_reused"
 	EventApprovalRefreshed                  EventType = "approval_refreshed"
+	EventSecretFetchStarted                 EventType = "secret_fetch_started"
+	EventSecretFetchFailed                  EventType = "secret_fetch_failed"
 	EventCommandStarting                    EventType = "command_starting"
 	EventCommandStarted                     EventType = "command_started"
 	EventCommandCompleted                   EventType = "command_completed"
