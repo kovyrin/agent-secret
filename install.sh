@@ -11,6 +11,8 @@ version="${AGENT_SECRET_VERSION:-}"
 local_dmg="${AGENT_SECRET_DMG:-}"
 local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
+allow_unsigned_install="${AGENT_SECRET_ALLOW_UNSIGNED_INSTALL:-0}"
+require_notarization="${AGENT_SECRET_REQUIRE_NOTARIZATION:-1}"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-install.XXXXXX")"
 mount_dir="$tmp_dir/mount"
@@ -79,6 +81,45 @@ verify_checksum() {
   fi
 }
 
+verify_dmg_identity() {
+  dmg="$1"
+
+  if [ "$allow_unsigned_install" = "1" ]; then
+    echo "Skipping release identity verification because AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1" >&2
+    return
+  fi
+
+  require_command codesign
+  require_command spctl
+  require_command xcrun
+
+  codesign --verify --strict --verbose=2 "$dmg" ||
+    die "DMG code signature verification failed"
+  spctl --assess --type open --context context:primary-signature --verbose "$dmg" ||
+    die "DMG Gatekeeper assessment failed"
+  if [ "$require_notarization" = "1" ]; then
+    xcrun stapler validate "$dmg" ||
+      die "DMG notarization ticket validation failed"
+  fi
+}
+
+verify_app_identity() {
+  app="$1"
+
+  if [ "$allow_unsigned_install" = "1" ]; then
+    return
+  fi
+
+  codesign --verify --deep --strict --verbose=2 "$app" ||
+    die "app code signature verification failed"
+  spctl --assess --type execute --verbose "$app" ||
+    die "app Gatekeeper assessment failed"
+  if [ "$require_notarization" = "1" ]; then
+    xcrun stapler validate "$app" ||
+      die "app notarization ticket validation failed"
+  fi
+}
+
 stop_existing_daemon() {
   if [ "$no_stop_daemon" = "1" ]; then
     return
@@ -129,6 +170,7 @@ else
   download_release_file "checksums.txt" "$checksums_path"
 fi
 verify_checksum "$checksums_path" "$artifact_name" "$dmg_path"
+verify_dmg_identity "$dmg_path"
 
 mkdir -p "$mount_dir"
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount_dir" "$dmg_path"
@@ -136,6 +178,7 @@ mounted=1
 
 source_app="$mount_dir/Agent Secret.app"
 [ -d "$source_app" ] || die "DMG does not contain Agent Secret.app"
+verify_app_identity "$source_app"
 
 target_app="$app_dir/Agent Secret.app"
 tmp_app="$app_dir/.Agent Secret.app.installing.$$"

@@ -93,7 +93,8 @@ The installer should:
 1. Detect `arm64` or `x86_64`.
 2. Resolve the latest release unless `AGENT_SECRET_VERSION` is set.
 3. Download the matching release artifact.
-4. Verify the checksum.
+4. Verify the checksum, DMG signature, Gatekeeper assessment, notarization
+   ticket, and mounted app bundle identity.
 5. Stop the old per-user daemon if it is running.
 6. Copy `Agent Secret.app` to `/Applications` by default.
 7. Create or refresh the CLI symlink in `~/.local/bin`.
@@ -109,7 +110,9 @@ AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" install.sh
 ```
 
 For local smoke tests, `AGENT_SECRET_DMG` and
-`AGENT_SECRET_CHECKSUMS_FILE` can point at a locally built artifact.
+`AGENT_SECRET_CHECKSUMS_FILE` can point at a locally built artifact. Unsigned
+local artifacts must also set `AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`; signed
+but unstapled local artifacts can set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
 
 ### Upgrade
 
