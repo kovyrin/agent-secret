@@ -182,3 +182,26 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 		t.Fatalf("daemon command path = %q, want direct binary", cmd.Path)
 	}
 }
+
+func TestDaemonAppPathForBundledExecutable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	appPath := filepath.Join(root, "Agent Secret.app")
+	cliPath := filepath.Join(appPath, "Contents", "Resources", "bin", "agent-secret")
+	daemonAppPath := filepath.Join(appPath, "Contents", "Library", "Helpers", "AgentSecretDaemon.app")
+	if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
+		t.Fatalf("create cli dir: %v", err)
+	}
+	if err := os.MkdirAll(daemonAppPath, 0o755); err != nil {
+		t.Fatalf("create daemon app: %v", err)
+	}
+	if err := os.WriteFile(cliPath, []byte("test"), 0o755); err != nil {
+		t.Fatalf("write cli: %v", err)
+	}
+
+	got, ok := daemonAppPathForExecutable(cliPath)
+	if !ok || got != daemonAppPath {
+		t.Fatalf("daemon app path = %q, %v, want %q, true", got, ok, daemonAppPath)
+	}
+}

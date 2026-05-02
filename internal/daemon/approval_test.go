@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -269,7 +270,7 @@ func TestProcessApproverLauncherExecutablePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app executablePath returned error: %v", err)
 	}
-	want := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
+	want := filepath.Join(appPath, "Contents", "MacOS", "Agent Secret")
 	if got != want {
 		t.Fatalf("app executable path = %q, want %q", got, want)
 	}
@@ -281,6 +282,57 @@ func TestProcessApproverLauncherExecutablePath(t *testing.T) {
 	}
 	if got != binaryPath {
 		t.Fatalf("binary executable path = %q, want %q", got, binaryPath)
+	}
+}
+
+func TestProcessApproverLauncherPrefersUnifiedAppExecutable(t *testing.T) {
+	t.Parallel()
+
+	appPath := filepath.Join(t.TempDir(), "Agent Secret.app")
+	unifiedExecutable := filepath.Join(appPath, "Contents", "MacOS", "Agent Secret")
+	legacyExecutable := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
+	if err := os.MkdirAll(filepath.Dir(unifiedExecutable), 0o755); err != nil {
+		t.Fatalf("create app macos dir: %v", err)
+	}
+	if err := os.WriteFile(legacyExecutable, []byte("test"), 0o755); err != nil {
+		t.Fatalf("write legacy executable: %v", err)
+	}
+	if err := os.WriteFile(unifiedExecutable, []byte("test"), 0o755); err != nil {
+		t.Fatalf("write unified executable: %v", err)
+	}
+
+	got, err := (ProcessApproverLauncher{AppPath: appPath}).executablePath()
+	if err != nil {
+		t.Fatalf("app executablePath returned error: %v", err)
+	}
+	if got != unifiedExecutable {
+		t.Fatalf("app executable path = %q, want unified executable %q", got, unifiedExecutable)
+	}
+}
+
+func TestApproverCandidatesForBundledExecutables(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	appPath := filepath.Join(root, "Agent Secret.app")
+	cliPath := filepath.Join(appPath, "Contents", "Resources", "bin", "agent-secret")
+	daemonPath := filepath.Join(
+		appPath,
+		"Contents",
+		"Library",
+		"Helpers",
+		"AgentSecretDaemon.app",
+		"Contents",
+		"MacOS",
+		"Agent Secret",
+	)
+	want := filepath.Join(appPath, "Contents", "MacOS", "Agent Secret")
+
+	if !slices.Contains(approverCandidatesForExecutable(cliPath), want) {
+		t.Fatalf("cli approver candidates missing top-level app executable")
+	}
+	if !slices.Contains(approverCandidatesForExecutable(daemonPath), want) {
+		t.Fatalf("daemon approver candidates missing top-level app executable")
 	}
 }
 
