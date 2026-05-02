@@ -115,17 +115,6 @@ path_contains() {
   return 1
 }
 
-install_symlink() {
-  local target="$1"
-  local link="$2"
-
-  if [[ -e "$link" && ! -L "$link" ]]; then
-    echo "dev-install: refusing to replace non-symlink $link" >&2
-    exit 1
-  fi
-  ln -sfn "$target" "$link"
-}
-
 require_command ditto
 require_command install
 
@@ -163,7 +152,7 @@ rm -f "$bin_dir/agent-secretd" "$bin_dir/agent-secret-approver"
 
 echo "Installing command symlink into $bin_dir..."
 install -d -m 0755 "$bin_dir"
-install_symlink "$target_cli" "$bin_dir/agent-secret"
+"$target_cli" install-cli --bin-dir "$bin_dir" --force >/dev/null
 
 if ! path_contains "$bin_dir"; then
   echo "dev-install: warning: $bin_dir is not on PATH for this shell" >&2
