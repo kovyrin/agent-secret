@@ -55,11 +55,8 @@ func (m Manager) Start(ctx context.Context) error {
 	if m.DaemonPath == "" {
 		return errors.New("daemon path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(m.SocketPath), 0o700); err != nil {
-		return fmt.Errorf("create daemon socket directory: %w", err)
-	}
-	if err := os.Chmod(filepath.Dir(m.SocketPath), 0o700); err != nil {
-		return fmt.Errorf("secure daemon socket directory: %w", err)
+	if err := prepareSocketDirectory(m.SocketPath); err != nil {
+		return err
 	}
 	_ = cleanupStaleSocket(m.SocketPath)
 
