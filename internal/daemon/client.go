@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -91,12 +92,28 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 	if err != nil {
 		return zero, err
 	}
+	stopCancelWatch := c.closeOnContextCancel(ctx)
+	defer stopCancelWatch()
+	defer c.clearDeadlines()
+
+	if err := c.setWriteDeadline(ctx); err != nil {
+		return zero, fmt.Errorf("set daemon write deadline %s: %w", messageType, err)
+	}
 	if err := c.encoder.Encode(env); err != nil {
+		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
+			return zero, fmt.Errorf("daemon request canceled: %w", ctxErr)
+		}
 		return zero, fmt.Errorf("send daemon message %s: %w", messageType, err)
 	}
 
+	if err := c.setReadDeadline(ctx); err != nil {
+		return zero, fmt.Errorf("set daemon read deadline %s: %w", messageType, err)
+	}
 	var resp Envelope
 	if err := c.decoder.Decode(&resp); err != nil {
+		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
+			return zero, fmt.Errorf("daemon request canceled: %w", ctxErr)
+		}
 		return zero, fmt.Errorf("read daemon response %s: %w", messageType, err)
 	}
 	if err := validateEnvelope(resp); err != nil {
@@ -126,6 +143,64 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
+}
+
+func (c *Client) closeOnContextCancel(ctx context.Context) func() {
+	done := ctx.Done()
+	if done == nil || c.conn == nil {
+		return func() {}
+	}
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-done:
+			_ = c.Close()
+		case <-stop:
+		}
+	}()
+	return func() {
+		close(stop)
+		<-stopped
+	}
+}
+
+func (c *Client) setWriteDeadline(ctx context.Context) error {
+	return c.setContextDeadline(ctx, c.conn.SetWriteDeadline)
+}
+
+func (c *Client) setReadDeadline(ctx context.Context) error {
+	return c.setContextDeadline(ctx, c.conn.SetReadDeadline)
+}
+
+func (c *Client) setContextDeadline(ctx context.Context, set func(time.Time) error) error {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return nil
+	}
+	return set(deadline)
+}
+
+func (c *Client) clearDeadlines() {
+	if c.conn == nil {
+		return
+	}
+	_ = c.conn.SetDeadline(time.Time{})
+}
+
+func contextErrorAfterIOError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		deadline, ok := ctx.Deadline()
+		if ok && !time.Now().Before(deadline) {
+			return context.DeadlineExceeded
+		}
+	}
+	return nil
 }
 
 func IsProtocolError(err error, code string) bool {
