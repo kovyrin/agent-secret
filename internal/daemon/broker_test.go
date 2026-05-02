@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -62,6 +63,25 @@ func (m *mockResolver) Calls() []string {
 	defer m.mu.Unlock()
 	return slices.Clone(m.calls)
 }
+
+type failingSecretCache struct {
+	err           error
+	clearedScopes []string
+}
+
+func (c *failingSecretCache) Put(_ string, _ string, _ string, _ string) error {
+	return c.err
+}
+
+func (c *failingSecretCache) Get(_ string, _ string, _ string) (string, bool) {
+	return "", false
+}
+
+func (c *failingSecretCache) ClearScope(scopeID string) {
+	c.clearedScopes = append(c.clearedScopes, scopeID)
+}
+
+func (c *failingSecretCache) Clear() {}
 
 func resolverCallKey(ref string, account string) string {
 	if account == "" {
@@ -264,7 +284,8 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	aud := &memoryAudit{}
-	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: aud})
+	cache := policy.NewSecretCache()
+	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: aud, Cache: cache})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
 	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
@@ -305,12 +326,160 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("force refresh did not update cached value: %+v", third.Env)
 	}
+	if value, ok := cache.Get(first.ApprovalID, ref, ""); !ok || value != "second" {
+		t.Fatalf("force refresh cache value = %q, %v; want second, true", value, ok)
+	}
 	if len(resolver.Calls()) != 2 {
 		t.Fatalf("force-refresh did not refetch once: %v", resolver.Calls())
 	}
 	events := aud.Events()
 	if !containsAuditEvent(events, audit.EventApprovalRefreshed) {
 		t.Fatalf("force-refresh did not emit refresh audit event: %+v", events)
+	}
+}
+
+func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      func() time.Time { return now },
+		Cache:    cache,
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected first reusable value in cache")
+	}
+
+	now = req.ExpiresAt.Add(time.Second)
+	resolver.values[ref] = "second"
+	next := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", next)
+	if err != nil {
+		t.Fatalf("second HandleExec returned error: %v", err)
+	}
+	if second.Env["TOKEN"] != "second" {
+		t.Fatalf("fresh approval after expiry used stale value: %+v", second.Env)
+	}
+	if second.ApprovalID == first.ApprovalID {
+		t.Fatalf("fresh approval reused expired approval id %q", second.ApprovalID)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("expired reusable approval cache scope remained reachable")
+	}
+}
+
+func TestBrokerClearsReusableCacheOnUseExhaustion(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: &memoryAudit{}, Cache: cache})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	for i := 1; i <= policy.DefaultReusableUses; i++ {
+		requestID := fmt.Sprintf("req_%d", i)
+		nonce := fmt.Sprintf("nonce_%d", i)
+		if i > 1 {
+			if _, err := broker.HandleExec(context.Background(), requestID, nonce, req); err != nil {
+				t.Fatalf("reuse %d HandleExec returned error: %v", i, err)
+			}
+		}
+		if err := broker.MarkPayloadDelivered(requestID); err != nil {
+			t.Fatalf("reuse %d MarkPayloadDelivered returned error: %v", i, err)
+		}
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("exhausted reusable approval cache scope remained reachable")
+	}
+
+	resolver.values[ref] = "second"
+	fresh, err := broker.HandleExec(context.Background(), "req_4", "nonce_4", req)
+	if err != nil {
+		t.Fatalf("fresh HandleExec returned error: %v", err)
+	}
+	if fresh.Env["TOKEN"] != "second" {
+		t.Fatalf("fresh approval after exhaustion used stale value: %+v", fresh.Env)
+	}
+	if fresh.ApprovalID == first.ApprovalID {
+		t.Fatalf("fresh approval reused exhausted approval id %q", fresh.ApprovalID)
+	}
+}
+
+func TestBrokerStopClearsReusableCache(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    &memoryAudit{},
+		Cache:    cache,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	grant, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("HandleExec returned error: %v", err)
+	}
+	if _, ok := cache.Get(grant.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected reusable value in cache")
+	}
+	broker.Stop(context.Background())
+	if _, ok := cache.Get(grant.ApprovalID, ref, ""); ok {
+		t.Fatal("daemon stop left reusable cache scope reachable")
+	}
+}
+
+func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	store := policy.NewStore(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	cache := &failingSecretCache{err: errors.New("mlock failed")}
+	broker := newTestBroker(t, BrokerOptions{
+		Store:    store,
+		Cache:    cache,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    &memoryAudit{},
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err == nil {
+		t.Fatal("expected cache insertion failure")
+	}
+	if len(cache.clearedScopes) != 1 {
+		t.Fatalf("cleared scopes = %v, want one rollback clear", cache.clearedScopes)
+	}
+	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+		t.Fatalf("reusable approval survived cache insertion failure: %v", err)
 	}
 }
 
@@ -413,6 +582,12 @@ func newTestBroker(t *testing.T, opts BrokerOptions) *Broker {
 func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecRequest {
 	t.Helper()
 
+	return testExecRequestAt(t, time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC), secrets)
+}
+
+func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec) request.ExecRequest {
+	t.Helper()
+
 	reqSecrets := make([]request.Secret, 0, len(secrets))
 	for _, spec := range secrets {
 		ref, err := request.ParseSecretRef(spec.Ref)
@@ -422,7 +597,6 @@ func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecReq
 		reqSecrets = append(reqSecrets, request.Secret{Alias: spec.Alias, Ref: ref, Account: spec.Account})
 	}
 
-	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	return request.ExecRequest{
 		Reason:             "Run Terraform plan",
 		Command:            []string{"terraform", "plan"},
