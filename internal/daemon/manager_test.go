@@ -185,7 +185,15 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 func TestDaemonAppPathAndStartCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	daemonAppPath := filepath.Join(home, "Applications", "AgentSecretDaemon.app")
+	daemonAppPath := filepath.Join(
+		home,
+		"Applications",
+		"Agent Secret.app",
+		"Contents",
+		"Library",
+		"Helpers",
+		"AgentSecretDaemon.app",
+	)
 	if err := os.MkdirAll(daemonAppPath, 0o755); err != nil {
 		t.Fatalf("mkdir daemon app: %v", err)
 	}
@@ -254,5 +262,21 @@ func TestDaemonAppPathForBundledExecutable(t *testing.T) {
 	got, ok := daemonAppPathForExecutable(cliPath)
 	if !ok || got != daemonAppPath {
 		t.Fatalf("daemon app path = %q, %v, want %q, true", got, ok, daemonAppPath)
+	}
+
+	symlinkPath := filepath.Join(root, "bin", "agent-secret")
+	if err := os.MkdirAll(filepath.Dir(symlinkPath), 0o755); err != nil {
+		t.Fatalf("create symlink dir: %v", err)
+	}
+	if err := os.Symlink(cliPath, symlinkPath); err != nil {
+		t.Fatalf("create cli symlink: %v", err)
+	}
+	resolvedDaemonAppPath, err := filepath.EvalSymlinks(daemonAppPath)
+	if err != nil {
+		t.Fatalf("resolve daemon app path: %v", err)
+	}
+	got, ok = daemonAppPathForExecutable(symlinkPath)
+	if !ok || got != resolvedDaemonAppPath {
+		t.Fatalf("daemon app path through symlink = %q, %v, want %q, true", got, ok, resolvedDaemonAppPath)
 	}
 }

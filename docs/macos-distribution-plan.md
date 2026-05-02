@@ -226,8 +226,10 @@ Expected lookup order:
 
 2. If running through the symlink, resolve the symlink and then use the same
    app-relative path.
-3. In development, keep the current fallback to `~/Applications` or PATH so
-   local builds remain easy to test.
+3. For development installs, look for
+   `~/Applications/Agent Secret.app/Contents/Library/Helpers/AgentSecretDaemon.app`.
+4. For unbundled local test binaries only, keep direct sibling binary discovery
+   so package tests and ad hoc builds remain easy to run.
 
 ### App Setup UI
 

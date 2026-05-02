@@ -445,10 +445,10 @@ func defaultApproverPath() (string, error) {
 		candidates = append(candidates, filepath.Join(
 			home,
 			"Applications",
-			"AgentSecretApprover.app",
+			"Agent Secret.app",
 			"Contents",
 			"MacOS",
-			"agent-secret-approver",
+			"Agent Secret",
 		))
 	}
 	for _, candidate := range candidates {
