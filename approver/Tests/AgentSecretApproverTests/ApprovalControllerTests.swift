@@ -112,6 +112,7 @@ final class ApprovalControllerTests: XCTestCase {
         Data(#"{"type":"ok","version":1}"#.utf8)
     }
 
+    @MainActor
     func testReusableDecisionCarriesThreeUseLimit() throws {
         let request: ApprovalRequest = Self.sampleRequest
         let client = MockDaemonClient(request: request)
@@ -125,6 +126,13 @@ final class ApprovalControllerTests: XCTestCase {
 
         XCTAssertEqual(decision.decision, .approveReusable)
         XCTAssertEqual(decision.reusableUses, Self.expectedReusableUses)
+    }
+
+    @MainActor
+    func testPresenterContractIsMainActorAccessible() {
+        let presenter: ApprovalPresenter = StaticDecisionPresenter(decision: .deny)
+
+        XCTAssertEqual(presenter.decide(for: Self.sampleRequest), .deny)
     }
 
     func testSharedApprovalFixturesDecode() throws {
@@ -201,6 +209,7 @@ final class ApprovalControllerTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testSubmitsApproveOnceDecisionWithoutSecretValues() throws {
         let request: ApprovalRequest = Self.sampleRequest
         let client = MockDaemonClient(request: request)

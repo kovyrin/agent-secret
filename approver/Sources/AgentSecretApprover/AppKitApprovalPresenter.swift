@@ -77,11 +77,11 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
     #endif
 
     /// Presents the request and returns the operator decision.
+    @preconcurrency
+    @MainActor
     public func decide(for request: ApprovalRequest) -> ApprovalDecisionKind {
         #if canImport(AppKit)
-            MainActor.assumeIsolated {
-                Self.decideOnMain(for: request)
-            }
+            Self.decideOnMain(for: request)
         #else
             .timeout
         #endif
