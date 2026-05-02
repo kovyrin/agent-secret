@@ -525,6 +525,19 @@ func TestDefaultApproverIdentityMatchesBundleMetadata(t *testing.T) {
 	}
 }
 
+func TestDefaultApproverIdentityPolicyUsesBuildConfiguredTeamID(t *testing.T) {
+	previous := defaultApproverExpectedTeamID
+	defaultApproverExpectedTeamID = " B6L7QLWTZW "
+	t.Cleanup(func() {
+		defaultApproverExpectedTeamID = previous
+	})
+
+	policy := DefaultApproverIdentityPolicy()
+	if policy.ExpectedTeamID != "B6L7QLWTZW" {
+		t.Fatalf("ExpectedTeamID = %q, want configured Developer ID Team ID", policy.ExpectedTeamID)
+	}
+}
+
 func TestBundleApproverIdentityPolicyRejectsWrongBundleID(t *testing.T) {
 	t.Parallel()
 

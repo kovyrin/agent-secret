@@ -11,11 +11,10 @@ import (
 )
 
 type Manager struct {
-	SocketPath         string
-	DaemonPath         string
-	DaemonArgs         []string
-	TrustedClientPaths []string
-	StartupTimeout     time.Duration
+	SocketPath     string
+	DaemonPath     string
+	DaemonArgs     []string
+	StartupTimeout time.Duration
 }
 
 func NewManager(socketPath string) (Manager, error) {
@@ -31,10 +30,9 @@ func NewManager(socketPath string) (Manager, error) {
 		return Manager{}, err
 	}
 	return Manager{
-		SocketPath:         socketPath,
-		DaemonPath:         daemonPath,
-		TrustedClientPaths: CurrentExecutableTrustedClientPaths(),
-		StartupTimeout:     3 * time.Second,
+		SocketPath:     socketPath,
+		DaemonPath:     daemonPath,
+		StartupTimeout: 3 * time.Second,
 	}, nil
 }
 
@@ -130,14 +128,7 @@ func (m Manager) stopped(ctx context.Context) bool {
 
 func (m Manager) daemonArgs() []string {
 	if len(m.DaemonArgs) == 0 {
-		args := []string{"--socket", m.SocketPath}
-		for _, path := range m.TrustedClientPaths {
-			if strings.TrimSpace(path) == "" {
-				continue
-			}
-			args = append(args, "--trusted-client", path)
-		}
-		return args
+		return []string{"--socket", m.SocketPath}
 	}
 	args := make([]string, 0, len(m.DaemonArgs))
 	for _, arg := range m.DaemonArgs {

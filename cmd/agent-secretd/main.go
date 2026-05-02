@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -26,19 +26,8 @@ func run() int {
 		return 1
 	}
 
-	socketPath, err := daemon.DefaultSocketPath()
+	config, err := parseDaemonConfig(os.Args[1:])
 	if err != nil {
-		stderrf("agent-secretd: resolve default socket path: %v\n", err)
-		return 1
-	}
-
-	flags := flag.NewFlagSet("agent-secretd", flag.ExitOnError)
-	flags.StringVar(&socketPath, "socket", socketPath, "daemon socket path")
-	var trustedClients stringListFlag
-	flags.Var(&trustedClients, "trusted-client", "trusted agent-secret executable path; repeatable")
-	approverPath := flags.String("approver", defaultApproverFlagValue(), "approver executable or .app path")
-	accountName := flags.String("account", os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"), "1Password account sign-in address, name, or UUID; empty uses OP_ACCOUNT or my.1password.com")
-	if err := flags.Parse(os.Args[1:]); err != nil {
 		stderrf("agent-secretd: parse flags: %v\n", err)
 		return 2
 	}
@@ -51,8 +40,8 @@ func run() int {
 	defer func() { _ = auditWriter.Close() }()
 
 	approver, err := daemon.NewSocketApprover(
-		socketPath,
-		daemon.ProcessApproverLauncher{AppPath: *approverPath},
+		config.socketPath,
+		daemon.ProcessApproverLauncher{},
 		nil,
 	)
 	if err != nil {
@@ -62,54 +51,61 @@ func run() int {
 
 	broker, err := daemon.NewBroker(daemon.BrokerOptions{
 		Approver: approver,
-		Resolver: newResolver(*accountName),
+		Resolver: newResolver(config.accountName),
 		Audit:    auditWriter,
 	})
 	if err != nil {
 		stderrf("agent-secretd: initialize broker: %v\n", err)
 		return 1
 	}
-	trustedClientPaths := []string(trustedClients)
-	if len(trustedClientPaths) == 0 {
-		trustedClientPaths = daemon.DefaultTrustedClientPaths()
-	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:        broker,
 		Approvals:     approver,
-		ExecValidator: daemon.NewTrustedExecutableValidator(trustedClientPaths),
+		ExecValidator: daemon.NewTrustedExecutableValidator(daemon.DefaultTrustedClientPaths()),
 	})
 	if err != nil {
 		stderrf("agent-secretd: initialize server: %v\n", err)
 		return 1
 	}
-	if err := server.ListenAndServe(context.Background(), socketPath); err != nil {
+	if err := server.ListenAndServe(context.Background(), config.socketPath); err != nil {
 		stderrf("agent-secretd: %v\n", err)
 		return 1
 	}
 	return 0
 }
 
+type daemonConfig struct {
+	socketPath  string
+	accountName string
+}
+
+func parseDaemonConfig(args []string) (daemonConfig, error) {
+	socketPath, err := daemon.DefaultSocketPath()
+	if err != nil {
+		return daemonConfig{}, fmt.Errorf("resolve default socket path: %w", err)
+	}
+
+	config := daemonConfig{}
+	flags := flag.NewFlagSet("agent-secretd", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&config.socketPath, "socket", socketPath, "daemon socket path")
+	flags.StringVar(
+		&config.accountName,
+		"account",
+		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
+		"1Password account sign-in address, name, or UUID; empty uses OP_ACCOUNT or my.1password.com",
+	)
+	if err := flags.Parse(args); err != nil {
+		return daemonConfig{}, err
+	}
+	if flags.NArg() != 0 {
+		return daemonConfig{}, fmt.Errorf("unexpected positional arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	return config, nil
+}
+
 func stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, args...)
-}
-
-func defaultApproverFlagValue() string {
-	return ""
-}
-
-type stringListFlag []string
-
-func (f *stringListFlag) String() string {
-	return strings.Join(*f, ",")
-}
-
-func (f *stringListFlag) Set(value string) error {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return errors.New("trusted client path is required")
-	}
-	*f = append(*f, value)
-	return nil
 }
 
 type desktopResolver struct {

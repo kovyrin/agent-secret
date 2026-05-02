@@ -18,6 +18,9 @@ const (
 	DefaultApproverExecutable = "Agent Secret"
 )
 
+//nolint:gochecknoglobals // Release builds set this with -ldflags to bind the approver to the signing Team ID.
+var defaultApproverExpectedTeamID string
+
 type BundleApproverIdentityPolicy struct {
 	ExpectedBundleID   string
 	ExpectedExecutable string
@@ -29,6 +32,7 @@ func DefaultApproverIdentityPolicy() BundleApproverIdentityPolicy {
 	return BundleApproverIdentityPolicy{
 		ExpectedBundleID:   DefaultApproverBundleID,
 		ExpectedExecutable: DefaultApproverExecutable,
+		ExpectedTeamID:     strings.TrimSpace(defaultApproverExpectedTeamID),
 		VerifySignature:    runtime.GOOS == "darwin",
 	}
 }
