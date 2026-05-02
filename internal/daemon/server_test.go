@@ -569,6 +569,32 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	}
 }
 
+func TestServerRejectsSessionSocketDeliveryBeforeApproval(t *testing.T) {
+	t.Parallel()
+
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
+	client, cleanup := startTestServer(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req.DeliveryMode = request.DeliverySessionSocket
+	req.MaxReads = 1
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
+		t.Fatalf("expected bad_request protocol error, got %v", err)
+	}
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+}
+
 func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	t.Parallel()
 

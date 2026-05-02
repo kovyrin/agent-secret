@@ -101,6 +101,9 @@ func (r ExecRequest) ValidateForDaemon() error {
 	if reason != r.Reason {
 		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
 	}
+	if r.DeliveryMode == DeliverySessionSocket {
+		return fmt.Errorf("%w: daemon does not implement %q delivery", ErrInvalidDeliveryMode, r.DeliveryMode)
+	}
 	if err := validateDelivery(r.DeliveryMode, r.MaxReads); err != nil {
 		return err
 	}
