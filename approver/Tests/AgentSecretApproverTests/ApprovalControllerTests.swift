@@ -55,7 +55,8 @@ final class ApprovalControllerTests: XCTestCase {
             secrets: [
                 RequestedSecret(
                     alias: "EXAMPLE_TOKEN",
-                    ref: "op://Example Vault/Example Item/token"
+                    ref: "op://Example Vault/Example Item/token",
+                    account: "Work"
                 )
             ],
             resolvedExecutable: "/opt/homebrew/bin/terraform"
@@ -141,6 +142,7 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(request.overriddenAliases, ["EXAMPLE_TOKEN"])
         XCTAssertEqual(request.reusableUses, Self.expectedReusableUses)
         XCTAssertEqual(request.secrets.first?.ref, "op://Example Vault/Example Item/token")
+        XCTAssertEqual(request.secrets.first?.account, "Work")
 
         let decision: ApprovalDecision = try decoder.decode(
             ApprovalDecision.self,
@@ -238,7 +240,11 @@ final class ApprovalControllerTests: XCTestCase {
 
         XCTAssertTrue(viewModel.renderedText.contains("Run Terraform plan"))
         XCTAssertTrue(viewModel.renderedText.contains("/tmp/project"))
-        XCTAssertTrue(viewModel.renderedText.contains("EXAMPLE_TOKEN -> op://Example Vault/Example Item/token"))
+        XCTAssertTrue(
+            viewModel.renderedText.contains(
+                "EXAMPLE_TOKEN [Account: Work] -> op://Example Vault/Example Item/token"
+            )
+        )
         XCTAssertTrue(viewModel.renderedText.contains("Resolved binary: /opt/homebrew/bin/terraform"))
         XCTAssertTrue(viewModel.renderedText.contains("Time remaining: 2 minutes"))
         XCTAssertTrue(viewModel.renderedText.contains("Will replace existing variables: EXAMPLE_TOKEN"))

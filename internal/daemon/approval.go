@@ -38,8 +38,9 @@ type ApprovalRequestPayload struct {
 }
 
 type ApprovalRequestedSecret struct {
-	Alias string `json:"alias"`
-	Ref   string `json:"ref"`
+	Alias   string `json:"alias"`
+	Ref     string `json:"ref"`
+	Account string `json:"account,omitempty"`
 }
 
 type ApprovalDecisionPayload struct {
@@ -270,7 +271,11 @@ func (l ProcessApproverLauncher) identityPolicy() ApproverIdentityPolicy {
 func approvalPayload(requestID string, nonce string, req request.ExecRequest) ApprovalRequestPayload {
 	secrets := make([]ApprovalRequestedSecret, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
-		secrets = append(secrets, ApprovalRequestedSecret{Alias: secret.Alias, Ref: secret.Ref.Raw})
+		secrets = append(secrets, ApprovalRequestedSecret{
+			Alias:   secret.Alias,
+			Ref:     secret.Ref.Raw,
+			Account: secret.Account,
+		})
 	}
 	return ApprovalRequestPayload{
 		RequestID:          requestID,

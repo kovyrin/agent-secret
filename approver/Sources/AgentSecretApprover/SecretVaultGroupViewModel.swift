@@ -1,8 +1,8 @@
 import Foundation
 
-/// Requested secrets grouped by their backing vault.
+/// Requested secrets grouped by their backing vault or account-qualified vault.
 public struct SecretVaultGroupViewModel: Equatable, Sendable {
-    /// Vault name shown in the grouped secret summary.
+    /// Vault or account-qualified vault name shown in the grouped secret summary.
     public let vaultName: String
     /// Secrets requested from this vault.
     public let secrets: [RequestedSecretRowViewModel]

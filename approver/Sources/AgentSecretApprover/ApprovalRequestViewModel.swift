@@ -129,10 +129,10 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
 
     private static func secretPresentation(for secrets: [RequestedSecret]) -> SecretPresentation {
         let rows: [RequestedSecretRowViewModel] = secrets.map { secret -> RequestedSecretRowViewModel in
-            RequestedSecretRowViewModel(alias: secret.alias, ref: secret.ref)
+            RequestedSecretRowViewModel(alias: secret.alias, ref: secret.ref, account: secret.account)
         }
         let rowText: [String] = rows.map { secret -> String in
-            "\(secret.alias) -> \(secret.ref)"
+            Self.secretRowText(secret)
         }
         let vaultGroups: [SecretVaultGroupViewModel] = Self.vaultGroups(for: rows)
         return SecretPresentation(
@@ -146,18 +146,25 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
 
     private static func vaultGroups(for rows: [RequestedSecretRowViewModel]) -> [SecretVaultGroupViewModel] {
         var groups: [SecretVaultGroupViewModel] = []
-        var groupIndexesByVault: [String: Int] = [:]
+        var groupIndexesByScope: [String: Int] = [:]
         for row in rows {
-            if let index: Int = groupIndexesByVault[row.vaultName] {
+            if let index: Int = groupIndexesByScope[row.vaultScopeName] {
                 var group: SecretVaultGroupViewModel = groups[index]
                 group = SecretVaultGroupViewModel(vaultName: group.vaultName, secrets: group.secrets + [row])
                 groups[index] = group
             } else {
-                groupIndexesByVault[row.vaultName] = groups.count
-                groups.append(SecretVaultGroupViewModel(vaultName: row.vaultName, secrets: [row]))
+                groupIndexesByScope[row.vaultScopeName] = groups.count
+                groups.append(SecretVaultGroupViewModel(vaultName: row.vaultScopeName, secrets: [row]))
             }
         }
         return groups
+    }
+
+    private static func secretRowText(_ secret: RequestedSecretRowViewModel) -> String {
+        if let accountLabel: String = secret.accountLabel {
+            return "\(secret.alias) [\(accountLabel)] -> \(secret.ref)"
+        }
+        return "\(secret.alias) -> \(secret.ref)"
     }
 
     private static func promptQuestion(secretCount: Int) -> String {
