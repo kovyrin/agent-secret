@@ -2,6 +2,14 @@ package main
 
 import "testing"
 
+func TestDefaultApproverFlagValueIgnoresEnvironmentOverride(t *testing.T) {
+	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/tmp/fake-approver")
+
+	if got := defaultApproverFlagValue(); got != "" {
+		t.Fatalf("default approver flag value = %q, want empty", got)
+	}
+}
+
 func TestNewResolverUsesDesktopResolverWithoutAccountOverride(t *testing.T) {
 	t.Parallel()
 

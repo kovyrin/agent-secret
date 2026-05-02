@@ -141,6 +141,10 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		case TypeDaemonStatus:
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
 		case TypeDaemonStop:
+			if err := s.validateTrustedClientPeer(conn); err != nil {
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+				continue
+			}
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
 			s.Stop(ctx)
 			return
@@ -211,7 +215,7 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
 		return ""
 	}
-	if err := s.validateExecPeer(conn); err != nil {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return ""
 	}
@@ -241,7 +245,7 @@ func (s *Server) handleCommandStarted(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_started", err)
 		return
 	}
-	if err := s.validateExecPeer(conn); err != nil {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return
 	}
@@ -263,7 +267,7 @@ func (s *Server) handleCommandCompleted(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_completed", err)
 		return false
 	}
-	if err := s.validateExecPeer(conn); err != nil {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return false
 	}
@@ -285,7 +289,7 @@ func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 	return peercred.Inspect(conn)
 }
 
-func (s *Server) validateExecPeer(conn *net.UnixConn) error {
+func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
 	peer, err := s.peerInfo(conn)
 	if err != nil {
 		return err
@@ -324,6 +328,8 @@ func codeForError(err error) string {
 		return "invalid_nonce"
 	case errors.Is(err, ErrApproverPeerMismatch):
 		return "approver_peer_mismatch"
+	case errors.Is(err, ErrApproverIdentity):
+		return "approver_identity_mismatch"
 	case errors.Is(err, ErrNoPendingApproval):
 		return "no_pending_approval"
 	case errors.Is(err, ErrRequestExpired):

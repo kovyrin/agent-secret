@@ -41,4 +41,8 @@ cat >"$bundle/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+if command -v codesign >/dev/null 2>&1; then
+  codesign --force --sign - "$bundle" >/dev/null
+fi
+
 echo "$bundle"
