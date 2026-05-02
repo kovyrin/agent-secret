@@ -17,6 +17,11 @@ USAGE
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 output_dir="$project_root/dist"
+codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
+notarize="${AGENT_SECRET_NOTARIZE:-0}"
+notary_key="${AGENT_SECRET_NOTARY_KEY:-}"
+notary_key_id="${AGENT_SECRET_NOTARY_KEY_ID:-}"
+notary_issuer_id="${AGENT_SECRET_NOTARY_ISSUER_ID:-}"
 
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
   if command -v mise >/dev/null 2>&1; then
@@ -91,6 +96,12 @@ esac
 require_command hdiutil
 require_command ditto
 require_command shasum
+if [[ "$codesign_identity" != "-" ]]; then
+  require_command codesign
+fi
+if [[ "$notarize" == "1" ]]; then
+  require_command xcrun
+fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release.XXXXXX")"
 cleanup() {
@@ -103,6 +114,28 @@ dmg_root="$tmp_dir/dmg-root"
 artifact_name="Agent-Secret-$version-macos-$arch.dmg"
 dmg_path="$output_dir/$artifact_name"
 checksums_path="$output_dir/checksums.txt"
+
+prepare_notary_key() {
+  if [[ "$notary_key" == "" || "$notary_key_id" == "" || "$notary_issuer_id" == "" ]]; then
+    echo "build-release: notarization requires AGENT_SECRET_NOTARY_KEY, AGENT_SECRET_NOTARY_KEY_ID, and AGENT_SECRET_NOTARY_ISSUER_ID" >&2
+    exit 1
+  fi
+
+  if [[ -f "$notary_key" ]]; then
+    echo "$notary_key"
+    return
+  fi
+
+  local key_path="$tmp_dir/AuthKey_${notary_key_id}.p8"
+  printf '%s\n' "$notary_key" >"$key_path"
+  chmod 0600 "$key_path"
+  echo "$key_path"
+}
+
+if [[ "$notarize" == "1" && "$codesign_identity" == "-" ]]; then
+  echo "build-release: notarization requires AGENT_SECRET_CODESIGN_IDENTITY" >&2
+  exit 1
+fi
 
 echo "Building Agent Secret.app for $version..."
 "$project_root/scripts/build-app-bundle.sh" --version "$version" --output "$build_dir"
@@ -125,6 +158,25 @@ hdiutil create \
 
 echo "Verifying DMG..."
 hdiutil verify "$dmg_path" >/dev/null
+
+if [[ "$codesign_identity" != "-" ]]; then
+  echo "Signing DMG with $codesign_identity..."
+  codesign --force --sign "$codesign_identity" --timestamp "$dmg_path" >/dev/null
+fi
+
+if [[ "$notarize" == "1" ]]; then
+  echo "Submitting DMG for notarization..."
+  notary_key_path="$(prepare_notary_key)"
+  xcrun notarytool submit "$dmg_path" \
+    --key "$notary_key_path" \
+    --key-id "$notary_key_id" \
+    --issuer "$notary_issuer_id" \
+    --wait
+
+  echo "Stapling notarization ticket..."
+  xcrun stapler staple "$dmg_path"
+  xcrun stapler validate "$dmg_path"
+fi
 
 echo "Writing checksums..."
 (

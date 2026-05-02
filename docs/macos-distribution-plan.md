@@ -385,22 +385,43 @@ hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
 
 ### Epic 4: Signed and Notarized Releases
 
-Status: Not started; blocked on Developer ID signing and notarization secrets
+Status: Signing hooks implemented; full verification blocked on Developer ID
+certificate and notarization secrets
 
 Deliverables:
 
-- Developer ID signing in release CI.
-- Notarization in release CI using App Store Connect API key credentials.
-- Stapled artifact.
-- Gatekeeper verification documented and automated where possible.
+- Optional Developer ID signing in the app bundle and release artifact builder.
+- Optional notarization using App Store Connect API key credentials.
+- Stapled artifact when `AGENT_SECRET_NOTARIZE=1` is used.
+- Gatekeeper verification documented for signed/notarized releases.
+
+Release signing environment:
+
+```bash
+AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
+AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
+AGENT_SECRET_NOTARIZE=1
+AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
+AGENT_SECRET_NOTARY_KEY_ID=KEYID
+AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
+```
+
+`AGENT_SECRET_NOTARY_KEY` may also be a path to a `.p8` API key file. Without
+`AGENT_SECRET_CODESIGN_IDENTITY`, builds use ad-hoc signing. Without
+`AGENT_SECRET_NOTARIZE=1`, the release builder does not submit to Apple.
 
 Acceptance checks:
 
 ```bash
+scripts/build-release.sh v0.0.0-dev
 codesign --verify --deep --strict "/Applications/Agent Secret.app"
 spctl --assess --type execute --verbose "/Applications/Agent Secret.app"
 xcrun stapler validate "/Applications/Agent Secret.app"
 ```
+
+Only the ad-hoc release builder path can be verified locally without Apple
+credentials. The Developer ID path must be verified once the certificate and App
+Store Connect API key are available in the release environment.
 
 ### Epic 5: Unattended Installer
 

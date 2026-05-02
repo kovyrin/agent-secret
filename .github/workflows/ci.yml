@@ -63,6 +63,13 @@ jobs:
         run: mise run setup
 
       - name: Build release artifacts
+        env:
+          AGENT_SECRET_CODESIGN_ENTITLEMENTS: ${{ secrets.AGENT_SECRET_CODESIGN_ENTITLEMENTS }}
+          AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
+          AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
+          AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
+          AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
         run: scripts/build-release.sh "$GITHUB_REF_NAME"
 
       - name: Create or update draft release
@@ -79,5 +86,5 @@ jobs:
               --draft \
               --verify-tag \
               --title "$GITHUB_REF_NAME" \
-              --notes "Unsigned macOS artifacts built from $GITHUB_SHA."
+              --notes "macOS artifacts built from $GITHUB_SHA."
           fi

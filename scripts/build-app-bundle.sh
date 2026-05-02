@@ -27,6 +27,8 @@ fi
 
 output_dir="$project_root/dist"
 version="${AGENT_SECRET_VERSION:-0.1.0}"
+codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
+codesign_entitlements="${AGENT_SECRET_CODESIGN_ENTITLEMENTS:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -114,6 +116,21 @@ make_icon() {
     sips -z "$size" "$size" "$icon_source" --out "$iconset_dir/$name" >/dev/null
   done
   iconutil -c icns "$iconset_dir" -o "$out"
+}
+
+sign_path() {
+  local path="$1"
+  local args=(--force --sign "$codesign_identity")
+
+  if [[ "$codesign_identity" != "-" ]]; then
+    args+=(--timestamp --options runtime)
+    if [[ "$codesign_entitlements" != "" ]]; then
+      args+=(--entitlements "$codesign_entitlements")
+    fi
+  fi
+
+  args+=("$path")
+  codesign "${args[@]}" >/dev/null
 }
 
 build_daemon_app() {
@@ -234,9 +251,13 @@ cat >"$app_bundle/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "Ad-hoc signing app bundle..."
-codesign --force --sign - "$app_bundle/Contents/Resources/bin/agent-secret" >/dev/null
-codesign --force --sign - "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app" >/dev/null
-codesign --force --sign - "$app_bundle" >/dev/null
+if [[ "$codesign_identity" == "-" ]]; then
+  echo "Signing app bundle with ad-hoc identity..."
+else
+  echo "Signing app bundle with $codesign_identity..."
+fi
+sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
+sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+sign_path "$app_bundle"
 
 echo "$app_bundle"

@@ -13,9 +13,9 @@ This repository is designed as a standalone open-source project.
 
 Planning scaffold, research spikes, Epic 3 core Go packages, the Epic 4
 CLI/daemon/exec path, and the Epic 5 native approver socket integration are in
-place. The macOS app bundle, development installer, local DMG builder, and
-unattended install/uninstall scripts are in progress on the distribution PR.
-Session/socket secret reads are next.
+place. The macOS app bundle, development installer, local DMG builder,
+unattended install/uninstall scripts, and optional release signing hooks are in
+place on the distribution PR. Session/socket secret reads are next.
 
 ## Current Documents
 
@@ -202,8 +202,23 @@ scripts/build-release.sh v0.0.0-dev
 
 That produces a DMG and `checksums.txt` in `dist/`.
 Tag pushes matching `v*` build the same artifacts in CI and attach them to a
-draft GitHub Release. The artifacts are ad-hoc signed until Developer ID
-signing and notarization are configured.
+draft GitHub Release. Local and CI builds are ad-hoc signed by default.
+
+Developer ID signing and notarization are opt-in release settings:
+
+```bash
+AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
+AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
+AGENT_SECRET_NOTARIZE=1
+AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
+AGENT_SECRET_NOTARY_KEY_ID=KEYID
+AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
+scripts/build-release.sh v0.3.1
+```
+
+`AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is
+only attempted when `AGENT_SECRET_NOTARIZE=1`; without Apple Developer ID and
+App Store Connect API key credentials, release artifacts remain ad-hoc signed.
 
 ## Command Usage
 
