@@ -44,7 +44,15 @@ func defaultDaemonAppPath() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	appPath := filepath.Join(home, "Applications", "AgentSecretDaemon.app")
+	appPath := filepath.Join(
+		home,
+		"Applications",
+		"Agent Secret.app",
+		"Contents",
+		"Library",
+		"Helpers",
+		"AgentSecretDaemon.app",
+	)
 	info, err := os.Stat(appPath)
 	if err != nil || !info.IsDir() {
 		return "", false
