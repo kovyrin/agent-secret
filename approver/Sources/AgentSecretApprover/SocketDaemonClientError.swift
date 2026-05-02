@@ -31,8 +31,8 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
         case let .connectFailed(errnoValue):
             "connect failed: errno \(errnoValue)"
 
-        case let .daemonError(code, message):
-            "daemon error \(code): \(message)"
+        case let .daemonError(code, _):
+            "daemon error \(DaemonErrorDisplay.sanitizedCode(code)): \(DaemonErrorDisplay.message(for: code))"
 
         case .disconnected:
             "daemon disconnected"

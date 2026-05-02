@@ -125,7 +125,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             from: data
         )
         let payload: DaemonErrorPayload? = response.payload
-        return .daemonError(payload?.code ?? "unknown", payload?.message ?? "unknown daemon error")
+        let code: String = DaemonErrorDisplay.sanitizedCode(payload?.code)
+        return .daemonError(code, DaemonErrorDisplay.message(for: code))
     }
 
     private func send(_ envelope: DaemonEnvelope<some Encodable>) throws {
