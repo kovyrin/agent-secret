@@ -113,9 +113,11 @@ func (f *stringListFlag) Set(value string) error {
 }
 
 type desktopResolver struct {
-	mu      sync.Mutex
-	account string
-	clients map[string]*opresolver.Resolver
+	mu                 sync.Mutex
+	account            string
+	clients            map[string]*opresolver.Resolver
+	inits              map[string]*desktopResolverInit
+	newDesktopResolver desktopResolverFactory
 }
 
 type desktopResolverResult struct {
@@ -123,9 +125,22 @@ type desktopResolverResult struct {
 	err      error
 }
 
+type desktopResolverFactory func(context.Context, opresolver.ClientOptions) (*opresolver.Resolver, error)
+
+type desktopResolverInit struct {
+	done     chan struct{}
+	resolver *opresolver.Resolver
+	err      error
+}
+
 func newResolver(account string) daemon.Resolver {
 	account = strings.TrimSpace(account)
-	return &desktopResolver{account: account, clients: make(map[string]*opresolver.Resolver)}
+	return &desktopResolver{
+		account:            account,
+		clients:            make(map[string]*opresolver.Resolver),
+		inits:              make(map[string]*desktopResolverInit),
+		newDesktopResolver: opresolver.NewDesktopResolver,
+	}
 }
 
 func (r *desktopResolver) Resolve(ctx context.Context, ref string, account string) (string, error) {
@@ -142,17 +157,46 @@ func (r *desktopResolver) Resolve(ctx context.Context, ref string, account strin
 
 func (r *desktopResolver) client(ctx context.Context, accountOverride string) (*opresolver.Resolver, error) {
 	account := r.effectiveAccount(accountOverride)
+	resolver, init, owner := r.startClientInit(account)
+	if resolver != nil {
+		return resolver, nil
+	}
+	if !owner {
+		return waitForClientInit(ctx, init)
+	}
+
+	resolver, err := r.createClient(ctx, account)
+	r.finishClientInit(account, init, resolver, err)
+	return resolver, err
+}
+
+func (r *desktopResolver) startClientInit(account string) (*opresolver.Resolver, *desktopResolverInit, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if resolver := r.clients[account]; resolver != nil {
-		return resolver, nil
+		return resolver, nil, false
 	}
+	if init := r.inits[account]; init != nil {
+		return nil, init, false
+	}
+	if r.inits == nil {
+		r.inits = make(map[string]*desktopResolverInit)
+	}
+	init := &desktopResolverInit{done: make(chan struct{})}
+	r.inits[account] = init
+	return nil, init, true
+}
 
+func (r *desktopResolver) createClient(ctx context.Context, account string) (*opresolver.Resolver, error) {
 	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	results := make(chan desktopResolverResult, 1)
+	factory := r.newDesktopResolver
+	if factory == nil {
+		factory = opresolver.NewDesktopResolver
+	}
 	go func() {
-		resolver, err := opresolver.NewDesktopResolver(initCtx, opresolver.ClientOptions{
+		resolver, err := factory(initCtx, opresolver.ClientOptions{
 			Account:            account,
 			IntegrationName:    "Agent Secret Broker",
 			IntegrationVersion: "dev",
@@ -165,13 +209,40 @@ func (r *desktopResolver) client(ctx context.Context, accountOverride string) (*
 		if result.err != nil {
 			return nil, result.err
 		}
-		r.clients[account] = result.resolver
 		return result.resolver, nil
 	case <-initCtx.Done():
 		return nil, fmt.Errorf(
 			"create 1Password SDK client timed out after 30s: unlock or restart 1Password and confirm SDK desktop integration is enabled: %w",
 			initCtx.Err(),
 		)
+	}
+}
+
+func (r *desktopResolver) finishClientInit(account string, init *desktopResolverInit, resolver *opresolver.Resolver, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err == nil {
+		r.clients[account] = resolver
+	}
+	delete(r.inits, account)
+	init.resolver = resolver
+	init.err = err
+	close(init.done)
+}
+
+func waitForClientInit(ctx context.Context, init *desktopResolverInit) (*opresolver.Resolver, error) {
+	select {
+	case <-init.done:
+		return init.resolver, init.err
+	default:
+	}
+
+	select {
+	case <-init.done:
+		return init.resolver, init.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("create 1Password resolver: %w", ctx.Err())
 	}
 }
 
