@@ -7,10 +7,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
-var ErrDaemonUnavailable = errors.New("daemon unavailable")
+var (
+	ErrDaemonUnavailable       = errors.New("daemon unavailable")
+	ErrInsecureSocketDirectory = errors.New("insecure daemon socket directory")
+)
 
 func DefaultSocketPath() (string, error) {
 	home, err := os.UserHomeDir()
@@ -21,11 +25,8 @@ func DefaultSocketPath() (string, error) {
 }
 
 func ListenUnix(path string) (*net.UnixListener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("create socket directory: %w", err)
-	}
-	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("secure socket directory: %w", err)
+	if err := prepareSocketDirectory(path); err != nil {
+		return nil, err
 	}
 	if err := cleanupStaleSocket(path); err != nil {
 		return nil, err
@@ -41,6 +42,49 @@ func ListenUnix(path string) (*net.UnixListener, error) {
 		return nil, fmt.Errorf("secure daemon socket: %w", err)
 	}
 	return listener, nil
+}
+
+func prepareSocketDirectory(path string) error {
+	defaultPath, err := DefaultSocketPath()
+	if err == nil && filepath.Clean(path) == filepath.Clean(defaultPath) {
+		return prepareDefaultSocketDirectory(filepath.Dir(path))
+	}
+	return prepareCustomSocketDirectory(filepath.Dir(path))
+}
+
+func prepareDefaultSocketDirectory(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create socket directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("secure socket directory: %w", err)
+	}
+	return nil
+}
+
+func prepareCustomSocketDirectory(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create socket directory: %w", err)
+	}
+	return rejectInsecureSocketDirectory(dir)
+}
+
+func rejectInsecureSocketDirectory(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("stat socket directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s is not a directory", ErrInsecureSocketDirectory, dir)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("%w: %s has mode %s", ErrInsecureSocketDirectory, dir, info.Mode().Perm())
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if ok && int(stat.Uid) != os.Getuid() {
+		return fmt.Errorf("%w: %s is owned by uid %d", ErrInsecureSocketDirectory, dir, stat.Uid)
+	}
+	return nil
 }
 
 func Dial(ctx context.Context, path string) (*net.UnixConn, error) {

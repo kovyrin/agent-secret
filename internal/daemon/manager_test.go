@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -156,6 +157,28 @@ func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 	want := []string{"--listen", "/tmp/agent-secret.sock", "--verbose"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("custom daemon args = %v, want %v", got, want)
+	}
+}
+
+func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatalf("chmod custom dir: %v", err)
+	}
+	manager := Manager{
+		SocketPath:     filepath.Join(dir, "agent-secretd.sock"),
+		DaemonPath:     filepath.Join(t.TempDir(), "missing-agent-secretd"),
+		StartupTimeout: time.Millisecond,
+	}
+
+	err := manager.Start(context.Background())
+	if !errors.Is(err, ErrInsecureSocketDirectory) {
+		t.Fatalf("expected insecure socket directory error, got %v", err)
+	}
+	if got := statMode(t, dir); got != 0o755 {
+		t.Fatalf("manager changed custom socket dir mode to %s", got)
 	}
 }
 
