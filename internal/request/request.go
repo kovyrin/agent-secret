@@ -25,6 +25,7 @@ var (
 	ErrInvalidMaxReads     = errors.New("invalid max reads")
 	ErrInvalidReason       = errors.New("invalid reason")
 	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
+	ErrInvalidRequest      = errors.New("invalid exec request")
 	ErrInvalidTTL          = errors.New("invalid ttl")
 )
 
@@ -90,6 +91,44 @@ type ExecRequest struct {
 
 func (r ExecRequest) Expired(at time.Time) bool {
 	return !at.Before(r.ExpiresAt)
+}
+
+func (r ExecRequest) ValidateForDaemon() error {
+	reason, err := validateReason(r.Reason)
+	if err != nil {
+		return err
+	}
+	if reason != r.Reason {
+		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
+	}
+	if err := validateDelivery(r.DeliveryMode, r.MaxReads); err != nil {
+		return err
+	}
+	if r.TTL < MinExecTTL || r.TTL > MaxExecTTL {
+		return fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
+	}
+	if r.ReceivedAt.IsZero() || r.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: request times are required", ErrInvalidRequest)
+	}
+	if !r.ExpiresAt.Equal(r.ReceivedAt.Add(r.TTL)) {
+		return fmt.Errorf("%w: expires_at must equal received_at plus ttl", ErrInvalidTTL)
+	}
+	if err := validateDaemonPath("cwd", r.CWD, false); err != nil {
+		return err
+	}
+	if err := validateDaemonPath("resolved executable", r.ResolvedExecutable, true); err != nil {
+		return err
+	}
+	if len(r.Command) == 0 || r.Command[0] == "" {
+		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
+	}
+	if _, err := validateDaemonSecrets(r.Secrets); err != nil {
+		return err
+	}
+	if err := validateOverriddenAliases(r.Secrets, r.OverriddenAliases, r.OverrideEnv); err != nil {
+		return err
+	}
+	return nil
 }
 
 func NewExec(opts ExecOptions) (ExecRequest, error) {
@@ -298,6 +337,22 @@ func validateExecutable(path string) (string, error) {
 	return evalPath(abs), nil
 }
 
+func validateDaemonPath(name string, path string, executable bool) error {
+	if path == "" {
+		return fmt.Errorf("%w: %s is required", ErrInvalidRequest, name)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%w: %s must be absolute", ErrInvalidRequest, name)
+	}
+	if filepath.Clean(path) != path {
+		return fmt.Errorf("%w: %s must be normalized", ErrInvalidRequest, name)
+	}
+	if executable && strings.HasSuffix(path, string(os.PathSeparator)) {
+		return fmt.Errorf("%w: %s must name a file", ErrInvalidCommand, name)
+	}
+	return nil
+}
+
 func parseSecrets(specs []SecretSpec) ([]Secret, error) {
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("%w: at least one secret is required", ErrInvalidReference)
@@ -322,6 +377,63 @@ func parseSecrets(specs []SecretSpec) ([]Secret, error) {
 	}
 
 	return secrets, nil
+}
+
+func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
+	specs := make([]SecretSpec, 0, len(secrets))
+	for _, secret := range secrets {
+		parsed, err := ParseSecretRef(secret.Ref.Raw)
+		if err != nil {
+			return nil, err
+		}
+		if parsed != secret.Ref {
+			return nil, fmt.Errorf("%w: parsed reference metadata does not match raw ref", ErrInvalidReference)
+		}
+		specs = append(specs, SecretSpec{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
+	}
+	parsed, err := parseSecrets(specs)
+	if err != nil {
+		return nil, err
+	}
+	if len(parsed) != len(secrets) {
+		return nil, fmt.Errorf("%w: secret count mismatch", ErrInvalidReference)
+	}
+	for i := range parsed {
+		if parsed[i] != secrets[i] {
+			return nil, fmt.Errorf("%w: secret metadata must be pre-normalized", ErrInvalidReference)
+		}
+	}
+	return parsed, nil
+}
+
+func validateOverriddenAliases(secrets []Secret, aliases []string, override bool) error {
+	if len(aliases) == 0 {
+		return nil
+	}
+	if !override {
+		return fmt.Errorf("%w: overridden aliases require override", ErrInvalidAlias)
+	}
+	if !slices.IsSorted(aliases) {
+		return fmt.Errorf("%w: overridden aliases must be sorted", ErrInvalidAlias)
+	}
+	known := make(map[string]struct{}, len(secrets))
+	for _, secret := range secrets {
+		known[secret.Alias] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		if !aliasPattern.MatchString(alias) {
+			return fmt.Errorf("%w: %q", ErrInvalidAlias, alias)
+		}
+		if _, exists := seen[alias]; exists {
+			return fmt.Errorf("%w: duplicate overridden alias %q", ErrInvalidAlias, alias)
+		}
+		seen[alias] = struct{}{}
+		if _, exists := known[alias]; !exists {
+			return fmt.Errorf("%w: overridden alias %q is not requested", ErrInvalidAlias, alias)
+		}
+	}
+	return nil
 }
 
 func detectOverrides(env []string, secrets []Secret, override bool) ([]string, error) {
