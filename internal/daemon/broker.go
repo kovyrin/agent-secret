@@ -42,11 +42,18 @@ type AuditSink interface {
 	Record(ctx context.Context, event audit.Event) error
 }
 
+type SecretCache interface {
+	Put(scopeID string, ref string, account string, value string) error
+	Get(scopeID string, ref string, account string) (string, bool)
+	ClearScope(scopeID string)
+	Clear()
+}
+
 type Broker struct {
 	mu         sync.Mutex
 	now        func() time.Time
 	store      *policy.Store
-	cache      *policy.SecretCache
+	cache      SecretCache
 	approver   Approver
 	resolver   Resolver
 	audit      AuditSink
@@ -71,7 +78,7 @@ type activeExec struct {
 type BrokerOptions struct {
 	Now        func() time.Time
 	Store      *policy.Store
-	Cache      *policy.SecretCache
+	Cache      SecretCache
 	Approver   Approver
 	Resolver   Resolver
 	Audit      AuditSink
@@ -168,7 +175,10 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	if active.approvalID == "" {
 		return nil
 	}
-	_, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
+	approval, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
+	if err == nil && approval.Uses >= approval.MaxUses {
+		b.cache.ClearScope(approval.ID)
+	}
 	return err
 }
 
@@ -241,6 +251,9 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 		if errors.Is(err, policy.ErrAuditFailed) {
 			return ExecGrant{}, err
 		}
+		if approval.ID != "" && (errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted)) {
+			b.cache.ClearScope(approval.ID)
+		}
 		return ExecGrant{}, nil
 	}
 
@@ -304,6 +317,7 @@ func (b *Broker) freshGrant(
 		approvalID = approval.ID
 		if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
 			b.cache.ClearScope(approvalID)
+			b.store.RemoveReusable(approvalID)
 			return ExecGrant{}, err
 		}
 	}
@@ -358,6 +372,7 @@ func (b *Broker) refreshedReusableValues(
 	values := fanoutValues(req.Secrets, refValues)
 	if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
 		b.cache.ClearScope(approvalID)
+		b.store.RemoveReusable(approvalID)
 		return nil, err
 	}
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)

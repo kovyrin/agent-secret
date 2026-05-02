@@ -140,16 +140,18 @@ func (s *Store) FindReusable(ctx context.Context, req request.ExecRequest, sink 
 
 	key := NewReuseKey(req)
 	now := s.now()
-	for _, approval := range s.approvals {
+	for id, approval := range s.approvals {
 		if !approval.Key.Equal(key) {
 			continue
 		}
 		if !now.Before(approval.ExpiresAt) {
-			return ReusableApproval{}, ErrExpired
+			delete(s.approvals, id)
+			return *approval, ErrExpired
 		}
 		remainingUses := approval.MaxUses - approval.Uses
 		if remainingUses <= 0 {
-			return ReusableApproval{}, ErrUseExhausted
+			delete(s.approvals, id)
+			return *approval, ErrUseExhausted
 		}
 
 		event := ReuseAuditEvent{
@@ -185,6 +187,17 @@ func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (Reusabl
 	}
 
 	return *approval, nil
+}
+
+func (s *Store) RemoveReusable(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.approvals[id]; !ok {
+		return false
+	}
+	delete(s.approvals, id)
+	return true
 }
 
 func (s *Store) CreateSession(id string, nonce string, expiresAt time.Time, grants []SecretGrant, maxReads int) (Session, error) {

@@ -178,8 +178,15 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	if _, err := expiredStore.AddReusable(req, "expired", "nonce"); err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
-	if _, err := expiredStore.FindReusable(context.Background(), req, nil); !errors.Is(err, ErrExpired) {
+	expired, err := expiredStore.FindReusable(context.Background(), req, nil)
+	if !errors.Is(err, ErrExpired) {
 		t.Fatalf("expected expired approval, got %v", err)
+	}
+	if expired.ID != "expired" {
+		t.Fatalf("expired approval id = %q, want expired", expired.ID)
+	}
+	if _, err := expiredStore.FindReusable(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("expected expired approval to be removed, got %v", err)
 	}
 }
 
