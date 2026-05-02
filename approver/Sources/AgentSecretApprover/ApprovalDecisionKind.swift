@@ -10,4 +10,8 @@ public enum ApprovalDecisionKind: String, Codable, Equatable, Sendable {
     case deny
     /// Treat the request as unanswered.
     case timeout
+
+    var requiresUnexpiredRequest: Bool {
+        self == .approveOnce || self == .approveReusable
+    }
 }

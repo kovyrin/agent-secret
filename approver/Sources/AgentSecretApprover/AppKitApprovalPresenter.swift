@@ -46,7 +46,6 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         private static func decideOnMain(for request: ApprovalRequest) -> ApprovalDecisionKind {
             let app = NSApplication.shared
             Self.activate(app)
-            let viewModel = ApprovalRequestViewModel(request: request)
             var decision: ApprovalDecisionKind = .deny
             let window = NSPanel(
                 contentRect: NSRect(
@@ -64,7 +63,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.hasShadow = false
             window.isMovableByWindowBackground = true
             window.contentView = NSHostingView(
-                rootView: ApprovalRequestPanelView(viewModel: viewModel) { selectedDecision in
+                rootView: ApprovalRequestPanelView(request: request) { selectedDecision in
                     decision = selectedDecision
                     app.stopModal()
                 }

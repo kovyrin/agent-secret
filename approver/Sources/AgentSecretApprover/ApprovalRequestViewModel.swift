@@ -56,6 +56,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let promptQuestion: String
     /// Summary text next to the command pill.
     public let accessSummary: String
+    /// True when the request can no longer be approved.
+    public let isExpired: Bool
     /// True when the number of requested secrets deserves extra attention.
     public let highScopeWarning: Bool
     /// Human-readable approval TTL.
@@ -93,24 +95,28 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         secretCount = secretPresentation.count
         vaultGroups = secretPresentation.vaultGroups
         vaultCount = secretPresentation.vaultCount
-        promptQuestion = Self.promptQuestion(secretCount: secretPresentation.count)
-        accessSummary = Self.accessSummary()
-        highScopeWarning = secretPresentation.count >= Self.highScopeSecretThreshold
         let remaining: TimeInterval = request.expiresAt.timeIntervalSince(now)
-        timeRemaining = Self.formatRemaining(remaining)
+        isExpired = Self.isExpired(remaining)
+        promptQuestion = Self.promptQuestion(secretCount: secretPresentation.count, isExpired: isExpired)
+        accessSummary = Self.accessSummary(isExpired: isExpired)
+        highScopeWarning = secretPresentation.count >= Self.highScopeSecretThreshold
+        timeRemaining = isExpired ? Self.expiredTimeRemaining() : Self.formatRemaining(remaining)
         compactTimeRemaining = timeRemaining
-        reusableUses = request.reusableUses
+        let reusableUseLimit: Int = request.reusableUses
+        reusableUses = reusableUseLimit
         scopeSummary = Self.scopeSummary(
-            reusableUses: request.reusableUses,
-            compactTimeRemaining: compactTimeRemaining
+            uses: reusableUseLimit,
+            remaining: compactTimeRemaining,
+            expired: isExpired
         )
-        allowReusableTitle = "Allow same command briefly\n\(compactTimeRemaining) or \(request.reusableUses) uses"
-        printsEnvironmentWarning = Self.environmentPrinter(
-            command: request.command,
-            resolvedExecutable: request.resolvedExecutable
+        allowReusableTitle = Self.allowReusableTitle(
+            uses: reusableUseLimit,
+            remaining: compactTimeRemaining,
+            expired: isExpired
         )
+        printsEnvironmentWarning = Self.environmentWarning(for: request)
         overrideWarning = Self.overrideWarning(for: request)
-        footerMessage = Self.footerMessage(secretCount: secretPresentation.count)
+        footerMessage = Self.footerMessage(secretCount: secretPresentation.count, expired: isExpired)
         renderedText = Self.renderedText(
             for: request,
             viewModel: SelfRenderInput(
@@ -165,26 +171,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             return "\(secret.alias) [\(accountLabel)] -> \(secret.ref)"
         }
         return "\(secret.alias) -> \(secret.ref)"
-    }
-
-    private static func promptQuestion(secretCount: Int) -> String {
-        if secretCount == 1 {
-            return "Allow this command to use the following secret?"
-        }
-        return "Allow this command to use the following \(secretCount) secrets?"
-    }
-
-    private static func accessSummary() -> String {
-        "wants temporary access."
-    }
-
-    private static func footerMessage(secretCount: Int) -> String {
-        let noun: String = secretCount == 1 ? "secret is" : "secrets are"
-        let pronoun: String = secretCount == 1 ? "It is" : "They are"
-        return """
-        The \(noun) injected into the approved process only.
-        \(pronoun) never shown to the agent or stored on disk.
-        """
     }
 
     private static func renderedText(
@@ -244,10 +230,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         return URL(fileURLWithPath: path).lastPathComponent
     }
 
-    private static func scopeSummary(reusableUses: Int, compactTimeRemaining: String) -> String {
-        "Same command only • max \(reusableUses) uses • expires in \(compactTimeRemaining)"
-    }
-
     private static func displayPath(_ path: String) -> String {
         guard let home: String = ProcessInfo.processInfo.environment["HOME"], !home.isEmpty else {
             return path
@@ -282,5 +264,9 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let executableName: String = URL(fileURLWithPath: resolvedExecutable ?? command.first ?? "")
             .lastPathComponent
         return executableName == "env" || executableName == "printenv"
+    }
+
+    private static func environmentWarning(for request: ApprovalRequest) -> Bool {
+        environmentPrinter(command: request.command, resolvedExecutable: request.resolvedExecutable)
     }
 }

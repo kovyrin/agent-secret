@@ -39,6 +39,7 @@ import Foundation
             static let contextRowSpacing: CGFloat = 10
             static let contextTitleFontSize: CGFloat = 13
             static let contextValueFontSize: CGFloat = 12
+            static let countdownTickInterval: TimeInterval = 1
             static let decisionButtonCount: CGFloat = 3
             static let decisionButtonGapCount: CGFloat = 2
             static let decisionButtonWidth: CGFloat = (
@@ -50,6 +51,8 @@ import Foundation
             static let detailSubtitleFontSize: CGFloat = 12
             static let detailTitleFontSize: CGFloat = 14
             static let detailTopPadding: CGFloat = 5
+            static let disabledButtonOpacity: Double = 0.45
+            static let enabledButtonOpacity: Double = 1
             static let footerIconSize: CGFloat = 18
             static let footerSpacing: CGFloat = 12
             static let greenBorderOpacity: Double = 0.22
