@@ -203,7 +203,7 @@ if [[ "$codesign_identity" != "-" ]]; then
     echo "build-app-bundle: codesign identity must end with a Team ID in parentheses" >&2
     exit 1
   }
-  go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultApproverExpectedTeamID=$approver_team_id")
+  go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultDeveloperIDTeamID=$approver_team_id")
 fi
 go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
 go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd

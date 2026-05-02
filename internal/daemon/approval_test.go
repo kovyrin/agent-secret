@@ -526,10 +526,10 @@ func TestDefaultApproverIdentityMatchesBundleMetadata(t *testing.T) {
 }
 
 func TestDefaultApproverIdentityPolicyUsesBuildConfiguredTeamID(t *testing.T) {
-	previous := defaultApproverExpectedTeamID
-	defaultApproverExpectedTeamID = " B6L7QLWTZW "
+	previous := defaultDeveloperIDTeamID
+	defaultDeveloperIDTeamID = " B6L7QLWTZW "
 	t.Cleanup(func() {
-		defaultApproverExpectedTeamID = previous
+		defaultDeveloperIDTeamID = previous
 	})
 
 	policy := DefaultApproverIdentityPolicy()

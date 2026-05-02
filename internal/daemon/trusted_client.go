@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"runtime"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -18,12 +18,23 @@ type ExecPeerValidator interface {
 }
 
 type TrustedExecutableValidator struct {
-	paths []string
+	entries        []trustedExecutable
+	expectedTeamID string
+}
+
+type trustedExecutable struct {
+	path       string
+	fileInfo   os.FileInfo
+	bundlePath string
 }
 
 func NewTrustedExecutableValidator(paths []string) TrustedExecutableValidator {
+	return newTrustedExecutableValidator(paths, defaultExpectedTeamID())
+}
+
+func newTrustedExecutableValidator(paths []string, expectedTeamID string) TrustedExecutableValidator {
 	seen := make(map[string]struct{}, len(paths))
-	normalized := make([]string, 0, len(paths))
+	entries := make([]trustedExecutable, 0, len(paths))
 	for _, path := range paths {
 		path = strings.TrimSpace(path)
 		if path == "" {
@@ -33,11 +44,24 @@ func NewTrustedExecutableValidator(paths []string) TrustedExecutableValidator {
 		if _, ok := seen[path]; ok {
 			continue
 		}
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
 		seen[path] = struct{}{}
-		normalized = append(normalized, path)
+		entry := trustedExecutable{
+			path:     path,
+			fileInfo: info,
+		}
+		if bundlePath, ok := trustedClientBundlePath(path); ok {
+			entry.bundlePath = bundlePath
+		}
+		entries = append(entries, entry)
 	}
-	slices.Sort(normalized)
-	return TrustedExecutableValidator{paths: normalized}
+	return TrustedExecutableValidator{
+		entries:        entries,
+		expectedTeamID: strings.TrimSpace(expectedTeamID),
+	}
 }
 
 func DefaultTrustedClientPaths() []string {
@@ -45,14 +69,10 @@ func DefaultTrustedClientPaths() []string {
 	if err != nil {
 		return nil
 	}
-	home := ""
-	if userHome, err := os.UserHomeDir(); err == nil {
-		home = userHome
-	}
-	return trustedClientPathsForExecutable(exe, home)
+	return trustedClientPathsForExecutable(exe)
 }
 
-func trustedClientPathsForExecutable(exe string, home string) []string {
+func trustedClientPathsForExecutable(exe string) []string {
 	dir := filepath.Dir(exe)
 	paths := []string{filepath.Join(dir, "agent-secret")}
 	if filepath.Base(exe) == "agent-secret" {
@@ -60,9 +80,6 @@ func trustedClientPathsForExecutable(exe string, home string) []string {
 	}
 	if bundledCLI, ok := bundledCLIPathForDaemonExecutable(exe); ok {
 		paths = append(paths, bundledCLI)
-	}
-	if home != "" {
-		paths = append(paths, filepath.Join(home, ".local", "bin", "agent-secret"))
 	}
 	return paths
 }
@@ -87,6 +104,29 @@ func bundledCLIPathForDaemonExecutable(exe string) (string, bool) {
 	return filepath.Join(hostApp, "Contents", "Resources", "bin", "agent-secret"), true
 }
 
+func trustedClientBundlePath(path string) (string, bool) {
+	if filepath.Base(path) != "agent-secret" {
+		return "", false
+	}
+	binDir := filepath.Dir(path)
+	if filepath.Base(binDir) != "bin" {
+		return "", false
+	}
+	resourcesDir := filepath.Dir(binDir)
+	if filepath.Base(resourcesDir) != "Resources" {
+		return "", false
+	}
+	contentsDir := filepath.Dir(resourcesDir)
+	if filepath.Base(contentsDir) != "Contents" {
+		return "", false
+	}
+	appPath := filepath.Dir(contentsDir)
+	if filepath.Ext(appPath) != ".app" {
+		return "", false
+	}
+	return filepath.Clean(appPath), true
+}
+
 func containingAppBundlePath(path string) (string, bool) {
 	dir := filepath.Dir(path)
 	for {
@@ -105,14 +145,46 @@ func (v TrustedExecutableValidator) ValidateExecPeer(info peercred.Info) error {
 	if info.ExecutablePath == "" {
 		return fmt.Errorf("%w: peer executable path is unavailable", ErrUntrustedClient)
 	}
-	if len(v.paths) == 0 {
+	if len(v.entries) == 0 {
 		return fmt.Errorf("%w: no trusted client executables configured", ErrUntrustedClient)
 	}
 	got := comparablePath(info.ExecutablePath)
-	if _, ok := slices.BinarySearch(v.paths, got); ok {
+	for _, entry := range v.entries {
+		if entry.path != got {
+			continue
+		}
+		if err := entry.validate(got, v.expectedTeamID); err != nil {
+			return err
+		}
 		return nil
 	}
 	return fmt.Errorf("%w: executable %q is not trusted", ErrUntrustedClient, got)
+}
+
+func (e trustedExecutable) validate(path string, expectedTeamID string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("%w: stat trusted executable %q: %w", ErrUntrustedClient, path, err)
+	}
+	if !os.SameFile(info, e.fileInfo) {
+		return fmt.Errorf("%w: executable %q changed since daemon startup", ErrUntrustedClient, path)
+	}
+	if e.bundlePath != "" {
+		currentBundlePath, ok := trustedClientBundlePath(path)
+		if !ok || currentBundlePath != e.bundlePath {
+			return fmt.Errorf("%w: executable %q is outside expected app bundle %q", ErrUntrustedClient, path, e.bundlePath)
+		}
+	}
+	if expectedTeamID != "" && runtime.GOOS == "darwin" {
+		teamID, err := verifyCodeSignature(path)
+		if err != nil {
+			return fmt.Errorf("%w: verify code signature: %w", ErrUntrustedClient, err)
+		}
+		if teamID != expectedTeamID {
+			return fmt.Errorf("%w: team id %q != %q", ErrUntrustedClient, teamID, expectedTeamID)
+		}
+	}
+	return nil
 }
 
 func comparablePath(path string) string {

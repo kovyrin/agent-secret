@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -41,6 +42,38 @@ func TestTrustedExecutableValidatorRejectsUnlistedExecutable(t *testing.T) {
 	}
 }
 
+func TestTrustedExecutableValidatorRejectsExecutableReplacedAfterStartup(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	validator := NewTrustedExecutableValidator([]string{trusted})
+
+	if err := os.Remove(trusted); err != nil {
+		t.Fatalf("remove trusted executable: %v", err)
+	}
+	if err := os.WriteFile(trusted, []byte("#!/bin/sh\nexit 64\n"), 0o755); err != nil {
+		t.Fatalf("replace trusted executable: %v", err)
+	}
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient after replacement, got %v", err)
+	}
+}
+
+func TestTrustedExecutableValidatorSkipsMissingTrustedPath(t *testing.T) {
+	t.Parallel()
+
+	missing := filepath.Join(t.TempDir(), "agent-secret")
+	validator := NewTrustedExecutableValidator([]string{missing})
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: missing})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient for missing trusted path, got %v", err)
+	}
+}
+
 func TestDefaultTrustedClientPathsIncludeBundledCLIForDaemonHelper(t *testing.T) {
 	t.Parallel()
 
@@ -58,8 +91,20 @@ func TestDefaultTrustedClientPathsIncludeBundledCLIForDaemonHelper(t *testing.T)
 	)
 	wantCLI := filepath.Join(appPath, "Contents", "Resources", "bin", "agent-secret")
 
-	got := trustedClientPathsForExecutable(daemonExe, "")
+	got := trustedClientPathsForExecutable(daemonExe)
 	if !slices.Contains(got, wantCLI) {
 		t.Fatalf("trusted paths = %v, want bundled CLI %q", got, wantCLI)
+	}
+}
+
+func TestDefaultTrustedClientPathsDoNotIncludeUserLocalBin(t *testing.T) {
+	t.Parallel()
+
+	daemonExe := filepath.Join(t.TempDir(), "agent-secretd")
+	got := trustedClientPathsForExecutable(daemonExe)
+	for _, path := range got {
+		if strings.Contains(path, filepath.Join(".local", "bin", "agent-secret")) {
+			t.Fatalf("trusted paths include mutable user command path: %v", got)
+		}
 	}
 }
