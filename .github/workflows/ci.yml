@@ -62,6 +62,18 @@ jobs:
       - name: Install project dependencies
         run: mise run setup
 
+      - name: Import Developer ID certificate
+        env:
+          AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
+          AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
+          AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
+        run: |
+          if [ -n "$AGENT_SECRET_CODESIGN_CERT_P12_BASE64" ]; then
+            scripts/import-codesign-certificate.sh
+          else
+            echo "No Developer ID certificate secret configured; skipping keychain import."
+          fi
+
       - name: Build release artifacts
         env:
           AGENT_SECRET_CODESIGN_ENTITLEMENTS: ${{ secrets.AGENT_SECRET_CODESIGN_ENTITLEMENTS }}
@@ -87,4 +99,13 @@ jobs:
               --verify-tag \
               --title "$GITHUB_REF_NAME" \
               --notes "macOS artifacts built from $GITHUB_SHA."
+          fi
+
+      - name: Delete temporary signing keychain
+        if: ${{ always() }}
+        env:
+          AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
+        run: |
+          if [ -f "$AGENT_SECRET_CODESIGN_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$AGENT_SECRET_CODESIGN_KEYCHAIN_PATH"
           fi

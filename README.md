@@ -231,6 +231,29 @@ scripts/build-release.sh v0.3.1
 only attempted when `AGENT_SECRET_NOTARIZE=1`; without Apple Developer ID and
 App Store Connect API key credentials, release artifacts remain ad-hoc signed.
 
+For this repository's maintainer releases, the current Developer ID identity is:
+
+```text
+Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)
+```
+
+GitHub release signing also needs the Developer ID certificate exported from
+Keychain Access as a password-protected `.p12` and saved as secrets:
+
+```bash
+identity="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
+base64 -i AgentSecretDeveloperID.p12 | gh secret set AGENT_SECRET_CODESIGN_CERT_P12_BASE64
+gh secret set AGENT_SECRET_CODESIGN_CERT_PASSWORD --body "$P12_PASSWORD"
+gh secret set AGENT_SECRET_CODESIGN_IDENTITY --body "$identity"
+gh secret set AGENT_SECRET_NOTARIZE --body "1"
+gh secret set AGENT_SECRET_NOTARY_KEY < AuthKey_KEYID.p8
+gh secret set AGENT_SECRET_NOTARY_KEY_ID --body "KEYID"
+gh secret set AGENT_SECRET_NOTARY_ISSUER_ID --body "ISSUER_UUID"
+```
+
+The CI release job imports the `.p12` into a temporary keychain before signing
+and deletes that keychain after the release artifact step.
+
 ## Command Usage
 
 The main command is `exec`, which asks the daemon for approved secrets and then

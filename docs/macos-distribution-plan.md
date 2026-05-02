@@ -456,6 +456,30 @@ AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
 `AGENT_SECRET_CODESIGN_IDENTITY`, builds use ad-hoc signing. Without
 `AGENT_SECRET_NOTARIZE=1`, the release builder does not submit to Apple.
 
+GitHub release signing imports a Developer ID certificate into a temporary
+keychain before building artifacts. Configure these repository secrets:
+
+```text
+AGENT_SECRET_CODESIGN_IDENTITY
+AGENT_SECRET_CODESIGN_CERT_P12_BASE64
+AGENT_SECRET_CODESIGN_CERT_PASSWORD
+AGENT_SECRET_NOTARIZE
+AGENT_SECRET_NOTARY_KEY
+AGENT_SECRET_NOTARY_KEY_ID
+AGENT_SECRET_NOTARY_ISSUER_ID
+```
+
+For maintainer releases from this repository, `AGENT_SECRET_CODESIGN_IDENTITY`
+is currently:
+
+```text
+Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)
+```
+
+`AGENT_SECRET_CODESIGN_CERT_P12_BASE64` is the base64-encoded `.p12` exported
+from Keychain Access. The CI keychain is deleted after the release artifact
+step.
+
 Acceptance checks:
 
 ```bash
