@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -483,6 +484,26 @@ func TestBundleApproverIdentityPolicyValidatesBundleMetadata(t *testing.T) {
 	}
 }
 
+func TestDefaultApproverIdentityMatchesBundleMetadata(t *testing.T) {
+	t.Parallel()
+
+	metadata := readBundleMetadata(t)
+	if DefaultApproverBundleID != metadata["AGENT_SECRET_APP_BUNDLE_ID"] {
+		t.Fatalf(
+			"DefaultApproverBundleID = %q, want bundle metadata %q",
+			DefaultApproverBundleID,
+			metadata["AGENT_SECRET_APP_BUNDLE_ID"],
+		)
+	}
+	if DefaultApproverExecutable != metadata["AGENT_SECRET_APP_EXECUTABLE"] {
+		t.Fatalf(
+			"DefaultApproverExecutable = %q, want bundle metadata %q",
+			DefaultApproverExecutable,
+			metadata["AGENT_SECRET_APP_EXECUTABLE"],
+		)
+	}
+}
+
 func TestBundleApproverIdentityPolicyRejectsWrongBundleID(t *testing.T) {
 	t.Parallel()
 
@@ -591,6 +612,34 @@ func readFixture(t *testing.T, name string) []byte {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
 	return data
+}
+
+func readBundleMetadata(t *testing.T) map[string]string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	path := filepath.Join(filepath.Dir(file), "..", "..", "scripts", "bundle-metadata.sh")
+	//nolint:gosec // G304: test metadata path is derived from runtime.Caller within this repository.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read bundle metadata: %v", err)
+	}
+
+	metadata := make(map[string]string)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		metadata[key] = strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	return metadata
 }
 
 func waitForPending(t *testing.T, approver *SocketApprover) {

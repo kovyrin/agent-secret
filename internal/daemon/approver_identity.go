@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	DefaultApproverBundleID   = "com.kovyrin.agent-secret.approver"
-	DefaultApproverExecutable = "agent-secret-approver"
+	DefaultApproverBundleID   = "com.kovyrin.agent-secret"
+	DefaultApproverExecutable = "Agent Secret"
 )
 
 type BundleApproverIdentityPolicy struct {
