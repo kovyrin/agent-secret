@@ -78,6 +78,12 @@ test-only `op://` references, and never print fetched values.
 ## Documentation Policy
 
 - Keep docs practical and implementation-focused.
+- Keep `CHANGELOG.md` up to date for user-facing changes, release-process
+  changes, compatibility changes, and security-relevant fixes. Add entries under
+  the next `Pending` version section as work lands.
+- Do not bury release-note material in commits, PR bodies, or issue comments
+  only. Release notes are copied from the matching `CHANGELOG.md` version
+  section during release.
 - When creating or editing Markdown, run `mise run lint` or
   `npx --no-install markdownlint '**/*.md'` from a `mise exec` shell.
 - Record research findings in docs before relying on them in implementation.

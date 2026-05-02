@@ -19,10 +19,12 @@ place on the distribution PR. Session/socket secret reads are next.
 
 ## Current Documents
 
+- [Changelog](CHANGELOG.md)
 - [Product Requirements](docs/prd.md)
 - [Implementation Plan](docs/implementation-plan.md)
 - [Configuration Reference](docs/configuration.md)
 - [macOS Distribution Plan](docs/macos-distribution-plan.md)
+- [Release Process](docs/release-process.md)
 - [Code Layout](docs/code-layout.md)
 - [Epic 2 Spike Notes](docs/epic-2-spikes.md)
 
@@ -214,6 +216,9 @@ scripts/build-release.sh v0.0.0-dev
 That produces a DMG and `checksums.txt` in `dist/`.
 Tag pushes matching `v*` build the same artifacts in CI and attach them to a
 draft GitHub Release. Local and CI builds are ad-hoc signed by default.
+The maintainer release checklist is documented in
+[Release Process](docs/release-process.md), and release notes are copied from
+the matching section in [Changelog](CHANGELOG.md).
 
 Developer ID signing and notarization are opt-in release settings:
 
