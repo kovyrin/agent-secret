@@ -59,6 +59,7 @@ type Broker struct {
 	audit      AuditSink
 	fetchLimit int
 	active     map[string]*activeExec
+	expiry     map[string]*time.Timer
 }
 
 type ExecGrant struct {
@@ -122,6 +123,7 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 		audit:      opts.Audit,
 		fetchLimit: fetchLimit,
 		active:     make(map[string]*activeExec),
+		expiry:     make(map[string]*time.Timer),
 	}, nil
 }
 
@@ -178,7 +180,7 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	}
 	approval, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
 	if err == nil && approval.Uses >= approval.MaxUses {
-		b.cache.ClearScope(approval.ID)
+		b.clearReusableCacheScope(approval.ID)
 	}
 	return err
 }
@@ -253,6 +255,10 @@ func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.active = make(map[string]*activeExec)
+	for id, timer := range b.expiry {
+		timer.Stop()
+		delete(b.expiry, id)
+	}
 	b.cache.Clear()
 	b.store = policy.NewStore(b.now)
 }
@@ -271,7 +277,7 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 			return ExecGrant{}, err
 		}
 		if approval.ID != "" && (errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted)) {
-			b.cache.ClearScope(approval.ID)
+			b.clearReusableCacheScope(approval.ID)
 		}
 		return ExecGrant{}, nil
 	}
@@ -347,10 +353,11 @@ func (b *Broker) freshGrant(
 		}
 		approvalID = approval.ID
 		if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
-			b.cache.ClearScope(approvalID)
+			b.clearReusableCacheScope(approvalID)
 			b.store.RemoveReusable(approvalID)
 			return ExecGrant{}, err
 		}
+		b.scheduleReusableExpiry(approval.ID, approval.ExpiresAt)
 	}
 
 	return ExecGrant{
@@ -358,6 +365,36 @@ func (b *Broker) freshGrant(
 		SecretAliases: aliases(req.Secrets),
 		ApprovalID:    approvalID,
 	}, nil
+}
+
+func (b *Broker) scheduleReusableExpiry(approvalID string, expiresAt time.Time) {
+	ttl := expiresAt.Sub(b.now())
+	if ttl <= 0 {
+		b.store.RemoveReusable(approvalID)
+		b.clearReusableCacheScope(approvalID)
+		return
+	}
+
+	b.mu.Lock()
+	if previous := b.expiry[approvalID]; previous != nil {
+		previous.Stop()
+	}
+	timer := time.AfterFunc(ttl, func() {
+		b.store.RemoveReusable(approvalID)
+		b.clearReusableCacheScope(approvalID)
+	})
+	b.expiry[approvalID] = timer
+	b.mu.Unlock()
+}
+
+func (b *Broker) clearReusableCacheScope(approvalID string) {
+	b.mu.Lock()
+	if timer := b.expiry[approvalID]; timer != nil {
+		timer.Stop()
+		delete(b.expiry, approvalID)
+	}
+	b.mu.Unlock()
+	b.cache.ClearScope(approvalID)
 }
 
 func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req request.ExecRequest) (map[secretIdentity]string, error) {
