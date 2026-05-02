@@ -362,27 +362,56 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 		return nil, err
 	}
 
+	fetchCtx, cancelFetches := context.WithCancel(ctx)
+	defer cancelFetches()
+
 	sem := make(chan struct{}, b.fetchLimit)
 	results := make(chan result, len(identities))
+	var wg sync.WaitGroup
 	for _, identity := range identities {
-		sem <- struct{}{}
+		wg.Add(1)
 		go func(identity secretIdentity) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-fetchCtx.Done():
+				return
+			}
 			defer func() { <-sem }()
-			value, err := b.resolver.Resolve(ctx, identity.ref, identity.account)
+
+			value, err := b.resolver.Resolve(fetchCtx, identity.ref, identity.account)
 			results <- result{identity: identity, value: value, err: err}
 		}(identity)
 	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
 	resolved := make(map[secretIdentity]string, len(identities))
-	for range identities {
-		got := <-results
+	var firstErr error
+	for got := range results {
 		if got.err != nil {
-			if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
-				return nil, err
+			if firstErr == nil {
+				cancelFetches()
+				if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
+					firstErr = err
+				} else {
+					firstErr = fmt.Errorf("resolve approved ref: %w", got.err)
+				}
 			}
-			return nil, fmt.Errorf("resolve approved ref: %w", got.err)
+			continue
 		}
-		resolved[got.identity] = got.value
+		if firstErr == nil {
+			resolved[got.identity] = got.value
+		}
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if err := fetchCtx.Err(); err != nil {
+		return nil, fmt.Errorf("resolve approved ref: %w", err)
 	}
 
 	return resolved, nil
