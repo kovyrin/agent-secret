@@ -65,6 +65,7 @@ release target. Do not publish a release whose changelog section is empty.
 
    ```text
    Agent-Secret-vX.Y.Z-macos-arm64.dmg
+   Agent-Secret-vX.Y.Z-macos-x86_64.dmg
    checksums.txt
    ```
 
