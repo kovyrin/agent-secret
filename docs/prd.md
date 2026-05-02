@@ -1175,8 +1175,8 @@ Exit criteria:
 
 - V1 `exec` logs approval request, approval grant, approval denial, approval
   timeout, reusable approval reuse/refresh, secret fetch attempt, secret fetch
-  failure, command start/start-complete/completion, post-payload disconnect, and
-  daemon stop events.
+  failure, command start/start-complete/completion, post-payload disconnect,
+  post-start lifecycle disconnect, and daemon stop events.
 - Future handle/session delivery APIs must add expiry and destroy audit events
   before those APIs are considered complete.
 - Logs contain refs and aliases but no values.
@@ -1200,6 +1200,9 @@ Exit criteria:
   `command_started`, the daemon records `exec_client_disconnected_after_payload`,
   clears one-shot daemon-held values, and does not try to kill or infer a child
   process. Reusable cached values are not cleared by this event alone.
+- If `agent-secret exec` disconnects after `command_started` but before
+  `command_completed`, the daemon records
+  `exec_client_disconnected_after_start` with request metadata and child PID.
 - If a child process exits, cleanup runs.
 - If a reusable approval expires while a child is still running, the command is
   allowed to finish and broker-held cached values are cleared.

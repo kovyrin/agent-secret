@@ -169,6 +169,44 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	t.Fatalf("disconnect audit was not recorded: %+v", aud.Events())
 }
 
+func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	aud := &memoryAudit{}
+	client, cleanup := startTestServer(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: canarySecretValue}},
+		Audit:    aud,
+	})
+	defer cleanup()
+
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: ref},
+	})); err != nil {
+		t.Fatalf("RequestExec returned error: %v", err)
+	}
+	if err := client.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	_ = client.Close()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for _, event := range aud.Events() {
+			if event.Type == audit.EventExecClientDisconnectedAfterStart {
+				if event.ChildPID == nil || *event.ChildPID != 4321 {
+					t.Fatalf("disconnect child pid = %v, want 4321", event.ChildPID)
+				}
+				assertAuditEventsValueFree(t, aud.Events())
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("post-start disconnect audit was not recorded: %+v", aud.Events())
+}
+
 func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	t.Parallel()
 

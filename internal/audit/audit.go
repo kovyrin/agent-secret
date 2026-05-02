@@ -36,6 +36,7 @@ const (
 	EventCommandStarted                     EventType = "command_started"
 	EventCommandCompleted                   EventType = "command_completed"
 	EventExecClientDisconnectedAfterPayload EventType = "exec_client_disconnected_after_payload"
+	EventExecClientDisconnectedAfterStart   EventType = "exec_client_disconnected_after_start"
 	EventDaemonStop                         EventType = "daemon_stop"
 )
 

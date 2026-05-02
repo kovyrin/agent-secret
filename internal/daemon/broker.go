@@ -73,6 +73,7 @@ type activeExec struct {
 	approvalID       string
 	payloadDelivered bool
 	started          bool
+	childPID         *int
 }
 
 type BrokerOptions struct {
@@ -189,7 +190,8 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 	}
 
 	event := audit.FromExecRequest(audit.EventCommandStarted, requestID, active.req)
-	event.ChildPID = new(childPID)
+	pid := childPID
+	event.ChildPID = &pid
 	if err := b.recordRequiredAudit(ctx, event); err != nil {
 		return err
 	}
@@ -197,6 +199,7 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 	b.mu.Lock()
 	if current := b.active[requestID]; current != nil {
 		current.started = true
+		current.childPID = &pid
 	}
 	b.mu.Unlock()
 	return nil
@@ -228,11 +231,16 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 		delete(b.active, requestID)
 	}
 	b.mu.Unlock()
-	if !ok || !active.payloadDelivered || active.started {
+	if !ok || !active.payloadDelivered {
 		return
 	}
 
-	event := audit.FromExecRequest(audit.EventExecClientDisconnectedAfterPayload, requestID, active.req)
+	eventType := audit.EventExecClientDisconnectedAfterPayload
+	if active.started {
+		eventType = audit.EventExecClientDisconnectedAfterStart
+	}
+	event := audit.FromExecRequest(eventType, requestID, active.req)
+	event.ChildPID = active.childPID
 	_ = b.audit.Record(ctx, event)
 }
 
