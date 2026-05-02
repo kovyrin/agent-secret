@@ -37,7 +37,7 @@ extension ApprovalRequestViewModel {
         return "Same command only • max \(uses) uses • expires in \(remaining)"
     }
 
-    static func allowReusableTitle(uses: Int, remaining: String, expired: Bool) -> String {
+    static func reuseTitle(uses: Int, remaining: String, expired: Bool) -> String {
         if expired {
             return "Allow same command briefly\nRequest expired"
         }

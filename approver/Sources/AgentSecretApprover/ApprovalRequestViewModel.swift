@@ -14,6 +14,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let title: String
         let reason: String
         let command: String
+        let commandArgumentRows: [String]
         let cwd: String
         let scopeSummary: String
         let resolvedExecutable: String?
@@ -30,10 +31,14 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let title: String
     /// Request reason.
     public let reason: String
-    /// Shell-rendered command display.
+    /// Shell-escaped compact argv display.
     public let command: String
     /// True when the command should expose a full-text inspector affordance.
     public let commandNeedsInspector: Bool
+    /// Structured argv rows for the full command inspector.
+    public let commandInspectionText: String
+    /// One view model per argv element.
+    let commandArguments: [CommandArgumentViewModel]
     /// Executable path displayed in the approval summary.
     public let executable: String
     /// Working directory display.
@@ -84,8 +89,10 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         title = "Secret Access Request"
         reason = request.reason
         executable = Self.executableName(request.resolvedExecutable ?? request.command.first)
-        command = Self.commandDisplay(request.command, resolvedExecutable: request.resolvedExecutable)
-        commandNeedsInspector = Self.commandNeedsInspector(command)
+        commandArguments = Self.commandArguments(request.command)
+        command = Self.commandDisplay(commandArguments)
+        commandNeedsInspector = Self.commandNeedsInspector(command, arguments: commandArguments)
+        commandInspectionText = Self.commandInspectionText(commandArguments)
         cwd = request.cwd
         projectFolder = Self.displayPath(request.cwd)
         resolvedExecutable = request.resolvedExecutable
@@ -104,16 +111,9 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         compactTimeRemaining = timeRemaining
         let reusableUseLimit: Int = request.reusableUses
         reusableUses = reusableUseLimit
-        scopeSummary = Self.scopeSummary(
-            uses: reusableUseLimit,
-            remaining: compactTimeRemaining,
-            expired: isExpired
-        )
-        allowReusableTitle = Self.allowReusableTitle(
-            uses: reusableUseLimit,
-            remaining: compactTimeRemaining,
-            expired: isExpired
-        )
+        let remainingText: String = compactTimeRemaining
+        scopeSummary = Self.scopeSummary(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
+        allowReusableTitle = Self.reuseTitle(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
         printsEnvironmentWarning = Self.environmentWarning(for: request)
         overrideWarning = Self.overrideWarning(for: request)
         footerMessage = Self.footerMessage(secretCount: secretPresentation.count, expired: isExpired)
@@ -123,6 +123,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
                 title: title,
                 reason: reason,
                 command: command,
+                commandArgumentRows: commandArguments.map(\.inspectorLine),
                 cwd: cwd,
                 scopeSummary: scopeSummary,
                 resolvedExecutable: resolvedExecutable,
@@ -181,9 +182,13 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             viewModel.title,
             "Reason: \(viewModel.reason)",
             "Command: \(viewModel.command)",
+            "Command argv:"
+        ]
+        lines.append(contentsOf: viewModel.commandArgumentRows)
+        lines.append(contentsOf: [
             "Working directory: \(viewModel.cwd)",
             "Scope: \(viewModel.scopeSummary)"
-        ]
+        ])
         if let resolvedExecutable: String = viewModel.resolvedExecutable, !resolvedExecutable.isEmpty {
             lines.append("Resolved binary: \(resolvedExecutable)")
         }
@@ -207,20 +212,25 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         return "Will replace existing variables: \(request.overriddenAliases.joined(separator: ", "))"
     }
 
-    private static func commandDisplay(_ command: [String], resolvedExecutable: String?) -> String {
-        guard !command.isEmpty else {
-            return "unknown command"
+    private static func commandArguments(_ command: [String]) -> [CommandArgumentViewModel] {
+        command.enumerated().map { index, value in
+            CommandArgumentViewModel(index: index, value: value)
         }
-        guard let resolvedExecutable: String, !resolvedExecutable.isEmpty else {
-            return command.joined(separator: " ")
-        }
-        var parts: [String] = command
-        parts[0] = resolvedExecutable
-        return parts.joined(separator: " ")
     }
 
-    private static func commandNeedsInspector(_ command: String) -> Bool {
-        command.count > commandInspectorThreshold || command.contains("\n")
+    private static func commandDisplay(_ arguments: [CommandArgumentViewModel]) -> String {
+        guard !arguments.isEmpty else {
+            return "unknown command"
+        }
+        return arguments.map(\.escaped).joined(separator: " ")
+    }
+
+    private static func commandInspectionText(_ arguments: [CommandArgumentViewModel]) -> String {
+        arguments.map(\.inspectorLine).joined(separator: "\n")
+    }
+
+    private static func commandNeedsInspector(_ command: String, arguments: [CommandArgumentViewModel]) -> Bool {
+        command.count > commandInspectorThreshold || arguments.contains(where: \.needsInspector)
     }
 
     private static func executableName(_ path: String?) -> String {

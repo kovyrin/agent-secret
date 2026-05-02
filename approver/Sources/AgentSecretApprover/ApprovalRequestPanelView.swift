@@ -121,8 +121,8 @@ import Foundation
             }
             return {
                 textInspection = ApprovalPanelTextInspection(
-                    title: "Full command",
-                    text: viewModel.command
+                    title: "Command arguments",
+                    text: viewModel.commandInspectionText
                 )
             }
         }
