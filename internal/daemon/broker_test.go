@@ -70,22 +70,37 @@ func (m *mockResolver) Calls() []string {
 
 type failingSecretCache struct {
 	err           error
+	failPuts      int
+	puts          int
+	delegate      *policy.SecretCache
 	clearedScopes []string
 }
 
-func (c *failingSecretCache) Put(_ string, _ string, _ string, _ string) error {
-	return c.err
+func newFailingSecretCache(err error, failPuts int) *failingSecretCache {
+	return &failingSecretCache{err: err, failPuts: failPuts, delegate: policy.NewSecretCache()}
 }
 
-func (c *failingSecretCache) Get(_ string, _ string, _ string) (string, bool) {
-	return "", false
+func (c *failingSecretCache) Put(scopeID string, ref string, account string, value string) error {
+	if c.puts < c.failPuts {
+		c.puts++
+		return c.err
+	}
+	c.puts++
+	return c.delegate.Put(scopeID, ref, account, value)
+}
+
+func (c *failingSecretCache) Get(scopeID string, ref string, account string) (string, bool) {
+	return c.delegate.Get(scopeID, ref, account)
 }
 
 func (c *failingSecretCache) ClearScope(scopeID string) {
 	c.clearedScopes = append(c.clearedScopes, scopeID)
+	c.delegate.ClearScope(scopeID)
 }
 
-func (c *failingSecretCache) Clear() {}
+func (c *failingSecretCache) Clear() {
+	c.delegate.Clear()
+}
 
 func resolverCallKey(ref string, account string) string {
 	if account == "" {
@@ -522,11 +537,12 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	store := policy.NewStore(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-	cache := &failingSecretCache{err: errors.New("mlock failed")}
+	cache := newFailingSecretCache(errors.New("mlock failed"), 1)
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
 	broker := newTestBroker(t, BrokerOptions{
 		Store:    store,
 		Cache:    cache,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
 		Audit:    &memoryAudit{},
 	})
@@ -541,6 +557,23 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	}
 	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("reusable approval survived cache insertion failure: %v", err)
+	}
+	if approver.calls != 1 {
+		t.Fatalf("approver calls after failed insert = %d, want 1", approver.calls)
+	}
+
+	grant, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", req)
+	if err != nil {
+		t.Fatalf("fresh retry after cache failure returned error: %v", err)
+	}
+	if approver.calls != 2 {
+		t.Fatalf("retry did not use fresh approval path; approver calls = %d", approver.calls)
+	}
+	if grant.Env["TOKEN"] != "value" {
+		t.Fatalf("retry grant = %+v, want TOKEN value", grant)
+	}
+	if grant.ApprovalID == "" {
+		t.Fatal("retry should create a usable reusable approval")
 	}
 }
 
