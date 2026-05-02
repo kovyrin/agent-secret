@@ -9,7 +9,7 @@ Usage:
 Build the macOS Agent Secret app bundle.
 
 Flags:
-  --version VERSION    Bundle version. Defaults to AGENT_SECRET_VERSION or 0.1.0.
+  --version VERSION    Bundle version. Defaults to AGENT_SECRET_VERSION or bundle metadata.
   --output DIR         Output directory. Defaults to ./dist.
   -h, --help           Show this help.
 USAGE
@@ -17,6 +17,8 @@ USAGE
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/bundle-metadata.sh
+source "$project_root/scripts/bundle-metadata.sh"
 
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
   if command -v mise >/dev/null 2>&1; then
@@ -26,7 +28,8 @@ if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
 fi
 
 output_dir="$project_root/dist"
-version="${AGENT_SECRET_VERSION:-0.1.0}"
+version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
+bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 codesign_entitlements="${AGENT_SECRET_CODESIGN_ENTITLEMENTS:-}"
 
@@ -82,9 +85,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-bundle_id="com.kovyrin.agent-secret"
-daemon_bundle_id="com.kovyrin.agent-secret.daemon"
-app_bundle="$output_dir/Agent Secret.app"
+app_bundle="$output_dir/$AGENT_SECRET_APP_NAME.app"
 daemon_bundle="$tmp_dir/AgentSecretDaemon.app"
 skill_source="$project_root/.agents/skills/agent-secret"
 icon_png="$tmp_dir/AppIcon.png"
@@ -140,8 +141,8 @@ build_daemon_app() {
 
   rm -rf "$bundle"
   mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-  install -m 0755 "$binary_path" "$bundle/Contents/MacOS/Agent Secret"
-  cp "$tmp_dir/AppIcon.icns" "$bundle/Contents/Resources/AppIcon.icns"
+  install -m 0755 "$binary_path" "$bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
+  cp "$tmp_dir/AppIcon.icns" "$bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
 
   cat >"$bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -152,27 +153,27 @@ build_daemon_app() {
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>Agent Secret</string>
+  <string>$AGENT_SECRET_APP_DISPLAY_NAME</string>
   <key>CFBundleExecutable</key>
-  <string>Agent Secret</string>
+  <string>$AGENT_SECRET_APP_EXECUTABLE</string>
   <key>CFBundleIconFile</key>
-  <string>AppIcon</string>
+  <string>$AGENT_SECRET_ICON_FILE</string>
   <key>CFBundleIdentifier</key>
-  <string>$daemon_bundle_id</string>
+  <string>$AGENT_SECRET_DAEMON_BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
+  <string>$AGENT_SECRET_INFO_DICTIONARY_VERSION</string>
   <key>CFBundleName</key>
-  <string>Agent Secret</string>
+  <string>$AGENT_SECRET_APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
   <string>$version</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$bundle_version</string>
   <key>LSApplicationCategoryType</key>
-  <string>public.app-category.developer-tools</string>
+  <string>$AGENT_SECRET_APP_CATEGORY</string>
   <key>LSMinimumSystemVersion</key>
-  <string>14.0</string>
+  <string>$AGENT_SECRET_MIN_MACOS_VERSION</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSHighResolutionCapable</key>
@@ -210,14 +211,14 @@ mkdir -p \
   "$app_bundle/Contents/Resources/bin" \
   "$app_bundle/Contents/Resources/skills" \
   "$app_bundle/Contents/Library/Helpers"
-install -m 0755 "$approver_binary" "$app_bundle/Contents/MacOS/Agent Secret"
+install -m 0755 "$approver_binary" "$app_bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
 install -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
 if [[ ! -f "$skill_source/SKILL.md" ]]; then
   echo "build-app-bundle: missing bundled skill at $skill_source" >&2
   exit 1
 fi
 cp -R "$skill_source" "$app_bundle/Contents/Resources/skills/agent-secret"
-cp "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/AppIcon.icns"
+cp "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
 cp -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 
 cat >"$app_bundle/Contents/Info.plist" <<PLIST
@@ -229,27 +230,27 @@ cat >"$app_bundle/Contents/Info.plist" <<PLIST
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>Agent Secret</string>
+  <string>$AGENT_SECRET_APP_DISPLAY_NAME</string>
   <key>CFBundleExecutable</key>
-  <string>Agent Secret</string>
+  <string>$AGENT_SECRET_APP_EXECUTABLE</string>
   <key>CFBundleIconFile</key>
-  <string>AppIcon</string>
+  <string>$AGENT_SECRET_ICON_FILE</string>
   <key>CFBundleIdentifier</key>
-  <string>$bundle_id</string>
+  <string>$AGENT_SECRET_APP_BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
+  <string>$AGENT_SECRET_INFO_DICTIONARY_VERSION</string>
   <key>CFBundleName</key>
-  <string>Agent Secret</string>
+  <string>$AGENT_SECRET_APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
   <string>$version</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$bundle_version</string>
   <key>LSApplicationCategoryType</key>
-  <string>public.app-category.developer-tools</string>
+  <string>$AGENT_SECRET_APP_CATEGORY</string>
   <key>LSMinimumSystemVersion</key>
-  <string>14.0</string>
+  <string>$AGENT_SECRET_MIN_MACOS_VERSION</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSPrincipalClass</key>
@@ -266,5 +267,6 @@ fi
 sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
 sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 sign_path "$app_bundle"
+"$project_root/scripts/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"
 
 echo "$app_bundle"
