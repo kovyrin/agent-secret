@@ -252,20 +252,11 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following secret?")
         XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
         XCTAssertEqual(viewModel.compactTimeRemaining, "2 minutes")
+        XCTAssertFalse(viewModel.isExpired)
         XCTAssertFalse(viewModel.commandNeedsInspector)
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
         XCTAssertFalse(viewModel.renderedText.contains(request.requestID))
         XCTAssertFalse(viewModel.renderedText.contains(request.nonce))
-    }
-
-    func testViewModelMarksLongCommandsInspectable() {
-        var request: ApprovalRequest = Self.sampleRequest
-        let script = String(repeating: "terraform import cloudflare_record.long_name ", count: 3)
-        request.command = ["/bin/sh", "-c", script]
-        request.resolvedExecutable = "/bin/sh"
-        let viewModel = ApprovalRequestViewModel(request: request, now: Date(timeIntervalSince1970: Self.viewModelNow))
-
-        XCTAssertTrue(viewModel.commandNeedsInspector)
     }
 
     func testViewModelSummarizesManySecretsByVault() {

@@ -8,10 +8,12 @@ import Foundation
         private typealias Metric = ApprovalPanelStyle.Metric
         private typealias Palette = ApprovalPanelStyle.Palette
 
-        let viewModel: ApprovalRequestViewModel
+        let request: ApprovalRequest
         let decide: (ApprovalDecisionKind) -> Void
 
         @State private var detailsExpanded = false
+        @State private var didDecide = false
+        @State private var now: Date
         @State private var textInspection: ApprovalPanelTextInspection?
 
         var body: some View {
@@ -41,6 +43,19 @@ import Foundation
             .sheet(item: $textInspection) { inspection in
                 ApprovalPanelTextInspector(inspection: inspection)
             }
+            .onAppear {
+                handleClockTick(Date())
+            }
+            .onReceive(
+                Timer.publish(every: Metric.countdownTickInterval, on: .main, in: .common)
+                    .autoconnect()
+            ) { date in
+                handleClockTick(date)
+            }
+        }
+
+        var viewModel: ApprovalRequestViewModel {
+            ApprovalRequestViewModel(request: request, now: now)
         }
 
         private var cardBackground: some View {
@@ -79,50 +94,6 @@ import Foundation
             }
             .font(.system(size: Metric.inlineFontSize))
             .fixedSize(horizontal: false, vertical: true)
-        }
-
-        private var secretSection: some View {
-            Group {
-                if viewModel.secretCount == Metric.singleSecretCount {
-                    singleSecretSection
-                } else if viewModel.secretCount <= Metric.compactSecretLimit {
-                    ApprovalPanelSecretList(heading: secretCardHeading, secrets: viewModel.requestedSecrets)
-                } else {
-                    ApprovalPanelSecretGroupList(heading: secretCardHeading, groups: viewModel.vaultGroups)
-                }
-            }
-        }
-
-        private var singleSecretSection: some View {
-            VStack(alignment: .leading, spacing: Metric.secretCardSpacing) {
-                Text(secretCardHeading)
-                    .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
-                    .foregroundStyle(Color.green)
-                ForEach(viewModel.requestedSecrets, id: \.alias) { secret in
-                    ApprovalPanelSecretCard(secret: secret)
-                }
-            }
-            .padding(Metric.secretPanelPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(secretPanelBackground)
-            .overlay(secretPanelBorder)
-        }
-
-        private var secretCardHeading: String {
-            if viewModel.secretCount == Metric.singleSecretCount {
-                return "Requested secret"
-            }
-            return "Requested secrets"
-        }
-
-        private var secretPanelBackground: some View {
-            RoundedRectangle(cornerRadius: Metric.panelCornerRadius, style: .continuous)
-                .fill(Color.green.opacity(Metric.greenPanelOpacity))
-        }
-
-        private var secretPanelBorder: some View {
-            RoundedRectangle(cornerRadius: Metric.panelCornerRadius, style: .continuous)
-                .stroke(Color.green.opacity(Metric.greenBorderOpacity), lineWidth: Metric.borderWidth)
         }
 
         private var requestContext: some View {
@@ -221,7 +192,7 @@ import Foundation
             HStack(spacing: Metric.buttonSpacing) {
                 ForEach(decisionButtonSpecs, id: \.decision) { spec in
                     ApprovalPanelDecisionButton(spec: spec) {
-                        decide(spec.decision)
+                        complete(with: expiration.guardDecision(spec.decision, at: Date()))
                     }
                     .frame(width: Metric.decisionButtonWidth)
                 }
@@ -231,6 +202,10 @@ import Foundation
 
         private var decisionButtonSpecs: [ApprovalPanelDecisionButtonSpec] {
             ApprovalPanelDecisionButtonSpec.makeAll(viewModel: viewModel)
+        }
+
+        private var expiration: ApprovalPromptExpiration {
+            ApprovalPromptExpiration(expiresAt: request.expiresAt)
         }
 
         private var footer: some View {
@@ -246,6 +221,31 @@ import Foundation
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        init(
+            request: ApprovalRequest,
+            now: Date = Date(),
+            decide: @escaping (ApprovalDecisionKind) -> Void
+        ) {
+            self.request = request
+            self.decide = decide
+            _now = State(initialValue: now)
+        }
+
+        private func handleClockTick(_ date: Date) {
+            now = date
+            if let timeoutDecision: ApprovalDecisionKind = expiration.timeoutDecision(at: date) {
+                complete(with: timeoutDecision)
+            }
+        }
+
+        private func complete(with decision: ApprovalDecisionKind) {
+            guard !didDecide else {
+                return
+            }
+            didDecide = true
+            decide(decision)
         }
     }
 #endif
