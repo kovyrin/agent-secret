@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 
 final class ApproverAppEntrypointTests: XCTestCase {
-    private static let appEntrypointPath: String = "Sources/AgentSecretApproverApp/main.swift"
+    private static let appEntrypointPath: String = "Sources/AgentSecretApproverApp/AgentSecretApproverMain.swift"
     private static let mockClientSymbol: String = "MockDaemonClient"
     private static let mockDecisionFlag: String = "--mock-decision"
     private static let mockPresenterSymbol: String = "StaticDecisionPresenter"
@@ -10,6 +10,7 @@ final class ApproverAppEntrypointTests: XCTestCase {
     private static let packageDirectoryName: String = "approver"
     private static let smokeEntrypointPath: String = "Sources/AgentSecretApproverSmoke/main.swift"
     private static let healthCheckFlag: String = "--health-check"
+    private static let mainActorIsolationEscapeHatch: String = "assumeIsolated"
 
     private static func packageRootURL() -> URL? {
         var url = URL(fileURLWithPath: #filePath)
@@ -45,6 +46,14 @@ final class ApproverAppEntrypointTests: XCTestCase {
 
         XCTAssertTrue(source.contains(Self.healthCheckFlag))
         XCTAssertTrue(source.contains("agent-secret-approver: ok"))
+    }
+
+    func testShippedApproverEntrypointDoesNotAssumeMainActorIsolation() throws {
+        let source: String = try Self.sourceText(at: Self.appEntrypointPath)
+
+        XCTAssertFalse(source.contains(Self.mainActorIsolationEscapeHatch))
+        XCTAssertTrue(source.contains("@MainActor"))
+        XCTAssertTrue(source.contains("static func main()"))
     }
 
     func testSmokeEntrypointOwnsMockOnlySurface() throws {
