@@ -369,6 +369,27 @@ func TestDefaultApproverPathUsesInstalledUnifiedApp(t *testing.T) {
 	}
 }
 
+func TestDefaultApproverPathIgnoresEnvironmentOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AGENT_SECRET_APPROVER_PATH", filepath.Join(t.TempDir(), "PoisonApprover.app"))
+	want := filepath.Join(home, "Applications", "Agent Secret.app", "Contents", "MacOS", "Agent Secret")
+	if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+		t.Fatalf("create app macos dir: %v", err)
+	}
+	if err := os.WriteFile(want, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write app executable: %v", err)
+	}
+
+	got, err := defaultApproverPath()
+	if err != nil {
+		t.Fatalf("defaultApproverPath returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("default approver path = %q, want installed app executable %q", got, want)
+	}
+}
+
 func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	t.Parallel()
 

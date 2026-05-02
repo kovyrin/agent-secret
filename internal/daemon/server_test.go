@@ -492,6 +492,76 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	}
 }
 
+func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	resolver := &mockResolver{
+		values: map[string]string{"op://Example/Item/token": canarySecretValue},
+	}
+	aud := &memoryAudit{}
+	path, stop := startRawServerWithBrokerAndExecValidator(
+		t,
+		newTestBroker(t, BrokerOptions{
+			Approver: approver,
+			Resolver: resolver,
+			Audit:    aud,
+		}),
+		nil,
+		staticPeerValidator{info: peer},
+		NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+	)
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	payload, err := marshalPayload(req)
+	if err != nil {
+		t.Fatalf("marshal exec request: %v", err)
+	}
+	if err := json.NewEncoder(conn).Encode(Envelope{
+		Version:   ProtocolVersion,
+		Type:      TypeRequestExec,
+		RequestID: "req_attacker",
+		Nonce:     "nonce_attacker",
+		Payload:   payload,
+	}); err != nil {
+		t.Fatalf("encode raw exec request: %v", err)
+	}
+
+	var resp Envelope
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatalf("decode raw exec response: %v", err)
+	}
+	if resp.Type != TypeError {
+		t.Fatalf("raw exec response type = %q, want %q", resp.Type, TypeError)
+	}
+	errorPayload, err := DecodePayload[ErrorPayload](resp)
+	if err != nil {
+		t.Fatalf("decode raw exec error payload: %v", err)
+	}
+	if errorPayload.Code != "untrusted_client" {
+		t.Fatalf("raw exec error code = %q, want untrusted_client", errorPayload.Code)
+	}
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+	if events := aud.Events(); len(events) != 0 {
+		t.Fatalf("audit events = %+v, want none before approval/fetch", events)
+	}
+	assertAuditEventsValueFree(t, aud.Events())
+}
+
 func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 	t.Parallel()
 
