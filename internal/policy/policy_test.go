@@ -436,6 +436,9 @@ func TestAddReusableAndCreateSessionGenerateIdentifiers(t *testing.T) {
 	if !strings.HasPrefix(approval.ID, "appr_") || !strings.HasPrefix(approval.Nonce, "nonce_") {
 		t.Fatalf("generated approval identifiers = %+v", approval)
 	}
+	if len(approval.ID) != len("appr_")+32 || len(approval.Nonce) != len("nonce_")+32 {
+		t.Fatalf("generated approval identifier lengths = id:%d nonce:%d", len(approval.ID), len(approval.Nonce))
+	}
 
 	session, err := store.CreateSession("", "", now.Add(time.Minute), []SecretGrant{
 		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
@@ -445,6 +448,85 @@ func TestAddReusableAndCreateSessionGenerateIdentifiers(t *testing.T) {
 	}
 	if !strings.HasPrefix(session.ID, "sess_") || !strings.HasPrefix(session.Nonce, "nonce_") {
 		t.Fatalf("generated session identifiers = %+v", session)
+	}
+	if len(session.ID) != len("sess_")+32 || len(session.Nonce) != len("nonce_")+32 {
+		t.Fatalf("generated session identifier lengths = id:%d nonce:%d", len(session.ID), len(session.Nonce))
+	}
+	handleID := onlyHandleID(t, session)
+	if !strings.HasPrefix(handleID, "h_") || len(handleID) != len("h_")+32 {
+		t.Fatalf("generated handle id = %q", handleID)
+	}
+}
+
+func TestStoreRandomIDFailuresReturnErrors(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	entropyErr := errors.New("entropy unavailable")
+	grants := []SecretGrant{{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"}}
+	tests := []struct {
+		name string
+		run  func(*testing.T, *Store) error
+		want string
+	}{
+		{
+			name: "reusable approval id",
+			run: func(t *testing.T, store *Store) error {
+				t.Helper()
+				_, err := store.AddReusable(testRequest(t, now), "", "nonce_1")
+				return err
+			},
+			want: "generate reusable approval id",
+		},
+		{
+			name: "reusable approval nonce",
+			run: func(t *testing.T, store *Store) error {
+				t.Helper()
+				_, err := store.AddReusable(testRequest(t, now), "appr_1", "")
+				return err
+			},
+			want: "generate reusable approval nonce",
+		},
+		{
+			name: "session id",
+			run: func(_ *testing.T, store *Store) error {
+				_, err := store.CreateSession("", "nonce_1", now.Add(time.Minute), grants, 1)
+				return err
+			},
+			want: "generate session id",
+		},
+		{
+			name: "session nonce",
+			run: func(_ *testing.T, store *Store) error {
+				_, err := store.CreateSession("sess_1", "", now.Add(time.Minute), grants, 1)
+				return err
+			},
+			want: "generate session nonce",
+		},
+		{
+			name: "secret handle id",
+			run: func(_ *testing.T, store *Store) error {
+				_, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), grants, 1)
+				return err
+			},
+			want: "generate secret handle id",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := NewStore(func() time.Time { return now })
+			store.random = failingRandomReader{err: entropyErr}
+			err := tc.run(t, store)
+			if !errors.Is(err, entropyErr) {
+				t.Fatalf("expected entropy error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want %q", err.Error(), tc.want)
+			}
+		})
 	}
 }
 
@@ -478,6 +560,14 @@ func onlyHandleID(t *testing.T, session Session) string {
 		return id
 	}
 	panic("unreachable")
+}
+
+type failingRandomReader struct {
+	err error
+}
+
+func (r failingRandomReader) Read(_ []byte) (int, error) {
+	return 0, r.err
 }
 
 func containsCanary(data []byte) bool {
