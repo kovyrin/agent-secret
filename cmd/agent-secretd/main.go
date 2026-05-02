@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -33,7 +34,9 @@ func run() int {
 
 	flags := flag.NewFlagSet("agent-secretd", flag.ExitOnError)
 	flags.StringVar(&socketPath, "socket", socketPath, "daemon socket path")
-	approverPath := flags.String("approver", os.Getenv("AGENT_SECRET_APPROVER_PATH"), "approver executable or .app path")
+	var trustedClients stringListFlag
+	flags.Var(&trustedClients, "trusted-client", "trusted agent-secret executable path; repeatable")
+	approverPath := flags.String("approver", defaultApproverFlagValue(), "approver executable or .app path")
 	accountName := flags.String("account", os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"), "1Password account sign-in address, name, or UUID; empty uses OP_ACCOUNT or my.1password.com")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		stderrf("agent-secretd: parse flags: %v\n", err)
@@ -66,7 +69,15 @@ func run() int {
 		stderrf("agent-secretd: initialize broker: %v\n", err)
 		return 1
 	}
-	server, err := daemon.NewServer(daemon.ServerOptions{Broker: broker, Approvals: approver})
+	trustedClientPaths := []string(trustedClients)
+	if len(trustedClientPaths) == 0 {
+		trustedClientPaths = daemon.DefaultTrustedClientPaths()
+	}
+	server, err := daemon.NewServer(daemon.ServerOptions{
+		Broker:        broker,
+		Approvals:     approver,
+		ExecValidator: daemon.NewTrustedExecutableValidator(trustedClientPaths),
+	})
 	if err != nil {
 		stderrf("agent-secretd: initialize server: %v\n", err)
 		return 1
@@ -80,6 +91,25 @@ func run() int {
 
 func stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, args...)
+}
+
+func defaultApproverFlagValue() string {
+	return ""
+}
+
+type stringListFlag []string
+
+func (f *stringListFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *stringListFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("trusted client path is required")
+	}
+	*f = append(*f, value)
+	return nil
 }
 
 type desktopResolver struct {

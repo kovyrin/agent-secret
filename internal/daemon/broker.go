@@ -42,11 +42,18 @@ type AuditSink interface {
 	Record(ctx context.Context, event audit.Event) error
 }
 
+type SecretCache interface {
+	Put(scopeID string, ref string, account string, value string) error
+	Get(scopeID string, ref string, account string) (string, bool)
+	ClearScope(scopeID string)
+	Clear()
+}
+
 type Broker struct {
 	mu         sync.Mutex
 	now        func() time.Time
 	store      *policy.Store
-	cache      *policy.SecretCache
+	cache      SecretCache
 	approver   Approver
 	resolver   Resolver
 	audit      AuditSink
@@ -71,7 +78,7 @@ type activeExec struct {
 type BrokerOptions struct {
 	Now        func() time.Time
 	Store      *policy.Store
-	Cache      *policy.SecretCache
+	Cache      SecretCache
 	Approver   Approver
 	Resolver   Resolver
 	Audit      AuditSink
@@ -140,8 +147,8 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	}
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
-	if err := b.audit.Record(ctx, event); err != nil {
-		return ExecGrant{}, fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		return ExecGrant{}, err
 	}
 
 	b.mu.Lock()
@@ -168,7 +175,10 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	if active.approvalID == "" {
 		return nil
 	}
-	_, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
+	approval, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
+	if err == nil && approval.Uses >= approval.MaxUses {
+		b.cache.ClearScope(approval.ID)
+	}
 	return err
 }
 
@@ -180,8 +190,8 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 
 	event := audit.FromExecRequest(audit.EventCommandStarted, requestID, active.req)
 	event.ChildPID = new(childPID)
-	if err := b.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		return err
 	}
 
 	b.mu.Lock()
@@ -201,8 +211,8 @@ func (b *Broker) ReportCompleted(ctx context.Context, requestID string, nonce st
 	event := audit.FromExecRequest(audit.EventCommandCompleted, requestID, active.req)
 	event.ExitCode = new(exitCode)
 	event.Signal = signal
-	if err := b.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		return err
 	}
 
 	b.mu.Lock()
@@ -240,6 +250,9 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 	if err != nil {
 		if errors.Is(err, policy.ErrAuditFailed) {
 			return ExecGrant{}, err
+		}
+		if approval.ID != "" && (errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted)) {
+			b.cache.ClearScope(approval.ID)
 		}
 		return ExecGrant{}, nil
 	}
@@ -281,15 +294,27 @@ func (b *Broker) freshGrant(
 	nonce string,
 	req request.ExecRequest,
 ) (ExecGrant, error) {
+	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, requestID, req)); err != nil {
+		return ExecGrant{}, err
+	}
 	decision, err := b.approver.ApproveExec(ctx, requestID, nonce, req)
 	if err != nil {
+		if auditErr := b.recordApprovalError(ctx, requestID, req, err); auditErr != nil {
+			return ExecGrant{}, auditErr
+		}
 		return ExecGrant{}, err
 	}
 	if !decision.Approved {
+		if err := b.recordApprovalDenied(ctx, requestID, req); err != nil {
+			return ExecGrant{}, err
+		}
 		return ExecGrant{}, ErrApprovalDenied
 	}
+	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, requestID, req)); err != nil {
+		return ExecGrant{}, err
+	}
 
-	refValues, err := b.resolveUniqueRefs(ctx, req.Secrets)
+	refValues, err := b.resolveUniqueRefs(ctx, requestID, req)
 	if err != nil {
 		return ExecGrant{}, err
 	}
@@ -304,6 +329,7 @@ func (b *Broker) freshGrant(
 		approvalID = approval.ID
 		if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
 			b.cache.ClearScope(approvalID)
+			b.store.RemoveReusable(approvalID)
 			return ExecGrant{}, err
 		}
 	}
@@ -315,12 +341,17 @@ func (b *Broker) freshGrant(
 	}, nil
 }
 
-func (b *Broker) resolveUniqueRefs(ctx context.Context, secrets []request.Secret) (map[secretIdentity]string, error) {
+func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req request.ExecRequest) (map[secretIdentity]string, error) {
+	secrets := req.Secrets
 	identities := uniqueSecretIdentities(secrets)
 	type result struct {
 		identity secretIdentity
 		value    string
 		err      error
+	}
+
+	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventSecretFetchStarted, requestID, req)); err != nil {
+		return nil, err
 	}
 
 	sem := make(chan struct{}, b.fetchLimit)
@@ -338,6 +369,9 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, secrets []request.Secret
 	for range identities {
 		got := <-results
 		if got.err != nil {
+			if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
+				return nil, err
+			}
 			return nil, fmt.Errorf("resolve approved ref: %w", got.err)
 		}
 		resolved[got.identity] = got.value
@@ -351,21 +385,97 @@ func (b *Broker) refreshedReusableValues(
 	approvalID string,
 	req request.ExecRequest,
 ) (map[string]string, error) {
-	refValues, err := b.resolveUniqueRefs(ctx, req.Secrets)
+	refValues, err := b.resolveUniqueRefs(ctx, "", req)
 	if err != nil {
 		return nil, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
 	if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
 		b.cache.ClearScope(approvalID)
+		b.store.RemoveReusable(approvalID)
 		return nil, err
 	}
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 	event.ApprovalID = approvalID
-	if err := b.audit.Record(ctx, event); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		return nil, err
 	}
 	return values, nil
+}
+
+func (b *Broker) recordRequiredAudit(ctx context.Context, event audit.Event) error {
+	if err := b.audit.Record(ctx, event); err != nil {
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	}
+	return nil
+}
+
+func (b *Broker) recordApprovalError(
+	ctx context.Context,
+	requestID string,
+	req request.ExecRequest,
+	err error,
+) error {
+	switch {
+	case errors.Is(err, ErrApprovalDenied):
+		return b.recordApprovalDenied(ctx, requestID, req)
+	case errors.Is(err, ErrRequestExpired):
+		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
+		event.ErrorCode = "request_expired"
+		return b.recordRequiredAudit(ctx, event)
+	default:
+		return nil
+	}
+}
+
+func (b *Broker) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
+	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
+	event.ErrorCode = "approval_denied"
+	return b.recordRequiredAudit(ctx, event)
+}
+
+func (b *Broker) recordSecretFetchFailed(
+	ctx context.Context,
+	requestID string,
+	secrets []request.Secret,
+	identity secretIdentity,
+	err error,
+) error {
+	event := audit.Event{
+		Type:       audit.EventSecretFetchFailed,
+		RequestID:  requestID,
+		SecretRefs: auditRefsForIdentity(secrets, identity),
+		ErrorCode:  secretFetchErrorCode(err),
+	}
+	return b.recordRequiredAudit(ctx, event)
+}
+
+func secretFetchErrorCode(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "context_canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "context_deadline_exceeded"
+	}
+	return "resolve_failed"
+}
+
+func auditRefsForIdentity(secrets []request.Secret, identity secretIdentity) []audit.SecretRef {
+	refs := []audit.SecretRef{}
+	for _, secret := range secrets {
+		if secret.Ref.Raw != identity.ref || secret.Account != identity.account {
+			continue
+		}
+		refs = append(refs, audit.SecretRef{
+			Alias:   secret.Alias,
+			Ref:     secret.Ref.Raw,
+			Account: secret.Account,
+		})
+	}
+	if len(refs) == 0 {
+		return []audit.SecretRef{{Ref: identity.ref, Account: identity.account}}
+	}
+	return refs
 }
 
 func (b *Broker) cacheResolvedValues(approvalID string, refValues map[secretIdentity]string) error {

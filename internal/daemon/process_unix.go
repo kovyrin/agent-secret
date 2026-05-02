@@ -33,9 +33,6 @@ func defaultDaemonAppPath() (string, bool) {
 	if runtime.GOOS != "darwin" {
 		return "", false
 	}
-	if appPath := os.Getenv("AGENT_SECRET_DAEMON_APP_PATH"); appPath != "" {
-		return appPath, true
-	}
 	if exe, err := os.Executable(); err == nil {
 		if appPath, ok := daemonAppPathForExecutable(exe); ok {
 			return appPath, true
@@ -79,7 +76,6 @@ func daemonAppEnvironment() []string {
 	names := []string{
 		"OP_ACCOUNT",
 		"AGENT_SECRET_1PASSWORD_ACCOUNT",
-		"AGENT_SECRET_APPROVER_PATH",
 	}
 	env := make([]string, 0, len(names))
 	for _, name := range names {

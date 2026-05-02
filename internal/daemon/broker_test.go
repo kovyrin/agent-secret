@@ -1,8 +1,11 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -13,6 +16,8 @@ import (
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
+
+const canarySecretValue = "synthetic-secret-value"
 
 type mockApprover struct {
 	decision ApprovalDecision
@@ -62,6 +67,25 @@ func (m *mockResolver) Calls() []string {
 	defer m.mu.Unlock()
 	return slices.Clone(m.calls)
 }
+
+type failingSecretCache struct {
+	err           error
+	clearedScopes []string
+}
+
+func (c *failingSecretCache) Put(_ string, _ string, _ string, _ string) error {
+	return c.err
+}
+
+func (c *failingSecretCache) Get(_ string, _ string, _ string) (string, bool) {
+	return "", false
+}
+
+func (c *failingSecretCache) ClearScope(scopeID string) {
+	c.clearedScopes = append(c.clearedScopes, scopeID)
+}
+
+func (c *failingSecretCache) Clear() {}
 
 func resolverCallKey(ref string, account string) string {
 	if account == "" {
@@ -124,7 +148,7 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}, order: &order},
 		Resolver: &mockResolver{values: map[string]string{
-			"op://Example/Item/token": "synthetic-secret-value",
+			"op://Example/Item/token": canarySecretValue,
 		}, order: &order},
 		Audit: aud,
 	})
@@ -133,25 +157,61 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleExec returned error: %v", err)
 	}
-	if got := grant.Env["TOKEN"]; got != "synthetic-secret-value" {
+	if got := grant.Env["TOKEN"]; got != canarySecretValue {
 		t.Fatalf("env TOKEN = %q", got)
 	}
 	if !reflect.DeepEqual(order, []string{"approve", "resolve:op://Example/Item/token"}) {
 		t.Fatalf("unexpected operation order: %v", order)
 	}
 	events := aud.Events()
-	if len(events) != 1 || events[0].Type != audit.EventCommandStarting {
-		t.Fatalf("expected command_starting audit before payload, got %+v", events)
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventCommandStarting,
 	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	assertAuditEventsValueFree(t, events)
 }
 
-func TestBrokerDenialDoesNotResolveOrAuditCommandStarting(t *testing.T) {
+func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 
-	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
+	assertApprovalFailureAudited(t, approvalFailureAuditCase{
+		name:      "denial",
+		err:       ErrApprovalDenied,
+		eventType: audit.EventApprovalDenied,
+		errorCode: "approval_denied",
+	})
+}
+
+func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
+	t.Parallel()
+
+	assertApprovalFailureAudited(t, approvalFailureAuditCase{
+		name:      "timeout",
+		err:       ErrRequestExpired,
+		eventType: audit.EventApprovalTimedOut,
+		errorCode: "request_expired",
+	})
+}
+
+type approvalFailureAuditCase struct {
+	name      string
+	err       error
+	eventType audit.EventType
+	errorCode string
+}
+
+func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
+	t.Helper()
+
+	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": canarySecretValue}}
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: false}},
+		Approver: &mockApprover{err: tc.err},
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -159,15 +219,21 @@ func TestBrokerDenialDoesNotResolveOrAuditCommandStarting(t *testing.T) {
 	_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	}))
-	if !errors.Is(err, ErrApprovalDenied) {
-		t.Fatalf("expected denial, got %v", err)
+	if !errors.Is(err, tc.err) {
+		t.Fatalf("expected approval %s, got %v", tc.name, err)
 	}
 	if len(resolver.Calls()) != 0 {
-		t.Fatalf("resolver was called after denial: %v", resolver.Calls())
+		t.Fatalf("resolver was called after approval %s: %v", tc.name, resolver.Calls())
 	}
-	if events := aud.Events(); len(events) != 0 {
-		t.Fatalf("audit wrote command events after denial: %+v", events)
+	events := aud.Events()
+	want := []audit.EventType{audit.EventApprovalRequested, tc.eventType}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
 	}
+	if events[1].ErrorCode != tc.errorCode {
+		t.Fatalf("approval %s error code = %q", tc.name, events[1].ErrorCode)
+	}
+	assertAuditEventsValueFree(t, events)
 }
 
 func TestBrokerDeduplicatesRefsAndPreservesEmptyValues(t *testing.T) {
@@ -236,8 +302,8 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
 		Resolver: &mockResolver{
-			values: map[string]string{"op://Example/Item/token": "value"},
-			errs:   map[string]error{failingRef: errors.New("unreadable")},
+			values: map[string]string{"op://Example/Item/token": canarySecretValue},
+			errs:   map[string]error{failingRef: fmt.Errorf("unreadable %s", canarySecretValue)},
 		},
 		Audit: aud,
 	})
@@ -249,9 +315,24 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected partial fetch failure")
 	}
-	if events := aud.Events(); len(events) != 0 {
-		t.Fatalf("command_starting audit should not be written after fetch failure: %+v", events)
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSecretFetchFailed,
 	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	failure := events[len(events)-1]
+	if failure.ErrorCode != "resolve_failed" {
+		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
+	}
+	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failingRef {
+		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
+	}
+	assertAuditEventsValueFree(t, events)
 	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
 		t.Fatalf("request should not become active after failed fetch, got %v", err)
 	}
@@ -264,7 +345,8 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	aud := &memoryAudit{}
-	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: aud})
+	cache := policy.NewSecretCache()
+	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: aud, Cache: cache})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
 	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
@@ -305,12 +387,160 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("force refresh did not update cached value: %+v", third.Env)
 	}
+	if value, ok := cache.Get(first.ApprovalID, ref, ""); !ok || value != "second" {
+		t.Fatalf("force refresh cache value = %q, %v; want second, true", value, ok)
+	}
 	if len(resolver.Calls()) != 2 {
 		t.Fatalf("force-refresh did not refetch once: %v", resolver.Calls())
 	}
 	events := aud.Events()
 	if !containsAuditEvent(events, audit.EventApprovalRefreshed) {
 		t.Fatalf("force-refresh did not emit refresh audit event: %+v", events)
+	}
+}
+
+func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      func() time.Time { return now },
+		Cache:    cache,
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected first reusable value in cache")
+	}
+
+	now = req.ExpiresAt.Add(time.Second)
+	resolver.values[ref] = "second"
+	next := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", next)
+	if err != nil {
+		t.Fatalf("second HandleExec returned error: %v", err)
+	}
+	if second.Env["TOKEN"] != "second" {
+		t.Fatalf("fresh approval after expiry used stale value: %+v", second.Env)
+	}
+	if second.ApprovalID == first.ApprovalID {
+		t.Fatalf("fresh approval reused expired approval id %q", second.ApprovalID)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("expired reusable approval cache scope remained reachable")
+	}
+}
+
+func TestBrokerClearsReusableCacheOnUseExhaustion(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: &memoryAudit{}, Cache: cache})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	for i := 1; i <= policy.DefaultReusableUses; i++ {
+		requestID := fmt.Sprintf("req_%d", i)
+		nonce := fmt.Sprintf("nonce_%d", i)
+		if i > 1 {
+			if _, err := broker.HandleExec(context.Background(), requestID, nonce, req); err != nil {
+				t.Fatalf("reuse %d HandleExec returned error: %v", i, err)
+			}
+		}
+		if err := broker.MarkPayloadDelivered(requestID); err != nil {
+			t.Fatalf("reuse %d MarkPayloadDelivered returned error: %v", i, err)
+		}
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("exhausted reusable approval cache scope remained reachable")
+	}
+
+	resolver.values[ref] = "second"
+	fresh, err := broker.HandleExec(context.Background(), "req_4", "nonce_4", req)
+	if err != nil {
+		t.Fatalf("fresh HandleExec returned error: %v", err)
+	}
+	if fresh.Env["TOKEN"] != "second" {
+		t.Fatalf("fresh approval after exhaustion used stale value: %+v", fresh.Env)
+	}
+	if fresh.ApprovalID == first.ApprovalID {
+		t.Fatalf("fresh approval reused exhausted approval id %q", fresh.ApprovalID)
+	}
+}
+
+func TestBrokerStopClearsReusableCache(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    &memoryAudit{},
+		Cache:    cache,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	grant, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("HandleExec returned error: %v", err)
+	}
+	if _, ok := cache.Get(grant.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected reusable value in cache")
+	}
+	broker.Stop(context.Background())
+	if _, ok := cache.Get(grant.ApprovalID, ref, ""); ok {
+		t.Fatal("daemon stop left reusable cache scope reachable")
+	}
+}
+
+func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	store := policy.NewStore(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	cache := &failingSecretCache{err: errors.New("mlock failed")}
+	broker := newTestBroker(t, BrokerOptions{
+		Store:    store,
+		Cache:    cache,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    &memoryAudit{},
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err == nil {
+		t.Fatal("expected cache insertion failure")
+	}
+	if len(cache.clearedScopes) != 1 {
+		t.Fatalf("cleared scopes = %v, want one rollback clear", cache.clearedScopes)
+	}
+	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+		t.Fatalf("reusable approval survived cache insertion failure: %v", err)
 	}
 }
 
@@ -344,7 +574,14 @@ func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
 	for _, event := range aud.Events() {
 		got = append(got, event.Type)
 	}
-	want := []audit.EventType{audit.EventCommandStarting, audit.EventCommandStarted, audit.EventCommandCompleted}
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventCommandStarting,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
@@ -370,7 +607,7 @@ func TestBrokerClientDisconnectAfterPayloadAuditsWithoutKillingProcess(t *testin
 	broker.ClientDisconnected(context.Background(), "req_1")
 
 	events := aud.Events()
-	if len(events) != 2 || events[1].Type != audit.EventExecClientDisconnectedAfterPayload {
+	if len(events) != 5 || events[4].Type != audit.EventExecClientDisconnectedAfterPayload {
 		t.Fatalf("expected disconnect audit, got %+v", events)
 	}
 }
@@ -413,6 +650,12 @@ func newTestBroker(t *testing.T, opts BrokerOptions) *Broker {
 func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecRequest {
 	t.Helper()
 
+	return testExecRequestAt(t, time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC), secrets)
+}
+
+func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec) request.ExecRequest {
+	t.Helper()
+
 	reqSecrets := make([]request.Secret, 0, len(secrets))
 	for _, spec := range secrets {
 		ref, err := request.ParseSecretRef(spec.Ref)
@@ -422,7 +665,6 @@ func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecReq
 		reqSecrets = append(reqSecrets, request.Secret{Alias: spec.Alias, Ref: ref, Account: spec.Account})
 	}
 
-	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	return request.ExecRequest{
 		Reason:             "Run Terraform plan",
 		Command:            []string{"terraform", "plan"},
@@ -443,4 +685,23 @@ func containsAuditEvent(events []audit.Event, eventType audit.EventType) bool {
 		}
 	}
 	return false
+}
+
+func auditEventTypes(events []audit.Event) []audit.EventType {
+	types := make([]audit.EventType, 0, len(events))
+	for _, event := range events {
+		types = append(types, event.Type)
+	}
+	return types
+}
+
+func assertAuditEventsValueFree(t *testing.T, events []audit.Event) {
+	t.Helper()
+	encoded, err := json.Marshal(events)
+	if err != nil {
+		t.Fatalf("marshal audit events: %v", err)
+	}
+	if bytes.Contains(encoded, []byte(canarySecretValue)) {
+		t.Fatalf("audit events contain secret value %q: %s", canarySecretValue, encoded)
+	}
 }

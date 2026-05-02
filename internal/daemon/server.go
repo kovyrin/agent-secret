@@ -35,17 +35,19 @@ func (SameUIDValidator) Validate(conn *net.UnixConn) error {
 }
 
 type Server struct {
-	broker    *Broker
-	approvals ApprovalEndpoint
-	validator PeerValidator
-	stopOnce  sync.Once
-	stop      chan struct{}
+	broker        *Broker
+	approvals     ApprovalEndpoint
+	validator     PeerValidator
+	execValidator ExecPeerValidator
+	stopOnce      sync.Once
+	stop          chan struct{}
 }
 
 type ServerOptions struct {
-	Broker    *Broker
-	Approvals ApprovalEndpoint
-	Validator PeerValidator
+	Broker        *Broker
+	Approvals     ApprovalEndpoint
+	Validator     PeerValidator
+	ExecValidator ExecPeerValidator
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
@@ -56,11 +58,16 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if validator == nil {
 		validator = SameUIDValidator{}
 	}
+	execValidator := opts.ExecValidator
+	if execValidator == nil {
+		execValidator = NewTrustedExecutableValidator(DefaultTrustedClientPaths())
+	}
 	return &Server{
-		broker:    opts.Broker,
-		approvals: opts.Approvals,
-		validator: validator,
-		stop:      make(chan struct{}),
+		broker:        opts.Broker,
+		approvals:     opts.Approvals,
+		validator:     validator,
+		execValidator: execValidator,
+		stop:          make(chan struct{}),
 	}, nil
 }
 
@@ -134,6 +141,10 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		case TypeDaemonStatus:
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
 		case TypeDaemonStop:
+			if err := s.validateTrustedClientPeer(conn); err != nil {
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+				continue
+			}
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
 			s.Stop(ctx)
 			return
@@ -174,51 +185,98 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 			_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
 		case TypeRequestExec:
-			req, err := DecodePayload[request.ExecRequest](env)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
-				continue
-			}
-			grant, err := s.broker.HandleExec(ctx, env.RequestID, env.Nonce, req)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-				continue
-			}
-			activeRequestID = env.RequestID
-			err = writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
-				Env:           grant.Env,
-				SecretAliases: grant.SecretAliases,
-			})
-			if err == nil {
-				_ = s.broker.MarkPayloadDelivered(env.RequestID)
+			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
+				activeRequestID = requestID
 			}
 		case TypeCommandStarted:
-			payload, err := DecodePayload[CommandStartedPayload](env)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_started", err)
-				continue
-			}
-			if err := s.broker.ReportStarted(ctx, env.RequestID, env.Nonce, payload.ChildPID); err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-				continue
-			}
-			_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+			s.handleCommandStarted(ctx, conn, encoder, env)
 		case TypeCommandCompleted:
-			payload, err := DecodePayload[CommandCompletedPayload](env)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_completed", err)
-				continue
+			if s.handleCommandCompleted(ctx, conn, encoder, env) {
+				activeRequestID = ""
 			}
-			if err := s.broker.ReportCompleted(ctx, env.RequestID, env.Nonce, payload.ExitCode, payload.Signal); err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-				continue
-			}
-			activeRequestID = ""
-			_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
 		default:
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_type", fmt.Errorf("%w: %s", ErrProtocolType, env.Type))
 		}
 	}
+}
+
+func (s *Server) handleRequestExec(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env Envelope,
+) string {
+	req, err := DecodePayload[request.ExecRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
+		return ""
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
+		return ""
+	}
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ""
+	}
+	grant, err := s.broker.HandleExec(ctx, env.RequestID, env.Nonce, req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ""
+	}
+	err = writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
+		Env:           grant.Env,
+		SecretAliases: grant.SecretAliases,
+	})
+	if err == nil {
+		_ = s.broker.MarkPayloadDelivered(env.RequestID)
+	}
+	return env.RequestID
+}
+
+func (s *Server) handleCommandStarted(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env Envelope,
+) {
+	payload, err := DecodePayload[CommandStartedPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_started", err)
+		return
+	}
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return
+	}
+	if err := s.broker.ReportStarted(ctx, env.RequestID, env.Nonce, payload.ChildPID); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+}
+
+func (s *Server) handleCommandCompleted(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env Envelope,
+) bool {
+	payload, err := DecodePayload[CommandCompletedPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_completed", err)
+		return false
+	}
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return false
+	}
+	if err := s.broker.ReportCompleted(ctx, env.RequestID, env.Nonce, payload.ExitCode, payload.Signal); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return false
+	}
+	_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+	return true
 }
 
 func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
@@ -229,6 +287,14 @@ func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 		return provider.Info(conn)
 	}
 	return peercred.Inspect(conn)
+}
+
+func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		return err
+	}
+	return s.execValidator.ValidateExecPeer(peer)
 }
 
 func writeOK(encoder *json.Encoder, requestID string, nonce string, payload any) error {
@@ -262,12 +328,16 @@ func codeForError(err error) string {
 		return "invalid_nonce"
 	case errors.Is(err, ErrApproverPeerMismatch):
 		return "approver_peer_mismatch"
+	case errors.Is(err, ErrApproverIdentity):
+		return "approver_identity_mismatch"
 	case errors.Is(err, ErrNoPendingApproval):
 		return "no_pending_approval"
 	case errors.Is(err, ErrRequestExpired):
 		return "request_expired"
 	case errors.Is(err, ErrStaleApproval):
 		return "stale_approval"
+	case errors.Is(err, ErrUntrustedClient):
+		return "untrusted_client"
 	default:
 		return "request_failed"
 	}

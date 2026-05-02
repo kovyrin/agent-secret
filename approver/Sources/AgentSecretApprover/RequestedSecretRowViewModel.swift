@@ -8,8 +8,14 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
     public let alias: String
     /// Backing 1Password reference.
     public let ref: String
+    /// 1Password account scope for this reference, when available.
+    public let account: String?
+    /// Visible account scope label.
+    public let accountLabel: String?
     /// Vault name parsed from an op reference when available.
     public let vaultName: String
+    /// Account-qualified vault scope used for grouping.
+    public let vaultScopeName: String
     /// Item name parsed from an op reference when available.
     public let itemName: String?
     /// Field name parsed from an op reference when available.
@@ -18,11 +24,25 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
     public let symbolName: String
 
     /// Creates a display-only secret row.
-    public init(alias: String, ref: String) {
+    public init(alias: String, ref: String, account: String? = nil) {
         let parts: [String] = Self.referenceParts(ref)
+        let normalizedAccount: String?
+        if let account {
+            let trimmedAccount = account.trimmingCharacters(in: .whitespacesAndNewlines)
+            normalizedAccount = trimmedAccount.isEmpty ? nil : trimmedAccount
+        } else {
+            normalizedAccount = nil
+        }
         self.alias = alias
         self.ref = ref
+        self.account = normalizedAccount
+        accountLabel = normalizedAccount.map { account in "Account: \(account)" }
         vaultName = parts.first ?? "Unknown vault"
+        if let normalizedAccount {
+            vaultScopeName = "\(normalizedAccount) / \(vaultName)"
+        } else {
+            vaultScopeName = vaultName
+        }
         itemName = parts.dropFirst().first
         fieldName = parts.dropFirst().dropFirst().first
         symbolName = Self.symbolName(alias: alias, ref: ref)
