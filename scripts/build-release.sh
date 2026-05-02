@@ -114,6 +114,7 @@ dmg_root="$tmp_dir/dmg-root"
 artifact_name="Agent-Secret-$version-macos-$arch.dmg"
 dmg_path="$output_dir/$artifact_name"
 checksums_path="$output_dir/checksums.txt"
+notary_key_path=""
 
 prepare_notary_key() {
   if [[ "$notary_key" == "" || "$notary_key_id" == "" || "$notary_issuer_id" == "" ]]; then
@@ -132,6 +133,20 @@ prepare_notary_key() {
   echo "$key_path"
 }
 
+submit_for_notarization() {
+  local path="$1"
+
+  if [[ "$notary_key_path" == "" ]]; then
+    notary_key_path="$(prepare_notary_key)"
+  fi
+
+  xcrun notarytool submit "$path" \
+    --key "$notary_key_path" \
+    --key-id "$notary_key_id" \
+    --issuer "$notary_issuer_id" \
+    --wait
+}
+
 if [[ "$notarize" == "1" && "$codesign_identity" == "-" ]]; then
   echo "build-release: notarization requires AGENT_SECRET_CODESIGN_IDENTITY" >&2
   exit 1
@@ -139,6 +154,20 @@ fi
 
 echo "Building Agent Secret.app for $version..."
 "$project_root/scripts/build-app-bundle.sh" --version "$version" --output "$build_dir"
+
+if [[ "$notarize" == "1" ]]; then
+  echo "Submitting app bundle for notarization..."
+  app_zip="$tmp_dir/AgentSecretApp.zip"
+  (
+    cd "$build_dir"
+    ditto -c -k --keepParent "Agent Secret.app" "$app_zip"
+  )
+  submit_for_notarization "$app_zip"
+
+  echo "Stapling notarization ticket to app bundle..."
+  xcrun stapler staple "$build_dir/Agent Secret.app"
+  xcrun stapler validate "$build_dir/Agent Secret.app"
+fi
 
 echo "Preparing DMG contents..."
 rm -rf "$dmg_root"
@@ -166,12 +195,7 @@ fi
 
 if [[ "$notarize" == "1" ]]; then
   echo "Submitting DMG for notarization..."
-  notary_key_path="$(prepare_notary_key)"
-  xcrun notarytool submit "$dmg_path" \
-    --key "$notary_key_path" \
-    --key-id "$notary_key_id" \
-    --issuer "$notary_issuer_id" \
-    --wait
+  submit_for_notarization "$dmg_path"
 
   echo "Stapling notarization ticket..."
   xcrun stapler staple "$dmg_path"
