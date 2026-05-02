@@ -39,6 +39,23 @@ func (m *mockApprover) ApproveExec(
 	return m.decision, m.err
 }
 
+type sleepingApprover struct {
+	delay    time.Duration
+	decision ApprovalDecision
+	calls    int
+}
+
+func (s *sleepingApprover) ApproveExec(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ request.ExecRequest,
+) (ApprovalDecision, error) {
+	s.calls++
+	time.Sleep(s.delay)
+	return s.decision, nil
+}
+
 type mockResolver struct {
 	mu     sync.Mutex
 	values map[string]string
@@ -99,6 +116,26 @@ func (r *cancelObservingResolver) Resolve(ctx context.Context, ref string, _ str
 	default:
 		return canarySecretValue, nil
 	}
+}
+
+type deadlineObservingResolver struct {
+	done chan struct{}
+}
+
+func (r *deadlineObservingResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+	<-ctx.Done()
+	close(r.done)
+	return "", ctx.Err()
+}
+
+type advancingResolver struct {
+	value   string
+	advance func()
+}
+
+func (r *advancingResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
+	r.advance()
+	return r.value, nil
 }
 
 type failingSecretCache struct {
@@ -433,6 +470,127 @@ func TestBrokerCancelsOutstandingFetchesAfterFirstFailure(t *testing.T) {
 	failure := events[len(events)-1]
 	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failRef {
 		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
+	}
+}
+
+func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Now()
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.TTL = 50 * time.Millisecond
+	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+	resolver := &deadlineObservingResolver{done: make(chan struct{})}
+	aud := &memoryAudit{}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      time.Now,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: resolver,
+		Audit:    aud,
+		Cache:    policy.NewSecretCache(),
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+
+	_, err = broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("expected request expiry while resolving, got %v", err)
+	}
+	receiveBrokerSignal(t, resolver.done, "resolver did not observe request deadline")
+	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
+		t.Fatal("command_starting was audited after request deadline expired during fetch")
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("request should not become active after fetch deadline expiry, got %v", err)
+	}
+}
+
+func TestBrokerRejectsApprovalThatReturnsAfterRequestExpiry(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Now()
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.TTL = 25 * time.Millisecond
+	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+	approver := &sleepingApprover{
+		delay:    50 * time.Millisecond,
+		decision: ApprovalDecision{Approved: true, Reusable: true},
+	}
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	aud := &memoryAudit{}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      time.Now,
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+
+	_, err = broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("expected request expiry after slow approval, got %v", err)
+	}
+	if approver.calls != 1 {
+		t.Fatalf("approver calls = %d, want 1", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver was called after approval crossed deadline: %v", calls)
+	}
+	if containsAuditEvent(aud.Events(), audit.EventApprovalGranted) {
+		t.Fatal("approval_granted was audited after approval crossed deadline")
+	}
+}
+
+func TestBrokerStopsBeforePayloadWhenRequestExpiresAfterResolution(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	var nowMu sync.Mutex
+	nowFn := func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+		return now
+	}
+	resolver := &advancingResolver{
+		value: "value",
+		advance: func() {
+			nowMu.Lock()
+			now = req.ExpiresAt
+			nowMu.Unlock()
+		},
+	}
+	cache := newFailingSecretCache(nil, 0)
+	aud := &memoryAudit{}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      nowFn,
+		Cache:    cache,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+
+	_, err = broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("expected request expiry after resolution, got %v", err)
+	}
+	if cache.puts != 0 {
+		t.Fatalf("cache writes after request expiry = %d, want 0", cache.puts)
+	}
+	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
+		t.Fatal("command_starting was audited after request expired post-resolution")
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("request should not become active after post-resolution expiry, got %v", err)
 	}
 }
 

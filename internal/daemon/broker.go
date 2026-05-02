@@ -138,20 +138,33 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	if req.Expired(b.now()) {
 		return ExecGrant{}, ErrRequestExpired
 	}
-
-	grant, err := b.reusableGrant(ctx, req)
-	if err != nil {
+	execCtx, cancelExec := b.requestContext(ctx, req)
+	defer cancelExec()
+	if err := b.requestActive(execCtx, req); err != nil {
 		return ExecGrant{}, err
 	}
+
+	grant, err := b.reusableGrant(execCtx, req)
+	if err != nil {
+		return ExecGrant{}, b.requestError(execCtx, req, err)
+	}
 	if grant.Env == nil {
-		grant, err = b.freshGrant(ctx, requestID, nonce, req)
+		grant, err = b.freshGrant(execCtx, requestID, nonce, req)
 		if err != nil {
-			return ExecGrant{}, err
+			return ExecGrant{}, b.requestError(execCtx, req, err)
 		}
+	}
+	if err := b.requestActive(execCtx, req); err != nil {
+		b.rollbackReusableApproval(grant.reusableMutationID)
+		return ExecGrant{}, err
 	}
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
-	if err := b.recordRequiredAudit(ctx, event); err != nil {
+	if err := b.recordRequiredAudit(execCtx, event); err != nil {
+		b.rollbackReusableApproval(grant.reusableMutationID)
+		return ExecGrant{}, err
+	}
+	if err := b.requestActive(execCtx, req); err != nil {
 		b.rollbackReusableApproval(grant.reusableMutationID)
 		return ExecGrant{}, err
 	}
@@ -165,6 +178,37 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	b.mu.Unlock()
 
 	return grant, nil
+}
+
+func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (context.Context, context.CancelFunc) {
+	ttl := req.ExpiresAt.Sub(b.now())
+	return context.WithTimeout(ctx, ttl)
+}
+
+func (b *Broker) requestActive(ctx context.Context, req request.ExecRequest) error {
+	if err := ctx.Err(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && req.Expired(b.now()) {
+			return ErrRequestExpired
+		}
+		return err
+	}
+	if req.Expired(b.now()) {
+		return ErrRequestExpired
+	}
+	return nil
+}
+
+func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, ErrRequestExpired) {
+		return err
+	}
+	if errors.Is(b.requestActive(ctx, req), ErrRequestExpired) {
+		return ErrRequestExpired
+	}
+	return err
 }
 
 func (b *Broker) MarkPayloadDelivered(requestID string) error {
@@ -283,6 +327,9 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 		}
 		return ExecGrant{}, nil
 	}
+	if err := b.requestActive(ctx, req); err != nil {
+		return ExecGrant{}, err
+	}
 
 	var values map[string]string
 	var valueErr error
@@ -338,12 +385,21 @@ func (b *Broker) freshGrant(
 		}
 		return ExecGrant{}, ErrApprovalDenied
 	}
+	if err := b.requestActive(ctx, req); err != nil {
+		return ExecGrant{}, err
+	}
 	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, requestID, req)); err != nil {
+		return ExecGrant{}, err
+	}
+	if err := b.requestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
 
 	refValues, err := b.resolveUniqueRefs(ctx, requestID, req)
 	if err != nil {
+		return ExecGrant{}, b.requestError(ctx, req, err)
+	}
+	if err := b.requestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
@@ -490,6 +546,9 @@ func (b *Broker) refreshedReusableValues(
 ) (map[string]string, error) {
 	refValues, err := b.resolveUniqueRefs(ctx, "", req)
 	if err != nil {
+		return nil, b.requestError(ctx, req, err)
+	}
+	if err := b.requestActive(ctx, req); err != nil {
 		return nil, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
@@ -500,6 +559,10 @@ func (b *Broker) refreshedReusableValues(
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 	event.ApprovalID = approvalID
 	if err := b.recordRequiredAudit(ctx, event); err != nil {
+		b.rollbackReusableApproval(approvalID)
+		return nil, err
+	}
+	if err := b.requestActive(ctx, req); err != nil {
 		b.rollbackReusableApproval(approvalID)
 		return nil, err
 	}
