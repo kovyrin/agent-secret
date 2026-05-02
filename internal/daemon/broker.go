@@ -14,14 +14,15 @@ import (
 )
 
 var (
-	ErrApprovalDenied      = errors.New("approval denied")
-	ErrApprovalUnavailable = errors.New("approval unavailable")
-	ErrAuditRequired       = errors.New("audit required")
-	ErrInvalidNonce        = errors.New("invalid request nonce")
-	ErrMissingCache        = errors.New("approved secret cache entry missing")
-	ErrNoResolver          = errors.New("secret resolver unavailable")
-	ErrRequestExpired      = errors.New("request expired")
-	ErrUnknownRequest      = errors.New("unknown request")
+	ErrApprovalDenied       = errors.New("approval denied")
+	ErrApprovalUnavailable  = errors.New("approval unavailable")
+	ErrAuditRequired        = errors.New("audit required")
+	ErrInvalidNonce         = errors.New("invalid request nonce")
+	ErrMissingCache         = errors.New("approved secret cache entry missing")
+	ErrNoResolver           = errors.New("secret resolver unavailable")
+	ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
+	ErrRequestExpired       = errors.New("request expired")
+	ErrUnknownRequest       = errors.New("unknown request")
 )
 
 type Approver interface {
