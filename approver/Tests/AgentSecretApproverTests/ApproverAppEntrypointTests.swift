@@ -9,6 +9,7 @@ final class ApproverAppEntrypointTests: XCTestCase {
     private static let mockRequestFlag: String = "--mock-request"
     private static let packageDirectoryName: String = "approver"
     private static let smokeEntrypointPath: String = "Sources/AgentSecretApproverSmoke/main.swift"
+    private static let healthCheckFlag: String = "--health-check"
 
     private static func packageRootURL() -> URL? {
         var url = URL(fileURLWithPath: #filePath)
@@ -37,6 +38,13 @@ final class ApproverAppEntrypointTests: XCTestCase {
         XCTAssertFalse(source.contains(Self.mockDecisionFlag))
         XCTAssertFalse(source.contains(Self.mockClientSymbol))
         XCTAssertFalse(source.contains(Self.mockPresenterSymbol))
+    }
+
+    func testShippedApproverEntrypointProvidesNonSecretHealthCheck() throws {
+        let source: String = try Self.sourceText(at: Self.appEntrypointPath)
+
+        XCTAssertTrue(source.contains(Self.healthCheckFlag))
+        XCTAssertTrue(source.contains("agent-secret-approver: ok"))
     }
 
     func testSmokeEntrypointOwnsMockOnlySurface() throws {

@@ -130,6 +130,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 }
 
 func TestAppDaemonStatusAndDoctor(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
 		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
@@ -139,6 +140,8 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app.DoctorApproverCheck = func(context.Context) error { return nil }
+	app.DoctorOnePasswordCheck = func(context.Context) error { return nil }
 
 	if code := app.Run(context.Background(), []string{"daemon", "status"}); code != 0 {
 		t.Fatalf("daemon status exit=%d stderr=%q", code, stderr.String())
@@ -150,8 +153,40 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	if code := app.Run(context.Background(), []string{"doctor"}); code != 0 {
 		t.Fatalf("doctor exit=%d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "audit log:") || !strings.Contains(stdout.String(), "daemon socket:") {
+	if !strings.Contains(stdout.String(), "audit log: writable") ||
+		!strings.Contains(stdout.String(), "daemon startup: ok") ||
+		!strings.Contains(stdout.String(), "socket directory: private") ||
+		!strings.Contains(stdout.String(), "native approver: ok") ||
+		!strings.Contains(stdout.String(), "1password desktop integration: ok") {
 		t.Fatalf("doctor output missing diagnostics: %q", stdout.String())
+	}
+}
+
+func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
+		Audit:    &appAudit{},
+	})
+	defer cleanup()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app.DoctorApproverCheck = func(context.Context) error { return nil }
+	app.DoctorOnePasswordCheck = func(context.Context) error {
+		return errors.New("desktop integration unavailable")
+	}
+
+	code := app.Run(context.Background(), []string{"doctor"})
+	if code != 1 {
+		t.Fatalf("doctor exit=%d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "1password desktop integration: failed") {
+		t.Fatalf("doctor stdout = %q, want 1Password failure", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "synthetic-secret-value") || strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("doctor leaked secret: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 

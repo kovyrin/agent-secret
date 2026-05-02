@@ -53,6 +53,10 @@ func prepareSocketDirectory(path string) error {
 	return prepareCustomSocketDirectory(filepath.Dir(path))
 }
 
+func ValidateSocketDirectory(path string) error {
+	return rejectInsecureSocketDirectory(filepath.Dir(path))
+}
+
 func prepareDefaultSocketDirectory(dir string) error {
 	//nolint:gosec // G703: dir is the managed default socket directory under Application Support.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
