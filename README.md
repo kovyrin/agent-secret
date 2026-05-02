@@ -195,6 +195,12 @@ AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
 ```
 
+The unattended installer verifies the DMG checksum, DMG code signature,
+Gatekeeper assessment, notarization ticket, and the mounted app bundle before
+copying anything into place. For local unsigned test artifacts only, set
+`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`. For signed but intentionally
+unstapled local artifacts, set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
+
 Unattended uninstall:
 
 ```bash
