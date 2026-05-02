@@ -24,6 +24,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private static let protocolVersion: Int = 1
+    private static let typeError: String = "error"
+    private static let typeOK: String = "ok"
 
     private let transport: LineTransport
     private let decoder: JSONDecoder
@@ -53,21 +55,15 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             version: Self.protocolVersion
         )
         try send(request)
-        let data: Data = try transport.readLine()
-        let header: DaemonHeader = try decoder.decode(DaemonHeader.self, from: data)
-        if header.type == "error" {
-            throw try daemonError(from: data)
-        }
-        guard header.type == "ok" else {
-            throw SocketDaemonClientError.invalidResponse("unexpected response type \(header.type)")
-        }
-        let response: DaemonEnvelope<ApprovalRequest> = try decoder.decode(
-            DaemonEnvelope<ApprovalRequest>.self,
-            from: data
-        )
+        let response: DaemonEnvelope<ApprovalRequest> = try readOKEnvelope()
         guard let payload: ApprovalRequest = response.payload else {
             throw SocketDaemonClientError.invalidResponse("missing approval request payload")
         }
+        try validateCorrelation(
+            response,
+            requestID: payload.requestID,
+            nonce: payload.nonce
+        )
         return payload
     }
 
@@ -81,13 +77,45 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             version: Self.protocolVersion
         )
         try send(request)
+        let response: DaemonEnvelope<EmptyPayload> = try readOKEnvelope()
+        try validateCorrelation(
+            response,
+            requestID: decision.requestID,
+            nonce: decision.nonce
+        )
+    }
+
+    private func readOKEnvelope<Payload: Codable>() throws -> DaemonEnvelope<Payload> {
         let data: Data = try transport.readLine()
         let header: DaemonHeader = try decoder.decode(DaemonHeader.self, from: data)
-        if header.type == "error" {
+        try validateHeader(header)
+        if header.type == Self.typeError {
             throw try daemonError(from: data)
         }
-        guard header.type == "ok" else {
+        guard header.type == Self.typeOK else {
             throw SocketDaemonClientError.invalidResponse("unexpected response type \(header.type)")
+        }
+        return try decoder.decode(DaemonEnvelope<Payload>.self, from: data)
+    }
+
+    private func validateHeader(_ header: DaemonHeader) throws {
+        guard header.version == Self.protocolVersion else {
+            throw SocketDaemonClientError.invalidResponse(
+                "unsupported protocol version \(header.version)"
+            )
+        }
+    }
+
+    private func validateCorrelation(
+        _ response: DaemonEnvelope<some Codable>,
+        requestID: String,
+        nonce: String
+    ) throws {
+        guard response.requestID == requestID else {
+            throw SocketDaemonClientError.invalidResponse("response request id mismatch")
+        }
+        guard response.nonce == nonce else {
+            throw SocketDaemonClientError.invalidResponse("response nonce mismatch")
         }
     }
 
