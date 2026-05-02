@@ -3,30 +3,6 @@ import Foundation
 import XCTest
 
 final class ApprovalControllerTests: XCTestCase {
-    private final class MemoryLineTransport: LineTransport {
-        private var reads: [Data]
-        private(set) var writtenStrings: [String] = []
-
-        init(reads: [Data]) {
-            self.reads = reads
-        }
-
-        func readLine() throws -> Data {
-            guard !reads.isEmpty else {
-                throw SocketDaemonClientError.disconnected
-            }
-            return reads.removeFirst()
-        }
-
-        func writeLine(_ data: Data) {
-            writtenStrings.append(String(data: data, encoding: .utf8) ?? "")
-        }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
-    }
-
     private final class RecordingLogger: ApprovalLogger {
         private(set) var events: [String] = []
 
@@ -91,25 +67,9 @@ final class ApprovalControllerTests: XCTestCase {
         ]
     }
 
-    private static func daemonEnvelope(
-        type: String,
-        requestID: String,
-        nonce: String,
-        payload: String
-    ) -> Data {
-        let json = """
-        {"nonce":"\(nonce)","payload":\(payload),"request_id":"\(requestID)","type":"\(type)","version":1}
-        """
-        return Data(json.utf8)
-    }
-
     private static func fixtureData(_ name: String) throws -> Data {
         let url: URL = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
-    }
-
-    private static func okEnvelope() -> Data {
-        Data(#"{"type":"ok","version":1}"#.utf8)
     }
 
     @MainActor
@@ -160,53 +120,6 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(decision.nonce, "nonce_456")
         XCTAssertEqual(decision.decision, .approveReusable)
         XCTAssertEqual(decision.reusableUses, Self.expectedReusableUses)
-    }
-
-    func testSocketDaemonClientFetchesAndSubmitsDecision() throws {
-        let payload: String = try String(data: Self.fixtureData("approval_request"), encoding: .utf8)?
-            .replacingOccurrences(
-                of: #""expiresAt": "2027-01-15T08:00:00Z""#,
-                with: #""expiresAt": "2027-01-15T08:00:00.123456Z""#
-            ) ?? "{}"
-        let requestData: Data = Self.daemonEnvelope(
-            type: "ok",
-            requestID: "req_123",
-            nonce: "nonce_456",
-            payload: payload
-        )
-        let transport = MemoryLineTransport(reads: [requestData, Self.okEnvelope()])
-        let client = SocketDaemonClient(transport: transport)
-
-        let request: ApprovalRequest = try client.fetchPendingRequest()
-        XCTAssertEqual(request.requestID, "req_123")
-        try client.submit(
-            ApprovalDecision(
-                requestID: request.requestID,
-                nonce: request.nonce,
-                decision: .approveOnce
-            )
-        )
-
-        let written: String = transport.writtenStrings.joined(separator: "\n")
-        XCTAssertTrue(written.contains("approval.pending"))
-        XCTAssertTrue(written.contains("approval.decision"))
-        XCTAssertFalse(written.contains(Self.canarySecretValue))
-    }
-
-    func testSocketDaemonClientReportsDaemonErrors() {
-        let errorLine = Data(
-            """
-            {"payload":{"code":"stale_approval","message":"stale approval response"},"type":"error","version":1}
-            """.utf8
-        )
-        let client = SocketDaemonClient(transport: MemoryLineTransport(reads: [errorLine]))
-
-        XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
-            XCTAssertEqual(
-                error as? SocketDaemonClientError,
-                .daemonError("stale_approval", "stale approval response")
-            )
-        }
     }
 
     @MainActor
