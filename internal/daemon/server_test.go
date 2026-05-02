@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,6 +136,120 @@ func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	}
 	if payload.Code != "bad_envelope" {
 		t.Fatalf("error code = %q, want bad_envelope", payload.Code)
+	}
+}
+
+func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Validator:     allowPeerValidator{},
+		MaxFrameBytes: 96,
+		ReadTimeout:   time.Second,
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	frame := `{"version":1,"type":"daemon.status","payload":"` + strings.Repeat("x", 128) + `"}` + "\n"
+	if _, err := conn.Write([]byte(frame)); err != nil {
+		t.Fatalf("write oversized frame: %v", err)
+	}
+
+	var resp Envelope
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatalf("decode oversized frame response: %v", err)
+	}
+	if resp.Type != TypeError {
+		t.Fatalf("oversized frame response type = %s", resp.Type)
+	}
+	payload, err := DecodePayload[ErrorPayload](resp)
+	if err != nil {
+		t.Fatalf("decode oversized frame error payload: %v", err)
+	}
+	if payload.Code != "frame_too_large" {
+		t.Fatalf("oversized frame error code = %q, want frame_too_large", payload.Code)
+	}
+}
+
+func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Validator:     allowPeerValidator{},
+		ReadTimeout:   25 * time.Millisecond,
+		MaxFrameBytes: 1024,
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.Write([]byte(`{"version":`)); err != nil {
+		t.Fatalf("write partial frame: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	buf := make([]byte, 1)
+	_, err = conn.Read(buf)
+	if err == nil {
+		t.Fatal("expected connection close for slow partial frame")
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Fatalf("server did not close slow partial frame before client deadline: %v", err)
+	}
+}
+
+func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		MaxFrameBytes: 4096,
+		ReadTimeout:   time.Second,
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	env := Envelope{
+		Version:   ProtocolVersion,
+		Type:      TypeRequestExec,
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Payload:   json.RawMessage(`{"not":"a valid exec request"}`),
+	}
+	if err := json.NewEncoder(conn).Encode(env); err != nil {
+		t.Fatalf("encode untrusted exec request: %v", err)
+	}
+	var resp Envelope
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatalf("decode untrusted exec response: %v", err)
+	}
+	payload, err := DecodePayload[ErrorPayload](resp)
+	if err != nil {
+		t.Fatalf("decode untrusted exec error payload: %v", err)
+	}
+	if payload.Code != "untrusted_client" {
+		t.Fatalf("untrusted exec error code = %q, want untrusted_client", payload.Code)
 	}
 }
 
@@ -757,6 +872,16 @@ func startRawServerWithBrokerAndExecValidator(
 	execValidator ExecPeerValidator,
 ) (string, func()) {
 	t.Helper()
+	return startRawServerWithOptions(t, ServerOptions{
+		Broker:        broker,
+		Approvals:     approvals,
+		Validator:     validator,
+		ExecValidator: execValidator,
+	})
+}
+
+func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()) {
+	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-test-")
 	if err != nil {
 		t.Fatalf("MkdirTemp returned error: %v", err)
@@ -766,12 +891,7 @@ func startRawServerWithBrokerAndExecValidator(
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
-	server, err := NewServer(ServerOptions{
-		Broker:        broker,
-		Approvals:     approvals,
-		Validator:     validator,
-		ExecValidator: execValidator,
-	})
+	server, err := NewServer(opts)
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
 	}

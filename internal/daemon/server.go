@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -40,6 +42,8 @@ type Server struct {
 	approvals     ApprovalEndpoint
 	validator     PeerValidator
 	execValidator ExecPeerValidator
+	maxFrameBytes int64
+	readTimeout   time.Duration
 	stopOnce      sync.Once
 	stop          chan struct{}
 }
@@ -49,7 +53,11 @@ type ServerOptions struct {
 	Approvals     ApprovalEndpoint
 	Validator     PeerValidator
 	ExecValidator ExecPeerValidator
+	MaxFrameBytes int64
+	ReadTimeout   time.Duration
 }
+
+const DefaultProtocolReadTimeout = 30 * time.Second
 
 func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Broker == nil {
@@ -63,11 +71,21 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if execValidator == nil {
 		execValidator = NewTrustedExecutableValidator(DefaultTrustedClientPaths())
 	}
+	maxFrameBytes := opts.MaxFrameBytes
+	if maxFrameBytes <= 0 {
+		maxFrameBytes = DefaultMaxProtocolFrameBytes
+	}
+	readTimeout := opts.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = DefaultProtocolReadTimeout
+	}
 	return &Server{
 		broker:        opts.Broker,
 		approvals:     opts.Approvals,
 		validator:     validator,
 		execValidator: execValidator,
+		maxFrameBytes: maxFrameBytes,
+		readTimeout:   readTimeout,
 		stop:          make(chan struct{}),
 	}, nil
 }
@@ -127,14 +145,19 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		return
 	}
 
-	decoder := json.NewDecoder(conn)
+	reader := bufio.NewReader(conn)
 	encoder := json.NewEncoder(conn)
 	activeRequestID := ""
 	for {
-		var env Envelope
-		if err := decoder.Decode(&env); err != nil {
+		env, err := s.readEnvelope(conn, reader)
+		if err != nil {
 			if activeRequestID != "" {
 				s.broker.ClientDisconnected(ctx, activeRequestID)
+			}
+			if errors.Is(err, ErrProtocolFrameSize) {
+				_ = writeErrorEncoder(encoder, "", "", "frame_too_large", err)
+			} else if errors.Is(err, ErrMalformedEnvelope) {
+				_ = writeErrorEncoder(encoder, "", "", "bad_envelope", err)
 			}
 			return
 		}
@@ -218,6 +241,10 @@ func (s *Server) handleRequestExec(
 	encoder *json.Encoder,
 	env Envelope,
 ) string {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ""
+	}
 	req, err := DecodePayload[request.ExecRequest](env)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
@@ -225,10 +252,6 @@ func (s *Server) handleRequestExec(
 	}
 	if err := req.ValidateForDaemon(); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
-		return ""
-	}
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return ""
 	}
 	grant, err := s.broker.HandleExec(ctx, env.RequestID, env.Nonce, req)
@@ -252,13 +275,13 @@ func (s *Server) handleCommandStarted(
 	encoder *json.Encoder,
 	env Envelope,
 ) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return
+	}
 	payload, err := DecodePayload[CommandStartedPayload](env)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_started", err)
-		return
-	}
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return
 	}
 	if err := s.broker.ReportStarted(ctx, env.RequestID, env.Nonce, payload.ChildPID); err != nil {
@@ -274,13 +297,13 @@ func (s *Server) handleCommandCompleted(
 	encoder *json.Encoder,
 	env Envelope,
 ) bool {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return false
+	}
 	payload, err := DecodePayload[CommandCompletedPayload](env)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_completed", err)
-		return false
-	}
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return false
 	}
 	if err := s.broker.ReportCompleted(ctx, env.RequestID, env.Nonce, payload.ExitCode, payload.Signal); err != nil {
@@ -299,6 +322,16 @@ func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 		return provider.Info(conn)
 	}
 	return peercred.Inspect(conn)
+}
+
+func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader) (Envelope, error) {
+	if s.readTimeout > 0 {
+		if err := conn.SetReadDeadline(time.Now().Add(s.readTimeout)); err != nil {
+			return Envelope{}, fmt.Errorf("set daemon read deadline: %w", err)
+		}
+		defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
+	}
+	return readEnvelopeFrame(reader, s.maxFrameBytes)
 }
 
 func daemonStopAuditEvent(peer peercred.Info, err error) audit.Event {

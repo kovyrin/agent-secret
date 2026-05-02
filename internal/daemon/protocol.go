@@ -1,12 +1,16 @@
 package daemon
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 )
 
 const ProtocolVersion = 1
+const DefaultMaxProtocolFrameBytes int64 = 1 << 20
 
 const (
 	TypeDaemonStatus     = "daemon.status"
@@ -22,6 +26,7 @@ const (
 
 var (
 	ErrMalformedEnvelope = errors.New("malformed protocol envelope")
+	ErrProtocolFrameSize = errors.New("protocol frame exceeds maximum size")
 	ErrProtocolVersion   = errors.New("unsupported protocol version")
 	ErrProtocolType      = errors.New("unsupported protocol message type")
 )
@@ -90,6 +95,43 @@ func validateEnvelope(env Envelope) error {
 		return fmt.Errorf("%w: missing type", ErrMalformedEnvelope)
 	}
 	return nil
+}
+
+func readEnvelopeFrame(reader *bufio.Reader, maxBytes int64) (Envelope, error) {
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxProtocolFrameBytes
+	}
+	var frame []byte
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if int64(len(frame)+len(chunk)) > maxBytes {
+			return Envelope{}, fmt.Errorf("%w: max %d bytes", ErrProtocolFrameSize, maxBytes)
+		}
+		frame = append(frame, chunk...)
+		if err == nil {
+			break
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if errors.Is(err, io.EOF) && len(frame) == 0 {
+			return Envelope{}, io.EOF
+		}
+		if errors.Is(err, io.EOF) {
+			return Envelope{}, fmt.Errorf("%w: unterminated JSON frame", ErrMalformedEnvelope)
+		}
+		return Envelope{}, err
+	}
+
+	frame = bytes.TrimSpace(frame)
+	if len(frame) == 0 {
+		return Envelope{}, fmt.Errorf("%w: empty frame", ErrMalformedEnvelope)
+	}
+	var env Envelope
+	if err := json.Unmarshal(frame, &env); err != nil {
+		return Envelope{}, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
+	}
+	return env, nil
 }
 
 func marshalPayload(payload any) (json.RawMessage, error) {
