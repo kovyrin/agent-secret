@@ -30,6 +30,7 @@ app_bundle="$1"
 short_version="${2:-${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}}"
 bundle_version="${3:-${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}}"
 daemon_bundle="$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+short_version="$(agent_secret_normalize_short_version "$short_version")"
 
 require_command() {
   local name="$1"

@@ -64,6 +64,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+version="$(agent_secret_normalize_short_version "$version")"
+
 require_command() {
   local name="$1"
 
