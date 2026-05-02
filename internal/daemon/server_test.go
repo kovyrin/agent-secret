@@ -950,7 +950,7 @@ func testSocketPath(t *testing.T) string {
 func writeExecutableAt(t *testing.T, dir string, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon tests need runnable fixture executables.
 		t.Fatalf("write executable: %v", err)
 	}
 	return path

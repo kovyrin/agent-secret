@@ -76,7 +76,7 @@ func InstallCLI(options CLIOptions) (CLIResult, error) {
 		return CLIResult{}, err
 	}
 
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o755); err != nil { //nolint:gosec // G301: user command directories must be searchable for PATH execution.
 		return CLIResult{}, fmt.Errorf("create bin dir %s: %w", binDir, err)
 	}
 	linkPath := filepath.Join(binDir, CommandName)
@@ -111,7 +111,7 @@ func InstallSkill(options SkillOptions) (SkillResult, error) {
 		return SkillResult{}, err
 	}
 
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil { //nolint:gosec // G301: agent skill directories are non-secret content intended for tool discovery.
 		return SkillResult{}, fmt.Errorf("create skills dir %s: %w", skillsDir, err)
 	}
 	linkPath := filepath.Join(skillsDir, SkillName)

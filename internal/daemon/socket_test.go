@@ -52,7 +52,7 @@ func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 	t.Parallel()
 
 	dir := shortTempDir(t, "agent-secret-socket-")
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: custom socket directories must be owner-searchable and private.
 		t.Fatalf("chmod custom dir: %v", err)
 	}
 	path := filepath.Join(dir, "agent-secretd.sock")
@@ -71,7 +71,7 @@ func TestListenUnixRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T)
 	t.Parallel()
 
 	dir := shortTempDir(t, "agent-secret-socket-")
-	if err := os.Chmod(dir, 0o755); err != nil {
+	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: this test intentionally creates a permissive custom socket directory.
 		t.Fatalf("chmod custom dir: %v", err)
 	}
 	path := filepath.Join(dir, "agent-secretd.sock")

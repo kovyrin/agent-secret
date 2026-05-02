@@ -52,10 +52,6 @@ linters:
   settings:
     gosec:
       excludes:
-        # Private directories need executable bits; test scripts need executable bits.
-        - G301
-        - G302
-        - G306
         # Queue promotion is detached from request cancellation by design.
         - G118
     revive:

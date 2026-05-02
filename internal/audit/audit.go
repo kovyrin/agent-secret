@@ -177,7 +177,7 @@ func openPath(path string, now func() time.Time) (*Writer, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create audit directory: %w", err)
 	}
-	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil {
+	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil { //nolint:gosec // G302: audit directories need owner execute/search while denying group and other access.
 		return nil, fmt.Errorf("secure audit directory: %w", err)
 	}
 	if err := rejectInsecureFile(path); err != nil {

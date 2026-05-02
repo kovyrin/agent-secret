@@ -299,7 +299,7 @@ func writeExecutable(t *testing.T, dir string) string {
 	t.Helper()
 
 	path := filepath.Join(dir, "tool")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: request validation tests need a runnable fixture executable.
 		t.Fatalf("write executable: %v", err)
 	}
 

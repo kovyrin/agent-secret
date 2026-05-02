@@ -93,7 +93,7 @@ func TestOpenDefaultRejectsPermissiveExistingAuditFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("write audit file: %v", err)
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
+	if err := os.Chmod(path, 0o644); err != nil { //nolint:gosec // G302: this test intentionally creates an insecure audit log to prove rejection.
 		t.Fatalf("chmod audit file: %v", err)
 	}
 
@@ -284,7 +284,7 @@ func writeExecutable(t *testing.T, dir string, name string) {
 	t.Helper()
 
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: audit tests need a runnable fixture executable in command metadata.
 		t.Fatalf("write executable: %v", err)
 	}
 }

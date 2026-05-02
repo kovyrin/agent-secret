@@ -59,7 +59,7 @@ func TestInstallCLIRefusesExistingRegularFileWithoutForce(t *testing.T) {
 	binDir := t.TempDir()
 	executable := writeInstallTestExecutable(t, t.TempDir())
 	linkPath := filepath.Join(binDir, CommandName)
-	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o644); err != nil {
+	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o600); err != nil {
 		t.Fatalf("write existing file: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestInstallCLIForceReplacesExistingRegularFile(t *testing.T) {
 	binDir := t.TempDir()
 	executable := writeInstallTestExecutable(t, t.TempDir())
 	linkPath := filepath.Join(binDir, CommandName)
-	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o644); err != nil {
+	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o600); err != nil {
 		t.Fatalf("write existing file: %v", err)
 	}
 
@@ -111,13 +111,14 @@ func TestInstallCLIUsesDefaultBinDirAndCurrentExecutable(t *testing.T) {
 	if target != result.TargetPath {
 		t.Fatalf("symlink target = %q, want result target %q", target, result.TargetPath)
 	}
+	assertInstallPathMode(t, filepath.Dir(result.LinkPath), 0o755)
 }
 
 func TestInstallCLIRejectsNonExecutableTarget(t *testing.T) {
 	t.Parallel()
 
 	target := filepath.Join(t.TempDir(), "agent-secret")
-	if err := os.WriteFile(target, []byte("not executable"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("not executable"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -186,7 +187,7 @@ func TestInstallCLIForceRefusesDirectoryAtLinkPath(t *testing.T) {
 	t.Parallel()
 
 	binDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(binDir, CommandName), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(binDir, CommandName), 0o750); err != nil {
 		t.Fatalf("create existing directory: %v", err)
 	}
 
@@ -254,6 +255,7 @@ func TestInstallSkillUsesDefaultSkillsDir(t *testing.T) {
 	if result.LinkPath != wantLinkPath {
 		t.Fatalf("link path = %q, want %q", result.LinkPath, wantLinkPath)
 	}
+	assertInstallPathMode(t, filepath.Dir(result.LinkPath), 0o755)
 }
 
 func TestInstallSkillRefusesExistingRegularFileWithoutForce(t *testing.T) {
@@ -261,7 +263,7 @@ func TestInstallSkillRefusesExistingRegularFileWithoutForce(t *testing.T) {
 
 	skillsDir := t.TempDir()
 	linkPath := filepath.Join(skillsDir, SkillName)
-	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o644); err != nil {
+	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o600); err != nil {
 		t.Fatalf("write existing file: %v", err)
 	}
 
@@ -277,7 +279,7 @@ func TestInstallSkillForceReplacesExistingRegularFile(t *testing.T) {
 	skillsDir := t.TempDir()
 	source := writeInstallTestSkill(t, t.TempDir())
 	linkPath := filepath.Join(skillsDir, SkillName)
-	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o644); err != nil {
+	if err := os.WriteFile(linkPath, []byte("not a symlink"), 0o600); err != nil {
 		t.Fatalf("write existing file: %v", err)
 	}
 
@@ -329,7 +331,7 @@ func TestInstallSkillRejectsFileSource(t *testing.T) {
 	t.Parallel()
 
 	source := filepath.Join(t.TempDir(), "agent-secret")
-	if err := os.WriteFile(source, []byte("---\nname: agent-secret\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(source, []byte("---\nname: agent-secret\n---\n"), 0o600); err != nil {
 		t.Fatalf("write source file: %v", err)
 	}
 
@@ -343,7 +345,7 @@ func TestInstallSkillRejectsSkillFileDirectory(t *testing.T) {
 	t.Parallel()
 
 	source := filepath.Join(t.TempDir(), SkillName)
-	if err := os.MkdirAll(filepath.Join(source, "SKILL.md"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(source, "SKILL.md"), 0o750); err != nil {
 		t.Fatalf("create skill file directory: %v", err)
 	}
 
@@ -357,7 +359,7 @@ func TestInstallSkillRejectsDirectoryAtLinkPath(t *testing.T) {
 	t.Parallel()
 
 	skillsDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(skillsDir, SkillName), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(skillsDir, SkillName), 0o750); err != nil {
 		t.Fatalf("create existing directory: %v", err)
 	}
 
@@ -375,7 +377,7 @@ func writeInstallTestExecutable(t *testing.T, dir string) string {
 	t.Helper()
 
 	path := filepath.Join(dir, "agent-secret")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: installer tests need a runnable fixture executable.
 		t.Fatalf("write executable: %v", err)
 	}
 	return path
@@ -387,10 +389,10 @@ func writeInstallTestBundle(t *testing.T, dir string) string {
 	bundle := filepath.Join(dir, "Agent Secret.app")
 	executableDir := filepath.Join(bundle, "Contents", "Resources", "bin")
 	skillsDir := filepath.Join(bundle, "Contents", "Resources", "skills")
-	if err := os.MkdirAll(executableDir, 0o755); err != nil {
+	if err := os.MkdirAll(executableDir, 0o750); err != nil {
 		t.Fatalf("create executable dir: %v", err)
 	}
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o750); err != nil {
 		t.Fatalf("create skills dir: %v", err)
 	}
 	writeInstallTestExecutable(t, executableDir)
@@ -402,13 +404,25 @@ func writeInstallTestSkill(t *testing.T, dir string) string {
 	t.Helper()
 
 	path := filepath.Join(dir, SkillName)
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o750); err != nil {
 		t.Fatalf("create skill dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("---\nname: agent-secret\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("---\nname: agent-secret\n---\n"), 0o600); err != nil {
 		t.Fatalf("write skill file: %v", err)
 	}
 	return path
+}
+
+func assertInstallPathMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %s, want %s", path, got, want)
+	}
 }
 
 func resolveInstallTestPath(t *testing.T, path string) string {

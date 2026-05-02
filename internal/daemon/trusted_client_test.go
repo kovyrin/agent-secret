@@ -52,7 +52,7 @@ func TestTrustedExecutableValidatorRejectsExecutableReplacedAfterStartup(t *test
 	if err := os.Remove(trusted); err != nil {
 		t.Fatalf("remove trusted executable: %v", err)
 	}
-	if err := os.WriteFile(trusted, []byte("#!/bin/sh\nexit 64\n"), 0o755); err != nil {
+	if err := os.WriteFile(trusted, []byte("#!/bin/sh\nexit 64\n"), 0o755); err != nil { //nolint:gosec // G306: trusted-client tests need a runnable replacement executable.
 		t.Fatalf("replace trusted executable: %v", err)
 	}
 

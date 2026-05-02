@@ -304,13 +304,13 @@ func TestProcessApproverLauncherPrefersUnifiedAppExecutable(t *testing.T) {
 	appPath := filepath.Join(t.TempDir(), "Agent Secret.app")
 	unifiedExecutable := filepath.Join(appPath, "Contents", "MacOS", "Agent Secret")
 	legacyExecutable := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
-	if err := os.MkdirAll(filepath.Dir(unifiedExecutable), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(unifiedExecutable), 0o750); err != nil {
 		t.Fatalf("create app macos dir: %v", err)
 	}
-	if err := os.WriteFile(legacyExecutable, []byte("test"), 0o755); err != nil {
+	if err := os.WriteFile(legacyExecutable, []byte("test"), 0o755); err != nil { //nolint:gosec // G306: approver tests need runnable app executable fixtures.
 		t.Fatalf("write legacy executable: %v", err)
 	}
-	if err := os.WriteFile(unifiedExecutable, []byte("test"), 0o755); err != nil {
+	if err := os.WriteFile(unifiedExecutable, []byte("test"), 0o755); err != nil { //nolint:gosec // G306: approver tests need runnable app executable fixtures.
 		t.Fatalf("write unified executable: %v", err)
 	}
 
@@ -353,10 +353,10 @@ func TestDefaultApproverPathUsesInstalledUnifiedApp(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	want := filepath.Join(home, "Applications", "Agent Secret.app", "Contents", "MacOS", "Agent Secret")
-	if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(want), 0o750); err != nil {
 		t.Fatalf("create app macos dir: %v", err)
 	}
-	if err := os.WriteFile(want, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(want, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: default approver path tests need runnable app executable fixtures.
 		t.Fatalf("write app executable: %v", err)
 	}
 
@@ -374,10 +374,10 @@ func TestDefaultApproverPathIgnoresEnvironmentOverride(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("AGENT_SECRET_APPROVER_PATH", filepath.Join(t.TempDir(), "PoisonApprover.app"))
 	want := filepath.Join(home, "Applications", "Agent Secret.app", "Contents", "MacOS", "Agent Secret")
-	if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(want), 0o750); err != nil {
 		t.Fatalf("create app macos dir: %v", err)
 	}
-	if err := os.WriteFile(want, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(want, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: default approver path tests need runnable app executable fixtures.
 		t.Fatalf("write app executable: %v", err)
 	}
 
@@ -394,7 +394,7 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	t.Parallel()
 
 	helper := filepath.Join(t.TempDir(), "approver-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}
 
@@ -421,7 +421,7 @@ func TestProcessApproverLauncherHealthCheck(t *testing.T) {
 	t.Parallel()
 
 	helper := filepath.Join(t.TempDir(), "approver-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'agent-secret-approver: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil {
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'agent-secret-approver: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}
 
@@ -438,7 +438,7 @@ func TestProcessApproverLauncherHealthCheckRejectsUnexpectedOutput(t *testing.T)
 	t.Parallel()
 
 	helper := filepath.Join(t.TempDir(), "approver-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\necho nope\n"), 0o755); err != nil {
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\necho nope\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}
 
@@ -455,7 +455,7 @@ func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
 	t.Parallel()
 
 	helper := filepath.Join(t.TempDir(), "agent-secret-approver")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}
 
@@ -561,11 +561,11 @@ func writeApproverBundle(t *testing.T, dir string, bundleID string, executableNa
 	t.Helper()
 	bundlePath := filepath.Join(dir, "AgentSecretApprover.app")
 	macOSPath := filepath.Join(bundlePath, "Contents", "MacOS")
-	if err := os.MkdirAll(macOSPath, 0o755); err != nil {
+	if err := os.MkdirAll(macOSPath, 0o750); err != nil {
 		t.Fatalf("mkdir bundle: %v", err)
 	}
 	executablePath := filepath.Join(macOSPath, executableName)
-	if err := os.WriteFile(executablePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(executablePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: bundle identity tests need runnable app executable fixtures.
 		t.Fatalf("write executable: %v", err)
 	}
 	info := `<?xml version="1.0" encoding="UTF-8"?>
@@ -579,7 +579,7 @@ func writeApproverBundle(t *testing.T, dir string, bundleID string, executableNa
 </dict>
 </plist>
 `
-	if err := os.WriteFile(filepath.Join(bundlePath, "Contents", "Info.plist"), []byte(info), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(bundlePath, "Contents", "Info.plist"), []byte(info), 0o600); err != nil {
 		t.Fatalf("write Info.plist: %v", err)
 	}
 	return executablePath
