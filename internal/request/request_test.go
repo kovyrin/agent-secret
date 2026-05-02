@@ -206,6 +206,10 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 		{name: "relative cwd", mutate: func(r *ExecRequest) { r.CWD = "project" }, want: ErrInvalidRequest},
 		{name: "relative resolved executable", mutate: func(r *ExecRequest) { r.ResolvedExecutable = "tool" }, want: ErrInvalidRequest},
 		{name: "missing command", mutate: func(r *ExecRequest) { r.Command = nil }, want: ErrInvalidCommand},
+		{name: "session socket delivery", mutate: func(r *ExecRequest) {
+			r.DeliveryMode = DeliverySessionSocket
+			r.MaxReads = 1
+		}, want: ErrInvalidDeliveryMode},
 		{name: "tampered ref metadata", mutate: func(r *ExecRequest) { r.Secrets[0].Ref.Field = "other" }, want: ErrInvalidReference},
 		{name: "duplicate alias", mutate: func(r *ExecRequest) {
 			r.Secrets = append(r.Secrets, r.Secrets[0])
