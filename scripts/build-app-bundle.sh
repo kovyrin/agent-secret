@@ -17,6 +17,14 @@ USAGE
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
+
+if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
+  if command -v mise >/dev/null 2>&1; then
+    export AGENT_SECRET_IN_MISE=1
+    exec mise exec -- "$0" "$@"
+  fi
+fi
+
 output_dir="$project_root/dist"
 version="${AGENT_SECRET_VERSION:-0.1.0}"
 

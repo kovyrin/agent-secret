@@ -40,7 +40,7 @@ swiftlint lint --strict --no-cache
 
 [tasks."lint:shell"]
 description = "Run shell syntax, style, and formatting checks"
-run = "shellcheck scripts/*.sh approver/scripts/*.sh && AGENT_SECRET_IN_MISE=1 scripts/check-format.sh shell"
+run = "shellcheck install.sh uninstall.sh scripts/*.sh approver/scripts/*.sh && AGENT_SECRET_IN_MISE=1 scripts/check-format.sh shell"
 
 [tasks."lint:toml"]
 description = "Run TOML formatting checks"
