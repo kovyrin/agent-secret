@@ -68,6 +68,39 @@ func (m *mockResolver) Calls() []string {
 	return slices.Clone(m.calls)
 }
 
+type cancelObservingResolver struct {
+	failRef      string
+	failErr      error
+	slowRef      string
+	slowStarted  chan struct{}
+	slowCanceled chan struct{}
+}
+
+func (r *cancelObservingResolver) Resolve(ctx context.Context, ref string, _ string) (string, error) {
+	switch ref {
+	case r.failRef:
+		select {
+		case <-r.slowStarted:
+			return "", r.failErr
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(time.Second):
+			return "", errors.New("slow resolver did not start")
+		}
+	case r.slowRef:
+		close(r.slowStarted)
+		select {
+		case <-ctx.Done():
+			close(r.slowCanceled)
+			return "", ctx.Err()
+		case <-time.After(time.Second):
+			return "", errors.New("slow resolver was not canceled")
+		}
+	default:
+		return canarySecretValue, nil
+	}
+}
+
 type failingSecretCache struct {
 	err           error
 	failPuts      int
@@ -350,6 +383,52 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 	assertAuditEventsValueFree(t, events)
 	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
 		t.Fatalf("request should not become active after failed fetch, got %v", err)
+	}
+}
+
+func TestBrokerCancelsOutstandingFetchesAfterFirstFailure(t *testing.T) {
+	t.Parallel()
+
+	failRef := "op://Example/Item/a_fail"
+	slowRef := "op://Example/Item/z_slow"
+	failErr := errors.New("unreadable secret")
+	resolver := &cancelObservingResolver{
+		failRef:      failRef,
+		failErr:      failErr,
+		slowRef:      slowRef,
+		slowStarted:  make(chan struct{}),
+		slowCanceled: make(chan struct{}),
+	}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver:   &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver:   resolver,
+		Audit:      aud,
+		FetchLimit: 2,
+	})
+
+	_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "FAIL", Ref: failRef},
+		{Alias: "SLOW", Ref: slowRef},
+	}))
+	if !errors.Is(err, failErr) {
+		t.Fatalf("expected failing ref error, got %v", err)
+	}
+	receiveBrokerSignal(t, resolver.slowCanceled, "slow resolver did not observe cancellation")
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSecretFetchFailed,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	failure := events[len(events)-1]
+	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failRef {
+		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
 	}
 }
 
@@ -759,6 +838,16 @@ func containsAuditEvent(events []audit.Event, eventType audit.EventType) bool {
 		}
 	}
 	return false
+}
+
+func receiveBrokerSignal(t *testing.T, ch <-chan struct{}, message string) {
+	t.Helper()
+
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal(message)
+	}
 }
 
 func auditEventTypes(events []audit.Event) []audit.EventType {
