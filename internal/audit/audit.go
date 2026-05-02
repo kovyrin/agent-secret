@@ -62,6 +62,9 @@ type Event struct {
 	ExitCode           *int                 `json:"exit_code,omitempty"`
 	Signal             string               `json:"signal,omitempty"`
 	ErrorCode          string               `json:"error_code,omitempty"`
+	RequesterPID       *int                 `json:"requester_pid,omitempty"`
+	RequesterUID       *int                 `json:"requester_uid,omitempty"`
+	RequesterPath      string               `json:"requester_path,omitempty"`
 	RemainingTTLMillis *int64               `json:"remaining_ttl_ms,omitempty"`
 	RemainingUses      *int                 `json:"remaining_uses,omitempty"`
 	ForceRefresh       bool                 `json:"force_refresh,omitempty"`

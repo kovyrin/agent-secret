@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -111,7 +112,11 @@ func (s *Server) Serve(ctx context.Context, listener *net.UnixListener) error {
 }
 
 func (s *Server) Stop(ctx context.Context) {
-	s.broker.Stop(ctx)
+	s.stopWithAudit(ctx, audit.Event{Type: audit.EventDaemonStop})
+}
+
+func (s *Server) stopWithAudit(ctx context.Context, event audit.Event) {
+	s.broker.stopWithAudit(ctx, event)
 	s.stopOnce.Do(func() { close(s.stop) })
 }
 
@@ -142,12 +147,18 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		case TypeDaemonStatus:
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
 		case TypeDaemonStop:
-			if err := s.validateTrustedClientPeer(conn); err != nil {
+			peer, err := s.peerInfo(conn)
+			if err != nil {
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
+				continue
+			}
+			if err := s.execValidator.ValidateExecPeer(peer); err != nil {
+				s.broker.recordDaemonStopAttempt(ctx, daemonStopAuditEvent(peer, err))
 				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 				continue
 			}
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
-			s.Stop(ctx)
+			s.stopWithAudit(ctx, daemonStopAuditEvent(peer, nil))
 			return
 		case TypeApprovalPending:
 			if s.approvals == nil {
@@ -288,6 +299,21 @@ func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 		return provider.Info(conn)
 	}
 	return peercred.Inspect(conn)
+}
+
+func daemonStopAuditEvent(peer peercred.Info, err error) audit.Event {
+	pid := peer.PID
+	uid := peer.UID
+	event := audit.Event{
+		Type:          audit.EventDaemonStop,
+		RequesterPID:  &pid,
+		RequesterUID:  &uid,
+		RequesterPath: peer.ExecutablePath,
+	}
+	if err != nil {
+		event.ErrorCode = codeForError(err)
+	}
+	return event
 }
 
 func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
