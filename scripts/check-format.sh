@@ -29,6 +29,11 @@ collect_go_files() {
 }
 
 collect_shell_files() {
+  for file in install.sh uninstall.sh; do
+    [ -f "$file" ] || continue
+    printf '%s\n' "$file"
+  done
+
   local dir=""
   for dir in scripts approver/scripts; do
     [ -d "$dir" ] || continue

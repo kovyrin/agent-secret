@@ -32,12 +32,16 @@ do {
     } else {
         AppKitApprovalPresenter()
     }
-    let client: ApprovalDaemonClient = if let socketPath: String = try value(for: "--socket", in: kArguments) {
-        try SocketDaemonClient(socketPath: socketPath)
+    let client: ApprovalDaemonClient
+    if let socketPath: String = try value(for: "--socket", in: kArguments) {
+        client = try SocketDaemonClient(socketPath: socketPath)
     } else if hasMockRequest(kArguments) {
-        try MockDaemonClient(request: requestFromArguments(kArguments))
+        client = try MockDaemonClient(request: requestFromArguments(kArguments))
     } else {
-        throw ApproverAppError.missingSocket
+        MainActor.assumeIsolated {
+            runSetupDialog()
+        }
+        exit(0)
     }
     let controller = ApprovalController(client: client, presenter: presenter)
     let decision: ApprovalDecision = try controller.run()

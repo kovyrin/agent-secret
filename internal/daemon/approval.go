@@ -257,7 +257,12 @@ func (l ProcessApproverLauncher) executablePath() (string, error) {
 		return defaultApproverPath()
 	}
 	if filepath.Ext(l.AppPath) == ".app" {
-		return filepath.Join(l.AppPath, "Contents", "MacOS", "agent-secret-approver"), nil
+		for _, candidate := range approverExecutablesInApp(l.AppPath) {
+			if executableExists(candidate) {
+				return candidate, nil
+			}
+		}
+		return approverExecutablesInApp(l.AppPath)[0], nil
 	}
 	return l.AppPath, nil
 }
@@ -397,9 +402,7 @@ func defaultApproverPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: get executable path: %w", ErrApproverLaunchFailed, err)
 	}
-	candidates := []string{
-		filepath.Join(filepath.Dir(exe), "agent-secret-approver"),
-	}
+	candidates := approverCandidatesForExecutable(exe)
 	if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates, filepath.Join(
 			home,
@@ -411,9 +414,54 @@ func defaultApproverPath() (string, error) {
 		))
 	}
 	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+		if executableExists(candidate) {
 			return candidate, nil
 		}
 	}
 	return candidates[0], nil
+}
+
+func approverCandidatesForExecutable(executable string) []string {
+	executables := []string{executable}
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil && resolved != executable {
+		executables = append(executables, resolved)
+	}
+
+	candidates := make([]string, 0, len(executables)*3)
+	seen := make(map[string]struct{})
+	for _, candidate := range executables {
+		for _, path := range []string{
+			filepath.Join(filepath.Dir(candidate), "agent-secret-approver"),
+			filepath.Clean(filepath.Join(filepath.Dir(candidate), "..", "..", "MacOS", "Agent Secret")),
+			filepath.Clean(filepath.Join(
+				filepath.Dir(candidate),
+				"..",
+				"..",
+				"..",
+				"..",
+				"..",
+				"MacOS",
+				"Agent Secret",
+			)),
+		} {
+			if _, ok := seen[path]; ok {
+				continue
+			}
+			candidates = append(candidates, path)
+			seen[path] = struct{}{}
+		}
+	}
+	return candidates
+}
+
+func approverExecutablesInApp(appPath string) []string {
+	return []string{
+		filepath.Join(appPath, "Contents", "MacOS", "Agent Secret"),
+		filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver"),
+	}
+}
+
+func executableExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }

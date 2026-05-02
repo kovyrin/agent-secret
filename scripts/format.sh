@@ -32,6 +32,12 @@ collect_files() {
     go_files+=("$path")
   done < <(find "$root" -name "*.go" -not -path "*/.git/*" -not -path "*/vendor/*" | sort)
 
+  local file=""
+  for file in install.sh uninstall.sh; do
+    [ -f "$file" ] || continue
+    shell_files+=("$file")
+  done
+
   local dir=""
   for dir in scripts approver/scripts; do
     [ -d "$dir" ] || continue

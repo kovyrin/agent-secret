@@ -13,7 +13,9 @@ This repository is designed as a standalone open-source project.
 
 Planning scaffold, research spikes, Epic 3 core Go packages, the Epic 4
 CLI/daemon/exec path, and the Epic 5 native approver socket integration are in
-place. Session/socket secret reads are next.
+place. The macOS app bundle, development installer, local DMG builder,
+unattended install/uninstall scripts, and optional release signing hooks are in
+place on the distribution PR. Session/socket secret reads are next.
 
 ## Current Documents
 
@@ -40,7 +42,7 @@ agent-secret/
   cmd/agent-secret/              # Go CLI
   cmd/agent-secretd/             # Go daemon
   internal/                      # Go broker, policy, socket, audit packages
-  approver/                      # Swift macOS approval helper
+  approver/                      # Swift macOS approval/setup app
   docs/                          # Product, architecture, and implementation docs
 ```
 
@@ -66,7 +68,8 @@ go test ./...
 go test -tags integration ./...
 go build ./cmd/agent-secret ./cmd/agent-secretd
 cd approver && swift test
-cd approver && ./scripts/build-app.sh
+scripts/build-app-bundle.sh
+scripts/build-release.sh v0.0.0-dev
 swift run agent-secret-approver-smoke
 ```
 
@@ -108,6 +111,69 @@ mise run test:race
 mise run test:coverage
 ```
 
+## Install From A Release
+
+The intended macOS install shape is one app bundle:
+
+```text
+/Applications/Agent Secret.app
+  Contents/MacOS/Agent Secret
+  Contents/Library/Helpers/AgentSecretDaemon.app
+  Contents/Resources/bin/agent-secret
+  Contents/Resources/skills/agent-secret
+```
+
+The command-line entry point is a user-level symlink:
+
+```text
+~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+```
+
+The bundled coding-agent skill is installed as a user-level symlink:
+
+```text
+~/.agents/skills/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
+```
+
+Human install flow:
+
+1. Download `Agent-Secret-vX.Y.Z-macos-arm64.dmg` from GitHub Releases.
+2. Open the DMG and drag `Agent Secret.app` into `/Applications`.
+3. Open `Agent Secret.app`.
+4. Click `Install Command Line Tool`.
+5. Run:
+
+   ```bash
+   agent-secret doctor
+   ```
+
+Unattended install and upgrade use the same script:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+```
+
+Useful installer environment variables:
+
+```bash
+AGENT_SECRET_VERSION=v0.3.1
+AGENT_SECRET_APP_DIR="$HOME/Applications"
+AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
+AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
+```
+
+Unattended uninstall:
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
+```
+
+By default uninstall removes the app, CLI symlink, skill symlink, and
+application support state, but leaves `~/Library/Logs/agent-secret` audit logs
+in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
+
 ## Development Install
 
 To use the current development build from any project on the same machine:
@@ -118,24 +184,75 @@ mise dev:install
 
 By default this installs:
 
-- `agent-secret`, `agent-secretd`, and an `agent-secret-approver` shim into
-  `~/.local/bin`.
-- `AgentSecretDaemon.app` and `AgentSecretApprover.app` into
-  `~/Applications`.
+- `~/Applications/Agent Secret.app`.
+- `~/.local/bin/agent-secret` as a symlink into the app bundle.
+- `~/.agents/skills/agent-secret` as a symlink to the bundled Agent Secret
+  skill.
 
 Override the install locations with `--bin-dir`, `--app-dir`,
 `AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
-one-off flags, run `./scripts/dev-install.sh` directly.
+one-off flags, run `./scripts/dev-install.sh` directly. The dev installer also
+removes the old split-app development artifacts if they are present and repairs
+the command path even when it was left behind as an older regular binary.
 
 By default, `agent-secret` uses the personal 1Password sign-in address
 `my.1password.com`. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` in the
 shell that will run `agent-secret exec` only when you want to force a specific
 account; the daemon inherits that value when it auto-starts. Project config can
 also set `account` globally, per profile, or per secret, and those config values
-take precedence for the affected secret refs.
-On macOS, `agent-secret` starts the daemon through `AgentSecretDaemon.app` so
-1Password sees the SDK caller as Agent Secret instead of the terminal or agent
-desktop app that launched the CLI.
+take precedence for the affected secret refs. On macOS, `agent-secret` starts
+the daemon through the nested `AgentSecretDaemon.app` inside `Agent Secret.app`
+so 1Password sees the SDK caller as Agent Secret instead of the terminal or
+agent desktop app that launched the CLI.
+
+Local release artifact build:
+
+```bash
+scripts/build-release.sh v0.0.0-dev
+```
+
+That produces a DMG and `checksums.txt` in `dist/`.
+Tag pushes matching `v*` build the same artifacts in CI and attach them to a
+draft GitHub Release. Local and CI builds are ad-hoc signed by default.
+
+Developer ID signing and notarization are opt-in release settings:
+
+```bash
+AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
+AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
+AGENT_SECRET_NOTARIZE=1
+AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
+AGENT_SECRET_NOTARY_KEY_ID=KEYID
+AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
+scripts/build-release.sh v0.3.1
+```
+
+`AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is
+only attempted when `AGENT_SECRET_NOTARIZE=1`; without Apple Developer ID and
+App Store Connect API key credentials, release artifacts remain ad-hoc signed.
+
+For this repository's maintainer releases, the current Developer ID identity is:
+
+```text
+Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)
+```
+
+GitHub release signing also needs the Developer ID certificate exported from
+Keychain Access as a password-protected `.p12` and saved as secrets:
+
+```bash
+identity="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
+base64 -i AgentSecretDeveloperID.p12 | gh secret set AGENT_SECRET_CODESIGN_CERT_P12_BASE64
+gh secret set AGENT_SECRET_CODESIGN_CERT_PASSWORD --body "$P12_PASSWORD"
+gh secret set AGENT_SECRET_CODESIGN_IDENTITY --body "$identity"
+gh secret set AGENT_SECRET_NOTARIZE --body "1"
+gh secret set AGENT_SECRET_NOTARY_KEY < AuthKey_KEYID.p8
+gh secret set AGENT_SECRET_NOTARY_KEY_ID --body "KEYID"
+gh secret set AGENT_SECRET_NOTARY_ISSUER_ID --body "ISSUER_UUID"
+```
+
+The CI release job imports the `.p12` into a temporary keychain before signing
+and deletes that keychain after the release artifact step.
 
 ## Command Usage
 
@@ -203,7 +320,26 @@ agent-secret daemon status
 agent-secret daemon start
 agent-secret daemon stop
 agent-secret doctor
+agent-secret install-cli
+agent-secret skill-install
 ```
+
+`agent-secret install-cli` installs or repairs the `agent-secret` symlink for
+the current user. It refuses to replace an unrelated regular file unless
+`--force` is passed.
+
+`agent-secret skill-install` installs or repairs the bundled coding-agent skill
+for the current user:
+
+```bash
+agent-secret skill-install
+agent-secret skill-install --skills-dir "$HOME/.agents/skills"
+agent-secret skill-install --force
+```
+
+The skill covers general Agent Secret usage, profiles, env files, safe
+verification, and migration from direct 1Password CLI usage. It is bundled in
+the app so upgrades keep the installed skill in sync with the installed CLI.
 
 ## Project Profiles
 

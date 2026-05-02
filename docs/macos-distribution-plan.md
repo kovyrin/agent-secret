@@ -40,12 +40,19 @@ The product should feel like one app:
   Contents/Library/Helpers/AgentSecretDaemon.app
     Contents/MacOS/Agent Secret
   Contents/Resources/bin/agent-secret
+  Contents/Resources/skills/agent-secret
 ```
 
 The CLI shim is a symlink:
 
 ```text
 ~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+```
+
+The bundled coding-agent skill is also a symlink:
+
+```text
+~/.agents/skills/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
 ```
 
 The app bundle is the version boundary. Updating `Agent Secret.app` updates the
@@ -65,6 +72,12 @@ approval UI, daemon, and CLI together.
    ```bash
    agent-secret doctor
    ```
+
+The app or CLI can also install the bundled coding-agent skill:
+
+```bash
+agent-secret skill-install
+```
 
 ### Unattended Install
 
@@ -92,7 +105,11 @@ Useful installer options:
 AGENT_SECRET_VERSION=v0.3.1 install.sh
 AGENT_SECRET_APP_DIR="$HOME/Applications" install.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" install.sh
+AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" install.sh
 ```
+
+For local smoke tests, `AGENT_SECRET_DMG` and
+`AGENT_SECRET_CHECKSUMS_FILE` can point at a locally built artifact.
 
 ### Upgrade
 
@@ -116,6 +133,7 @@ Manual uninstall:
 ```bash
 agent-secret daemon stop || true
 rm -f ~/.local/bin/agent-secret
+rm -f ~/.agents/skills/agent-secret
 rm -rf "/Applications/Agent Secret.app"
 rm -rf "$HOME/Library/Application Support/agent-secret"
 ```
@@ -132,16 +150,21 @@ The uninstall script should:
 1. Stop the per-user daemon if it is running.
 2. Remove the Agent Secret CLI symlink if it points at an Agent Secret app.
 3. Remove `Agent Secret.app` from the configured app directory.
-4. Remove `~/Library/Application Support/agent-secret`.
-5. Leave audit logs in place unless explicitly requested.
+4. Remove the Agent Secret skill symlink if it points at the app bundle.
+5. Remove `~/Library/Application Support/agent-secret`.
+6. Leave audit logs in place unless explicitly requested.
 
 Useful uninstall options:
 
 ```bash
 AGENT_SECRET_APP_DIR="$HOME/Applications" uninstall.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" uninstall.sh
+AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" uninstall.sh
 AGENT_SECRET_REMOVE_AUDIT_LOGS=1 uninstall.sh
 ```
+
+For isolated tests, `AGENT_SECRET_SUPPORT_DIR` and `AGENT_SECRET_AUDIT_DIR`
+override the state/log directories.
 
 Audit logs are durable by design and should require an explicit separate
 removal command:
@@ -184,6 +207,8 @@ reliably in shell.
 - Build the Go CLI to `Contents/Resources/bin/agent-secret`.
 - Build the daemon binary into `AgentSecretDaemon.app`.
 - Place `AgentSecretDaemon.app` in `Contents/Library/Helpers`.
+- Bundle the Agent Secret coding-agent skill in
+  `Contents/Resources/skills/agent-secret`.
 - Keep the daemon as an app, not a raw background binary, so 1Password Desktop
   sees a stable Agent Secret app identity.
 
@@ -240,6 +265,28 @@ Behavior:
 
 The app button should call the same internal implementation.
 
+### Skill Install Command
+
+Add an unattended command for installing the bundled coding-agent skill:
+
+```bash
+agent-secret skill-install
+```
+
+Behavior:
+
+- Create parent directory for the target symlink.
+- Link the bundled skill into `~/.agents/skills/agent-secret`.
+- Replace an existing Agent Secret symlink.
+- Refuse to overwrite an unrelated regular file unless `--force` is passed.
+- Default target: `~/.agents/skills/agent-secret`.
+- Support:
+
+  ```bash
+  agent-secret skill-install --skills-dir ~/.agents/skills
+  agent-secret skill-install --force
+  ```
+
 ### Installer Script
 
 Add `install.sh` at repo root.
@@ -252,6 +299,7 @@ Responsibilities:
 - Mount or unpack the artifact.
 - Copy the app bundle.
 - Run the bundled CLI's `install-cli`.
+- Run the bundled CLI's `skill-install`.
 - Run `agent-secret doctor`.
 
 The installer must not depend on Homebrew, 1Password CLI, or repo checkout
@@ -313,13 +361,14 @@ agent-secret install-cli
 
 ### Epic 1: App Bundle Reshape
 
-Status: Not started
+Status: Implemented
 
 Deliverables:
 
 - Build script creates one top-level `Agent Secret.app`.
 - CLI binary is embedded in the app bundle.
 - Daemon helper app is embedded in the app bundle.
+- Agent Secret coding-agent skill is embedded in the app bundle.
 - Existing `mise run dev:install` installs the new app-bundle layout.
 - Existing local `agent-secret exec` smoke still works.
 
@@ -341,26 +390,29 @@ value.
 
 ### Epic 2: CLI Symlink Installation
 
-Status: Not started
+Status: Implemented
 
 Deliverables:
 
 - `agent-secret install-cli`.
+- `agent-secret skill-install`.
 - App setup UI can install the CLI.
 - Help and README document install and upgrade.
 - Tests cover symlink creation, replacement, and refusal to overwrite unrelated
-  files.
+  files for the command and skill installers.
 
 Acceptance checks:
 
 ```bash
 agent-secret install-cli --bin-dir "$TMPDIR/agent-secret-bin"
 "$TMPDIR/agent-secret-bin/agent-secret" doctor
+agent-secret skill-install --skills-dir "$TMPDIR/agent-secret-skills"
+test -f "$TMPDIR/agent-secret-skills/agent-secret/SKILL.md"
 ```
 
 ### Epic 3: Release Artifact Builder
 
-Status: Not started
+Status: Implemented for unsigned/ad-hoc artifacts
 
 Deliverables:
 
@@ -379,26 +431,71 @@ hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
 
 ### Epic 4: Signed and Notarized Releases
 
-Status: Not started
+Status: Signing hooks implemented; full verification blocked on Developer ID
+certificate and notarization secrets
 
 Deliverables:
 
-- Developer ID signing in release CI.
-- Notarization in release CI using App Store Connect API key credentials.
-- Stapled artifact.
-- Gatekeeper verification documented and automated where possible.
+- Optional Developer ID signing in the app bundle and release artifact builder.
+- Optional notarization using App Store Connect API key credentials.
+- Stapled artifact when `AGENT_SECRET_NOTARIZE=1` is used.
+- Gatekeeper verification documented for signed/notarized releases.
+
+Release signing environment:
+
+```bash
+AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
+AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
+AGENT_SECRET_NOTARIZE=1
+AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
+AGENT_SECRET_NOTARY_KEY_ID=KEYID
+AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
+```
+
+`AGENT_SECRET_NOTARY_KEY` may also be a path to a `.p8` API key file. Without
+`AGENT_SECRET_CODESIGN_IDENTITY`, builds use ad-hoc signing. Without
+`AGENT_SECRET_NOTARIZE=1`, the release builder does not submit to Apple.
+
+GitHub release signing imports a Developer ID certificate into a temporary
+keychain before building artifacts. Configure these repository secrets:
+
+```text
+AGENT_SECRET_CODESIGN_IDENTITY
+AGENT_SECRET_CODESIGN_CERT_P12_BASE64
+AGENT_SECRET_CODESIGN_CERT_PASSWORD
+AGENT_SECRET_NOTARIZE
+AGENT_SECRET_NOTARY_KEY
+AGENT_SECRET_NOTARY_KEY_ID
+AGENT_SECRET_NOTARY_ISSUER_ID
+```
+
+For maintainer releases from this repository, `AGENT_SECRET_CODESIGN_IDENTITY`
+is currently:
+
+```text
+Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)
+```
+
+`AGENT_SECRET_CODESIGN_CERT_P12_BASE64` is the base64-encoded `.p12` exported
+from Keychain Access. The CI keychain is deleted after the release artifact
+step.
 
 Acceptance checks:
 
 ```bash
+scripts/build-release.sh v0.0.0-dev
 codesign --verify --deep --strict "/Applications/Agent Secret.app"
 spctl --assess --type execute --verbose "/Applications/Agent Secret.app"
 xcrun stapler validate "/Applications/Agent Secret.app"
 ```
 
+Only the ad-hoc release builder path can be verified locally without Apple
+credentials. The Developer ID path must be verified once the certificate and App
+Store Connect API key are available in the release environment.
+
 ### Epic 5: Unattended Installer
 
-Status: Not started
+Status: Implemented
 
 Deliverables:
 
@@ -411,6 +508,7 @@ Deliverables:
   checksum mismatch.
 - Uninstall removes app, shim, and application support state while preserving
   audit logs by default.
+- Install and uninstall manage the Agent Secret skill symlink.
 
 Acceptance checks:
 

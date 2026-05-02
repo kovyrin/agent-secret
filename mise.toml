@@ -40,7 +40,7 @@ swiftlint lint --strict --no-cache
 
 [tasks."lint:shell"]
 description = "Run shell syntax, style, and formatting checks"
-run = "shellcheck scripts/*.sh approver/scripts/*.sh && AGENT_SECRET_IN_MISE=1 scripts/check-format.sh shell"
+run = "shellcheck install.sh uninstall.sh scripts/*.sh approver/scripts/*.sh && AGENT_SECRET_IN_MISE=1 scripts/check-format.sh shell"
 
 [tasks."lint:toml"]
 description = "Run TOML formatting checks"
@@ -74,8 +74,5 @@ description = "Run Go tests with coverage floors for internal packages"
 run = "scripts/check-go-coverage.sh"
 
 [tasks.build]
-description = "Build Go commands and the macOS approver app"
-run = """
-go build ./cmd/agent-secret ./cmd/agent-secretd
-cd approver && ./scripts/build-app.sh
-"""
+description = "Build the unified macOS Agent Secret app bundle"
+run = "AGENT_SECRET_IN_MISE=1 scripts/build-app-bundle.sh"

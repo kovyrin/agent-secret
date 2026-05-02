@@ -4,10 +4,15 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
 
 jobs:
   lint-test-build:
@@ -34,3 +39,73 @@ jobs:
 
       - name: Build commands and app bundle
         run: mise run build
+
+  draft-release-artifacts:
+    name: Draft Release Artifacts
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Trust mise config
+        run: mise trust --yes
+
+      - name: Install project dependencies
+        run: mise run setup
+
+      - name: Import Developer ID certificate
+        env:
+          AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
+          AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
+          AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
+        run: |
+          if [ -n "$AGENT_SECRET_CODESIGN_CERT_P12_BASE64" ]; then
+            scripts/import-codesign-certificate.sh
+          else
+            echo "No Developer ID certificate secret configured; skipping keychain import."
+          fi
+
+      - name: Build release artifacts
+        env:
+          AGENT_SECRET_CODESIGN_ENTITLEMENTS: ${{ secrets.AGENT_SECRET_CODESIGN_ENTITLEMENTS }}
+          AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
+          AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
+          AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
+          AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
+        run: scripts/build-release.sh "$GITHUB_REF_NAME"
+
+      - name: Create or update draft release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          artifact="dist/Agent-Secret-${GITHUB_REF_NAME}-macos-$(uname -m).dmg"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$artifact" dist/checksums.txt --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "$artifact" \
+              dist/checksums.txt \
+              --draft \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes "macOS artifacts built from $GITHUB_SHA."
+          fi
+
+      - name: Delete temporary signing keychain
+        if: ${{ always() }}
+        env:
+          AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
+        run: |
+          if [ -f "$AGENT_SECRET_CODESIGN_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$AGENT_SECRET_CODESIGN_KEYCHAIN_PATH"
+          fi
