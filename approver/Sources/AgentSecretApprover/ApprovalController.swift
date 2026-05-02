@@ -20,6 +20,8 @@ public final class ApprovalController {
     }
 
     /// Executes one approval interaction and returns the submitted decision.
+    @preconcurrency
+    @MainActor
     public func run() throws -> ApprovalDecision {
         logger.record("approval_request_fetch_started", requestID: nil)
         let request: ApprovalRequest = try client.fetchPendingRequest()
