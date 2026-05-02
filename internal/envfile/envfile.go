@@ -19,6 +19,7 @@ type Entry struct {
 }
 
 func Load(path string) ([]Entry, error) {
+	//nolint:gosec // G304: env-file path is an explicit local user input for this parser.
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open env file %q: %w", path, err)

@@ -52,15 +52,10 @@ linters:
   settings:
     gosec:
       excludes:
-        # This tool intentionally launches approved commands and app bundles.
-        - G204
         # Private directories need executable bits; test scripts need executable bits.
         - G301
         - G302
         - G306
-        # Paths are validated by caller-specific policy and tests, not blanket taint rules.
-        - G304
-        - G703
         # Queue promotion is detached from request cancellation by design.
         - G118
     revive:

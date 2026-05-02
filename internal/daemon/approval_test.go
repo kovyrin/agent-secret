@@ -479,6 +479,7 @@ func readFixture(t *testing.T, name string) []byte {
 		"Fixtures",
 		name,
 	)
+	//nolint:gosec // G304: test fixture path is derived from runtime.Caller within this repository.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)

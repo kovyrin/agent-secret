@@ -37,6 +37,7 @@ func ListenUnix(path string) (*net.UnixListener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen on daemon socket: %w", err)
 	}
+	//nolint:gosec // G703: path is the Unix socket just created after directory validation.
 	if err := os.Chmod(path, 0o600); err != nil {
 		_ = listener.Close()
 		return nil, fmt.Errorf("secure daemon socket: %w", err)
@@ -53,9 +54,11 @@ func prepareSocketDirectory(path string) error {
 }
 
 func prepareDefaultSocketDirectory(dir string) error {
+	//nolint:gosec // G703: dir is the managed default socket directory under Application Support.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
+	//nolint:gosec // G703: only the managed default socket directory is chmodded.
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("secure socket directory: %w", err)
 	}
@@ -63,6 +66,7 @@ func prepareDefaultSocketDirectory(dir string) error {
 }
 
 func prepareCustomSocketDirectory(dir string) error {
+	//nolint:gosec // G703: custom mkdir creates missing private parents but existing parents are validated, not chmodded.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
@@ -70,6 +74,7 @@ func prepareCustomSocketDirectory(dir string) error {
 }
 
 func rejectInsecureSocketDirectory(dir string) error {
+	//nolint:gosec // G703: stat is required to validate the custom socket parent before use.
 	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("stat socket directory: %w", err)
@@ -123,6 +128,7 @@ func WaitUntilReady(ctx context.Context, path string, interval time.Duration) er
 }
 
 func cleanupStaleSocket(path string) error {
+	//nolint:gosec // G703: lstat checks whether the configured socket path is a stale Unix socket before removal.
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -141,6 +147,7 @@ func cleanupStaleSocket(path string) error {
 		_ = conn.Close()
 		return fmt.Errorf("daemon already listening on %s", path)
 	}
+	//nolint:gosec // G703: removal is limited to stale Unix socket paths after lstat and failed live-daemon dial.
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove stale daemon socket: %w", err)
 	}

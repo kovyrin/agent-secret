@@ -64,6 +64,7 @@ func TestOpenDefaultCreatesPrivateJSONLAuditLog(t *testing.T) {
 		t.Fatalf("audit file mode = %s, want 0600", got)
 	}
 
+	//nolint:gosec // G304: test reads the audit file path created under the test HOME.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read audit log: %v", err)

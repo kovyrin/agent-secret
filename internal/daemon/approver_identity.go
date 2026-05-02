@@ -114,6 +114,7 @@ func appBundleForExecutable(path string) (string, error) {
 }
 
 func plistString(path string, key string) (string, error) {
+	//nolint:gosec // G304: path is the Info.plist inside the canonicalized .app bundle under validation.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("%w: read %s: %w", ErrApproverIdentity, path, err)
@@ -153,9 +154,11 @@ func plistString(path string, key string) (string, error) {
 func verifyCodeSignature(bundlePath string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	//nolint:gosec // G204: codesign path is fixed and bundlePath is canonicalized before signature verification.
 	if err := exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", bundlePath).Run(); err != nil {
 		return "", fmt.Errorf("%w: verify code signature for %s: %w", ErrApproverIdentity, bundlePath, err)
 	}
+	//nolint:gosec // G204: codesign path is fixed and bundlePath is canonicalized before signature inspection.
 	output, err := exec.CommandContext(ctx, "/usr/bin/codesign", "-dv", "--verbose=4", bundlePath).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%w: inspect code signature for %s: %w", ErrApproverIdentity, bundlePath, err)

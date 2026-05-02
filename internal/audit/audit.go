@@ -181,6 +181,7 @@ func openPath(path string, now func() time.Time) (*Writer, error) {
 		return nil, err
 	}
 
+	//nolint:gosec // G304: audit path is daemon-owned; openPath rejects insecure existing files before and after creation.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open audit log: %w", err)

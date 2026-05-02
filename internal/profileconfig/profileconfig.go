@@ -113,6 +113,7 @@ func Load(opts LoadOptions) (Profile, error) {
 		return Profile{}, err
 	}
 
+	//nolint:gosec // G304: config path is selected from explicit project config discovery and parsed as configuration only.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Profile{}, fmt.Errorf("read profile config %s: %w", path, err)
