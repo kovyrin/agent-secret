@@ -91,11 +91,18 @@ final class SocketDaemonClientTests: XCTestCase {
         )
     }
 
-    private static func errorResponse() -> Data {
-        Data(
-            """
-            {"payload":{"code":"stale_approval","message":"stale approval response"},"type":"error","version":1}
-            """.utf8
+    private static func errorResponse(
+        code: String = "stale_approval",
+        message: String = "stale approval response"
+    ) throws -> Data {
+        try encode(
+            DaemonEnvelope(
+                nonce: nil,
+                payload: DaemonErrorPayload(code: code, message: message),
+                requestID: nil,
+                type: "error",
+                version: expectedProtocolVersion
+            )
         )
     }
 
@@ -252,8 +259,8 @@ final class SocketDaemonClientTests: XCTestCase {
         XCTAssertFalse(written.contains(Self.secretCanary))
     }
 
-    func testReportsDaemonErrors() {
-        let client = SocketDaemonClient(transport: MemoryLineTransport(reads: [Self.errorResponse()]))
+    func testReportsDaemonErrors() throws {
+        let client = try SocketDaemonClient(transport: MemoryLineTransport(reads: [Self.errorResponse()]))
 
         XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
             XCTAssertEqual(
