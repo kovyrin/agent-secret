@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/envfile"
+	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -29,15 +30,17 @@ const (
 	KindHelp         Kind = "help"
 	KindExec         Kind = "exec"
 	KindDoctor       Kind = "doctor"
+	KindInstallCLI   Kind = "install_cli"
 	KindDaemonStart  Kind = "daemon_start"
 	KindDaemonStop   Kind = "daemon_stop"
 	KindDaemonStatus Kind = "daemon_status"
 )
 
 type Command struct {
-	Kind        Kind
-	ExecRequest request.ExecRequest
-	HelpText    string
+	Kind              Kind
+	ExecRequest       request.ExecRequest
+	InstallCLIOptions install.CLIOptions
+	HelpText          string
 }
 
 type Parser struct {
@@ -65,6 +68,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseDaemon(args[1:])
 	case "doctor":
 		return parseDoctor(args[1:])
+	case "install-cli":
+		return parseInstallCLI(args[1:])
 	default:
 		return Command{}, fmt.Errorf("%w: unknown command %q", ErrInvalidArguments, args[0])
 	}
@@ -85,6 +90,7 @@ Secrets are never printed by agent-secret and are never written to disk. The nor
 Commands:
 
   exec       Run a command with approved secrets injected as environment variables.
+  install-cli Install or repair the agent-secret command symlink for this user.
   daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
   doctor    Print non-secret local diagnostics for setup troubleshooting.
   help      Show this help.
@@ -555,6 +561,29 @@ func parseDoctor(args []string) (Command, error) {
 	return Command{Kind: KindDoctor}, nil
 }
 
+func parseInstallCLI(args []string) (Command, error) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return Command{Kind: KindHelp, HelpText: InstallCLIHelp()}, ErrHelpRequested
+	}
+	fs := flag.NewFlagSet("install-cli", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	binDir := fs.String("bin-dir", "", "command symlink directory")
+	force := fs.Bool("force", false, "replace an existing non-symlink command path")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 0 {
+		return Command{}, fmt.Errorf("%w: install-cli accepts no positional arguments", ErrInvalidArguments)
+	}
+	return Command{
+		Kind: KindInstallCLI,
+		InstallCLIOptions: install.CLIOptions{
+			BinDir: *binDir,
+			Force:  *force,
+		},
+	}, nil
+}
+
 func DaemonHelp() string {
 	return strings.TrimSpace(`
 agent-secret daemon is for troubleshooting the hidden per-user daemon.
@@ -574,6 +603,29 @@ func DoctorHelp() string {
 	return strings.TrimSpace(`
 agent-secret doctor prints non-secret local diagnostics: expected daemon socket path, audit log path, current platform, and whether the daemon responds.
 It never prints secret values or reads 1Password items.
+`)
+}
+
+func InstallCLIHelp() string {
+	return strings.TrimSpace(`
+agent-secret install-cli installs or repairs the command-line entry point for the current user.
+
+Usage:
+
+  agent-secret install-cli [--bin-dir DIR] [--force]
+
+The command creates:
+
+  ~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+
+When run from a development or test build, it links to the executable that is
+currently running. If the command is already a symlink to that executable, it is
+left in place. Existing regular files are not replaced unless --force is passed.
+
+Flags:
+
+  --bin-dir DIR  Directory that should contain the agent-secret command. Defaults to ~/.local/bin.
+  --force        Replace an existing non-symlink file at DIR/agent-secret.
 `)
 }
 

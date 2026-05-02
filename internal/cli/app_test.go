@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -177,6 +178,31 @@ func TestAppDaemonStartAndStopCommands(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout.String()) != "agent-secretd: stopped" {
 		t.Fatalf("daemon stop output = %q", stdout.String())
+	}
+}
+
+func TestAppInstallCLICommand(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var gotOptions install.CLIOptions
+	app := NewApp(daemon.Manager{}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		gotOptions = options
+		return install.CLIResult{
+			LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", "/tmp/bin", "--force"})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if gotOptions.BinDir != "/tmp/bin" || !gotOptions.Force {
+		t.Fatalf("install-cli options = %+v", gotOptions)
+	}
+	if !strings.Contains(stdout.String(), "/tmp/bin/agent-secret") {
+		t.Fatalf("install-cli stdout = %q", stdout.String())
 	}
 }
 

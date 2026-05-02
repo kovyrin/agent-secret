@@ -815,6 +815,7 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 		{args: []string{"daemon", "start"}, want: KindDaemonStart},
 		{args: []string{"daemon", "stop"}, want: KindDaemonStop},
 		{args: []string{"doctor"}, want: KindDoctor},
+		{args: []string{"install-cli"}, want: KindInstallCLI},
 	} {
 		command, err := parser.Parse(tt.args)
 		if err != nil {
@@ -823,6 +824,25 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 		if command.Kind != tt.want {
 			t.Fatalf("Parse(%v) kind = %s, want %s", tt.args, command.Kind, tt.want)
 		}
+	}
+}
+
+func TestParseInstallCLIOptions(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser(time.Now)
+	command, err := parser.Parse([]string{"install-cli", "--bin-dir", "/tmp/bin", "--force"})
+	if err != nil {
+		t.Fatalf("Parse install-cli returned error: %v", err)
+	}
+	if command.Kind != KindInstallCLI {
+		t.Fatalf("kind = %s, want %s", command.Kind, KindInstallCLI)
+	}
+	if command.InstallCLIOptions.BinDir != "/tmp/bin" {
+		t.Fatalf("bin dir = %q, want /tmp/bin", command.InstallCLIOptions.BinDir)
+	}
+	if !command.InstallCLIOptions.Force {
+		t.Fatal("force = false, want true")
 	}
 }
 
@@ -838,7 +858,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "exec", "daemon", "doctor", "my.1password.com"},
+			wants: []string{"agent-secret controls", "exec", "install-cli", "daemon", "doctor", "my.1password.com"},
 		},
 		{
 			name:  "exec",
@@ -854,6 +874,11 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 			name:  "doctor",
 			args:  []string{"doctor", "--help"},
 			wants: []string{"non-secret local diagnostics", "1Password"},
+		},
+		{
+			name:  "install-cli",
+			args:  []string{"install-cli", "--help"},
+			wants: []string{"install", "command-line", "--bin-dir", "--force", "Agent Secret.app"},
 		},
 	}
 
