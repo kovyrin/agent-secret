@@ -313,6 +313,29 @@ test_destination_validation_rejects_bad_paths() {
   fi
 }
 
+test_destination_validation_rejects_symlinked_parent_dirs() {
+  local run_dir="$tmp_dir/symlinked-parents"
+  local target="$run_dir/target"
+  local link="$run_dir/link-parent"
+
+  mkdir -p "$target"
+  printf 'keep\n' >"$target/keep.txt"
+  ln -s "$target" "$link"
+
+  if run_installer symlinked-app-parent AGENT_SECRET_APP_DIR="$link/apps"; then
+    fail "installer accepted a symlinked app parent"
+  fi
+  if run_installer symlinked-bin-parent AGENT_SECRET_BIN_DIR="$link/bin"; then
+    fail "installer accepted a symlinked bin parent"
+  fi
+  if run_installer symlinked-skills-parent AGENT_SECRET_SKILLS_DIR="$link/skills"; then
+    fail "installer accepted a symlinked skills parent"
+  fi
+  if [ -e "$target/apps" ] || [ -e "$target/bin" ] || [ -e "$target/skills" ]; then
+    fail "installer followed a symlinked parent directory"
+  fi
+}
+
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
   run_installer unsigned-allowed \
     AGENT_SECRET_INSTALL_DEV_MODE=1 \
@@ -337,6 +360,7 @@ test_wrong_daemon_bundle_id_stops_install
 test_trust_root_overrides_require_dev_mode
 test_destination_overrides_require_guard
 test_destination_validation_rejects_bad_paths
+test_destination_validation_rejects_symlinked_parent_dirs
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 
 echo "test-install: ok"
