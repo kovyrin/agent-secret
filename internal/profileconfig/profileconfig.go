@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/request"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
 const currentVersion = 1

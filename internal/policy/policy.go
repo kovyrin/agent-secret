@@ -3,7 +3,6 @@ package policy
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/randid"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretmem"
 )
@@ -439,16 +439,5 @@ func consumesUse(result DeliveryResult) bool {
 }
 
 func (s *Store) randomID(prefix string) (string, error) {
-	return randomID(s.random, prefix)
-}
-
-func randomID(reader io.Reader, prefix string) (string, error) {
-	if reader == nil {
-		reader = rand.Reader
-	}
-	var data [16]byte
-	if _, err := io.ReadFull(reader, data[:]); err != nil {
-		return "", fmt.Errorf("generate random id: %w", err)
-	}
-	return prefix + "_" + hex.EncodeToString(data[:]), nil
+	return randid.Generate(s.random, prefix)
 }
