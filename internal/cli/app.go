@@ -316,7 +316,7 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 		return nil
 	case "command_started":
 		if err := r.client.ReportStarted(ctx, r.requestID, r.nonce, event.ChildPID); err != nil {
-			if isProtocolFailure(err) {
+			if isFatalCommandStartedAuditFailure(err) {
 				return err
 			}
 			_, _ = fmt.Fprintf(
@@ -333,9 +333,30 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 	return nil
 }
 
-func isProtocolFailure(err error) bool {
+func isFatalCommandStartedAuditFailure(err error) bool {
+	if errors.Is(err, daemon.ErrInvalidNonce) ||
+		errors.Is(err, daemon.ErrMalformedEnvelope) ||
+		errors.Is(err, daemon.ErrProtocolType) {
+		return true
+	}
+
 	var protocolErr *daemon.ProtocolError
-	return errors.As(err, &protocolErr)
+	if !errors.As(err, &protocolErr) {
+		return false
+	}
+	switch protocolErr.Code {
+	case "bad_command_started",
+		"bad_envelope",
+		"bad_type",
+		"invalid_nonce",
+		"request_active",
+		"request_expired",
+		"stale_approval",
+		"untrusted_client":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a App) randomID(prefix string) (string, error) {
