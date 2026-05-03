@@ -139,7 +139,7 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 	if err := json.Unmarshal(decisionData, &decision); err != nil {
 		t.Fatalf("decode approval decision fixture: %v", err)
 	}
-	if decision.Decision != "approve_reusable" || decision.ReusableUses == nil || *decision.ReusableUses != 3 {
+	if decision.Decision != ApprovalDecisionApproveReusable || decision.ReusableUses == nil || *decision.ReusableUses != 3 {
 		t.Fatalf("unexpected approval decision: %+v", decision)
 	}
 }
@@ -182,7 +182,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID:    "req_1",
 		Nonce:        "nonce_1",
-		Decision:     "approve_reusable",
+		Decision:     ApprovalDecisionApproveReusable,
 		ReusableUses: &uses,
 	})
 	if err != nil {
@@ -232,12 +232,12 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 		{
 			RequestID: "req_1",
 			Nonce:     "nonce_1",
-			Decision:  "approve_reusable",
+			Decision:  ApprovalDecisionApproveReusable,
 		},
 		{
 			RequestID:    "req_1",
 			Nonce:        "nonce_1",
-			Decision:     "approve_reusable",
+			Decision:     ApprovalDecisionApproveReusable,
 			ReusableUses: &mismatchedUses,
 		},
 	} {
@@ -251,7 +251,7 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID:    "req_1",
 		Nonce:        "nonce_1",
-		Decision:     "approve_reusable",
+		Decision:     ApprovalDecisionApproveReusable,
 		ReusableUses: &uses,
 	})
 	if err != nil {
@@ -293,7 +293,7 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "wrong",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	})
 	if !errors.Is(err, ErrStaleApproval) {
 		t.Fatalf("expected stale approval error, got %v", err)
@@ -301,7 +301,7 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "deny",
+		Decision:  ApprovalDecisionDeny,
 	})
 	if err != nil {
 		t.Fatalf("SubmitDecision deny returned error: %v", err)
@@ -386,7 +386,7 @@ func TestSocketApproverRejectsDecisionFromWrongApproverProcessSignature(t *testi
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	})
 	if !errors.Is(err, ErrApproverPeerMismatch) {
 		t.Fatalf("expected approver peer mismatch, got %v", err)
@@ -433,7 +433,7 @@ func TestSocketApproverFIFOAndQueuedExpiry(t *testing.T) {
 	if err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	}); err != nil {
 		t.Fatalf("SubmitDecision returned error: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	})
 	if !errors.Is(err, ErrNoPendingApproval) {
 		t.Fatalf("SubmitDecision after approver exit = %v, want no pending approval", err)
@@ -593,7 +593,7 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 	if err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_2",
 		Nonce:     "nonce_2",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	}); err != nil {
 		t.Fatalf("SubmitDecision second request returned error: %v", err)
 	}
@@ -638,7 +638,7 @@ func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	})
 	if err != nil {
 		t.Fatalf("SubmitDecision returned error: %v", err)
@@ -707,7 +707,7 @@ func TestSocketApproverSubmitDecisionHonorsContextWhileApproverLaunchIsBlocked(t
 			ApprovalDecisionPayload{
 				RequestID: "req_1",
 				Nonce:     "nonce_1",
-				Decision:  "approve_once",
+				Decision:  ApprovalDecisionApproveOnce,
 			},
 		)
 	}()
@@ -750,7 +750,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "banana",
+		Decision:  ApprovalDecisionKind("banana"),
 	})
 	if !errors.Is(err, ErrMalformedEnvelope) {
 		t.Fatalf("expected malformed decision error, got %v", err)
@@ -758,7 +758,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "timeout",
+		Decision:  ApprovalDecisionTimeout,
 	})
 	if err != nil {
 		t.Fatalf("timeout decision returned error: %v", err)
@@ -771,7 +771,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 func TestSocketApproverTreatsExpiredApprovalAsTimeout(t *testing.T) {
 	t.Parallel()
 
-	if err := submitExpiredDecisionForTest(t, "approve_once"); !errors.Is(err, ErrRequestExpired) {
+	if err := submitExpiredDecisionForTest(t, ApprovalDecisionApproveOnce); !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("ApproveExec error = %v, want expired", err)
 	}
 }
@@ -779,12 +779,12 @@ func TestSocketApproverTreatsExpiredApprovalAsTimeout(t *testing.T) {
 func TestSocketApproverPreservesExpiredDenial(t *testing.T) {
 	t.Parallel()
 
-	if err := submitExpiredDecisionForTest(t, "deny"); !errors.Is(err, ErrApprovalDenied) {
+	if err := submitExpiredDecisionForTest(t, ApprovalDecisionDeny); !errors.Is(err, ErrApprovalDenied) {
 		t.Fatalf("ApproveExec error = %v, want denied", err)
 	}
 }
 
-func submitExpiredDecisionForTest(t *testing.T, decision string) error {
+func submitExpiredDecisionForTest(t *testing.T, decision ApprovalDecisionKind) error {
 	t.Helper()
 
 	exe := currentExecutable(t)

@@ -46,11 +46,20 @@ type ApprovalRequestedSecret struct {
 	Account string `json:"account,omitempty"`
 }
 
+type ApprovalDecisionKind string
+
+const (
+	ApprovalDecisionApproveOnce     ApprovalDecisionKind = "approve_once"
+	ApprovalDecisionApproveReusable ApprovalDecisionKind = "approve_reusable"
+	ApprovalDecisionDeny            ApprovalDecisionKind = "deny"
+	ApprovalDecisionTimeout         ApprovalDecisionKind = "timeout"
+)
+
 type ApprovalDecisionPayload struct {
-	RequestID    string `json:"requestID"`
-	Nonce        string `json:"nonce"`
-	Decision     string `json:"decision"`
-	ReusableUses *int   `json:"reusableUses,omitempty"`
+	RequestID    string               `json:"requestID"`
+	Nonce        string               `json:"nonce"`
+	Decision     ApprovalDecisionKind `json:"decision"`
+	ReusableUses *int                 `json:"reusableUses,omitempty"`
 }
 
 type ApprovalEndpoint interface {
@@ -208,13 +217,13 @@ func (a *SocketApprover) SubmitDecision(
 		return ErrStaleApproval
 	}
 	switch decision.Decision {
-	case "approve_once":
+	case ApprovalDecisionApproveOnce:
 		if !a.now().Before(job.payload.ExpiresAt) {
 			a.complete(job, approvalResult{err: ErrRequestExpired})
 			return nil
 		}
 		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true}})
-	case "approve_reusable":
+	case ApprovalDecisionApproveReusable:
 		if !a.now().Before(job.payload.ExpiresAt) {
 			a.complete(job, approvalResult{err: ErrRequestExpired})
 			return nil
@@ -227,9 +236,9 @@ func (a *SocketApprover) SubmitDecision(
 			Reusable:     true,
 			ReusableUses: job.payload.ReusableUses,
 		}})
-	case "deny":
+	case ApprovalDecisionDeny:
 		a.complete(job, approvalResult{err: ErrApprovalDenied})
-	case "timeout":
+	case ApprovalDecisionTimeout:
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 	default:
 		return fmt.Errorf("%w: invalid approval decision %q", ErrMalformedEnvelope, decision.Decision)

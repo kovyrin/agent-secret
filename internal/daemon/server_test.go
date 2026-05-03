@@ -804,7 +804,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	if err := appClient.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
 		Nonce:     pending.Nonce,
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	}); err != nil {
 		t.Fatalf("SubmitApprovalDecision returned error: %v", err)
 	}
@@ -879,7 +879,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	if err := appClient.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
 		Nonce:     pending.Nonce,
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	}); err != nil {
 		t.Fatalf("SubmitApprovalDecision returned error after protocol read timeout: %v", err)
 	}
@@ -913,7 +913,7 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 	if err := client.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "approve_once",
+		Decision:  ApprovalDecisionApproveOnce,
 	}); !IsProtocolError(err, "approval_unavailable") {
 		t.Fatalf("expected approval unavailable decision error, got %v", err)
 	}
