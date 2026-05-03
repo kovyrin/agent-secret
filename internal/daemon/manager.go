@@ -11,10 +11,11 @@ import (
 )
 
 type Manager struct {
-	SocketPath     string
-	DaemonPath     string
-	DaemonArgs     []string
-	StartupTimeout time.Duration
+	SocketPath      string
+	DaemonPath      string
+	DaemonArgs      []string
+	StartupTimeout  time.Duration
+	ProtocolTimeout time.Duration
 }
 
 func NewManager(socketPath string) (Manager, error) {
@@ -124,7 +125,12 @@ func (m Manager) Stop(ctx context.Context) error {
 }
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
-	return ConnectWithPeerValidator(ctx, m.SocketPath, NewTrustedDaemonValidator(m.trustedDaemonPaths()))
+	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, NewTrustedDaemonValidator(m.trustedDaemonPaths()))
+	if err != nil {
+		return nil, err
+	}
+	client.DefaultTimeout = m.protocolTimeout()
+	return client, nil
 }
 
 func (m Manager) statusBeforeStart(ctx context.Context) error {
@@ -165,6 +171,13 @@ func (m Manager) trustedDaemonPaths() []string {
 		}
 	}
 	return trustedDaemonPathsForPath(daemonPath)
+}
+
+func (m Manager) protocolTimeout() time.Duration {
+	if m.ProtocolTimeout > 0 {
+		return m.ProtocolTimeout
+	}
+	return DefaultClientProtocolTimeout
 }
 
 func (m Manager) stopped(ctx context.Context) bool {

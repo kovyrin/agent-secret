@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
@@ -161,6 +162,37 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 		!strings.Contains(stdout.String(), "native approver: ok") ||
 		!strings.Contains(stdout.String(), "1password desktop integration: ok") {
 		t.Fatalf("doctor output missing diagnostics: %q", stdout.String())
+	}
+}
+
+func TestAppDaemonStatusUsesDefaultProtocolDeadline(t *testing.T) {
+	client, cleanup := startStallingAppDaemon(t)
+	defer cleanup()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(daemon.Manager{
+		SocketPath:      client.SocketPath,
+		DaemonPath:      os.Args[0],
+		ProtocolTimeout: 25 * time.Millisecond,
+		StartupTimeout:  25 * time.Millisecond,
+	}, &stdout, &stderr)
+
+	done := make(chan int, 1)
+	go func() {
+		done <- app.Run(context.Background(), []string{"daemon", "status"})
+	}()
+
+	select {
+	case code := <-done:
+		if code != 1 {
+			t.Fatalf("daemon status exit=%d, want stopped failure; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "agent-secretd: stopped") {
+			t.Fatalf("daemon status stdout = %q", stdout.String())
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("daemon status did not return after default protocol deadline")
 	}
 }
 
@@ -491,5 +523,47 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 		_ = listener.Close()
 		<-done
 		_ = os.RemoveAll(dir)
+	}
+}
+
+func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-stall-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	path := filepath.Join(dir, "d.sock")
+	listener, err := daemon.ListenUnix(path)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		conn, err := listener.AcceptUnix()
+		if err != nil {
+			done <- err
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = fmt.Fscan(conn)
+		<-release
+		done <- nil
+	}()
+
+	return appTestClient{SocketPath: path}, func() {
+		close(release)
+		_ = listener.Close()
+		defer func() { _ = os.RemoveAll(dir) }()
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, net.ErrClosed) {
+				t.Fatalf("stalling app daemon returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("stalling app daemon did not stop")
+		}
 	}
 }
