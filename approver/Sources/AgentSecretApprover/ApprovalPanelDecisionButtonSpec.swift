@@ -9,7 +9,7 @@ import Foundation
         let title: String
         let subtitle: String
         let role: ApprovalPanelDecisionButtonRole
-        let keyboardShortcut: ApprovalPanelKeyboardShortcut?
+        let keyboardShortcut: KeyboardShortcut?
         let isEnabled: Bool
 
         static func makeAll(viewModel: ApprovalRequestViewModel) -> [Self] {

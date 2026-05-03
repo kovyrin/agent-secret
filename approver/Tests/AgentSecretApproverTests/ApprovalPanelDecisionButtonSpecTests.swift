@@ -3,6 +3,8 @@ import Foundation
 import XCTest
 
 #if canImport(SwiftUI)
+    import SwiftUI
+
     final class ApprovalPanelDecisionButtonSpecTests: XCTestCase {
         private static let sampleExpiration: TimeInterval = 1_800_000_000
         private static let viewModelNow: TimeInterval = 1_799_999_880

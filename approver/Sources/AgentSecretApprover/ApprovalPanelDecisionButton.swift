@@ -35,8 +35,8 @@ import Foundation
             .disabled(!spec.isEnabled)
             .opacity(spec.isEnabled ? Metric.enabledButtonOpacity : Metric.disabledButtonOpacity)
 
-            if let keyboardShortcut: ApprovalPanelKeyboardShortcut = spec.keyboardShortcut {
-                button.keyboardShortcut(keyboardShortcut.keyboardShortcut)
+            if let keyboardShortcut = spec.keyboardShortcut {
+                button.keyboardShortcut(keyboardShortcut)
             } else {
                 button
             }
