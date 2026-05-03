@@ -64,18 +64,18 @@ func (g *grantIssuer) issue(
 			return ExecGrant{}, g.requestError(ctx, req, err)
 		}
 	}
-	if err := g.ensureGrantStillActive(ctx, req, grant.ApprovalID, grant.approvalExpiresAt); err != nil {
+	if err := g.ensureGrantStillActive(ctx, req, grant.reusable.approvalID, grant.reusable.expiresAt); err != nil {
 		g.reusable.rollbackGrant(grant)
 		return ExecGrant{}, err
 	}
-	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.approvalExpiresAt)
+	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.reusable.expiresAt)
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
 	if err := g.recordRequiredAudit(ctx, event); err != nil {
 		g.reusable.rollbackGrant(grant)
 		return ExecGrant{}, err
 	}
-	if err := g.ensureGrantStillActive(ctx, req, grant.ApprovalID, grant.approvalExpiresAt); err != nil {
+	if err := g.ensureGrantStillActive(ctx, req, grant.reusable.approvalID, grant.reusable.expiresAt); err != nil {
 		g.reusable.rollbackGrant(grant)
 		return ExecGrant{}, err
 	}
@@ -114,15 +114,18 @@ func (g *grantIssuer) ensureGrantStillActive(
 	return g.reusable.ensureApprovalActive(approvalID, approvalExpiresAt)
 }
 
-func (g *grantIssuer) finishPayloadDelivered(approvalID string, approvalExpiresAt time.Time) error {
-	if err := g.reusable.ensureApprovalActive(approvalID, approvalExpiresAt); err != nil {
+func (g *grantIssuer) finishPayloadDelivered(attempt reusableGrantAttempt) error {
+	if attempt.approvalID == "" {
+		return nil
+	}
+	if err := g.reusable.ensureApprovalActive(attempt.approvalID, attempt.expiresAt); err != nil {
 		return err
 	}
-	return g.reusable.finishPayloadDelivered(approvalID)
+	return g.reusable.finishPayloadDelivered(attempt.approvalID)
 }
 
-func (g *grantIssuer) finishPrePayloadFailure(approvalID string) {
-	g.reusable.finishPrePayloadFailure(approvalID)
+func (g *grantIssuer) finishPrePayloadFailure(attempt reusableGrantAttempt) {
+	g.reusable.finishPrePayloadFailure(attempt.approvalID)
 }
 
 func (g *grantIssuer) clearReusableGrants() {
@@ -184,11 +187,13 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 
 	delivered = true
 	return ExecGrant{
-		Env:                values,
-		SecretAliases:      aliases(req.Secrets),
-		ApprovalID:         approval.ID,
-		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
-		approvalExpiresAt:  approval.ExpiresAt,
+		Env:           values,
+		SecretAliases: aliases(req.Secrets),
+		reusable: reusableGrantAttempt{
+			approvalID: approval.ID,
+			mutationID: reusableMutationID(req.ForceRefresh, approval.ID),
+			expiresAt:  approval.ExpiresAt,
+		},
 	}, nil
 }
 
@@ -292,11 +297,13 @@ func (g *grantIssuer) freshGrant(
 	}
 
 	return ExecGrant{
-		Env:                values,
-		SecretAliases:      aliases(req.Secrets),
-		ApprovalID:         approvalID,
-		reusableMutationID: approvalID,
-		approvalExpiresAt:  approvalExpiresAt,
+		Env:           values,
+		SecretAliases: aliases(req.Secrets),
+		reusable: reusableGrantAttempt{
+			approvalID: approvalID,
+			mutationID: approvalID,
+			expiresAt:  approvalExpiresAt,
+		},
 	}, nil
 }
 

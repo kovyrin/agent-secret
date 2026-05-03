@@ -108,11 +108,11 @@ func (m *reusableGrantManager) rollbackApproval(approvalID string) {
 }
 
 func (m *reusableGrantManager) rollbackGrant(grant ExecGrant) {
-	if grant.reusableMutationID != "" {
-		m.rollbackApproval(grant.reusableMutationID)
+	if grant.reusable.mutationID != "" {
+		m.rollbackApproval(grant.reusable.mutationID)
 		return
 	}
-	m.releaseReservation(grant.ApprovalID)
+	m.releaseReservation(grant.reusable.approvalID)
 }
 
 func (m *reusableGrantManager) releaseReservation(approvalID string) {

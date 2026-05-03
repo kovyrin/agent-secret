@@ -66,12 +66,16 @@ type Broker struct {
 }
 
 type ExecGrant struct {
-	Env                map[string]string
-	SecretAliases      []string
-	ApprovalID         string
-	reusableMutationID string
-	approvalExpiresAt  time.Time
-	deliveryExpiresAt  time.Time
+	Env               map[string]string
+	SecretAliases     []string
+	reusable          reusableGrantAttempt
+	deliveryExpiresAt time.Time
+}
+
+type reusableGrantAttempt struct {
+	approvalID string
+	mutationID string
+	expiresAt  time.Time
 }
 
 type execDelivery struct {
@@ -82,13 +86,12 @@ type execDelivery struct {
 }
 
 type activeExec struct {
-	nonce             string
-	req               request.ExecRequest
-	approvalID        string
-	payloadDelivered  bool
-	started           bool
-	childPID          *int
-	approvalExpiresAt time.Time
+	nonce            string
+	req              request.ExecRequest
+	reusable         reusableGrantAttempt
+	payloadDelivered bool
+	started          bool
+	childPID         *int
 }
 
 type BrokerOptions struct {
@@ -197,10 +200,9 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 
 	b.mu.Lock()
 	b.active[requestID] = &activeExec{
-		nonce:             nonce,
-		req:               req,
-		approvalID:        grant.ApprovalID,
-		approvalExpiresAt: grant.approvalExpiresAt,
+		nonce:    nonce,
+		req:      req,
+		reusable: grant.reusable,
 	}
 	b.mu.Unlock()
 
@@ -247,11 +249,7 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 		b.removeActiveExec(requestID)
 		return ErrDaemonStopped
 	}
-	if active.approvalID == "" {
-		b.markActivePayloadDelivered(requestID)
-		return nil
-	}
-	if err := b.grants.finishPayloadDelivered(active.approvalID, active.approvalExpiresAt); err != nil {
+	if err := b.grants.finishPayloadDelivered(active.reusable); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}
@@ -291,11 +289,11 @@ func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 		delete(b.active, requestID)
 	}
 	b.mu.Unlock()
-	if !ok || active.payloadDelivered || active.approvalID == "" {
+	if !ok || active.payloadDelivered {
 		return
 	}
 
-	b.grants.finishPrePayloadFailure(active.approvalID)
+	b.grants.finishPrePayloadFailure(active.reusable)
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
