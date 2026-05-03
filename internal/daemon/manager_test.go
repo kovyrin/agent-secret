@@ -108,6 +108,39 @@ func waitForStatusFailure(t *testing.T, manager Manager) {
 	t.Fatal("daemon still responded after stop")
 }
 
+func TestManagerStatusUnavailableAcceptsOnlyUnavailableDaemon(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+
+	unavailable, err := manager.statusUnavailable(context.Background())
+	if err != nil {
+		t.Fatalf("statusUnavailable returned error: %v", err)
+	}
+	if !unavailable {
+		t.Fatal("statusUnavailable = false, want true for missing daemon socket")
+	}
+}
+
+func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startFakeExecDaemon(t)
+	defer stop()
+	manager := Manager{
+		SocketPath: path,
+		DaemonPath: writeExecutableAt(t, t.TempDir(), "agent-secretd"),
+	}
+
+	unavailable, err := manager.statusUnavailable(context.Background())
+	if unavailable {
+		t.Fatal("statusUnavailable = true for untrusted daemon peer")
+	}
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("statusUnavailable error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+}
+
 func TestNewManagerIgnoresDaemonPathEnvironmentOverride(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

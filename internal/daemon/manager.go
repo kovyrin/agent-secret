@@ -116,7 +116,11 @@ func (m Manager) Stop(ctx context.Context) error {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if m.stopped(ctx) {
+		unavailable, err := m.statusUnavailable(ctx)
+		if err != nil {
+			return err
+		}
+		if unavailable {
 			return nil
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -180,9 +184,15 @@ func (m Manager) protocolTimeout() time.Duration {
 	return DefaultClientProtocolTimeout
 }
 
-func (m Manager) stopped(ctx context.Context) bool {
+func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 	_, err := m.Status(ctx)
-	return err != nil
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, ErrDaemonUnavailable) {
+		return true, nil
+	}
+	return false, err
 }
 
 func (m Manager) daemonArgs() []string {
