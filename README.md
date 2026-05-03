@@ -86,7 +86,19 @@ cd approver && swift test
 scripts/build-app-bundle.sh
 ```
 
-`mise run test:smoke` runs the non-secret approver smoke executable:
+`mise run test:smoke` runs the non-secret install, uninstall, release
+configuration, release version, release docs, and approver smoke checks:
+
+```bash
+AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
+cd approver && swift run agent-secret-approver-smoke
+```
+
+The approver smoke executable can also be run directly:
 
 ```bash
 swift run agent-secret-approver-smoke
@@ -255,14 +267,24 @@ Local release artifact build:
 scripts/build-release.sh v0.0.0-dev
 ```
 
-That produces a DMG and `checksums.txt` in `dist/`.
-Tag pushes matching `v*` build the same artifacts in CI and attach them to a
-draft GitHub Release. Local and CI builds are ad-hoc signed by default.
+That produces a DMG and `checksums.txt` in `dist/`. Local builds are ad-hoc
+signed unless Developer ID signing and notarization settings are present, which
+makes the local command useful for layout, checksum, and installer smoke checks.
+
+Tag pushes matching `v*` run the GitHub release workflow and attach artifacts
+to a draft GitHub Release. Tag-triggered GitHub releases require production
+signing: CI runs `scripts/check-release-signing-env.sh`, imports the Developer
+ID certificate, and then calls `scripts/build-release.sh "$GITHUB_REF_NAME"
+--require-production-signing`. Missing certificate, Developer ID identity,
+`AGENT_SECRET_NOTARIZE=1`, or notary credentials fail the tag workflow instead
+of publishing ad-hoc artifacts.
+
 The maintainer release checklist is documented in
 [Release Process](docs/release-process.md), and release notes are copied from
 the matching section in [Changelog](CHANGELOG.md).
 
-Developer ID signing and notarization are opt-in release settings:
+Developer ID signing and notarization are optional for local release-candidate
+builds and required for this repository's tag-triggered maintainer releases:
 
 ```bash
 AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
@@ -271,12 +293,14 @@ AGENT_SECRET_NOTARIZE=1
 AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
 AGENT_SECRET_NOTARY_KEY_ID=KEYID
 AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
-scripts/build-release.sh v0.3.1
+scripts/check-release-signing-env.sh
+scripts/build-release.sh v0.3.1 --require-production-signing
 ```
 
 `AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is
 only attempted when `AGENT_SECRET_NOTARIZE=1`; without Apple Developer ID and
-App Store Connect API key credentials, release artifacts remain ad-hoc signed.
+App Store Connect API key credentials, local release artifacts remain ad-hoc
+signed.
 
 For this repository's maintainer releases, the current Developer ID identity is:
 
