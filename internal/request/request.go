@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
 const (
@@ -76,6 +78,7 @@ type ExecRequest struct {
 	Reason             string
 	Command            []string
 	ResolvedExecutable string
+	ExecutableIdentity fileidentity.Identity
 	CWD                string
 	Env                []string `json:"-"`
 	Secrets            []Secret
@@ -121,6 +124,9 @@ func (r ExecRequest) ValidateForDaemon() error {
 	}
 	if err := validateDaemonPath("resolved executable", r.ResolvedExecutable, true); err != nil {
 		return err
+	}
+	if r.ExecutableIdentity.IsZero() {
+		return fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
 	}
 	if len(r.Command) == 0 || r.Command[0] == "" {
 		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
@@ -176,6 +182,10 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	if err != nil {
 		return ExecRequest{}, err
 	}
+	executableIdentity, err := fileidentity.Capture(resolved)
+	if err != nil {
+		return ExecRequest{}, fmt.Errorf("%w: capture executable identity: %w", ErrInvalidCommand, err)
+	}
 
 	secrets, err := parseSecrets(opts.Secrets)
 	if err != nil {
@@ -191,6 +201,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		Reason:             reason,
 		Command:            command,
 		ResolvedExecutable: resolved,
+		ExecutableIdentity: executableIdentity,
 		CWD:                cwd,
 		Env:                env,
 		Secrets:            secrets,

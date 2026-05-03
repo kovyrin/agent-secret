@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretmem"
 )
@@ -58,6 +59,7 @@ type ReuseKey struct {
 	Reason             string
 	Command            []string
 	ResolvedExecutable string
+	ExecutableIdentity fileidentity.Identity
 	CWD                string
 	Secrets            []SecretGrant
 	DeliveryMode       request.DeliveryMode
@@ -335,6 +337,7 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 		Reason:             req.Reason,
 		Command:            slices.Clone(req.Command),
 		ResolvedExecutable: req.ResolvedExecutable,
+		ExecutableIdentity: req.ExecutableIdentity,
 		CWD:                req.CWD,
 		Secrets:            secrets,
 		DeliveryMode:       req.DeliveryMode,
@@ -348,6 +351,7 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 	return k.Reason == other.Reason &&
 		slices.Equal(k.Command, other.Command) &&
 		k.ResolvedExecutable == other.ResolvedExecutable &&
+		k.ExecutableIdentity == other.ExecutableIdentity &&
 		k.CWD == other.CWD &&
 		slices.Equal(k.Secrets, other.Secrets) &&
 		k.DeliveryMode == other.DeliveryMode &&

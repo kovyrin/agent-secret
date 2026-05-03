@@ -127,6 +127,7 @@ func (a App) runExec(ctx context.Context, command Command) int {
 	}
 	result, err := execwrap.Run(ctx, execwrap.Spec{
 		Path:          command.ExecRequest.ResolvedExecutable,
+		PathIdentity:  command.ExecRequest.ExecutableIdentity,
 		Args:          command.ExecRequest.Command[1:],
 		Dir:           command.ExecRequest.CWD,
 		BaseEnv:       command.ExecRequest.Env,

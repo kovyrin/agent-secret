@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -76,6 +77,7 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 		{name: "reason", mutate: func(r *request.ExecRequest) { r.Reason = "different" }},
 		{name: "command shape", mutate: func(r *request.ExecRequest) { r.Command = append(r.Command, "-refresh=false") }},
 		{name: "resolved executable", mutate: func(r *request.ExecRequest) { r.ResolvedExecutable = "/different/tool" }},
+		{name: "executable identity", mutate: func(r *request.ExecRequest) { r.ExecutableIdentity.Inode++ }},
 		{name: "cwd", mutate: func(r *request.ExecRequest) { r.CWD = "/tmp/other" }},
 		{name: "ref", mutate: func(r *request.ExecRequest) { r.Secrets[0].Ref.Raw = "op://Example Vault/Other/token" }},
 		{name: "account", mutate: func(r *request.ExecRequest) { r.Secrets[0].Account = "Fixture" }},
@@ -541,6 +543,7 @@ func testRequest(t *testing.T, now time.Time) request.ExecRequest {
 		Reason:             "Run Terraform plan",
 		Command:            []string{"terraform", "plan"},
 		ResolvedExecutable: "/opt/homebrew/bin/terraform",
+		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
 		CWD:                "/tmp/project",
 		Secrets:            []request.Secret{{Alias: "TOKEN", Ref: ref}},
 		TTL:                2 * time.Minute,

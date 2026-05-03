@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -1116,6 +1117,7 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 		Reason:             "Run Terraform plan",
 		Command:            []string{"terraform", "plan"},
 		ResolvedExecutable: "/opt/homebrew/bin/terraform",
+		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
 		CWD:                "/tmp/project",
 		Secrets:            reqSecrets,
 		TTL:                request.DefaultExecTTL,
