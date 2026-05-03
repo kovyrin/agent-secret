@@ -20,14 +20,10 @@ place on the distribution PR. Session/socket secret reads are next.
 ## Current Documents
 
 - [Changelog](CHANGELOG.md)
-- [Product Requirements](docs/prd.md)
 - [Threat Model](docs/threat-model.md)
-- [Implementation Plan](docs/implementation-plan.md)
 - [Configuration Reference](docs/configuration.md)
-- [macOS Distribution Plan](docs/macos-distribution-plan.md)
 - [Release Process](docs/release-process.md)
 - [Code Layout](docs/code-layout.md)
-- [Epic 2 Spike Notes](docs/epic-2-spikes.md)
 
 ## Project Boundary
 

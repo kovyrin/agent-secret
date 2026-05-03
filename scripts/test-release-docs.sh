@@ -5,7 +5,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 readme="$project_root/README.md"
 release_process="$project_root/docs/release-process.md"
-macos_distribution_plan="$project_root/docs/macos-distribution-plan.md"
 threat_model="$project_root/docs/threat-model.md"
 
 fail() {
@@ -26,14 +25,6 @@ reject_text() {
 
   if grep -F -- "$needle" "$readme" >/dev/null; then
     fail "README.md still contains stale release documentation: $needle"
-  fi
-}
-
-reject_macos_distribution_text() {
-  local needle="$1"
-
-  if grep -F -- "$needle" "$macos_distribution_plan" >/dev/null; then
-    fail "docs/macos-distribution-plan.md still contains stale release documentation: $needle"
   fi
 }
 
@@ -80,9 +71,6 @@ reject_text "Developer ID signing and notarization are opt-in release settings"
 reject_text "Developer ID Application: Example, Inc. (TEAMID)"
 reject_text "raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh"
 reject_text "raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh"
-reject_macos_distribution_text "Developer ID Application: Example, Inc. (TEAMID)"
-reject_macos_distribution_text "raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh"
-reject_macos_distribution_text "raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh"
 require_text "raw.githubusercontent.com/kovyrin/agent-secret"
 require_text "Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
 require_text "\$base_url/\${version}/install.sh"

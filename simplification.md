@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `38,847`.
+Current selected LOC: `35,713`.
 
-Cumulative reduction from baseline: `381` LOC.
+Cumulative reduction from baseline: `3,515` LOC.
 
-Remaining reduction needed: `11,388` LOC.
+Remaining reduction needed: `8,254` LOC.
 
 Measurement command:
 
@@ -148,9 +148,17 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `790638f`.
 - Change: remove historical review report and fake `awk` trust fixture.
 - LOC delta: -572.
+- Verification: `scripts/test-uninstall.sh`, `mise run lint:shell`,
+  `markdownlint`, `git diff --check`, `mise run lint`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: remove superseded planning and distribution history docs.
+- LOC delta: -3,134.
 - Verification: pending.
 
 ## Current Decisions
@@ -163,13 +171,11 @@ Docs:
 
 ## Next Cleanup Pass
 
-Start with documentation and shell-test simplification because those cuts are
-lowest risk and clarify the target shape before production code changes.
+Continue with shell-test and Swift-test simplification, then move into
+production code only after the low-risk fixture cleanup is exhausted.
 
 Initial candidates:
 
-- Remove or archive `docs/release-code-review-round-4-2026-05-03.md` if it is
-  not needed in the product repo.
 - Review `scripts/test-uninstall.sh` and `scripts/test-install.sh` for
   helper-tool path hijack fixtures that exceed the updated threat model.
 - Review Swift UI layout/concurrency tests for cases that pin implementation
