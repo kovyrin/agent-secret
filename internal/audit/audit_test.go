@@ -161,6 +161,47 @@ func TestOpenDefaultRejectsSymlinkAuditDirectoryWithoutChmodTarget(t *testing.T)
 	}
 }
 
+func TestOpenDefaultRejectsSymlinkAuditAncestorWithoutCreatingTargetPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	target := t.TempDir()
+	if err := os.Symlink(target, filepath.Join(home, "Library")); err != nil {
+		t.Fatalf("symlink audit ancestor: %v", err)
+	}
+
+	_, err := OpenDefault(time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "Logs")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink target Logs stat = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "Logs", "agent-secret", "audit.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink target audit log stat = %v, want not exist", err)
+	}
+}
+
+func TestOpenPathRejectsSymlinkAuditAncestorWithoutCreatingTargetPath(t *testing.T) {
+	root := t.TempDir()
+	target := t.TempDir()
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink audit ancestor: %v", err)
+	}
+	path := filepath.Join(link, "agent-secret", "audit.jsonl")
+
+	_, err := openPath(path, time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "agent-secret")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink target audit directory stat = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "agent-secret", "audit.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink target audit log stat = %v, want not exist", err)
+	}
+}
+
 func TestDefaultPathIgnoresEnvironmentOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
