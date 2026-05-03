@@ -299,6 +299,7 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadRequest, err)
 		return ""
 	}
+	req = req.WithReceiptTime(s.broker.now())
 	if err := req.ValidateForDaemon(); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadRequest, err)
 		return ""

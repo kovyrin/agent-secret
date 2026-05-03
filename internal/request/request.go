@@ -164,8 +164,9 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	}
 
 	receivedAt := opts.ReceivedAt
-	if receivedAt.IsZero() {
-		receivedAt = time.Now()
+	expiresAt := time.Time{}
+	if !receivedAt.IsZero() {
+		expiresAt = receivedAt.Add(ttl)
 	}
 
 	cwd, err := normalizeCWD(opts.CWD)
@@ -214,7 +215,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		Secrets:                secrets,
 		TTL:                    ttl,
 		ReceivedAt:             receivedAt,
-		ExpiresAt:              receivedAt.Add(ttl),
+		ExpiresAt:              expiresAt,
 		ReusableUses:           reusableUses,
 		OverrideEnv:            opts.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,

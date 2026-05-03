@@ -144,7 +144,6 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	if b.stopped() {
 		return ExecGrant{}, ErrDaemonStopped
 	}
-	req = req.WithReceiptTime(b.now())
 	if err := b.preflightAudit(ctx); err != nil {
 		return ExecGrant{}, err
 	}

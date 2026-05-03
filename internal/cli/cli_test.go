@@ -43,6 +43,9 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	if req.Command[0] != "terraform" || req.ResolvedExecutable == "" {
 		t.Fatalf("unexpected command resolution: %+v", req.Command)
 	}
+	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
+		t.Fatalf("client request times = received %s expires %s, want daemon-owned zero values", req.ReceivedAt, req.ExpiresAt)
+	}
 }
 
 func TestParseExecBuildsRequestFromProfile(t *testing.T) {

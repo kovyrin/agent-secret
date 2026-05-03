@@ -86,7 +86,7 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	}
 }
 
-func TestServerRebasesExecRequestTimeToDaemonClock(t *testing.T) {
+func TestServerStampsExecRequestTimeWithDaemonClock(t *testing.T) {
 	t.Parallel()
 
 	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
@@ -96,6 +96,7 @@ func TestServerRebasesExecRequestTimeToDaemonClock(t *testing.T) {
 		seen:     make(chan request.ExecRequest, 1),
 	}
 	client, cleanup := startTestServer(t, BrokerOptions{
+		Now:      func() time.Time { return daemonNow },
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
@@ -104,7 +105,8 @@ func TestServerRebasesExecRequestTimeToDaemonClock(t *testing.T) {
 
 	req := testExecRequestAt(t, daemonNow.Add(24*time.Hour), []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.TTL = 10 * time.Minute
-	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+	req.ReceivedAt = time.Time{}
+	req.ExpiresAt = time.Time{}
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}

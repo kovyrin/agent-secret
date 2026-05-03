@@ -68,6 +68,21 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	}
 }
 
+func TestNewExecLeavesReceiptTimesUnsetByDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir)
+
+	req, err := NewExec(baseOptions(dir, "reason"))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
+		t.Fatalf("client request times = received %s expires %s, want unset", req.ReceivedAt, req.ExpiresAt)
+	}
+}
+
 func TestNewExecRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
@@ -256,6 +271,7 @@ func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
 	}
+	req = req.WithReceiptTime(time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
 	req.Secrets[0].Account = "Work"
 	if err := req.ValidateForDaemon(); err != nil {
 		t.Fatalf("ValidateForDaemon returned error: %v", err)
@@ -271,6 +287,7 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
 	}
+	req = req.WithReceiptTime(time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
 	req.Secrets[0].Account = "Work"
 
 	tests := []struct {
@@ -280,6 +297,7 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	}{
 		{name: "unnormalized reason", mutate: func(r *ExecRequest) { r.Reason = " reason " }, want: ErrInvalidReason},
 		{name: "ttl outside bounds", mutate: func(r *ExecRequest) { r.TTL = time.Second }, want: ErrInvalidTTL},
+		{name: "missing receipt time", mutate: func(r *ExecRequest) { r.ReceivedAt = time.Time{} }, want: ErrInvalidRequest},
 		{name: "expiration mismatch", mutate: func(r *ExecRequest) { r.ExpiresAt = r.ExpiresAt.Add(time.Second) }, want: ErrInvalidTTL},
 		{name: "relative cwd", mutate: func(r *ExecRequest) { r.CWD = "project" }, want: ErrInvalidRequest},
 		{name: "relative resolved executable", mutate: func(r *ExecRequest) { r.ResolvedExecutable = "tool" }, want: ErrInvalidRequest},

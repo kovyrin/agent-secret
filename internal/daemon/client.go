@@ -289,8 +289,12 @@ func (c *Client) contextWithDefaultDeadline(
 	now := time.Now()
 	deadline := now.Add(timeout)
 	if messageType == TypeRequestExec {
-		if req, ok := payload.(request.ExecRequest); ok && req.ExpiresAt.After(now) {
-			deadline = req.ExpiresAt.Add(timeout)
+		if req, ok := payload.(request.ExecRequest); ok {
+			if req.ExpiresAt.After(now) {
+				deadline = req.ExpiresAt.Add(timeout)
+			} else if req.ExpiresAt.IsZero() && req.TTL > 0 {
+				deadline = now.Add(req.TTL + timeout)
+			}
 		}
 	}
 	return context.WithDeadline(ctx, deadline)

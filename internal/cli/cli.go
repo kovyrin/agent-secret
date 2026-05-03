@@ -46,15 +46,10 @@ type Command struct {
 	HelpText          string
 }
 
-type Parser struct {
-	now func() time.Time
-}
+type Parser struct{}
 
-func NewParser(now func() time.Time) Parser {
-	if now == nil {
-		now = time.Now
-	}
-	return Parser{now: now}
+func NewParser(_ func() time.Time) Parser {
+	return Parser{}
 }
 
 func (p Parser) Parse(args []string) (Command, error) {
@@ -374,7 +369,6 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		Env:                    childEnv,
 		Secrets:                effectiveSecrets,
 		TTL:                    effectiveTTL,
-		ReceivedAt:             p.now(),
 		OverrideEnv:            *overrideEnv,
 		ForceRefresh:           *forceRefresh,
 		AllowMutableExecutable: *allowMutableExecutable,
