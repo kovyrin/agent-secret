@@ -194,6 +194,8 @@ if [ "$install_dev_mode" != "1" ]; then
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_APP_BUNDLE_ID
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID
   require_dev_mode_for_env AGENT_SECRET_INSTALL_TOOL_DIR
+  require_dev_mode_for_env AGENT_SECRET_DMG
+  require_dev_mode_for_env AGENT_SECRET_CHECKSUMS_FILE
 else
   repo="${AGENT_SECRET_REPO:-$production_repo}"
   github_url="${AGENT_SECRET_GITHUB_URL:-$production_github_url}"
