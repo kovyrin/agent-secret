@@ -212,9 +212,18 @@ The unattended installer verifies the DMG checksum, DMG code signature,
 Developer ID Team ID, Gatekeeper assessment, notarization ticket, mounted app
 bundle ID, daemon helper bundle ID, and bundled CLI signature before copying
 anything into place. Maintainer releases are expected to use Team ID
-`B6L7QLWTZW`. For local unsigned test artifacts only, set
-`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`. For signed but intentionally unstapled
-local artifacts, set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
+`B6L7QLWTZW`. Release trust roots such as the GitHub host, repository, Team ID,
+bundle IDs, unsigned mode, and notarization mode are pinned for production
+installs. Local unsigned or intentionally unstapled artifacts require explicit
+development mode with local files:
+
+```bash
+AGENT_SECRET_INSTALL_DEV_MODE=1 \
+AGENT_SECRET_DMG=./dist/Agent-Secret-v0.3.1-macos-arm64.dmg \
+AGENT_SECRET_CHECKSUMS_FILE=./dist/checksums.txt \
+AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
+./install.sh
+```
 
 Unattended uninstall:
 

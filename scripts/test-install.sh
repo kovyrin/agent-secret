@@ -272,8 +272,25 @@ test_wrong_daemon_bundle_id_stops_install() {
   fi
 }
 
-test_unsigned_override_skips_identity_checks() {
+test_trust_root_overrides_require_dev_mode() {
+  if run_installer expected-team-override AGENT_SECRET_EXPECTED_TEAM_ID=BADTEAM123; then
+    fail "installer accepted expected Team ID override without dev mode"
+  fi
+  if run_installer expected-app-bundle-override \
+    AGENT_SECRET_EXPECTED_APP_BUNDLE_ID=com.example.not-agent-secret; then
+    fail "installer accepted expected app bundle override without dev mode"
+  fi
+  if run_installer github-url-override AGENT_SECRET_GITHUB_URL=https://example.invalid; then
+    fail "installer accepted GitHub URL override without dev mode"
+  fi
+  if run_installer unsigned-without-dev-mode AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1; then
+    fail "installer accepted unsigned override without dev mode"
+  fi
+}
+
+test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
   run_installer unsigned-allowed \
+    AGENT_SECRET_INSTALL_DEV_MODE=1 \
     AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
     AGENT_SECRET_INSTALL_TEST_CODESIGN_STATUS=23 \
     AGENT_SECRET_INSTALL_TEST_SPCTL_STATUS=23 \
@@ -292,6 +309,7 @@ test_identity_failure_stops_install
 test_wrong_team_id_stops_install
 test_wrong_app_bundle_id_stops_install
 test_wrong_daemon_bundle_id_stops_install
-test_unsigned_override_skips_identity_checks
+test_trust_root_overrides_require_dev_mode
+test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 
 echo "test-install: ok"
