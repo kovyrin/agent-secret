@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
 func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
@@ -46,6 +48,9 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	}
 	if req.ResolvedExecutable != bin {
 		t.Fatalf("resolved executable = %q, want %q", req.ResolvedExecutable, bin)
+	}
+	if req.ExecutableIdentity.IsZero() {
+		t.Fatal("executable identity was not captured")
 	}
 	if len(req.Secrets) != 2 || req.Secrets[0].Ref.Raw != req.Secrets[1].Ref.Raw {
 		t.Fatalf("duplicate refs with different aliases should be preserved: %+v", req.Secrets)
@@ -205,6 +210,7 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 		{name: "expiration mismatch", mutate: func(r *ExecRequest) { r.ExpiresAt = r.ExpiresAt.Add(time.Second) }, want: ErrInvalidTTL},
 		{name: "relative cwd", mutate: func(r *ExecRequest) { r.CWD = "project" }, want: ErrInvalidRequest},
 		{name: "relative resolved executable", mutate: func(r *ExecRequest) { r.ResolvedExecutable = "tool" }, want: ErrInvalidRequest},
+		{name: "missing executable identity", mutate: func(r *ExecRequest) { r.ExecutableIdentity = fileidentity.Identity{} }, want: ErrInvalidRequest},
 		{name: "missing command", mutate: func(r *ExecRequest) { r.Command = nil }, want: ErrInvalidCommand},
 		{name: "session socket delivery", mutate: func(r *ExecRequest) {
 			r.DeliveryMode = DeliverySessionSocket

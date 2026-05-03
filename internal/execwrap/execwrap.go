@@ -11,9 +11,12 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
 var ErrEnvironmentConflict = errors.New("approved alias already exists in parent environment")
+var ErrExecutableChanged = errors.New("approved executable changed before spawn")
 
 const terminateGracePeriod = 2 * time.Second
 
@@ -33,6 +36,7 @@ type AuditEvent struct {
 
 type Spec struct {
 	Path          string
+	PathIdentity  fileidentity.Identity
 	Args          []string
 	Dir           string
 	BaseEnv       []string
@@ -53,6 +57,9 @@ type Result struct {
 func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, error) {
 	if spec.Path == "" {
 		return Result{}, errors.New("command path is required")
+	}
+	if err := fileidentity.Verify(spec.Path, spec.PathIdentity); err != nil {
+		return Result{}, fmt.Errorf("%w: %w", ErrExecutableChanged, err)
 	}
 
 	baseEnv := spec.BaseEnv
