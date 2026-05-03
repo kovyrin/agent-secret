@@ -33,7 +33,7 @@ expect_failure() {
 release_env=(
   AGENT_SECRET_CODESIGN_CERT_P12_BASE64=dummy-p12
   AGENT_SECRET_CODESIGN_CERT_PASSWORD=dummy-password
-  "AGENT_SECRET_CODESIGN_IDENTITY=Developer ID Application: Example (TEAMID)"
+  "AGENT_SECRET_CODESIGN_IDENTITY=Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
   AGENT_SECRET_NOTARY_KEY=dummy-key
   AGENT_SECRET_NOTARY_KEY_ID=dummy-key-id
   AGENT_SECRET_NOTARY_ISSUER_ID=dummy-issuer-id
@@ -44,6 +44,9 @@ expect_failure "missing AGENT_SECRET_CODESIGN_CERT_P12_BASE64" \
 
 expect_failure "AGENT_SECRET_NOTARIZE must be 1" \
   env -i "PATH=$test_path" "${release_env[@]}" AGENT_SECRET_NOTARIZE=0 "$check_script"
+
+expect_failure "AGENT_SECRET_CODESIGN_IDENTITY must use Developer ID Team ID B6L7QLWTZW" \
+  env -i "PATH=$test_path" "${release_env[@]}" "AGENT_SECRET_CODESIGN_IDENTITY=Developer ID Application: Example (TEAMID)" AGENT_SECRET_NOTARIZE=1 "$check_script"
 
 env -i "PATH=$test_path" "${release_env[@]}" AGENT_SECRET_NOTARIZE=1 "$check_script"
 
