@@ -67,15 +67,20 @@ type ApproverIdentityPolicy interface {
 }
 
 type ApproverIdentity struct {
-	ExecutablePath string
-	BundlePath     string
-	BundleID       string
-	TeamID         string
+	ExecutablePath  string
+	BundlePath      string
+	BundleID        string
+	TeamID          string
+	ExpectedTeamID  string
+	VerifySignature bool
 }
 
 type ExpectedApprover struct {
-	PID            int
-	ExecutablePath string
+	PID               int
+	ExecutablePath    string
+	ExpectedTeamID    string
+	VerifySignature   bool
+	signatureVerifier codeSignatureVerifier
 }
 
 type SocketApprover struct {
@@ -282,8 +287,11 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 		return ExpectedApprover{}, fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)
 	}
 	expected := ExpectedApprover{
-		PID:            cmd.Process.Pid,
-		ExecutablePath: executable,
+		PID:               cmd.Process.Pid,
+		ExecutablePath:    executable,
+		ExpectedTeamID:    identity.ExpectedTeamID,
+		VerifySignature:   identity.VerifySignature,
+		signatureVerifier: codesignSignatureVerifier{},
 	}
 	if err := cmd.Process.Release(); err != nil {
 		return ExpectedApprover{}, fmt.Errorf("%w: release process: %w", ErrApproverLaunchFailed, err)
@@ -410,6 +418,9 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 		return fmt.Errorf("%w: pid %d != %d", ErrApproverPeerMismatch, got.PID, expected.PID)
 	}
 	if expected.ExecutablePath == "" {
+		if expected.VerifySignature && strings.TrimSpace(expected.ExpectedTeamID) != "" {
+			return fmt.Errorf("%w: executable path is unavailable for signature validation", ErrApproverPeerMismatch)
+		}
 		return nil
 	}
 	expectedPath, err := comparableApproverPath(expected.ExecutablePath)
@@ -422,6 +433,20 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	}
 	if gotPath != expectedPath {
 		return fmt.Errorf("%w: executable %q != %q", ErrApproverPeerMismatch, gotPath, expectedPath)
+	}
+	if expected.VerifySignature {
+		expectedTeamID := strings.TrimSpace(expected.ExpectedTeamID)
+		if expectedTeamID != "" {
+			if err := validatePeerSignature(
+				got,
+				expectedPath,
+				expectedTeamID,
+				expected.signatureVerifier,
+				ErrApproverPeerMismatch,
+			); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
