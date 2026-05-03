@@ -33,4 +33,17 @@ for term in "${private_terms[@]}"; do
   fi
 done
 
+secret_print_examples=(
+  "-- env"
+  "-- printenv"
+  "-- /usr/bin/env"
+)
+
+for pattern in "${secret_print_examples[@]}"; do
+  matches="$(grep -n -F -- "$pattern" "${scan_files[@]}" || true)"
+  if [ -n "$matches" ]; then
+    fail "public docs contain secret-printing exec example '$pattern': $matches"
+  fi
+done
+
 echo "test-public-docs: ok"

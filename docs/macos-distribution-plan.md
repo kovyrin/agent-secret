@@ -420,7 +420,7 @@ agent-secret doctor
 agent-secret exec \
   --reason "Install smoke" \
   --secret TOKEN=op://Example/Item/token \
-  -- env
+  -- sh -c 'test -n "${TOKEN:-}" && printf "TOKEN present\n"'
 ```
 
 The smoke should use a real test-only ref locally and must not print the secret
