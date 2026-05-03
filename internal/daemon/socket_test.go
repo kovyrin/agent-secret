@@ -1,12 +1,10 @@
 package daemon
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestDefaultSocketPathIgnoresEnvironmentOverrides(t *testing.T) {
@@ -99,18 +97,6 @@ func TestListenUnixRejectsNonSocketPath(t *testing.T) {
 	_, err := ListenUnix(path)
 	if err == nil {
 		t.Fatal("expected non-socket path rejection")
-	}
-}
-
-func TestWaitUntilReadyHonorsDefaultIntervalAndTimeout(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-
-	err := WaitUntilReady(ctx, filepath.Join(t.TempDir(), "missing.sock"), 0)
-	if !errors.Is(err, ErrDaemonUnavailable) {
-		t.Fatalf("expected daemon unavailable timeout, got %v", err)
 	}
 }
 

@@ -37,8 +37,10 @@ func NewManager(socketPath string) (Manager, error) {
 }
 
 func (m Manager) EnsureRunning(ctx context.Context) error {
-	if _, err := m.Status(ctx); err == nil {
+	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
+	} else if !errors.Is(err, ErrDaemonUnavailable) {
+		return err
 	}
 	if err := m.Start(ctx); err != nil {
 		return err
@@ -47,8 +49,10 @@ func (m Manager) EnsureRunning(ctx context.Context) error {
 }
 
 func (m Manager) Start(ctx context.Context) error {
-	if _, err := m.Status(ctx); err == nil {
+	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
+	} else if !errors.Is(err, ErrDaemonUnavailable) {
+		return err
 	}
 	if m.DaemonPath == "" {
 		return errors.New("daemon path is required")
@@ -56,7 +60,9 @@ func (m Manager) Start(ctx context.Context) error {
 	if err := prepareSocketDirectory(m.SocketPath); err != nil {
 		return err
 	}
-	_ = cleanupStaleSocket(m.SocketPath)
+	if err := cleanupStaleSocket(m.SocketPath); err != nil {
+		return err
+	}
 
 	cmd := daemonStartCommand(ctx, m.DaemonPath, m.daemonArgs())
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
@@ -81,7 +87,7 @@ func (m Manager) Start(ctx context.Context) error {
 	}
 	readyCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err := WaitUntilReady(readyCtx, m.SocketPath, 25*time.Millisecond); err != nil {
+	if err := m.waitUntilReady(readyCtx, 25*time.Millisecond); err != nil {
 		return fmt.Errorf("wait for agent-secretd readiness: %w", err)
 	}
 	return nil
@@ -119,6 +125,34 @@ func (m Manager) Stop(ctx context.Context) error {
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
 	return ConnectWithPeerValidator(ctx, m.SocketPath, NewTrustedDaemonValidator(m.trustedDaemonPaths()))
+}
+
+func (m Manager) statusBeforeStart(ctx context.Context) error {
+	_, err := m.Status(ctx)
+	return err
+}
+
+func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) error {
+	if interval <= 0 {
+		interval = 25 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		err := m.statusBeforeStart(ctx)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, ErrDaemonUnavailable) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: authenticated status timeout", ErrDaemonUnavailable)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (m Manager) trustedDaemonPaths() []string {
