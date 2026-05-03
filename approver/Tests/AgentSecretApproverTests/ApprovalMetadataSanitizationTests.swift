@@ -48,8 +48,6 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         XCTAssertEqual(secret.ref, "op://Shared\\nInjected/Item\\u202E/token")
         XCTAssertEqual(secret.account, "Work\\u202E\\nAdmin")
         XCTAssertEqual(secret.accountLabel, "Account: Work\\u202E\\nAdmin")
-        XCTAssertEqual(secret.vaultName, "Shared\\nInjected")
-        XCTAssertEqual(secret.vaultScopeName, "Work\\u202E\\nAdmin / Shared\\nInjected")
         XCTAssertEqual(
             viewModel.secretRows,
             [

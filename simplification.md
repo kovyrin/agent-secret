@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `33,918`.
+Current selected LOC: `32,396`.
 
-Cumulative reduction from baseline: `5,310` LOC.
+Cumulative reduction from baseline: `6,832` LOC.
 
-Remaining reduction needed: `6,459` LOC.
+Remaining reduction needed: `4,937` LOC.
 
 Measurement command:
 
@@ -188,11 +188,19 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `307aa80`.
 - Change: consolidate repetitive CLI, daemon protocol, and reusable broker
   tests while preserving invariant-level coverage.
 - LOC delta: -656.
 - Verification: focused Go package tests and focused Go package coverage.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: replace the custom SwiftUI approval panel with a plain native
+  `NSAlert` and remove the panel component tree.
+- LOC delta: -1,522.
+- Verification: `swift test`, `mise run lint:swift`.
 
 ## Current Decisions
 

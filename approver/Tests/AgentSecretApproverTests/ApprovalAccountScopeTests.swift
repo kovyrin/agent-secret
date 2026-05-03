@@ -27,7 +27,6 @@ final class ApprovalAccountScopeTests: XCTestCase {
 
         XCTAssertEqual(viewModel.requestedSecrets.map(\.account), ["Personal", "Work"])
         XCTAssertEqual(viewModel.requestedSecrets.map(\.accountLabel), ["Account: Personal", "Account: Work"])
-        XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Personal / Shared", "Work / Shared"])
         XCTAssertTrue(
             viewModel.renderedText.contains(
                 "PERSONAL_TOKEN [Account: Personal] -> op://Shared/Deploy/token"

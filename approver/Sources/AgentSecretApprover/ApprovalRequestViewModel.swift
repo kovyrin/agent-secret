@@ -6,8 +6,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let rows: [RequestedSecretRowViewModel]
         let rowText: [String]
         let count: Int
-        let vaultGroups: [SecretVaultGroupViewModel]
-        let vaultCount: Int
     }
 
     private struct SelfRenderInput {
@@ -53,10 +51,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let secretRows: [String]
     /// Total number of requested secrets.
     public let secretCount: Int
-    /// Requested secrets grouped by vault.
-    public let vaultGroups: [SecretVaultGroupViewModel]
-    /// Number of vaults represented by this request.
-    public let vaultCount: Int
     /// Main prompt question.
     public let promptQuestion: String
     /// Summary text next to the command pill.
@@ -85,7 +79,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let overrideWarning: String?
     /// Mutable executable opt-in warning when applicable.
     public let mutableExecutableWarning: String?
-    /// Caution messages visible in the default SwiftUI approval surface.
+    /// Caution messages visible in the native approval surface.
     public let cautionMessages: [String]
     /// Footer copy with correct singular/plural wording.
     public let footerMessage: String
@@ -108,8 +102,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         requestedSecrets = secretPresentation.rows
         secretRows = secretPresentation.rowText
         secretCount = secretPresentation.count
-        vaultGroups = secretPresentation.vaultGroups
-        vaultCount = secretPresentation.vaultCount
         let remaining: TimeInterval = request.expiresAt.timeIntervalSince(now)
         isExpired = Self.isExpired(remaining)
         promptQuestion = Self.promptQuestion(secretCount: secretPresentation.count, isExpired: isExpired)
@@ -153,30 +145,11 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let rowText: [String] = rows.map { secret -> String in
             Self.secretRowText(secret)
         }
-        let vaultGroups: [SecretVaultGroupViewModel] = Self.vaultGroups(for: rows)
         return SecretPresentation(
             rows: rows,
             rowText: rowText,
-            count: rows.count,
-            vaultGroups: vaultGroups,
-            vaultCount: vaultGroups.count
+            count: rows.count
         )
-    }
-
-    private static func vaultGroups(for rows: [RequestedSecretRowViewModel]) -> [SecretVaultGroupViewModel] {
-        var groups: [SecretVaultGroupViewModel] = []
-        var groupIndexesByScope: [String: Int] = [:]
-        for row in rows {
-            if let index: Int = groupIndexesByScope[row.vaultScopeName] {
-                var group: SecretVaultGroupViewModel = groups[index]
-                group = SecretVaultGroupViewModel(vaultName: group.vaultName, secrets: group.secrets + [row])
-                groups[index] = group
-            } else {
-                groupIndexesByScope[row.vaultScopeName] = groups.count
-                groups.append(SecretVaultGroupViewModel(vaultName: row.vaultScopeName, secrets: [row]))
-            }
-        }
-        return groups
     }
 
     private static func secretRowText(_ secret: RequestedSecretRowViewModel) -> String {

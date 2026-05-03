@@ -222,23 +222,19 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertFalse(viewModel.renderedText.contains(request.nonce))
     }
 
-    func testViewModelSummarizesManySecretsByVault() {
+    func testViewModelSummarizesManySecrets() {
         let viewModel = ApprovalRequestViewModel(
             request: Self.multiSecretRequest,
             now: Date(timeIntervalSince1970: Self.viewModelNow)
         )
 
         XCTAssertEqual(viewModel.secretCount, Self.multiSecrets.count)
-        XCTAssertEqual(viewModel.vaultCount, Self.expectedReusableUses)
         XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following 10 secrets?")
         XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
         XCTAssertTrue(viewModel.highScopeWarning)
         XCTAssertTrue(viewModel.printsEnvironmentWarning)
-        XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Private", "Database", "OpenAI"])
-        XCTAssertEqual(viewModel.vaultGroups.first?.countLabel, "3 secrets")
-        XCTAssertEqual(viewModel.vaultGroups.first?.aliasSummary, "LOGIN, GITHUB_TOKEN, GITHUB_EMAIL")
-        XCTAssertEqual(viewModel.requestedSecrets.first?.fieldName, "username")
-        XCTAssertEqual(viewModel.requestedSecrets.first?.symbolName, "person")
+        XCTAssertEqual(viewModel.requestedSecrets.first?.alias, "LOGIN")
+        XCTAssertEqual(viewModel.requestedSecrets.first?.ref, "op://Private/Github/username")
         XCTAssertTrue(viewModel.footerMessage.contains("The secrets are injected"))
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
     }

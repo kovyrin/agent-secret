@@ -41,18 +41,20 @@ import XCTest
         }
 
         @MainActor
-        func testModalStopIsDeferredUntilModalRunLoopTurns() {
-            let stopper = CountingModalStopper()
-            let coordinator = AppKitModalDecisionCoordinator(stopper: stopper)
-
-            coordinator.complete(with: .timeout)
-
-            XCTAssertEqual(coordinator.decision, .timeout)
-            XCTAssertEqual(stopper.stopCount, 0)
-
-            _ = RunLoop.main.run(mode: .modalPanel, before: Date().addingTimeInterval(0.1))
-
-            XCTAssertEqual(stopper.stopCount, 1)
+        func testAlertButtonMappingDefaultsToDeny() {
+            XCTAssertEqual(
+                AppKitApprovalPresenter.decision(for: .alertFirstButtonReturn),
+                .deny
+            )
+            XCTAssertEqual(
+                AppKitApprovalPresenter.decision(for: .alertSecondButtonReturn),
+                .approveOnce
+            )
+            XCTAssertEqual(
+                AppKitApprovalPresenter.decision(for: .alertThirdButtonReturn),
+                .approveReusable
+            )
+            XCTAssertEqual(AppKitApprovalPresenter.decision(for: .abort), .deny)
         }
 
         deinit {
