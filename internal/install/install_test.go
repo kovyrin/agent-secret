@@ -160,7 +160,7 @@ func TestInstallCLIKeepsExistingMatchingSymlink(t *testing.T) {
 	}
 }
 
-func TestInstallCLIReplacesExistingDifferentSymlink(t *testing.T) {
+func TestInstallCLIRefusesExistingDifferentSymlinkWithoutForce(t *testing.T) {
 	t.Parallel()
 
 	binDir := t.TempDir()
@@ -171,7 +171,31 @@ func TestInstallCLIReplacesExistingDifferentSymlink(t *testing.T) {
 		t.Fatalf("create existing symlink: %v", err)
 	}
 
-	if _, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: executable}); err != nil {
+	_, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: executable})
+	if !errors.Is(err, ErrRefuseOverwrite) {
+		t.Fatalf("InstallCLI error = %v, want ErrRefuseOverwrite", err)
+	}
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("read preserved symlink: %v", err)
+	}
+	if target != oldExecutable {
+		t.Fatalf("preserved symlink target = %q, want old executable %q", target, oldExecutable)
+	}
+}
+
+func TestInstallCLIForceReplacesExistingDifferentSymlink(t *testing.T) {
+	t.Parallel()
+
+	binDir := t.TempDir()
+	executable := writeInstallTestExecutable(t, t.TempDir())
+	oldExecutable := writeInstallTestExecutable(t, t.TempDir())
+	linkPath := filepath.Join(binDir, CommandName)
+	if err := os.Symlink(oldExecutable, linkPath); err != nil {
+		t.Fatalf("create existing symlink: %v", err)
+	}
+
+	if _, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: executable, Force: true}); err != nil {
 		t.Fatalf("InstallCLI returned error: %v", err)
 	}
 	target, err := os.Readlink(linkPath)
@@ -295,7 +319,7 @@ func TestInstallSkillForceReplacesExistingRegularFile(t *testing.T) {
 	}
 }
 
-func TestInstallSkillReplacesExistingDifferentSymlink(t *testing.T) {
+func TestInstallSkillRefusesExistingDifferentSymlinkWithoutForce(t *testing.T) {
 	t.Parallel()
 
 	skillsDir := t.TempDir()
@@ -306,7 +330,31 @@ func TestInstallSkillReplacesExistingDifferentSymlink(t *testing.T) {
 		t.Fatalf("create existing symlink: %v", err)
 	}
 
-	if _, err := InstallSkill(SkillOptions{SkillsDir: skillsDir, SourcePath: source}); err != nil {
+	_, err := InstallSkill(SkillOptions{SkillsDir: skillsDir, SourcePath: source})
+	if !errors.Is(err, ErrRefuseOverwrite) {
+		t.Fatalf("InstallSkill error = %v, want ErrRefuseOverwrite", err)
+	}
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("read preserved symlink: %v", err)
+	}
+	if target != oldSource {
+		t.Fatalf("preserved symlink target = %q, want old source %q", target, oldSource)
+	}
+}
+
+func TestInstallSkillForceReplacesExistingDifferentSymlink(t *testing.T) {
+	t.Parallel()
+
+	skillsDir := t.TempDir()
+	source := writeInstallTestSkill(t, t.TempDir())
+	oldSource := writeInstallTestSkill(t, t.TempDir())
+	linkPath := filepath.Join(skillsDir, SkillName)
+	if err := os.Symlink(oldSource, linkPath); err != nil {
+		t.Fatalf("create existing symlink: %v", err)
+	}
+
+	if _, err := InstallSkill(SkillOptions{SkillsDir: skillsDir, SourcePath: source, Force: true}); err != nil {
 		t.Fatalf("InstallSkill returned error: %v", err)
 	}
 	target, err := os.Readlink(linkPath)

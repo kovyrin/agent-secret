@@ -177,14 +177,11 @@ func replaceSymlink(linkPath string, targetPath string, force bool) error {
 		}
 		return fmt.Errorf("inspect link path %s: %w", linkPath, err)
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		if !force {
-			return fmt.Errorf("%w: %s exists and is not a symlink", ErrRefuseOverwrite, linkPath)
-		}
-		if info.IsDir() {
-			return fmt.Errorf("%w: %s is a directory", ErrRefuseOverwrite, linkPath)
-		}
-	} else if currentTarget, err := os.Readlink(linkPath); err == nil && currentTarget == targetPath {
+	replace, err := shouldReplaceLinkPath(linkPath, targetPath, info, force)
+	if err != nil {
+		return err
+	}
+	if !replace {
 		return nil
 	}
 
@@ -195,4 +192,31 @@ func replaceSymlink(linkPath string, targetPath string, force bool) error {
 		return fmt.Errorf("create symlink %s -> %s: %w", linkPath, targetPath, err)
 	}
 	return nil
+}
+
+func shouldReplaceLinkPath(linkPath string, targetPath string, info os.FileInfo, force bool) (bool, error) {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return shouldReplaceSymlink(linkPath, targetPath, force)
+	}
+	if !force {
+		return false, fmt.Errorf("%w: %s exists and is not a symlink", ErrRefuseOverwrite, linkPath)
+	}
+	if info.IsDir() {
+		return false, fmt.Errorf("%w: %s is a directory", ErrRefuseOverwrite, linkPath)
+	}
+	return true, nil
+}
+
+func shouldReplaceSymlink(linkPath string, targetPath string, force bool) (bool, error) {
+	currentTarget, err := os.Readlink(linkPath)
+	if err != nil {
+		return false, fmt.Errorf("read existing symlink %s: %w", linkPath, err)
+	}
+	if currentTarget == targetPath {
+		return false, nil
+	}
+	if !force {
+		return false, fmt.Errorf("%w: %s points to %s", ErrRefuseOverwrite, linkPath, currentTarget)
+	}
+	return true, nil
 }
