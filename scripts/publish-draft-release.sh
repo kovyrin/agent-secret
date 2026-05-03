@@ -32,6 +32,7 @@ if gh release view "$tag" >/dev/null 2>&1; then
   if [ "$is_draft" != "true" ]; then
     fail "release $tag is already published; refusing to replace assets"
   fi
+  gh release edit "$tag" --title "$tag" "${release_note_args[@]}"
   gh release upload "$tag" "${artifacts[@]}" --clobber
 else
   gh release create "$tag" \
