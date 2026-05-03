@@ -11,6 +11,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 func TestConnectAcceptsTrustedDaemonPeer(t *testing.T) {
@@ -124,6 +125,7 @@ func startFakeExecDaemon(t *testing.T) (string, func()) {
 	}
 	path := filepath.Join(dir, "d.sock")
 	listener, err := ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}

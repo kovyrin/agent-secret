@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 func TestPeerCredCapturesCurrentProcess(t *testing.T) {
@@ -20,6 +22,7 @@ func TestPeerCredCapturesCurrentProcess(t *testing.T) {
 	)
 	defer func() { _ = os.Remove(socketPath) }()
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("listen unix: %v", err)
 	}

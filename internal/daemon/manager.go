@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -191,7 +192,7 @@ func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 	if err == nil {
 		return false, nil
 	}
-	if errors.Is(err, ErrDaemonUnavailable) {
+	if errors.Is(err, ErrDaemonUnavailable) || errors.Is(err, io.EOF) {
 		return true, nil
 	}
 	return false, err

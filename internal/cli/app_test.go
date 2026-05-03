@@ -23,6 +23,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
@@ -597,6 +598,7 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 	}
 	path := filepath.Join(dir, "d.sock")
 	listener, err := daemon.ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
@@ -632,6 +634,7 @@ func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan protoco
 	}
 	path := filepath.Join(dir, "d.sock")
 	listener, err := daemon.ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		t.Fatalf("ListenUnix returned error: %v", err)
@@ -770,6 +773,7 @@ func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
 	}
 	path := filepath.Join(dir, "d.sock")
 	listener, err := daemon.ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		t.Fatalf("ListenUnix returned error: %v", err)

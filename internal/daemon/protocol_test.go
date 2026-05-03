@@ -14,6 +14,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
@@ -453,6 +454,7 @@ func startRespondingDaemonClient(t *testing.T, response func(protocol.Envelope) 
 	}
 	path := filepath.Join(dir, "daemon.sock")
 	listener, err := ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		t.Fatalf("ListenUnix returned error: %v", err)
@@ -511,6 +513,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan protocol.Envelope,
 	}
 	path := filepath.Join(dir, "daemon.sock")
 	listener, err := ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		t.Fatalf("ListenUnix returned error: %v", err)

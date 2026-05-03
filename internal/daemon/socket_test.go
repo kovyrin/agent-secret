@@ -2,9 +2,12 @@ package daemon
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 func TestDefaultSocketPathIgnoresEnvironmentOverrides(t *testing.T) {
@@ -22,6 +25,13 @@ func TestDefaultSocketPathIgnoresEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func listenUnixForTest(t *testing.T, path string) (*net.UnixListener, error) {
+	t.Helper()
+	listener, err := ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
+	return listener, err
+}
+
 func TestListenUnixCreatesDefaultSocketDirectoryPrivate(t *testing.T) {
 	home := shortTempDir(t, "agent-secret-home-")
 	t.Setenv("HOME", home)
@@ -30,7 +40,7 @@ func TestListenUnixCreatesDefaultSocketDirectoryPrivate(t *testing.T) {
 		t.Fatalf("DefaultSocketPath returned error: %v", err)
 	}
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
@@ -64,7 +74,7 @@ func TestListenUnixRejectsSymlinkDefaultSocketDirectoryWithoutChmodTarget(t *tes
 		t.Fatalf("symlink default socket dir: %v", err)
 	}
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if listener != nil {
 		_ = listener.Close()
 	}
@@ -91,7 +101,7 @@ func TestListenUnixRejectsSymlinkDefaultSocketAncestorBeforeMkdirAll(t *testing.
 		t.Fatalf("symlink default socket ancestor: %v", err)
 	}
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if listener != nil {
 		_ = listener.Close()
 	}
@@ -112,7 +122,7 @@ func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 	}
 	path := filepath.Join(dir, "agent-secretd.sock")
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
@@ -135,7 +145,7 @@ func TestListenUnixRejectsSymlinkCustomSocketParent(t *testing.T) {
 	}
 	path := filepath.Join(link, "agent-secretd.sock")
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if listener != nil {
 		_ = listener.Close()
 	}
@@ -160,7 +170,7 @@ func TestListenUnixRejectsSymlinkCustomSocketAncestorBeforeMkdirAll(t *testing.T
 	}
 	path := filepath.Join(link, "nested", "agent-secretd.sock")
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if listener != nil {
 		_ = listener.Close()
 	}
@@ -217,7 +227,7 @@ func TestListenUnixRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T)
 	}
 	path := filepath.Join(dir, "agent-secretd.sock")
 
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if listener != nil {
 		_ = listener.Close()
 	}
@@ -237,7 +247,7 @@ func TestListenUnixRejectsNonSocketPath(t *testing.T) {
 		t.Fatalf("write fake socket path: %v", err)
 	}
 
-	_, err := ListenUnix(path)
+	_, err := listenUnixForTest(t, path)
 	if err == nil {
 		t.Fatal("expected non-socket path rejection")
 	}
@@ -252,7 +262,7 @@ func TestCleanupStaleSocketRefusesLiveDaemon(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	path := filepath.Join(dir, "agent-secretd.sock")
-	listener, err := ListenUnix(path)
+	listener, err := listenUnixForTest(t, path)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}

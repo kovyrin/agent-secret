@@ -18,6 +18,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 type allowPeerValidator struct{}
@@ -669,6 +670,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dir) }()
 	path := filepath.Join(dir, "d.sock")
 	listener, err := ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
@@ -1344,6 +1346,7 @@ func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()
 	}
 	path := filepath.Join(dir, "d.sock")
 	listener, err := ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
