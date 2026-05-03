@@ -61,6 +61,10 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
             viewModel.overrideWarning,
             "Will replace existing variables: DEPLOY_TOKEN\\nROOT, API\\u202EKEY"
         )
+        XCTAssertTrue(viewModel.requestInspectionText.contains("- DEPLOY_TOKEN\\nROOT"))
+        XCTAssertTrue(viewModel.requestInspectionText.contains("- API\\u202EKEY"))
+        XCTAssertFalse(viewModel.requestInspectionText.contains("\u{202E}"))
+        XCTAssertFalse(viewModel.requestInspectionText.contains("\nROOT"))
         XCTAssertEqual(viewModel.command, "'/bin/echo' $'safe\\u202Etxt'")
         XCTAssertFalse(viewModel.renderedText.contains("\u{202E}"))
         XCTAssertFalse(viewModel.renderedText.contains("\u{200D}"))

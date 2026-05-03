@@ -17,14 +17,16 @@ extension ApprovalRequestViewModel {
         highScopeWarning: Bool
     ) -> WarningPresentation {
         let printsEnvironment: Bool = environmentWarning(for: request)
+        let override: String? = overrideWarning(for: request)
         let mutableExecutable: String? = mutableExecutableWarning(for: request)
         return WarningPresentation(
             printsEnvironment: printsEnvironment,
-            override: overrideWarning(for: request),
+            override: override,
             mutableExecutable: mutableExecutable,
             cautionMessages: cautionMessages(
                 printsEnvironmentWarning: printsEnvironment,
                 highScopeWarning: highScopeWarning,
+                overrideWarning: override,
                 mutableExecutableWarning: mutableExecutable
             )
         )
@@ -48,11 +50,15 @@ extension ApprovalRequestViewModel {
     private static func cautionMessages(
         printsEnvironmentWarning: Bool,
         highScopeWarning: Bool,
+        overrideWarning: String?,
         mutableExecutableWarning: String?
     ) -> [String] {
         var messages: [String] = []
         if printsEnvironmentWarning, !highScopeWarning {
             messages.append(environmentWarningText)
+        }
+        if let overrideWarning {
+            messages.append(overrideWarning)
         }
         if let mutableExecutableWarning {
             messages.append(mutableExecutableWarning)

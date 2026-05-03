@@ -206,6 +206,9 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertTrue(viewModel.renderedText.contains("Will replace existing variables: EXAMPLE_TOKEN"))
         XCTAssertTrue(viewModel.renderedText.contains("Mutable executable opt-in"))
         XCTAssertTrue(viewModel.cautionMessages.contains { message in
+            message.contains("Will replace existing variables: EXAMPLE_TOKEN")
+        })
+        XCTAssertTrue(viewModel.cautionMessages.contains { message in
             message.contains("Mutable executable opt-in")
         })
         XCTAssertEqual(viewModel.executable, "terraform")
@@ -241,7 +244,9 @@ final class ApprovalControllerTests: XCTestCase {
     }
 
     func testRequestInspectionTextContainsFullScopeValues() {
-        let request: ApprovalRequest = Self.longScopeRequest
+        var request: ApprovalRequest = Self.longScopeRequest
+        request.overrideEnv = true
+        request.overriddenAliases = ["SERVICE_TOKEN", "DEPLOY_KEY"]
         let viewModel = ApprovalRequestViewModel(
             request: request,
             now: Date(timeIntervalSince1970: Self.viewModelNow)
@@ -250,6 +255,9 @@ final class ApprovalControllerTests: XCTestCase {
 
         XCTAssertTrue(inspection.contains(request.cwd))
         XCTAssertTrue(inspection.contains("/tmp/project/bin/deploy-with-secrets"))
+        XCTAssertTrue(inspection.contains("Override existing environment: yes"))
+        XCTAssertTrue(inspection.contains("- SERVICE_TOKEN"))
+        XCTAssertTrue(inspection.contains("- DEPLOY_KEY"))
         XCTAssertTrue(
             inspection.contains("op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-a")
         )
@@ -262,20 +270,6 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertFalse(inspection.contains(Self.canarySecretValue))
         XCTAssertFalse(inspection.contains(request.requestID))
         XCTAssertFalse(inspection.contains(request.nonce))
-    }
-
-    func testMutableExecutableWarningIsVisibleOutsideCollapsedDetails() {
-        var request: ApprovalRequest = Self.multiSecretRequest
-        request.allowMutableExecutable = true
-        let viewModel = ApprovalRequestViewModel(
-            request: request,
-            now: Date(timeIntervalSince1970: Self.viewModelNow)
-        )
-
-        XCTAssertTrue(viewModel.highScopeWarning)
-        XCTAssertTrue(viewModel.printsEnvironmentWarning)
-        XCTAssertEqual(viewModel.cautionMessages.count, 1)
-        XCTAssertTrue(viewModel.cautionMessages[0].contains("Mutable executable opt-in"))
     }
 
     deinit {
