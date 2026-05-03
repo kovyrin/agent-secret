@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,6 +164,46 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 	}
 	if got := statMode(t, dir); got != 0o755 {
 		t.Fatalf("manager changed custom socket dir mode to %s", got)
+	}
+}
+
+func TestManagerStartRejectsUntrustedLiveSocket(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startFakeExecDaemon(t)
+	defer stop()
+	manager := Manager{
+		SocketPath:     path,
+		DaemonPath:     writeExecutableAt(t, t.TempDir(), "agent-secretd"),
+		StartupTimeout: time.Millisecond,
+	}
+
+	err := manager.Start(context.Background())
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("Start error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+}
+
+func TestManagerStartPropagatesStaleSocketCleanupError(t *testing.T) {
+	t.Parallel()
+
+	dir := shortTempDir(t, "agent-secret-manager-")
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: manager socket test needs a private custom directory.
+		t.Fatalf("chmod custom dir: %v", err)
+	}
+	path := filepath.Join(dir, "agent-secretd.sock")
+	if err := os.WriteFile(path, []byte("not a socket"), 0o600); err != nil {
+		t.Fatalf("write fake socket path: %v", err)
+	}
+	manager := Manager{
+		SocketPath:     path,
+		DaemonPath:     os.Args[0],
+		StartupTimeout: time.Millisecond,
+	}
+
+	err := manager.Start(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "refusing to remove non-socket path") {
+		t.Fatalf("Start error = %v, want stale socket cleanup failure", err)
 	}
 }
 

@@ -110,27 +110,6 @@ func Dial(ctx context.Context, path string) (*net.UnixConn, error) {
 	return unixConn, nil
 }
 
-func WaitUntilReady(ctx context.Context, path string, interval time.Duration) error {
-	if interval <= 0 {
-		interval = 25 * time.Millisecond
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		conn, err := Dial(ctx, path)
-		if err == nil {
-			_ = conn.Close()
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("%w: socket readiness timeout", ErrDaemonUnavailable)
-		case <-ticker.C:
-		}
-	}
-}
-
 func cleanupStaleSocket(path string) error {
 	//nolint:gosec // G703: lstat checks whether the configured socket path is a stale Unix socket before removal.
 	info, err := os.Lstat(path)
