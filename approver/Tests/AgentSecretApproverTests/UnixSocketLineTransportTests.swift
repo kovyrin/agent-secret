@@ -130,6 +130,15 @@ import XCTest
             XCTAssertEqual(try Self.readString(from: pair.peer), "hello\n")
         }
 
+        func testWriteLineToClosedPeerReturnsErrorWithoutSignal() throws {
+            let pair = try makeTransportPair()
+            close(pair.peer)
+
+            assertTransportError(.writeFailed(EPIPE)) {
+                try pair.transport.writeLine(Data("hello".utf8))
+            }
+        }
+
         func testWriteLineRejectsOversizedFrame() throws {
             let pair = try makeTransportPair(maxFrameBytes: Self.smallFrameBytes)
             defer {
