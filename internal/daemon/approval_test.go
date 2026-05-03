@@ -894,6 +894,13 @@ func TestApproverCandidatesForBundledExecutables(t *testing.T) {
 	if !slices.Contains(approverCandidatesForExecutable(daemonPath), want) {
 		t.Fatalf("daemon approver candidates missing top-level app executable")
 	}
+	legacy := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
+	if slices.Contains(approverCandidatesForExecutable(cliPath), legacy) {
+		t.Fatalf("cli approver candidates include legacy executable %q", legacy)
+	}
+	if slices.Contains(approverExecutablesInApp(appPath), legacy) {
+		t.Fatalf("app executable candidates include legacy executable %q", legacy)
+	}
 }
 
 func TestDefaultApproverPathUsesInstalledUnifiedApp(t *testing.T) {

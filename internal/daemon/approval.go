@@ -644,11 +644,10 @@ func approverCandidatesForExecutable(executable string) []string {
 		executables = append(executables, resolved)
 	}
 
-	candidates := make([]string, 0, len(executables)*3)
+	candidates := make([]string, 0, len(executables)*2)
 	seen := make(map[string]struct{})
 	for _, candidate := range executables {
 		for _, path := range []string{
-			filepath.Join(filepath.Dir(candidate), "agent-secret-approver"),
 			filepath.Clean(filepath.Join(filepath.Dir(candidate), "..", "..", "MacOS", "Agent Secret")),
 			filepath.Clean(filepath.Join(
 				filepath.Dir(candidate),
@@ -674,7 +673,6 @@ func approverCandidatesForExecutable(executable string) []string {
 func approverExecutablesInApp(appPath string) []string {
 	return []string{
 		filepath.Join(appPath, "Contents", "MacOS", "Agent Secret"),
-		filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver"),
 	}
 }
 
