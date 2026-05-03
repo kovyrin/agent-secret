@@ -1,33 +1,18 @@
 import Foundation
 
 #if canImport(Darwin)
-    import Darwin
     import Security
 
     struct SecurityDaemonCodeSignatureChecker: DaemonCodeSignatureChecking {
-        private static func runCodesign(arguments: [String]) throws -> String {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            process.arguments = arguments
-            let output = Pipe()
-            process.standardOutput = output
-            process.standardError = output
-            do {
-                try process.run()
-            } catch {
-                throw SocketDaemonClientError.untrustedDaemon(
-                    "launch daemon process code signature validation failed: \(error)"
-                )
-            }
-            process.waitUntilExit()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            let text = String(data: data, encoding: .utf8) ?? ""
-            guard process.terminationStatus == 0 else {
-                throw SocketDaemonClientError.untrustedDaemon(
-                    "daemon process code signature validation failed with status \(process.terminationStatus)"
-                )
-            }
-            return text
+        private let codesignRunner: CodeSignatureProcessRunning
+        private let codesignTimeout: TimeInterval
+
+        init(
+            codesignRunner: CodeSignatureProcessRunning = FoundationCodeSignatureProcessRunner(),
+            codesignTimeout: TimeInterval = 2
+        ) {
+            self.codesignRunner = codesignRunner
+            self.codesignTimeout = codesignTimeout
         }
 
         private static func teamID(forStaticCode code: SecStaticCode) throws -> String {
@@ -49,6 +34,20 @@ import Foundation
                 throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
             }
             return teamID
+        }
+
+        private func runCodesign(arguments: [String]) throws -> String {
+            let result = try codesignRunner.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
+                arguments: arguments,
+                timeout: codesignTimeout
+            )
+            guard result.terminationStatus == 0 else {
+                throw SocketDaemonClientError.untrustedDaemon(
+                    "daemon process code signature validation failed with status \(result.terminationStatus)"
+                )
+            }
+            return result.output
         }
 
         func staticCodeTeamID(for path: String) throws -> String {
@@ -80,8 +79,8 @@ import Foundation
 
         func processTeamID(for pid: pid_t) throws -> String {
             let target = "+\(pid)"
-            _ = try Self.runCodesign(arguments: ["--verify", "--strict", "--deep", target])
-            let output = try Self.runCodesign(arguments: ["-dv", "--verbose=4", target])
+            _ = try runCodesign(arguments: ["--verify", "--strict", "--deep", target])
+            let output = try runCodesign(arguments: ["-dv", "--verbose=4", target])
             for line in output.components(separatedBy: .newlines) {
                 let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmedLine.hasPrefix("TeamIdentifier=") {
