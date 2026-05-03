@@ -123,6 +123,9 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
     func testDaemonErrorDisplayIncludesDaemonStopAndFallbackCodes() {
         XCTAssertEqual(DaemonErrorDisplay.message(for: "daemon_stopped"), "daemon stopped")
         XCTAssertEqual(DaemonErrorDisplay.message(for: "request_failed"), "daemon request failed")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: "context_canceled"), "daemon request was canceled")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: "context_deadline_exceeded"), "daemon request deadline expired")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: "resolve_failed"), "daemon failed to resolve approved secret")
     }
 
     func testUnexpectedResponseTypeDoesNotEchoDaemonText() throws {

@@ -18,6 +18,8 @@ enum DaemonErrorDisplay {
         .badEnvelope: "daemon rejected malformed protocol envelope",
         .badRequest: "daemon rejected malformed request",
         .badType: "daemon rejected unsupported message type",
+        .contextCanceled: "daemon request was canceled",
+        .contextDeadlineExceeded: "daemon request deadline expired",
         .daemonStopped: "daemon stopped",
         .frameTooLarge: "daemon response frame was too large",
         .invalidNonce: "request nonce did not match",
@@ -26,6 +28,7 @@ enum DaemonErrorDisplay {
         .requestActive: "connection already has an active request",
         .requestExpired: "request expired",
         .requestFailed: "daemon request failed",
+        .resolveFailed: "daemon failed to resolve approved secret",
         .staleApproval: "stale approval response",
         .untrustedClient: "daemon rejected untrusted client"
     ]
