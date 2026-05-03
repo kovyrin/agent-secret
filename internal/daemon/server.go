@@ -105,7 +105,6 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 }
 
 func (s *Server) Serve(ctx context.Context, listener *net.UnixListener) error {
-	errs := make(chan error, 1)
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -124,8 +123,7 @@ func (s *Server) Serve(ctx context.Context, listener *net.UnixListener) error {
 			case <-s.stop:
 				return nil
 			default:
-				errs <- err
-				return <-errs
+				return err
 			}
 		}
 		go s.handleConn(ctx, conn)
