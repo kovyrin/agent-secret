@@ -46,6 +46,36 @@ func TestListenUnixCreatesDefaultSocketDirectoryPrivate(t *testing.T) {
 	}
 }
 
+func TestListenUnixRejectsSymlinkDefaultSocketDirectoryWithoutChmodTarget(t *testing.T) {
+	home := shortTempDir(t, "agent-secret-home-")
+	t.Setenv("HOME", home)
+	path, err := DefaultSocketPath()
+	if err != nil {
+		t.Fatalf("DefaultSocketPath returned error: %v", err)
+	}
+	target := shortTempDir(t, "agent-secret-socket-target-")
+	if err := os.Chmod(target, 0o755); err != nil { //nolint:gosec // G302: test target is intentionally permissive to prove chmod does not follow the symlink.
+		t.Fatalf("chmod target: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(filepath.Dir(path)), 0o700); err != nil {
+		t.Fatalf("create app support dir: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Dir(path)); err != nil {
+		t.Fatalf("symlink default socket dir: %v", err)
+	}
+
+	listener, err := ListenUnix(path)
+	if listener != nil {
+		_ = listener.Close()
+	}
+	if !errors.Is(err, ErrInsecureSocketDirectory) {
+		t.Fatalf("expected insecure socket directory error, got %v", err)
+	}
+	if got := statMode(t, target); got != 0o755 {
+		t.Fatalf("symlink target mode = %s, want unchanged 0755", got)
+	}
+}
+
 func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +92,49 @@ func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 	defer func() { _ = listener.Close() }()
 	if got := statMode(t, dir); got != 0o700 {
 		t.Fatalf("custom socket dir mode changed to %s", got)
+	}
+}
+
+func TestListenUnixRejectsSymlinkCustomSocketParent(t *testing.T) {
+	t.Parallel()
+
+	target := shortTempDir(t, "agent-secret-socket-target-")
+	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: custom socket targets are private in this test.
+		t.Fatalf("chmod target: %v", err)
+	}
+	link := filepath.Join(shortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink custom socket dir: %v", err)
+	}
+	path := filepath.Join(link, "agent-secretd.sock")
+
+	listener, err := ListenUnix(path)
+	if listener != nil {
+		_ = listener.Close()
+	}
+	if !errors.Is(err, ErrInsecureSocketDirectory) {
+		t.Fatalf("expected insecure socket directory error, got %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(target, "agent-secretd.sock")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("socket in symlink target exists or stat failed: %v", err)
+	}
+}
+
+func TestValidateSocketDirectoryRejectsSymlinkParent(t *testing.T) {
+	t.Parallel()
+
+	target := shortTempDir(t, "agent-secret-socket-target-")
+	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: custom socket targets are private in this test.
+		t.Fatalf("chmod target: %v", err)
+	}
+	link := filepath.Join(shortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink socket dir: %v", err)
+	}
+
+	err := ValidateSocketDirectory(filepath.Join(link, "agent-secretd.sock"))
+	if !errors.Is(err, ErrInsecureSocketDirectory) {
+		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
 }
 
