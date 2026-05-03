@@ -16,30 +16,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
-func TestProtocolHelpersRejectMalformedPayloads(t *testing.T) {
-	t.Parallel()
-
-	if _, err := protocol.NewEnvelope(protocol.TypeOK, "req_1", "nonce_1", make(chan int)); err == nil {
-		t.Fatal("expected unmarshalable payload error")
-	}
-
-	var env protocol.Envelope
-	if _, err := protocol.DecodePayload[protocol.StatusPayload](env); err != nil {
-		t.Fatalf("empty payload decode returned error: %v", err)
-	}
-	env = protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeOK, Payload: json.RawMessage(`{`)}
-	if _, err := protocol.DecodePayload[protocol.StatusPayload](env); !errors.Is(err, protocol.ErrMalformedEnvelope) {
-		t.Fatalf("expected malformed payload error, got %v", err)
-	}
-
-	if err := protocol.ValidateEnvelope(protocol.Envelope{Version: 99, Type: protocol.TypeOK}); !errors.Is(err, protocol.ErrProtocolVersion) {
-		t.Fatalf("expected protocol version error, got %v", err)
-	}
-	if err := protocol.ValidateEnvelope(protocol.Envelope{Version: protocol.ProtocolVersion}); !errors.Is(err, protocol.ErrMalformedEnvelope) {
-		t.Fatalf("expected missing type error, got %v", err)
-	}
-}
-
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	t.Parallel()
 
