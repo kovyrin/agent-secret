@@ -184,6 +184,12 @@ Run `AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh` after any
 workflow change. That smoke test fails if a `jdx/mise-action` step does not set
 both `version` and `sha256`.
 
+Signed release builds must already be inside a trusted toolchain context. The
+release builder refuses to re-exec a `mise` binary discovered through `PATH`
+when signing or notarization environment variables are present; CI uses the
+pinned `jdx/mise-action` and invokes the release builder through `mise exec`
+with `AGENT_SECRET_IN_MISE=1`.
+
 ## Failed Release Runs
 
 If a tag-triggered release fails before publication:

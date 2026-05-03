@@ -534,7 +534,7 @@ Acceptance checks:
 ```bash
 scripts/build-release.sh v0.0.0-dev
 scripts/check-release-signing-env.sh
-scripts/build-release.sh v0.0.0-dev --require-production-signing
+AGENT_SECRET_IN_MISE=1 scripts/build-release.sh v0.0.0-dev --require-production-signing
 codesign --verify --deep --strict "/Applications/Agent Secret.app"
 spctl --assess --type execute --verbose "/Applications/Agent Secret.app"
 xcrun stapler validate "/Applications/Agent Secret.app"
@@ -542,7 +542,9 @@ xcrun stapler validate "/Applications/Agent Secret.app"
 
 Only the ad-hoc release builder path can be verified locally without Apple
 credentials. The Developer ID path requires the certificate and App Store
-Connect API key in the release environment.
+Connect API key in the release environment, and it must run from a trusted
+toolchain context with `AGENT_SECRET_IN_MISE=1` so the release script does not
+resolve `mise` from `PATH` while those values are present.
 
 ### Epic 5: Unattended Installer
 

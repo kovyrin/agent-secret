@@ -126,13 +126,14 @@ jobs:
 
       - name: Build release artifacts
         env:
+          AGENT_SECRET_IN_MISE: "1"
           AGENT_SECRET_CODESIGN_ENTITLEMENTS: ${{ secrets.AGENT_SECRET_CODESIGN_ENTITLEMENTS }}
           AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
           AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
           AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
-        run: scripts/build-release.sh "$GITHUB_REF_NAME" --require-production-signing
+        run: mise exec -- scripts/build-release.sh "$GITHUB_REF_NAME" --require-production-signing
 
       - name: Verify release artifact architecture
         run: |
