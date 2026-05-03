@@ -289,6 +289,100 @@ SCRIPT
   fi
 }
 
+fake_path_codesign_is_not_used_for_trust_checks() {
+  local run_dir="$tmp_dir/fake-path-codesign"
+  local home="$run_dir/home"
+  local app_dir="$run_dir/apps"
+  local app="$app_dir/Agent Secret.app"
+  local daemon_app="$app/Contents/Library/Helpers/AgentSecretDaemon.app"
+  local bin_dir="$run_dir/bin"
+  local skills_dir="$run_dir/skills"
+  local support="$run_dir/support/agent-secret"
+  local path_bin="$run_dir/path"
+  local log="$run_dir/uninstall.log"
+
+  mkdir -p \
+    "$home" \
+    "$app/Contents/Resources/bin" \
+    "$daemon_app/Contents" \
+    "$bin_dir" \
+    "$skills_dir" \
+    "$support" \
+    "$path_bin"
+  : >"$log"
+
+  cat >"$app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.kovyrin.agent-secret</string>
+</dict>
+</plist>
+PLIST
+
+  cat >"$daemon_app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.kovyrin.agent-secret.daemon</string>
+</dict>
+</plist>
+PLIST
+
+  cat >"$app/Contents/Resources/bin/agent-secret" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-bundled-agent-secret' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+exit 0
+SCRIPT
+  chmod 755 "$app/Contents/Resources/bin/agent-secret"
+
+  cat >"$path_bin/codesign" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-path-codesign' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+case " $* " in
+  *" --verify "*)
+    exit 0
+    ;;
+  *)
+    printf 'TeamIdentifier=B6L7QLWTZW\n' >&2
+    exit 0
+    ;;
+esac
+SCRIPT
+  chmod 755 "$path_bin/codesign"
+
+  run_uninstall \
+    fake-path-codesign \
+    HOME="$home" \
+    PATH="$path_bin:$PATH" \
+    AGENT_SECRET_NO_STOP_DAEMON=0 \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_APP_DIR="$app_dir" \
+    AGENT_SECRET_BIN_DIR="$bin_dir" \
+    AGENT_SECRET_SKILLS_DIR="$skills_dir" \
+    AGENT_SECRET_SUPPORT_DIR="$support" \
+    AGENT_SECRET_UNINSTALL_TEST_LOG="$log"
+
+  if grep -F "fake-path-codesign" "$log" >/dev/null; then
+    fail "uninstaller used codesign from PATH for trust checks"
+  fi
+  if grep -F "fake-bundled-agent-secret daemon stop" "$log" >/dev/null; then
+    fail "uninstaller trusted fake app and executed bundled agent-secret"
+  fi
+}
+
 custom_guard_rejects_override
 custom_destination_guard_rejects_override
 dangerous_paths_are_rejected_even_with_guard
@@ -297,5 +391,6 @@ symlinked_parent_dirs_are_rejected
 symlinked_dirs_are_rejected
 safe_custom_paths_remove_only_known_files
 untrusted_existing_cli_is_not_used_for_daemon_stop
+fake_path_codesign_is_not_used_for_trust_checks
 
 echo "test-uninstall: ok"
