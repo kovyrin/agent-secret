@@ -180,6 +180,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			nextReadTimeout = 0
 		}
 
+		//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 		switch env.Type {
 		case protocol.TypeDaemonStatus:
 			_ = writeOK(encoder, env.RequestID, env.Nonce, protocol.StatusPayload{PID: os.Getpid()})
@@ -232,8 +233,6 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				commandStarted = false
 				nextReadTimeout = s.readTimeout
 			}
-		case protocol.TypeOK, protocol.TypeError:
-			fallthrough
 		default:
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
 		}
