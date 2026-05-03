@@ -219,6 +219,14 @@ func (s *Store) RemoveReusable(id string) bool {
 	return true
 }
 
+func (s *Store) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.approvals = make(map[string]*ReusableApproval)
+	s.sessions = make(map[string]*Session)
+}
+
 func (s *Store) CreateSession(id string, nonce string, expiresAt time.Time, grants []SecretGrant, maxReads int) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

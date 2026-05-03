@@ -87,6 +87,23 @@ func (a *contextExpiringApprover) ApproveExec(
 	return ApprovalDecision{}, ErrRequestExpired
 }
 
+type blockingApprover struct {
+	started  chan struct{}
+	canceled chan struct{}
+}
+
+func (a *blockingApprover) ApproveExec(
+	ctx context.Context,
+	_ string,
+	_ string,
+	_ request.ExecRequest,
+) (ApprovalDecision, error) {
+	close(a.started)
+	<-ctx.Done()
+	close(a.canceled)
+	return ApprovalDecision{}, ctx.Err()
+}
+
 type mockResolver struct {
 	mu     sync.Mutex
 	values map[string]string
@@ -156,6 +173,18 @@ type deadlineObservingResolver struct {
 func (r *deadlineObservingResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
 	<-ctx.Done()
 	close(r.done)
+	return "", ctx.Err()
+}
+
+type blockingResolver struct {
+	started  chan struct{}
+	canceled chan struct{}
+}
+
+func (r *blockingResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+	close(r.started)
+	<-ctx.Done()
+	close(r.canceled)
 	return "", ctx.Err()
 }
 
@@ -238,6 +267,19 @@ type contextCheckingAudit struct {
 func (m *contextCheckingAudit) Record(ctx context.Context, event audit.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	return m.memoryAudit.Record(ctx, event)
+}
+
+type callbackAudit struct {
+	memoryAudit
+
+	onRecord func(audit.Event)
+}
+
+func (m *callbackAudit) Record(ctx context.Context, event audit.Event) error {
+	if m.onRecord != nil {
+		m.onRecord(event)
 	}
 	return m.memoryAudit.Record(ctx, event)
 }
@@ -1045,6 +1087,144 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	broker.Stop(context.Background())
 	if _, ok := cache.Get(grant.ApprovalID, ref, ""); ok {
 		t.Fatal("daemon stop left reusable cache scope reachable")
+	}
+}
+
+func TestBrokerStopCancelsPendingApproval(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	approver := &blockingApprover{started: make(chan struct{}), canceled: make(chan struct{})}
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	receiveBrokerSignal(t, approver.started, "approval was not requested before stop")
+
+	broker.Stop(context.Background())
+
+	receiveBrokerSignal(t, approver.canceled, "stop did not cancel pending approval")
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrDaemonStopped) {
+			t.Fatalf("HandleExec error = %v, want daemon stopped", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleExec did not return after daemon stop")
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver called after stopped pending approval: %v", calls)
+	}
+	events := aud.Events()
+	if !containsAuditEvent(events, audit.EventDaemonStop) {
+		t.Fatalf("daemon stop was not audited: %+v", events)
+	}
+	if containsAuditEvent(events, audit.EventApprovalGranted) ||
+		containsAuditEvent(events, audit.EventCommandStarting) {
+		t.Fatalf("stopped approval reached post-approval audit events: %+v", events)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrDaemonStopped) {
+		t.Fatalf("MarkPayloadDelivered after stop = %v, want daemon stopped", err)
+	}
+}
+
+func TestBrokerStopCancelsSecretResolution(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	resolver := &blockingResolver{started: make(chan struct{}), canceled: make(chan struct{})}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	receiveBrokerSignal(t, resolver.started, "secret resolution did not start before stop")
+
+	broker.Stop(context.Background())
+
+	receiveBrokerSignal(t, resolver.canceled, "stop did not cancel secret resolution")
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrDaemonStopped) {
+			t.Fatalf("HandleExec error = %v, want daemon stopped", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleExec did not return after daemon stop")
+	}
+	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
+		t.Fatalf("stopped resolution reached command_starting audit: %+v", aud.Events())
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrDaemonStopped) {
+		t.Fatalf("MarkPayloadDelivered after stop = %v, want daemon stopped", err)
+	}
+}
+
+func TestBrokerStopBlocksReusablePayloadAfterCachedValuesAreRead(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	var broker *Broker
+	var stopOnce sync.Once
+	aud := &callbackAudit{}
+	aud.onRecord = func(event audit.Event) {
+		if event.Type != audit.EventCommandStarting || event.RequestID != "req_2" {
+			return
+		}
+		stopOnce.Do(func() {
+			broker.Stop(context.Background())
+		})
+	}
+	broker = newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: resolver,
+		Audit:    aud,
+		Cache:    cache,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("initial HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("initial MarkPayloadDelivered returned error: %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected reusable value in cache before stop")
+	}
+
+	_, err = broker.HandleExec(context.Background(), "req_2", "nonce_2", req)
+	if !errors.Is(err, ErrDaemonStopped) {
+		t.Fatalf("reusable HandleExec after stop during command_starting = %v, want daemon stopped", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_2"); !errors.Is(err, ErrDaemonStopped) {
+		t.Fatalf("reusable MarkPayloadDelivered after stop = %v, want daemon stopped", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("daemon stop left reusable cache value reachable")
+	}
+	if calls := resolver.Calls(); !reflect.DeepEqual(calls, []string{ref}) {
+		t.Fatalf("resolver calls = %v, want only initial fresh resolution", calls)
 	}
 }
 

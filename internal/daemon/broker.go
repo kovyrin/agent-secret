@@ -21,6 +21,7 @@ var (
 	ErrMissingCache         = errors.New("approved secret cache entry missing")
 	ErrNoResolver           = errors.New("secret resolver unavailable")
 	ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
+	ErrDaemonStopped        = errors.New("daemon stopped")
 	ErrRequestExpired       = errors.New("request expired")
 	ErrUnknownRequest       = errors.New("unknown request")
 )
@@ -61,6 +62,8 @@ type Broker struct {
 	fetchLimit int
 	active     map[string]*activeExec
 	expiry     map[string]*time.Timer
+	stopOnce   sync.Once
+	stop       chan struct{}
 }
 
 type ExecGrant struct {
@@ -117,7 +120,6 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 	if fetchLimit <= 0 {
 		fetchLimit = 4
 	}
-
 	return &Broker{
 		now:        now,
 		store:      store,
@@ -128,12 +130,16 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 		fetchLimit: fetchLimit,
 		active:     make(map[string]*activeExec),
 		expiry:     make(map[string]*time.Timer),
+		stop:       make(chan struct{}),
 	}, nil
 }
 
 func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ExecGrant, error) {
 	if requestID == "" || nonce == "" {
 		return ExecGrant{}, ErrInvalidNonce
+	}
+	if b.stopped() {
+		return ExecGrant{}, ErrDaemonStopped
 	}
 	req = req.WithReceiptTime(b.now())
 	if err := b.preflightAudit(ctx); err != nil {
@@ -193,15 +199,37 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 
 func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (context.Context, context.CancelFunc) {
 	ttl := req.ExpiresAt.Sub(b.now())
-	return context.WithTimeout(ctx, ttl)
+	ttlCtx, cancelTTL := context.WithTimeout(ctx, ttl)
+	execCtx, cancelExec := context.WithCancelCause(ttlCtx)
+	watcherDone := make(chan struct{})
+	go func() {
+		select {
+		case <-b.stop:
+			cancelExec(ErrDaemonStopped)
+		case <-execCtx.Done():
+		case <-watcherDone:
+		}
+	}()
+
+	return execCtx, func() {
+		close(watcherDone)
+		cancelExec(context.Canceled)
+		cancelTTL()
+	}
 }
 
 func (b *Broker) requestActive(ctx context.Context, req request.ExecRequest) error {
 	if err := ctx.Err(); err != nil {
+		if errors.Is(context.Cause(ctx), ErrDaemonStopped) {
+			return ErrDaemonStopped
+		}
 		if errors.Is(err, context.DeadlineExceeded) && req.Expired(b.now()) {
 			return ErrRequestExpired
 		}
 		return err
+	}
+	if b.stopped() {
+		return ErrDaemonStopped
 	}
 	if req.Expired(b.now()) {
 		return ErrRequestExpired
@@ -216,18 +244,29 @@ func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err 
 	if errors.Is(err, ErrRequestExpired) {
 		return err
 	}
-	if errors.Is(b.requestActive(ctx, req), ErrRequestExpired) {
-		return ErrRequestExpired
+	if activeErr := b.requestActive(ctx, req); activeErr != nil {
+		if errors.Is(activeErr, ErrDaemonStopped) || errors.Is(activeErr, ErrRequestExpired) {
+			return activeErr
+		}
 	}
 	return err
 }
 
 func (b *Broker) MarkPayloadDelivered(requestID string) error {
+	if b.stopped() {
+		return ErrDaemonStopped
+	}
 	b.mu.Lock()
 	active, ok := b.active[requestID]
 	b.mu.Unlock()
 	if !ok {
 		return ErrUnknownRequest
+	}
+	if b.stopped() {
+		b.mu.Lock()
+		delete(b.active, requestID)
+		b.mu.Unlock()
+		return ErrDaemonStopped
 	}
 	if active.approvalID == "" {
 		b.mu.Lock()
@@ -253,6 +292,12 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 			return ErrRequestExpired
 		}
 		return err
+	}
+	if b.stopped() {
+		b.mu.Lock()
+		delete(b.active, requestID)
+		b.mu.Unlock()
+		return ErrDaemonStopped
 	}
 	if approval.Uses >= approval.MaxUses {
 		b.clearReusableCacheScope(approval.ID)
@@ -331,6 +376,7 @@ func (b *Broker) Stop(ctx context.Context) {
 }
 
 func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
+	b.stopOnce.Do(func() { close(b.stop) })
 	b.recordDaemonStopAttempt(ctx, event)
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -340,7 +386,7 @@ func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
 		delete(b.expiry, id)
 	}
 	b.cache.Clear()
-	b.store = policy.NewStore(b.now)
+	b.store.Clear()
 }
 
 func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event) {
@@ -488,6 +534,10 @@ func (b *Broker) rollbackReusableApproval(approvalID string) {
 func (b *Broker) reusableApprovalActive(approvalID string, expiresAt time.Time) error {
 	if approvalID == "" || expiresAt.IsZero() {
 		return nil
+	}
+	if b.stopped() {
+		b.rollbackReusableApproval(approvalID)
+		return ErrDaemonStopped
 	}
 	if b.now().Before(expiresAt) {
 		return nil
@@ -686,6 +736,9 @@ func (b *Broker) recordSecretFetchFailed(
 }
 
 func secretFetchErrorCode(err error) string {
+	if errors.Is(err, ErrDaemonStopped) {
+		return "daemon_stopped"
+	}
 	if errors.Is(err, context.Canceled) {
 		return "context_canceled"
 	}
@@ -745,6 +798,9 @@ func (b *Broker) cachedValues(approvalID string, secrets []request.Secret) (map[
 }
 
 func (b *Broker) activeRequest(requestID string, nonce string) (*activeExec, error) {
+	if b.stopped() {
+		return nil, ErrDaemonStopped
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -756,6 +812,15 @@ func (b *Broker) activeRequest(requestID string, nonce string) (*activeExec, err
 		return nil, ErrInvalidNonce
 	}
 	return active, nil
+}
+
+func (b *Broker) stopped() bool {
+	select {
+	case <-b.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 type secretIdentity struct {
