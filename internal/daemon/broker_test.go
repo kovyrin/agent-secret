@@ -87,6 +87,21 @@ func (a *contextExpiringApprover) ApproveExec(
 	return ApprovalDecision{}, ErrRequestExpired
 }
 
+type contextDenyingApprover struct {
+	done chan struct{}
+}
+
+func (a *contextDenyingApprover) ApproveExec(
+	ctx context.Context,
+	_ string,
+	_ string,
+	_ request.ExecRequest,
+) (ApprovalDecision, error) {
+	<-ctx.Done()
+	close(a.done)
+	return ApprovalDecision{}, ErrApprovalDenied
+}
+
 type blockingApprover struct {
 	started  chan struct{}
 	canceled chan struct{}
@@ -374,17 +389,53 @@ func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testi
 func TestBrokerApprovalTimeoutAuditIgnoresExpiredRequestContext(t *testing.T) {
 	t.Parallel()
 
+	done := make(chan struct{})
+	assertDeadlineApprovalFailureAudited(t, deadlineApprovalFailureCase{
+		approver:  &contextExpiringApprover{done: done},
+		done:      done,
+		err:       ErrRequestExpired,
+		eventType: audit.EventApprovalTimedOut,
+		errorCode: "request_expired",
+		name:      "approval timeout",
+	})
+}
+
+func TestBrokerLateDenialAuditsDenialWithoutResolveOrCommandStart(t *testing.T) {
+	t.Parallel()
+
+	done := make(chan struct{})
+	assertDeadlineApprovalFailureAudited(t, deadlineApprovalFailureCase{
+		approver:  &contextDenyingApprover{done: done},
+		done:      done,
+		err:       ErrApprovalDenied,
+		eventType: audit.EventApprovalDenied,
+		errorCode: "approval_denied",
+		name:      "late denial",
+	})
+}
+
+type deadlineApprovalFailureCase struct {
+	approver  Approver
+	done      <-chan struct{}
+	err       error
+	eventType audit.EventType
+	errorCode string
+	name      string
+}
+
+func assertDeadlineApprovalFailureAudited(t *testing.T, tc deadlineApprovalFailureCase) {
+	t.Helper()
+
 	ref := "op://Example/Item/token"
 	now := time.Now()
 	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 	req.TTL = 25 * time.Millisecond
 	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
-	approver := &contextExpiringApprover{done: make(chan struct{})}
 	resolver := &mockResolver{values: map[string]string{ref: "value"}}
 	aud := &contextCheckingAudit{}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      time.Now,
-		Approver: approver,
+		Approver: tc.approver,
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -393,21 +444,21 @@ func TestBrokerApprovalTimeoutAuditIgnoresExpiredRequestContext(t *testing.T) {
 	}
 
 	_, err = broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if !errors.Is(err, ErrRequestExpired) {
-		t.Fatalf("expected request expiry, got %v", err)
+	if !errors.Is(err, tc.err) {
+		t.Fatalf("expected %s, got %v", tc.err, err)
 	}
-	receiveBrokerSignal(t, approver.done, "approver did not observe request deadline")
+	receiveBrokerSignal(t, tc.done, "approver did not observe request deadline")
 	if calls := resolver.Calls(); len(calls) != 0 {
-		t.Fatalf("resolver was called after approval timeout: %v", calls)
+		t.Fatalf("resolver was called after %s: %v", tc.name, calls)
 	}
 
 	events := aud.Events()
-	want := []audit.EventType{audit.EventApprovalRequested, audit.EventApprovalTimedOut}
+	want := []audit.EventType{audit.EventApprovalRequested, tc.eventType}
 	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
-	if events[1].ErrorCode != "request_expired" {
-		t.Fatalf("approval timeout error code = %q", events[1].ErrorCode)
+	if events[1].ErrorCode != tc.errorCode {
+		t.Fatalf("%s error code = %q", tc.name, events[1].ErrorCode)
 	}
 }
 

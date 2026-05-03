@@ -12,7 +12,7 @@ final class ApprovalPromptExpirationTests: XCTestCase {
         XCTAssertEqual(expiration.timeoutDecision(at: expiresAt.addingTimeInterval(1)), .timeout)
     }
 
-    func testLateDecisionsBecomeTimeouts() {
+    func testLateApprovalDecisionsBecomeTimeouts() {
         let expiresAt = Date(timeIntervalSince1970: 1_800_000_000)
         let expiration = ApprovalPromptExpiration(expiresAt: expiresAt)
 
@@ -22,7 +22,20 @@ final class ApprovalPromptExpirationTests: XCTestCase {
         )
         XCTAssertEqual(expiration.guardDecision(.approveOnce, at: expiresAt), .timeout)
         XCTAssertEqual(expiration.guardDecision(.approveReusable, at: expiresAt.addingTimeInterval(1)), .timeout)
-        XCTAssertEqual(expiration.guardDecision(.deny, at: expiresAt.addingTimeInterval(1)), .timeout)
+    }
+
+    func testLateDenyDecisionRemainsDeny() {
+        let expiresAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let expiration = ApprovalPromptExpiration(expiresAt: expiresAt)
+
+        XCTAssertEqual(expiration.guardDecision(.deny, at: expiresAt), .deny)
+        XCTAssertEqual(expiration.guardDecision(.deny, at: expiresAt.addingTimeInterval(1)), .deny)
+    }
+
+    func testTimeoutDecisionRemainsTimeout() {
+        let expiresAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let expiration = ApprovalPromptExpiration(expiresAt: expiresAt)
+
         XCTAssertEqual(expiration.guardDecision(.timeout, at: expiresAt.addingTimeInterval(1)), .timeout)
     }
 

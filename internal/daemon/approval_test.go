@@ -609,8 +609,24 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 	}
 }
 
-func TestSocketApproverTreatsExpiredDenialAsTimeout(t *testing.T) {
+func TestSocketApproverTreatsExpiredApprovalAsTimeout(t *testing.T) {
 	t.Parallel()
+
+	if err := submitExpiredDecisionForTest(t, "approve_once"); !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("ApproveExec error = %v, want expired", err)
+	}
+}
+
+func TestSocketApproverPreservesExpiredDenial(t *testing.T) {
+	t.Parallel()
+
+	if err := submitExpiredDecisionForTest(t, "deny"); !errors.Is(err, ErrApprovalDenied) {
+		t.Fatalf("ApproveExec error = %v, want denied", err)
+	}
+}
+
+func submitExpiredDecisionForTest(t *testing.T, decision string) error {
+	t.Helper()
 
 	exe := currentExecutable(t)
 	now := time.Date(2026, 4, 28, 15, 0, 0, 0, time.UTC)
@@ -639,14 +655,12 @@ func TestSocketApproverTreatsExpiredDenialAsTimeout(t *testing.T) {
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  "deny",
+		Decision:  decision,
 	})
 	if err != nil {
-		t.Fatalf("expired denial decision returned error: %v", err)
+		t.Fatalf("expired %s decision returned error: %v", decision, err)
 	}
-	if err := <-errCh; !errors.Is(err, ErrRequestExpired) {
-		t.Fatalf("ApproveExec error = %v, want expired", err)
-	}
+	return <-errCh
 }
 
 func TestProcessApproverLauncherExecutablePath(t *testing.T) {
