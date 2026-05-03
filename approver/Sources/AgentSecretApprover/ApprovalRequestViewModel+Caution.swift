@@ -34,7 +34,8 @@ extension ApprovalRequestViewModel {
         guard request.overrideEnv, !request.overriddenAliases.isEmpty else {
             return nil
         }
-        return "Will replace existing variables: \(request.overriddenAliases.joined(separator: ", "))"
+        let aliases: [String] = request.overriddenAliases.map(Self.sanitizedDisplayText)
+        return "Will replace existing variables: \(aliases.joined(separator: ", "))"
     }
 
     private static func mutableExecutableWarning(for request: ApprovalRequest) -> String? {

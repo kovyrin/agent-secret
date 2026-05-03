@@ -33,18 +33,18 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
         } else {
             normalizedAccount = nil
         }
-        self.alias = alias
-        self.ref = ref
-        self.account = normalizedAccount
-        accountLabel = normalizedAccount.map { account in "Account: \(account)" }
-        vaultName = parts.first ?? "Unknown vault"
-        if let normalizedAccount {
-            vaultScopeName = "\(normalizedAccount) / \(vaultName)"
+        self.alias = Self.sanitizedDisplayText(alias)
+        self.ref = Self.sanitizedDisplayText(ref)
+        self.account = normalizedAccount.map(Self.sanitizedDisplayText)
+        accountLabel = self.account.map { account in "Account: \(account)" }
+        vaultName = Self.sanitizedDisplayText(parts.first ?? "Unknown vault")
+        if let account = self.account {
+            vaultScopeName = "\(account) / \(vaultName)"
         } else {
             vaultScopeName = vaultName
         }
-        itemName = parts.dropFirst().first
-        fieldName = parts.dropFirst().dropFirst().first
+        itemName = parts.dropFirst().first.map(Self.sanitizedDisplayText)
+        fieldName = parts.dropFirst().dropFirst().first.map(Self.sanitizedDisplayText)
         symbolName = Self.symbolName(alias: alias, ref: ref)
     }
 
@@ -66,5 +66,9 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
             return "person"
         }
         return "key"
+    }
+
+    private static func sanitizedDisplayText(_ value: String) -> String {
+        ApprovalDisplayTextSanitizer.sanitize(value)
     }
 }
