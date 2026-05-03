@@ -263,12 +263,13 @@ the command path even when it was left behind as an older regular binary.
 By default, `agent-secret` uses the personal 1Password sign-in address
 `my.1password.com`. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` in the
 shell that will run `agent-secret exec` only when you want to force a specific
-account; the daemon inherits that value when it auto-starts. Project config can
-also set `account` globally, per profile, or per secret, and those config values
-take precedence for the affected secret refs. On macOS, `agent-secret` starts
-the daemon through the nested `AgentSecretDaemon.app` inside `Agent Secret.app`
-so 1Password sees the SDK caller as Agent Secret instead of the terminal or
-agent desktop app that launched the CLI.
+account; the CLI binds that account into the approval request so already-running
+daemons resolve the same account the approver sees. Project config can also set
+`account` globally, per profile, or per secret, and those config values take
+precedence for the affected secret refs. On macOS, `agent-secret` starts the
+daemon through the nested `AgentSecretDaemon.app` inside `Agent Secret.app` so
+1Password sees the SDK caller as Agent Secret instead of the terminal or agent
+desktop app that launched the CLI.
 
 Local release artifact build:
 
