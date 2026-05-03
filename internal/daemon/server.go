@@ -306,18 +306,21 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return ""
 	}
-	if err := s.broker.MarkPayloadDelivered(env.RequestID); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-		return ""
-	}
 	if s.stopped() {
+		s.broker.MarkPayloadDeliveryFailed(env.RequestID)
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
 		return ""
 	}
-	_ = writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
+	if err := writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
 		Env:           grant.Env,
 		SecretAliases: grant.SecretAliases,
-	})
+	}); err != nil {
+		s.broker.MarkPayloadDeliveryFailed(env.RequestID)
+		return ""
+	}
+	if err := s.broker.MarkPayloadDelivered(env.RequestID); err != nil {
+		return ""
+	}
 	return env.RequestID
 }
 
