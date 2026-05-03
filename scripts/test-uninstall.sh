@@ -132,6 +132,50 @@ dangerous_destination_paths_are_rejected_even_with_guard() {
     AGENT_SECRET_SKILLS_DIR="$link"
 }
 
+symlinked_parent_dirs_are_rejected() {
+  local run_dir="$tmp_dir/symlinked-parents"
+  local target="$run_dir/target"
+  local link="$run_dir/link-parent"
+  mkdir -p "$target"
+  printf 'keep\n' >"$target/keep.txt"
+  make_symlink "$target" "$link"
+
+  expect_failure \
+    symlinked-app-parent \
+    "app path must not contain symlinked parent directories" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_APP_DIR="$link/apps"
+
+  expect_failure \
+    symlinked-bin-parent \
+    "bin path must not contain symlinked parent directories" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_BIN_DIR="$link/bin"
+
+  expect_failure \
+    symlinked-skills-parent \
+    "skills path must not contain symlinked parent directories" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_SKILLS_DIR="$link/skills"
+
+  expect_failure \
+    symlinked-support-parent \
+    "support path must not contain symlinked parent directories" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_SUPPORT_DIR="$link/agent-secret"
+
+  expect_failure \
+    symlinked-audit-parent \
+    "audit path must not contain symlinked parent directories" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_REMOVE_AUDIT_LOGS=1 \
+    AGENT_SECRET_AUDIT_DIR="$link/agent-secret"
+
+  if [ ! -f "$target/keep.txt" ]; then
+    fail "symlinked parent target was modified"
+  fi
+}
+
 symlinked_dirs_are_rejected() {
   local run_dir="$tmp_dir/symlink"
   local target="$run_dir/target"
@@ -197,6 +241,7 @@ custom_guard_rejects_override
 custom_destination_guard_rejects_override
 dangerous_paths_are_rejected_even_with_guard
 dangerous_destination_paths_are_rejected_even_with_guard
+symlinked_parent_dirs_are_rejected
 symlinked_dirs_are_rejected
 safe_custom_paths_remove_only_known_files
 

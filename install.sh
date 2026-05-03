@@ -40,6 +40,40 @@ require_custom_install_path_guard() {
   die "$label path override requires AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1: $path"
 }
 
+is_system_root_alias() {
+  case "$1" in
+    /etc | /tmp | /var)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+reject_symlinked_parent_dirs() {
+  label="$1"
+  path="$2"
+  current="${path%/*}"
+
+  if [ "$current" = "$path" ] || [ "$current" = "" ]; then
+    return
+  fi
+
+  while [ "$current" != "/" ]; do
+    if [ -L "$current" ] && ! is_system_root_alias "$current"; then
+      die "$label path must not contain symlinked parent directories: $current"
+    fi
+
+    next="${current%/*}"
+    if [ "$next" = "$current" ] || [ "$next" = "" ]; then
+      current="/"
+    else
+      current="$next"
+    fi
+  done
+}
+
 validate_install_dir() {
   label="$1"
   path="$(strip_trailing_slashes "$2")"
@@ -64,6 +98,7 @@ validate_install_dir() {
       die "$label path must not contain dot segments: $path"
       ;;
   esac
+  reject_symlinked_parent_dirs "$label" "$path"
   if [ -L "$path" ]; then
     die "$label path must not be a symlink: $path"
   fi
