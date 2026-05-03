@@ -87,7 +87,6 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 		}},
 		{name: "ref", mutate: func(r *request.ExecRequest) { r.Secrets[0].Ref.Raw = "op://Example Vault/Other/token" }},
 		{name: "account", mutate: func(r *request.ExecRequest) { r.Secrets[0].Account = "Fixture" }},
-		{name: "delivery mode", mutate: func(r *request.ExecRequest) { r.DeliveryMode = request.DeliverySessionSocket }},
 		{name: "override", mutate: func(r *request.ExecRequest) { r.OverrideEnv = true }},
 		{name: "overridden alias", mutate: func(r *request.ExecRequest) { r.OverriddenAliases = []string{"TOKEN"} }},
 		{name: "mutable executable opt-in", mutate: func(r *request.ExecRequest) { r.AllowMutableExecutable = true }},
@@ -325,85 +324,6 @@ func TestReusableApprovalAuditFailureFailsClosed(t *testing.T) {
 	}
 }
 
-func TestSessionHandlesEnforceNonceTTLReadsAndDestroy(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
-	store := NewStore(func() time.Time { return now })
-	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token", Account: "Fixture"},
-	}, 1)
-	if err != nil {
-		t.Fatalf("CreateSession returned error: %v", err)
-	}
-
-	handleID := onlyHandleID(t, session)
-	grant, err := store.ResolveHandle(session.ID, handleID, session.Nonce)
-	if err != nil {
-		t.Fatalf("ResolveHandle returned error: %v", err)
-	}
-	if grant.Alias != "TOKEN" || grant.Account != "Fixture" {
-		t.Fatalf("grant = %+v", grant)
-	}
-	if _, err := store.ResolveHandle(session.ID, handleID, session.Nonce); !errors.Is(err, ErrReadExhausted) {
-		t.Fatalf("expected read exhaustion, got %v", err)
-	}
-	if _, err := store.ResolveHandle(session.ID, handleID, "wrong"); !errors.Is(err, ErrMismatch) {
-		t.Fatalf("expected nonce mismatch, got %v", err)
-	}
-	if err := store.DestroySession(session.ID); err != nil {
-		t.Fatalf("DestroySession returned error: %v", err)
-	}
-	if _, err := store.ResolveHandle(session.ID, handleID, session.Nonce); !errors.Is(err, ErrDestroyed) {
-		t.Fatalf("expected destroyed session, got %v", err)
-	}
-}
-
-func TestSessionCreationAndLookupFailures(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
-	store := NewStore(func() time.Time { return now })
-	if _, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
-	}, 0); !errors.Is(err, ErrReadExhausted) {
-		t.Fatalf("expected read exhaustion for maxReads=0, got %v", err)
-	}
-
-	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
-	}, 1)
-	if err != nil {
-		t.Fatalf("CreateSession returned error: %v", err)
-	}
-	if _, err := store.ResolveHandle("missing", "handle", "nonce_1"); !errors.Is(err, ErrMismatch) {
-		t.Fatalf("expected missing session mismatch, got %v", err)
-	}
-	if _, err := store.ResolveHandle(session.ID, "missing", session.Nonce); !errors.Is(err, ErrHandleMissing) {
-		t.Fatalf("expected missing handle error, got %v", err)
-	}
-	if err := store.DestroySession("missing"); !errors.Is(err, ErrMismatch) {
-		t.Fatalf("expected missing destroy mismatch, got %v", err)
-	}
-}
-
-func TestSessionExpiration(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
-	store := NewStore(func() time.Time { return now.Add(2 * time.Minute) })
-	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
-	}, 1)
-	if err != nil {
-		t.Fatalf("CreateSession returned error: %v", err)
-	}
-
-	if _, err := store.ResolveHandle(session.ID, onlyHandleID(t, session), session.Nonce); !errors.Is(err, ErrExpired) {
-		t.Fatalf("expected expired session, got %v", err)
-	}
-}
-
 func TestPolicyObjectsAreValueFreeWhenCacheContainsSecret(t *testing.T) {
 	t.Parallel()
 
@@ -429,23 +349,6 @@ func TestPolicyObjectsAreValueFreeWhenCacheContainsSecret(t *testing.T) {
 	}
 	if string(encoded) == "" || containsCanary(encoded) {
 		t.Fatalf("policy object leaked canary: %s", encoded)
-	}
-
-	session, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: req.Secrets[0].Ref.Raw, Account: req.Secrets[0].Account},
-	}, 1)
-	if err != nil {
-		t.Fatalf("CreateSession returned error: %v", err)
-	}
-	if err := cache.Put(session.ID, req.Secrets[0].Ref.Raw, req.Secrets[0].Account, canarySecret); err != nil {
-		t.Fatalf("Put returned error: %v", err)
-	}
-	encoded, err = json.Marshal(session)
-	if err != nil {
-		t.Fatalf("marshal session: %v", err)
-	}
-	if string(encoded) == "" || containsCanary(encoded) {
-		t.Fatalf("session object leaked canary: %s", encoded)
 	}
 }
 
@@ -543,7 +446,7 @@ func TestUnknownDeliveryResultDoesNotConsumeReusableUse(t *testing.T) {
 	}
 }
 
-func TestAddReusableAndCreateSessionGenerateIdentifiers(t *testing.T) {
+func TestAddReusableGeneratesIdentifiers(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
@@ -558,23 +461,6 @@ func TestAddReusableAndCreateSessionGenerateIdentifiers(t *testing.T) {
 	if len(approval.ID) != len("appr_")+32 || len(approval.Nonce) != len("nonce_")+32 {
 		t.Fatalf("generated approval identifier lengths = id:%d nonce:%d", len(approval.ID), len(approval.Nonce))
 	}
-
-	session, err := store.CreateSession("", "", now.Add(time.Minute), []SecretGrant{
-		{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
-	}, 1)
-	if err != nil {
-		t.Fatalf("CreateSession returned error: %v", err)
-	}
-	if !strings.HasPrefix(session.ID, "sess_") || !strings.HasPrefix(session.Nonce, "nonce_") {
-		t.Fatalf("generated session identifiers = %+v", session)
-	}
-	if len(session.ID) != len("sess_")+32 || len(session.Nonce) != len("nonce_")+32 {
-		t.Fatalf("generated session identifier lengths = id:%d nonce:%d", len(session.ID), len(session.Nonce))
-	}
-	handleID := onlyHandleID(t, session)
-	if !strings.HasPrefix(handleID, "h_") || len(handleID) != len("h_")+32 {
-		t.Fatalf("generated handle id = %q", handleID)
-	}
 }
 
 func TestStoreRandomIDFailuresReturnErrors(t *testing.T) {
@@ -582,7 +468,6 @@ func TestStoreRandomIDFailuresReturnErrors(t *testing.T) {
 
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	entropyErr := errors.New("entropy unavailable")
-	grants := []SecretGrant{{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"}}
 	tests := []struct {
 		name string
 		run  func(*testing.T, *Store) error
@@ -605,30 +490,6 @@ func TestStoreRandomIDFailuresReturnErrors(t *testing.T) {
 				return err
 			},
 			want: "generate reusable approval nonce",
-		},
-		{
-			name: "session id",
-			run: func(_ *testing.T, store *Store) error {
-				_, err := store.CreateSession("", "nonce_1", now.Add(time.Minute), grants, 1)
-				return err
-			},
-			want: "generate session id",
-		},
-		{
-			name: "session nonce",
-			run: func(_ *testing.T, store *Store) error {
-				_, err := store.CreateSession("sess_1", "", now.Add(time.Minute), grants, 1)
-				return err
-			},
-			want: "generate session nonce",
-		},
-		{
-			name: "secret handle id",
-			run: func(_ *testing.T, store *Store) error {
-				_, err := store.CreateSession("sess_1", "nonce_1", now.Add(time.Minute), grants, 1)
-				return err
-			},
-			want: "generate secret handle id",
 		},
 	}
 
@@ -666,24 +527,11 @@ func testRequest(t *testing.T, now time.Time) request.ExecRequest {
 			"PATH=/opt/homebrew/bin",
 			"NODE_OPTIONS=--require ./safe.js",
 		}),
-		Secrets:      []request.Secret{{Alias: "TOKEN", Ref: ref}},
-		TTL:          2 * time.Minute,
-		ReceivedAt:   now,
-		ExpiresAt:    now.Add(2 * time.Minute),
-		DeliveryMode: request.DeliveryEnvExec,
+		Secrets:    []request.Secret{{Alias: "TOKEN", Ref: ref}},
+		TTL:        2 * time.Minute,
+		ReceivedAt: now,
+		ExpiresAt:  now.Add(2 * time.Minute),
 	}
-}
-
-func onlyHandleID(t *testing.T, session Session) string {
-	t.Helper()
-
-	if len(session.Handles) != 1 {
-		t.Fatalf("expected one handle, got %d", len(session.Handles))
-	}
-	for id := range session.Handles {
-		return id
-	}
-	panic("unreachable")
 }
 
 type failingRandomReader struct {

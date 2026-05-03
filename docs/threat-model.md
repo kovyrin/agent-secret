@@ -27,7 +27,7 @@ Agent Secret is a local macOS-first broker for short-lived access to
 5. The CLI starts the child process with those environment variables.
 6. The daemon records value-free audit metadata.
 
-Session/socket secret reads are planned, but not currently implemented.
+Other delivery modes are out of scope for the current implementation.
 
 ## Assets
 

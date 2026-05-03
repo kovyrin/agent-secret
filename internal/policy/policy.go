@@ -17,13 +17,10 @@ import (
 )
 
 var (
-	ErrAuditFailed   = errors.New("audit failed")
-	ErrDestroyed     = errors.New("policy object destroyed")
-	ErrExpired       = errors.New("policy object expired")
-	ErrHandleMissing = errors.New("capability handle missing")
-	ErrMismatch      = errors.New("policy mismatch")
-	ErrReadExhausted = errors.New("capability read count exhausted")
-	ErrUseExhausted  = errors.New("reusable approval use count exhausted")
+	ErrAuditFailed  = errors.New("audit failed")
+	ErrExpired      = errors.New("policy object expired")
+	ErrMismatch     = errors.New("policy mismatch")
+	ErrUseExhausted = errors.New("reusable approval use count exhausted")
 )
 
 const DefaultReusableUses = request.DefaultReusableUses
@@ -43,7 +40,6 @@ type Store struct {
 	now       func() time.Time
 	random    io.Reader
 	approvals map[string]*ReusableApproval
-	sessions  map[string]*Session
 }
 
 type ReusableApproval struct {
@@ -64,7 +60,6 @@ type ReuseKey struct {
 	CWD                    string
 	EnvironmentFingerprint string
 	Secrets                []SecretGrant
-	DeliveryMode           request.DeliveryMode
 	TTL                    time.Duration
 	ReusableUses           int
 	OverrideEnv            bool
@@ -76,23 +71,6 @@ type SecretGrant struct {
 	Alias   string
 	Ref     string
 	Account string
-}
-
-type Session struct {
-	ID        string
-	Nonce     string
-	ExpiresAt time.Time
-	Destroyed bool
-	Handles   map[string]*Handle
-}
-
-type Handle struct {
-	ID       string
-	Alias    string
-	Ref      string
-	Account  string
-	MaxReads int
-	Reads    int
 }
 
 type DeliveryResult string
@@ -116,7 +94,6 @@ func NewStore(now func() time.Time) *Store {
 		now:       now,
 		random:    rand.Reader,
 		approvals: make(map[string]*ReusableApproval),
-		sessions:  make(map[string]*Session),
 	}
 }
 
@@ -317,97 +294,6 @@ func (s *Store) Clear() {
 	defer s.mu.Unlock()
 
 	s.approvals = make(map[string]*ReusableApproval)
-	s.sessions = make(map[string]*Session)
-}
-
-func (s *Store) CreateSession(id string, nonce string, expiresAt time.Time, grants []SecretGrant, maxReads int) (Session, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if maxReads <= 0 {
-		return Session{}, ErrReadExhausted
-	}
-	if id == "" {
-		var err error
-		id, err = s.randomID("sess")
-		if err != nil {
-			return Session{}, fmt.Errorf("generate session id: %w", err)
-		}
-	}
-	if nonce == "" {
-		var err error
-		nonce, err = s.randomID("nonce")
-		if err != nil {
-			return Session{}, fmt.Errorf("generate session nonce: %w", err)
-		}
-	}
-
-	handles := make(map[string]*Handle, len(grants))
-	for _, grant := range grants {
-		handleID, err := s.randomID("h")
-		if err != nil {
-			return Session{}, fmt.Errorf("generate secret handle id: %w", err)
-		}
-		handles[handleID] = &Handle{
-			ID:       handleID,
-			Alias:    grant.Alias,
-			Ref:      grant.Ref,
-			Account:  grant.Account,
-			MaxReads: maxReads,
-		}
-	}
-
-	session := &Session{
-		ID:        id,
-		Nonce:     nonce,
-		ExpiresAt: expiresAt,
-		Handles:   handles,
-	}
-	s.sessions[id] = session
-
-	return cloneSession(session), nil
-}
-
-func (s *Store) ResolveHandle(sessionID string, handleID string, nonce string) (SecretGrant, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	session, ok := s.sessions[sessionID]
-	if !ok {
-		return SecretGrant{}, ErrMismatch
-	}
-	if session.Destroyed {
-		return SecretGrant{}, ErrDestroyed
-	}
-	if session.Nonce != nonce {
-		return SecretGrant{}, ErrMismatch
-	}
-	if !s.now().Before(session.ExpiresAt) {
-		return SecretGrant{}, ErrExpired
-	}
-
-	handle, ok := session.Handles[handleID]
-	if !ok {
-		return SecretGrant{}, ErrHandleMissing
-	}
-	if handle.Reads >= handle.MaxReads {
-		return SecretGrant{}, ErrReadExhausted
-	}
-
-	handle.Reads++
-	return SecretGrant{Alias: handle.Alias, Ref: handle.Ref, Account: handle.Account}, nil
-}
-
-func (s *Store) DestroySession(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	session, ok := s.sessions[id]
-	if !ok {
-		return ErrMismatch
-	}
-	session.Destroyed = true
-	return nil
 }
 
 func NewReuseKey(req request.ExecRequest) ReuseKey {
@@ -448,7 +334,6 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 		CWD:                    req.CWD,
 		EnvironmentFingerprint: req.EnvironmentFingerprint,
 		Secrets:                secrets,
-		DeliveryMode:           req.DeliveryMode,
 		TTL:                    req.TTL,
 		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 		OverrideEnv:            req.OverrideEnv,
@@ -465,7 +350,6 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 		k.CWD == other.CWD &&
 		k.EnvironmentFingerprint == other.EnvironmentFingerprint &&
 		slices.Equal(k.Secrets, other.Secrets) &&
-		k.DeliveryMode == other.DeliveryMode &&
 		k.TTL == other.TTL &&
 		k.ReusableUses == other.ReusableUses &&
 		k.OverrideEnv == other.OverrideEnv &&
@@ -552,16 +436,6 @@ func consumesUse(result DeliveryResult) bool {
 	default:
 		return false
 	}
-}
-
-func cloneSession(session *Session) Session {
-	clone := *session
-	clone.Handles = make(map[string]*Handle, len(session.Handles))
-	for id, handle := range session.Handles {
-		handleClone := *handle
-		clone.Handles[id] = &handleClone
-	}
-	return clone
 }
 
 func (s *Store) randomID(prefix string) (string, error) {

@@ -15,7 +15,7 @@ Planning scaffold, research spikes, Epic 3 core Go packages, the Epic 4
 CLI/daemon/exec path, and the Epic 5 native approver socket integration are in
 place. The macOS app bundle, development installer, local DMG builder,
 unattended install/uninstall scripts, and optional release signing hooks are in
-place on the distribution PR. Session/socket secret reads are next.
+place on the distribution PR.
 
 ## Current Documents
 

@@ -45,9 +45,6 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	if !req.ReceivedAt.Equal(receivedAt) || !req.ExpiresAt.Equal(receivedAt.Add(DefaultExecTTL)) {
 		t.Fatalf("unexpected request times: received=%s expires=%s", req.ReceivedAt, req.ExpiresAt)
 	}
-	if req.DeliveryMode != DeliveryEnvExec {
-		t.Fatalf("delivery mode = %s", req.DeliveryMode)
-	}
 	if req.ReusableUses != DefaultReusableUses {
 		t.Fatalf("reusable uses = %d, want default %d", req.ReusableUses, DefaultReusableUses)
 	}
@@ -104,10 +101,6 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 		}), want: ErrInvalidReference},
 		{name: "ttl too low", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
 		{name: "ttl too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.TTL = MaxExecTTL + time.Second }), want: ErrInvalidTTL},
-		{name: "max reads on env exec", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.MaxReads = 1 }), want: ErrInvalidMaxReads},
-		{name: "session max reads zero", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-			o.DeliveryMode = DeliverySessionSocket
-		}), want: ErrInvalidMaxReads},
 		{name: "reusable uses too low", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = -1 }), want: ErrInvalidReusableUses},
 		{name: "reusable uses too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = MaxReusableUses + 1 }), want: ErrInvalidReusableUses},
 		{name: "env conflict without override", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
@@ -153,24 +146,6 @@ func TestNewExecAllowsMutableExecutableWithExplicitOptIn(t *testing.T) {
 	}
 	if !req.AllowMutableExecutable {
 		t.Fatal("AllowMutableExecutable = false, want explicit opt-in recorded")
-	}
-}
-
-func TestNewExecAllowsSessionSocketMaxReads(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	writeExecutable(t, dir)
-
-	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-		o.DeliveryMode = DeliverySessionSocket
-		o.MaxReads = 2
-	}))
-	if err != nil {
-		t.Fatalf("NewExec returned error: %v", err)
-	}
-	if req.DeliveryMode != DeliverySessionSocket || req.MaxReads != 2 {
-		t.Fatalf("unexpected session delivery policy: mode=%s maxReads=%d", req.DeliveryMode, req.MaxReads)
 	}
 }
 
@@ -312,10 +287,6 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 		{name: "missing environment fingerprint", mutate: func(r *ExecRequest) { r.EnvironmentFingerprint = "" }, want: ErrInvalidRequest},
 		{name: "malformed environment fingerprint", mutate: func(r *ExecRequest) { r.EnvironmentFingerprint = "env-v1:not-hex" }, want: ErrInvalidRequest},
 		{name: "missing command", mutate: func(r *ExecRequest) { r.Command = nil }, want: ErrInvalidCommand},
-		{name: "session socket delivery", mutate: func(r *ExecRequest) {
-			r.DeliveryMode = DeliverySessionSocket
-			r.MaxReads = 1
-		}, want: ErrInvalidDeliveryMode},
 		{name: "tampered ref metadata", mutate: func(r *ExecRequest) { r.Secrets[0].Ref.Field = "other" }, want: ErrInvalidReference},
 		{name: "empty account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = "" }, want: ErrInvalidReference},
 		{name: "blank account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = " \t " }, want: ErrInvalidReference},

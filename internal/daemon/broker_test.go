@@ -1819,11 +1819,10 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 			"PATH=/opt/homebrew/bin",
 			"NODE_OPTIONS=--require ./safe.js",
 		}),
-		Secrets:      reqSecrets,
-		TTL:          request.DefaultExecTTL,
-		ReceivedAt:   now,
-		ExpiresAt:    now.Add(request.DefaultExecTTL),
-		DeliveryMode: request.DeliveryEnvExec,
+		Secrets:    reqSecrets,
+		TTL:        request.DefaultExecTTL,
+		ReceivedAt: now,
+		ExpiresAt:  now.Add(request.DefaultExecTTL),
 	}
 }
 

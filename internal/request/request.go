@@ -27,8 +27,6 @@ const (
 var (
 	ErrInvalidAlias        = errors.New("invalid secret alias")
 	ErrInvalidCommand      = errors.New("invalid command")
-	ErrInvalidDeliveryMode = errors.New("invalid delivery mode")
-	ErrInvalidMaxReads     = errors.New("invalid max reads")
 	ErrMutableExecutable   = errors.New("mutable executable requires explicit opt-in")
 	ErrInvalidReason       = errors.New("invalid reason")
 	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
@@ -38,13 +36,6 @@ var (
 )
 
 var aliasPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
-
-type DeliveryMode string
-
-const (
-	DeliveryEnvExec       DeliveryMode = "env_exec"
-	DeliverySessionSocket DeliveryMode = "session_socket"
-)
 
 type SecretSpec struct {
 	Alias   string
@@ -74,8 +65,6 @@ type ExecOptions struct {
 	Secrets                []SecretSpec
 	TTL                    time.Duration
 	ReceivedAt             time.Time
-	DeliveryMode           DeliveryMode
-	MaxReads               int
 	ReusableUses           int
 	OverrideEnv            bool
 	ForceRefresh           bool
@@ -94,8 +83,6 @@ type ExecRequest struct {
 	TTL                    time.Duration
 	ReceivedAt             time.Time
 	ExpiresAt              time.Time
-	DeliveryMode           DeliveryMode
-	MaxReads               int
 	ReusableUses           int
 	OverrideEnv            bool
 	OverriddenAliases      []string
@@ -120,12 +107,6 @@ func (r ExecRequest) ValidateForDaemon() error {
 	}
 	if reason != r.Reason {
 		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
-	}
-	if r.DeliveryMode == DeliverySessionSocket {
-		return fmt.Errorf("%w: daemon does not implement %q delivery", ErrInvalidDeliveryMode, r.DeliveryMode)
-	}
-	if err := validateDelivery(r.DeliveryMode, r.MaxReads); err != nil {
-		return err
 	}
 	if err := validateReusableUses(r.ReusableUses); err != nil {
 		return err
@@ -169,13 +150,6 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		return ExecRequest{}, err
 	}
 
-	mode := opts.DeliveryMode
-	if mode == "" {
-		mode = DeliveryEnvExec
-	}
-	if err := validateDelivery(mode, opts.MaxReads); err != nil {
-		return ExecRequest{}, err
-	}
 	reusableUses := ReusableUsesOrDefault(opts.ReusableUses)
 	if err := validateReusableUses(reusableUses); err != nil {
 		return ExecRequest{}, err
@@ -241,8 +215,6 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		TTL:                    ttl,
 		ReceivedAt:             receivedAt,
 		ExpiresAt:              receivedAt.Add(ttl),
-		DeliveryMode:           mode,
-		MaxReads:               opts.MaxReads,
 		ReusableUses:           reusableUses,
 		OverrideEnv:            opts.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,
@@ -306,22 +278,6 @@ func validateReason(reason string) (string, error) {
 		return "", fmt.Errorf("%w: maximum length is %d characters", ErrInvalidReason, MaxReasonLength)
 	}
 	return trimmed, nil
-}
-
-func validateDelivery(mode DeliveryMode, maxReads int) error {
-	switch mode {
-	case DeliveryEnvExec:
-		if maxReads != 0 {
-			return fmt.Errorf("%w: max reads is session/socket-only", ErrInvalidMaxReads)
-		}
-	case DeliverySessionSocket:
-		if maxReads <= 0 {
-			return fmt.Errorf("%w: session/socket reads require a positive max reads", ErrInvalidMaxReads)
-		}
-	default:
-		return fmt.Errorf("%w: %q", ErrInvalidDeliveryMode, mode)
-	}
-	return nil
 }
 
 func validateReusableUses(uses int) error {

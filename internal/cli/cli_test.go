@@ -43,9 +43,6 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	if req.Command[0] != "terraform" || req.ResolvedExecutable == "" {
 		t.Fatalf("unexpected command resolution: %+v", req.Command)
 	}
-	if req.DeliveryMode != request.DeliveryEnvExec {
-		t.Fatalf("delivery mode = %s", req.DeliveryMode)
-	}
 }
 
 func TestParseExecBuildsRequestFromProfile(t *testing.T) {

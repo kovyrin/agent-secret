@@ -1275,11 +1275,10 @@ func approvalTestRequest(t *testing.T, expiresAt time.Time) request.ExecRequest 
 			"PATH=/opt/homebrew/bin",
 			"NODE_OPTIONS=--require ./safe.js",
 		}),
-		Secrets:      []request.Secret{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
-		ReceivedAt:   expiresAt.Add(-request.DefaultExecTTL),
-		ExpiresAt:    expiresAt,
-		TTL:          request.DefaultExecTTL,
-		DeliveryMode: request.DeliveryEnvExec,
+		Secrets:    []request.Secret{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		ReceivedAt: expiresAt.Add(-request.DefaultExecTTL),
+		ExpiresAt:  expiresAt,
+		TTL:        request.DefaultExecTTL,
 	}
 }
 

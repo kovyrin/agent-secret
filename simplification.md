@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `35,713`.
+Current selected LOC: `35,333`.
 
-Cumulative reduction from baseline: `3,515` LOC.
+Cumulative reduction from baseline: `3,895` LOC.
 
-Remaining reduction needed: `8,254` LOC.
+Remaining reduction needed: `7,874` LOC.
 
 Measurement command:
 
@@ -156,10 +156,19 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `9c6f45c`.
 - Change: remove superseded planning and distribution history docs.
 - LOC delta: -3,134.
-- Verification: pending.
+- Verification: `scripts/test-release-docs.sh`, `mise run lint:shell`,
+  `markdownlint`, `git diff --check`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: remove unimplemented session/socket delivery scaffolding.
+- LOC delta: -380.
+- Verification: focused Go package tests, `markdownlint`, `git diff --check`,
+  `mise run lint`.
 
 ## Current Decisions
 

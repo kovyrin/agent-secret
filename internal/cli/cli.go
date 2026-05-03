@@ -375,7 +375,6 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		Secrets:                effectiveSecrets,
 		TTL:                    effectiveTTL,
 		ReceivedAt:             p.now(),
-		DeliveryMode:           request.DeliveryEnvExec,
 		OverrideEnv:            *overrideEnv,
 		ForceRefresh:           *forceRefresh,
 		AllowMutableExecutable: *allowMutableExecutable,
