@@ -93,8 +93,9 @@ The installer should:
 1. Detect `arm64` or `x86_64`.
 2. Resolve the latest release unless `AGENT_SECRET_VERSION` is set.
 3. Download the matching release artifact.
-4. Verify the checksum, DMG signature, Gatekeeper assessment, notarization
-   ticket, and mounted app bundle identity.
+4. Verify the checksum, DMG signature, Developer ID Team ID, Gatekeeper
+   assessment, notarization ticket, mounted app bundle ID, daemon helper bundle
+   ID, and bundled CLI signature.
 5. Stop the old per-user daemon if it is running.
 6. Copy `Agent Secret.app` to `/Applications` by default.
 7. Create or refresh the CLI symlink in `~/.local/bin`.
@@ -113,6 +114,8 @@ For local smoke tests, `AGENT_SECRET_DMG` and
 `AGENT_SECRET_CHECKSUMS_FILE` can point at a locally built artifact. Unsigned
 local artifacts must also set `AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`; signed
 but unstapled local artifacts can set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
+Maintainer release installs expect Team ID `B6L7QLWTZW` and bundle identifiers
+`com.kovyrin.agent-secret` and `com.kovyrin.agent-secret.daemon`.
 
 ### Upgrade
 

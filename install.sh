@@ -13,6 +13,9 @@ local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
 allow_unsigned_install="${AGENT_SECRET_ALLOW_UNSIGNED_INSTALL:-0}"
 require_notarization="${AGENT_SECRET_REQUIRE_NOTARIZATION:-1}"
+expected_team_id="${AGENT_SECRET_EXPECTED_TEAM_ID:-B6L7QLWTZW}"
+expected_app_bundle_id="${AGENT_SECRET_EXPECTED_APP_BUNDLE_ID:-com.kovyrin.agent-secret}"
+expected_daemon_bundle_id="${AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID:-com.kovyrin.agent-secret.daemon}"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-install.XXXXXX")"
 mount_dir="$tmp_dir/mount"
@@ -95,6 +98,7 @@ verify_dmg_identity() {
 
   codesign --verify --strict --verbose=2 "$dmg" ||
     die "DMG code signature verification failed"
+  verify_team_id "$dmg" "DMG"
   spctl --assess --type open --context context:primary-signature --verbose "$dmg" ||
     die "DMG Gatekeeper assessment failed"
   if [ "$require_notarization" = "1" ]; then
@@ -103,8 +107,54 @@ verify_dmg_identity() {
   fi
 }
 
+codesign_team_id() {
+  path="$1"
+  details="$(codesign -dv --verbose=4 "$path" 2>&1)" ||
+    die "could not read code signature details for $path"
+  printf '%s\n' "$details" |
+    awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }' ||
+    die "code signature for $path does not include a TeamIdentifier"
+}
+
+verify_team_id() {
+  path="$1"
+  label="$2"
+  team_id="$(codesign_team_id "$path")"
+  if [ "$team_id" != "$expected_team_id" ]; then
+    die "$label signed by unexpected Team ID: $team_id"
+  fi
+}
+
+plist_value() {
+  plist="$1"
+  key="$2"
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null ||
+    die "could not read $key from $plist"
+}
+
+verify_bundle_identifier() {
+  bundle="$1"
+  expected="$2"
+  label="$3"
+  plist="$bundle/Contents/Info.plist"
+
+  [ -f "$plist" ] || die "$label is missing Contents/Info.plist"
+  got="$(plist_value "$plist" CFBundleIdentifier)"
+  if [ "$got" != "$expected" ]; then
+    die "$label has unexpected bundle identifier: $got"
+  fi
+}
+
 verify_app_identity() {
   app="$1"
+  daemon_app="$app/Contents/Library/Helpers/AgentSecretDaemon.app"
+  cli="$app/Contents/Resources/bin/agent-secret"
+
+  require_command /usr/libexec/PlistBuddy
+  verify_bundle_identifier "$app" "$expected_app_bundle_id" "Agent Secret.app"
+  [ -d "$daemon_app" ] || die "Agent Secret.app is missing the daemon helper app"
+  verify_bundle_identifier "$daemon_app" "$expected_daemon_bundle_id" "AgentSecretDaemon.app"
+  [ -x "$cli" ] || die "Agent Secret.app is missing the bundled agent-secret CLI"
 
   if [ "$allow_unsigned_install" = "1" ]; then
     return
@@ -112,6 +162,9 @@ verify_app_identity() {
 
   codesign --verify --deep --strict --verbose=2 "$app" ||
     die "app code signature verification failed"
+  verify_team_id "$app" "Agent Secret.app"
+  verify_team_id "$daemon_app" "AgentSecretDaemon.app"
+  verify_team_id "$cli" "bundled agent-secret CLI"
   spctl --assess --type execute --verbose "$app" ||
     die "app Gatekeeper assessment failed"
   if [ "$require_notarization" = "1" ]; then
