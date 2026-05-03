@@ -109,6 +109,15 @@ expect_failure "refusing to re-exec PATH-discovered mise while release signing e
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/mise-trap-out"
 assert_path_trap_clean "$trap_log"
 
+expect_failure "refusing to re-exec PATH-discovered mise while release signing environment is present" \
+  env -i \
+  "PATH=$trap_dir:$test_path" \
+  AGENT_SECRET_PATH_TRAP_LOG="$trap_log" \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  "$project_root/scripts/build-app-bundle.sh" --version v0.0.0 --output "$tmp_dir/bundle-mise-trap-out"
+assert_path_trap_clean "$trap_log"
+
 unsafe_keychain="$tmp_dir/unrelated-user-file"
 dummy_cert="$tmp_dir/dummy.p12"
 printf 'keep\n' >"$unsafe_keychain"
