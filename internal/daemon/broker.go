@@ -578,6 +578,10 @@ func (b *Broker) recordRequiredAudit(ctx context.Context, event audit.Event) err
 	return nil
 }
 
+func terminalAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+}
+
 func (b *Broker) recordApprovalError(
 	ctx context.Context,
 	requestID string,
@@ -590,7 +594,9 @@ func (b *Broker) recordApprovalError(
 	case errors.Is(err, ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
 		event.ErrorCode = "request_expired"
-		return b.recordRequiredAudit(ctx, event)
+		auditCtx, cancel := terminalAuditContext(ctx)
+		defer cancel()
+		return b.recordRequiredAudit(auditCtx, event)
 	default:
 		return nil
 	}
@@ -615,7 +621,9 @@ func (b *Broker) recordSecretFetchFailed(
 		SecretRefs: auditRefsForIdentity(secrets, identity),
 		ErrorCode:  secretFetchErrorCode(err),
 	}
-	return b.recordRequiredAudit(ctx, event)
+	auditCtx, cancel := terminalAuditContext(ctx)
+	defer cancel()
+	return b.recordRequiredAudit(auditCtx, event)
 }
 
 func secretFetchErrorCode(err error) string {
