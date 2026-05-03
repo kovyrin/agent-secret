@@ -15,6 +15,43 @@ final class ApprovalDecisionTests: XCTestCase {
         )
     }
 
+    func testReusableApprovalFactoryNormalizesOutOfRangeUseLimits() {
+        XCTAssertEqual(
+            ApprovalDecision
+                .approveReusable(requestID: "req_1", nonce: "nonce_1", reusableUses: 0)
+                .reusableUses,
+            ApprovalRequest.defaultReusableUses
+        )
+        XCTAssertEqual(
+            ApprovalDecision
+                .approveReusable(
+                    requestID: "req_1",
+                    nonce: "nonce_1",
+                    reusableUses: ApprovalRequest.maxReusableUses + 1
+                )
+                .reusableUses,
+            ApprovalRequest.defaultReusableUses
+        )
+    }
+
+    func testDecodeNormalizesOutOfRangeReusableApprovalUseLimits() throws {
+        for reusableUses in [0, ApprovalRequest.maxReusableUses + 1] {
+            let json = """
+            {
+                "requestID": "req_1",
+                "nonce": "nonce_1",
+                "decision": "approve_reusable",
+                "reusableUses": \(reusableUses)
+            }
+            """
+
+            XCTAssertEqual(
+                try decode(json).reusableUses,
+                ApprovalRequest.defaultReusableUses
+            )
+        }
+    }
+
     func testDecodeRejectsReusableApprovalWithoutUseLimit() {
         let json = """
         {

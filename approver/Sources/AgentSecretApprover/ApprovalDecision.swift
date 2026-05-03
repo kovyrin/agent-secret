@@ -1,6 +1,6 @@
 import Foundation
 
-/// Encodes only daemon decision metadata; reusable use limits are validated before submission.
+/// Encodes only daemon decision metadata; reusable use limits are normalized before submission.
 public struct ApprovalDecision: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case requestID
@@ -31,8 +31,11 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
         let requestID = try container.decode(String.self, forKey: .requestID)
         let nonce = try container.decode(String.self, forKey: .nonce)
         let decision = try container.decode(ApprovalDecisionKind.self, forKey: .decision)
-        let reusableUses = try container.decodeIfPresent(Int.self, forKey: .reusableUses)
-        try Self.validate(decision: decision, reusableUses: reusableUses, in: container)
+        let reusableUses = try Self.normalizedReusableUses(
+            decision: decision,
+            reusableUses: container.decodeIfPresent(Int.self, forKey: .reusableUses),
+            in: container
+        )
         self.init(
             requestID: requestID,
             nonce: nonce,
@@ -50,7 +53,7 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
             requestID: requestID,
             nonce: nonce,
             decision: .approveReusable,
-            reusableUses: reusableUses
+            reusableUses: ApprovalRequest.boundedReusableUses(reusableUses)
         )
     }
 
@@ -62,20 +65,21 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
         Self(requestID: requestID, nonce: nonce, decision: .timeout, reusableUses: nil)
     }
 
-    private static func validate(
+    private static func normalizedReusableUses(
         decision: ApprovalDecisionKind,
         reusableUses: Int?,
         in container: KeyedDecodingContainer<CodingKeys>
-    ) throws {
+    ) throws -> Int? {
         switch decision {
         case .approveReusable:
-            guard reusableUses != nil else {
+            guard let reusableUses else {
                 throw DecodingError.dataCorruptedError(
                     forKey: .reusableUses,
                     in: container,
                     debugDescription: "approve_reusable decisions require reusableUses"
                 )
             }
+            return ApprovalRequest.boundedReusableUses(reusableUses)
 
         case .approveOnce, .deny, .timeout:
             guard reusableUses == nil else {
@@ -85,6 +89,7 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
                     debugDescription: "\(decision.rawValue) decisions must not include reusableUses"
                 )
             }
+            return nil
         }
     }
 }

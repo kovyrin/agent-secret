@@ -84,7 +84,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         reusableUses = Self.boundedReusableUses(decodedReusableUses)
     }
 
-    private static func boundedReusableUses(_ uses: Int) -> Int {
+    static func boundedReusableUses(_ uses: Int) -> Int {
         guard (1 ... maxReusableUses).contains(uses) else {
             return defaultReusableUses
         }
