@@ -95,6 +95,55 @@ resolve_path_tool() {
   printf '%s\n' "$path"
 }
 
+release_signing_env_present() {
+  local name=""
+  local value=""
+
+  for name in \
+    AGENT_SECRET_CODESIGN_CERT_P12_BASE64 \
+    AGENT_SECRET_CODESIGN_CERT_P12_PATH \
+    AGENT_SECRET_CODESIGN_CERT_PASSWORD \
+    AGENT_SECRET_CODESIGN_ENTITLEMENTS \
+    AGENT_SECRET_NOTARY_ISSUER_ID \
+    AGENT_SECRET_NOTARY_KEY \
+    AGENT_SECRET_NOTARY_KEY_ID; do
+    if [[ "${!name:-}" != "" ]]; then
+      return 0
+    fi
+  done
+
+  value="${AGENT_SECRET_CODESIGN_IDENTITY:-}"
+  if [[ "$value" != "" && "$value" != "-" ]]; then
+    return 0
+  fi
+  if [[ "${AGENT_SECRET_NOTARIZE:-}" == "1" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+require_release_go_toolchain() {
+  if ! release_signing_env_present; then
+    return
+  fi
+
+  if [[ "${GOROOT:-}" == "" ]]; then
+    echo "build-app-bundle: release signing requires inherited GOROOT from trusted mise toolchain" >&2
+    echo "build-app-bundle: run from the trusted mise context without overriding GOROOT" >&2
+    exit 1
+  fi
+  if [[ "$GOROOT" != /* ]]; then
+    echo "build-app-bundle: inherited GOROOT must be absolute for release signing" >&2
+    exit 1
+  fi
+  if [[ "$tool_go" != "$GOROOT/bin/go" ]]; then
+    echo "build-app-bundle: inherited GOROOT does not match selected Go toolchain" >&2
+    echo "build-app-bundle: run from the trusted mise context without overriding PATH or GOROOT" >&2
+    exit 1
+  fi
+}
+
 tool_go="$(resolve_path_tool go)"
 tool_swift="/usr/bin/swift"
 tool_mktemp="/usr/bin/mktemp"
@@ -115,6 +164,7 @@ require_tool cp "$tool_cp"
 require_tool sips "$tool_sips"
 require_tool iconutil "$tool_iconutil"
 require_tool codesign "$tool_codesign"
+require_release_go_toolchain
 
 run_go() (
   unset GOROOT

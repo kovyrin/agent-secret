@@ -182,11 +182,15 @@ fi
 if [[ "$trusted_go" == "" || "$trusted_go" != /* ]]; then
   fail "could not locate trusted go for GOROOT trap test"
 fi
+trusted_goroot="$(GOROOT='' "$trusted_go" env GOROOT || true)"
+if [[ "$trusted_goroot" == "" || "$trusted_goroot" != /* ]]; then
+  fail "could not locate trusted GOROOT for release toolchain test"
+fi
 trusted_go_path="${trusted_go%/*}:$test_path"
 mkdir -p "$fake_goroot/bin"
 cat >"$fake_goroot/bin/go" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 printf '%s\n' "fake-goroot-go $*" >>"$AGENT_SECRET_FAKE_GOROOT_LOG"
 exit 44
 BASH
@@ -204,6 +208,39 @@ expect_failure "inherited GOROOT does not match selected Go toolchain" \
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/goroot-trap-out"
 if [[ -s "$fake_goroot_log" ]]; then
   fail "release script executed fake GOROOT go: $(cat "$fake_goroot_log")"
+fi
+
+expect_failure "release signing requires inherited GOROOT from trusted mise toolchain" \
+  env -i \
+  "PATH=$trusted_go_path" \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  AGENT_SECRET_IN_MISE=1 \
+  "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/missing-goroot-out"
+
+fake_path_go_dir="$tmp_dir/fake-path-go-bin"
+fake_path_go_log="$tmp_dir/fake-path-go.log"
+mkdir -p "$fake_path_go_dir"
+cat >"$fake_path_go_dir/go" <<'BASH'
+#!/bin/sh
+set -eu
+printf '%s\n' "fake-path-go $*" >>"$AGENT_SECRET_FAKE_PATH_GO_LOG"
+exit 44
+BASH
+chmod 755 "$fake_path_go_dir/go"
+: >"$fake_path_go_log"
+
+expect_failure "inherited GOROOT does not match selected Go toolchain" \
+  env -i \
+  "PATH=$fake_path_go_dir:$trusted_go_path" \
+  AGENT_SECRET_FAKE_PATH_GO_LOG="$fake_path_go_log" \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  AGENT_SECRET_IN_MISE=1 \
+  GOROOT="$trusted_goroot" \
+  "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/path-go-trap-out"
+if [[ -s "$fake_path_go_log" ]]; then
+  fail "release script executed fake PATH go: $(cat "$fake_path_go_log")"
 fi
 
 release_sensitive_scripts=(
