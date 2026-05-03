@@ -29,9 +29,9 @@ type ReuseAuditSink interface {
 }
 
 type ReuseAuditEvent struct {
-	ApprovalID   string
-	RemainingTTL time.Duration
-	RemainingUse int
+	ApprovalID    string
+	RemainingTTL  time.Duration
+	RemainingUses int
 }
 
 type Store struct {
@@ -234,9 +234,9 @@ func (s *Store) findReusableLocked(
 		}
 
 		event := ReuseAuditEvent{
-			ApprovalID:   approval.ID,
-			RemainingTTL: approval.ExpiresAt.Sub(now),
-			RemainingUse: remainingUses,
+			ApprovalID:    approval.ID,
+			RemainingTTL:  approval.ExpiresAt.Sub(now),
+			RemainingUses: remainingUses,
 		}
 		if sink != nil {
 			if err := sink.ApprovalReused(ctx, event); err != nil {

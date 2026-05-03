@@ -312,9 +312,9 @@ func TestWriterPreflightAndApprovalReused(t *testing.T) {
 		t.Fatalf("Preflight returned error: %v", err)
 	}
 	err = writer.ApprovalReused(context.Background(), policy.ReuseAuditEvent{
-		ApprovalID:   "approval_1",
-		RemainingTTL: 90 * time.Second,
-		RemainingUse: 2,
+		ApprovalID:    "approval_1",
+		RemainingTTL:  90 * time.Second,
+		RemainingUses: 2,
 	})
 	if err != nil {
 		t.Fatalf("ApprovalReused returned error: %v", err)

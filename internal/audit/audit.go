@@ -112,7 +112,7 @@ func FromExecRequest(eventType EventType, requestID string, req request.ExecRequ
 
 func (w *Writer) ApprovalReused(ctx context.Context, event policy.ReuseAuditEvent) error {
 	remainingTTL := event.RemainingTTL.Milliseconds()
-	remainingUses := event.RemainingUse
+	remainingUses := event.RemainingUses
 	return w.Record(ctx, Event{
 		Type:               EventApprovalReused,
 		ApprovalID:         event.ApprovalID,

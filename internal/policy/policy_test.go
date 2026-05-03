@@ -47,7 +47,7 @@ func TestReusableApprovalMatchesExactRequestAndAuditsBeforeUse(t *testing.T) {
 	if reused.ID != approval.ID {
 		t.Fatalf("reused approval = %q, want %q", reused.ID, approval.ID)
 	}
-	if len(audit.events) != 1 || audit.events[0].RemainingUse != DefaultReusableUses {
+	if len(audit.events) != 1 || audit.events[0].RemainingUses != DefaultReusableUses {
 		t.Fatalf("unexpected audit events: %+v", audit.events)
 	}
 
@@ -129,7 +129,7 @@ func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
 	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, audit); err != nil {
 		t.Fatalf("MatchReusableForReuseAudit returned error: %v", err)
 	}
-	if len(audit.events) != 1 || audit.events[0].RemainingUse != 2 {
+	if len(audit.events) != 1 || audit.events[0].RemainingUses != 2 {
 		t.Fatalf("unexpected audit events: %+v", audit.events)
 	}
 
