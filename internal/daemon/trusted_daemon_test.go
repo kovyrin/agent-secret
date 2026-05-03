@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -53,7 +55,50 @@ func TestTrustedDaemonValidatorAllowsTrustedExecutable(t *testing.T) {
 
 	trusted := writeExecutableAt(t, t.TempDir(), "agent-secretd")
 	validator := newTrustedDaemonValidator([]string{trusted}, "")
-	if err := validator.ValidateDaemonPeer(peercred.Info{ExecutablePath: trusted}); err != nil {
+	if err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(trusted)); err != nil {
 		t.Fatalf("ValidateDaemonPeer returned error: %v", err)
+	}
+}
+
+func TestTrustedDaemonValidatorRejectsDifferentUID(t *testing.T) {
+	t.Parallel()
+
+	trusted := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	validator := newTrustedDaemonValidator([]string{trusted}, "")
+	info := trustedDaemonPeerInfo(trusted)
+	info.UID = os.Getuid() + 1
+
+	err := validator.ValidateDaemonPeer(info)
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want ErrUntrustedDaemon", err)
+	}
+	if !strings.Contains(err.Error(), "uid") {
+		t.Fatalf("ValidateDaemonPeer error = %q, want uid context", err)
+	}
+}
+
+func TestTrustedDaemonValidatorRejectsDifferentGID(t *testing.T) {
+	t.Parallel()
+
+	trusted := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	validator := newTrustedDaemonValidator([]string{trusted}, "")
+	info := trustedDaemonPeerInfo(trusted)
+	info.GID = os.Getgid() + 1
+
+	err := validator.ValidateDaemonPeer(info)
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want ErrUntrustedDaemon", err)
+	}
+	if !strings.Contains(err.Error(), "gid") {
+		t.Fatalf("ValidateDaemonPeer error = %q, want gid context", err)
+	}
+}
+
+func trustedDaemonPeerInfo(executable string) peercred.Info {
+	return peercred.Info{
+		UID:            os.Getuid(),
+		GID:            os.Getgid(),
+		PID:            os.Getpid(),
+		ExecutablePath: executable,
 	}
 }

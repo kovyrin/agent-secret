@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -61,5 +63,11 @@ func bundleExecutablePath(bundlePath string) (string, error) {
 }
 
 func (v TrustedDaemonValidator) ValidateDaemonPeer(info peercred.Info) error {
+	if info.UID != os.Getuid() {
+		return fmt.Errorf("%w: daemon uid %d != %d", ErrUntrustedDaemon, info.UID, os.Getuid())
+	}
+	if info.GID != os.Getgid() {
+		return fmt.Errorf("%w: daemon gid %d != %d", ErrUntrustedDaemon, info.GID, os.Getgid())
+	}
 	return v.set.validatePeer(info)
 }
