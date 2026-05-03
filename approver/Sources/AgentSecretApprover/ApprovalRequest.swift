@@ -17,7 +17,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case secrets
     }
 
-    /// Default reusable approval count when older daemon payloads omit it.
+    /// Default reusable approval count for programmatic requests and out-of-range daemon values.
     public static let defaultReusableUses: Int = 3
     /// Maximum reusable approval count accepted from daemon payloads.
     public static let maxReusableUses: Int = 20
