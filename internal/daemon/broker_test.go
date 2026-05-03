@@ -799,6 +799,102 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	}
 }
 
+func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      func() time.Time { return now },
+		Cache:    cache,
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{ref: "first"}},
+		Audit:    &memoryAudit{},
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); !ok {
+		t.Fatal("expected reusable value in cache before force refresh")
+	}
+
+	now = req.ExpiresAt.Add(-time.Millisecond)
+	broker.resolver = &advancingResolver{
+		value: "second",
+		advance: func() {
+			now = req.ExpiresAt.Add(time.Second)
+		},
+	}
+	force := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	force.ForceRefresh = true
+
+	_, err = broker.HandleExec(context.Background(), "req_2", "nonce_2", force)
+	if !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("expected expired reusable approval during refresh, got %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("expired reusable approval cache scope remained after force refresh")
+	}
+	if _, err := broker.store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+		t.Fatalf("expired reusable approval remained in store: %v", err)
+	}
+}
+
+func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	broker, err := NewBroker(BrokerOptions{
+		Now:      func() time.Time { return now },
+		Cache:    cache,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "first"}},
+		Audit:    &memoryAudit{},
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+
+	now = req.ExpiresAt.Add(-time.Millisecond)
+	reuse := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	if _, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", reuse); err != nil {
+		t.Fatalf("reuse HandleExec returned error before payload delivery: %v", err)
+	}
+
+	now = req.ExpiresAt.Add(time.Second)
+	if err := broker.MarkPayloadDelivered("req_2"); !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("expected reusable approval expiry before payload delivery, got %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("expired reusable approval cache scope remained before payload delivery")
+	}
+	if err := broker.MarkPayloadDelivered("req_2"); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("expired request should no longer accept payload delivery, got %v", err)
+	}
+}
+
 func TestBrokerReusableCacheExpiresWithoutMatchingRequest(t *testing.T) {
 	t.Parallel()
 

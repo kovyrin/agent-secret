@@ -193,6 +193,30 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	}
 }
 
+func TestFinishReusableAttemptRejectsExpiredApproval(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	req := testRequest(t, now)
+	approval, err := store.AddReusable(req, "appr_1", "nonce_1")
+	if err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+
+	now = req.ExpiresAt
+	expired, err := store.FinishReusableAttempt(approval.ID, DeliveryPayloadDelivered)
+	if !errors.Is(err, ErrExpired) {
+		t.Fatalf("expected expired approval at payload delivery, got %v", err)
+	}
+	if expired.Uses != 0 {
+		t.Fatalf("expired approval consumed use: %d", expired.Uses)
+	}
+	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("expected expired approval to be removed, got %v", err)
+	}
+}
+
 func TestReusableApprovalAuditFailureFailsClosed(t *testing.T) {
 	t.Parallel()
 

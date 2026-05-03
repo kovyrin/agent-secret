@@ -193,6 +193,10 @@ func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (Reusabl
 	if !ok {
 		return ReusableApproval{}, ErrMismatch
 	}
+	if !s.now().Before(approval.ExpiresAt) {
+		delete(s.approvals, id)
+		return *approval, ErrExpired
+	}
 	if consumesUse(result) {
 		approval.Uses++
 	}
