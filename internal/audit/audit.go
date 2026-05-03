@@ -177,10 +177,14 @@ func openPath(path string, now func() time.Time) (*Writer, error) {
 	if now == nil {
 		now = time.Now
 	}
-	if err := prepareAuditDirectory(filepath.Dir(path)); err != nil {
+	dir := filepath.Dir(path)
+	if err := prepareAuditDirectory(dir); err != nil {
 		return nil, err
 	}
 	if err := rejectInsecureFile(path); err != nil {
+		return nil, err
+	}
+	if err := rejectAuditDirectoryAncestry(dir); err != nil {
 		return nil, err
 	}
 
@@ -193,6 +197,9 @@ func openPath(path string, now func() time.Time) (*Writer, error) {
 }
 
 func prepareAuditDirectory(dir string) error {
+	if err := rejectAuditDirectoryAncestry(dir); err != nil {
+		return err
+	}
 	_, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -207,6 +214,9 @@ func prepareAuditDirectory(dir string) error {
 }
 
 func rejectInsecureDirectory(dir string) error {
+	if err := rejectAuditDirectoryAncestry(dir); err != nil {
+		return err
+	}
 	info, err := os.Lstat(dir)
 	if err != nil {
 		return fmt.Errorf("stat audit directory: %w", err)
@@ -224,6 +234,48 @@ func rejectInsecureDirectory(dir string) error {
 		return fmt.Errorf("%w: %s is owned by uid %d", ErrInsecureAuditLog, dir, uid)
 	}
 	return nil
+}
+
+func rejectAuditDirectoryAncestry(dir string) error {
+	cleanDir := filepath.Clean(dir)
+	for current := cleanDir; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("stat audit directory ancestor: %w", err)
+		}
+		if err == nil {
+			if err := rejectAuditDirectoryAncestorInfo(cleanDir, current, info); err != nil {
+				return err
+			}
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return nil
+		}
+	}
+}
+
+func rejectAuditDirectoryAncestorInfo(cleanDir, current string, info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		if isAllowedAuditRootAlias(current) {
+			return nil
+		}
+		return fmt.Errorf("%w: %s contains symlink ancestor %s", ErrInsecureAuditLog, cleanDir, current)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s contains non-directory ancestor %s", ErrInsecureAuditLog, cleanDir, current)
+	}
+	return nil
+}
+
+func isAllowedAuditRootAlias(path string) bool {
+	switch path {
+	case "/etc", "/tmp", "/var":
+		return true
+	default:
+		return false
+	}
 }
 
 func rejectInsecureFile(path string) error {
