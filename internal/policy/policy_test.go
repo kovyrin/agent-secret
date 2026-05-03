@@ -222,7 +222,7 @@ func TestReusableApprovalConsumesUseForAllPostPayloadOutcomes(t *testing.T) {
 		DeliveryCLISpawnFailureAfterPayload,
 		DeliveryImmediateChildExitAfterPayload,
 		DeliveryNonZeroChildExitAfterPayload,
-		DeliveryCommandStartedAuditFailureAfter,
+		DeliveryCommandStartedAuditFailureAfterPayload,
 		DeliveryClientDisconnectAfterPayload,
 	}
 

@@ -75,13 +75,13 @@ type SecretGrant struct {
 type DeliveryResult string
 
 const (
-	DeliveryPrePayloadFailure               DeliveryResult = "pre_payload_failure"
-	DeliveryPayloadDelivered                DeliveryResult = "payload_delivered"
-	DeliveryCLISpawnFailureAfterPayload     DeliveryResult = "cli_spawn_failure_after_payload"
-	DeliveryImmediateChildExitAfterPayload  DeliveryResult = "immediate_child_exit_after_payload"
-	DeliveryNonZeroChildExitAfterPayload    DeliveryResult = "non_zero_child_exit_after_payload"
-	DeliveryCommandStartedAuditFailureAfter DeliveryResult = "command_started_audit_failure_after_payload"
-	DeliveryClientDisconnectAfterPayload    DeliveryResult = "client_disconnect_after_payload"
+	DeliveryPrePayloadFailure                      DeliveryResult = "pre_payload_failure"
+	DeliveryPayloadDelivered                       DeliveryResult = "payload_delivered"
+	DeliveryCLISpawnFailureAfterPayload            DeliveryResult = "cli_spawn_failure_after_payload"
+	DeliveryImmediateChildExitAfterPayload         DeliveryResult = "immediate_child_exit_after_payload"
+	DeliveryNonZeroChildExitAfterPayload           DeliveryResult = "non_zero_child_exit_after_payload"
+	DeliveryCommandStartedAuditFailureAfterPayload DeliveryResult = "command_started_audit_failure_after_payload"
+	DeliveryClientDisconnectAfterPayload           DeliveryResult = "client_disconnect_after_payload"
 )
 
 func NewStore(now func() time.Time) *Store {
@@ -368,7 +368,7 @@ func consumesUse(result DeliveryResult) bool {
 		DeliveryCLISpawnFailureAfterPayload,
 		DeliveryImmediateChildExitAfterPayload,
 		DeliveryNonZeroChildExitAfterPayload,
-		DeliveryCommandStartedAuditFailureAfter,
+		DeliveryCommandStartedAuditFailureAfterPayload,
 		DeliveryClientDisconnectAfterPayload:
 		return true
 	case DeliveryPrePayloadFailure:
