@@ -108,6 +108,7 @@ AGENT_SECRET_VERSION=v0.3.1 install.sh
 AGENT_SECRET_APP_DIR="$HOME/Applications" install.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" install.sh
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" install.sh
+AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 install.sh
 ```
 
 For local smoke tests, set `AGENT_SECRET_INSTALL_DEV_MODE=1` and point
@@ -118,6 +119,9 @@ can set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`. Production installs pin the
 GitHub host, repository, Team ID `B6L7QLWTZW`, and bundle identifiers
 `com.kovyrin.agent-secret` and `com.kovyrin.agent-secret.daemon`; overriding
 those release trust roots requires development mode and local artifacts.
+Custom app, command, or skill destination roots require
+`AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1` and are rejected when empty,
+relative, broad, or symlinked.
 
 ### Upgrade
 
@@ -174,7 +178,9 @@ AGENT_SECRET_REMOVE_AUDIT_LOGS=1 uninstall.sh
 For isolated tests, `AGENT_SECRET_SUPPORT_DIR` and `AGENT_SECRET_AUDIT_DIR`
 may point at temporary `agent-secret` directories only when
 `AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1` is also set. The script refuses
-empty, relative, broad, symlinked, and non-`agent-secret` directory targets.
+empty, relative, broad, symlinked, and non-`agent-secret` support or audit
+directory targets. The same custom-path guard applies to app, command, and
+skill destination roots.
 
 Audit logs are durable by design and should require an explicit separate
 removal command:

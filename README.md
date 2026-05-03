@@ -206,6 +206,7 @@ AGENT_SECRET_VERSION=v0.3.1
 AGENT_SECRET_APP_DIR="$HOME/Applications"
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
+AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1
 ```
 
 The unattended installer verifies the DMG checksum, DMG code signature,
@@ -235,9 +236,10 @@ curl -fsSL \
 By default uninstall removes the app, CLI symlink, skill symlink, and known
 application support files, but leaves `~/Library/Logs/agent-secret` audit logs
 in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
-Custom support or audit paths require
+Custom app, command, skill, support, or audit paths require
 `AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1`; the script refuses broad,
-relative, symlinked, or non-`agent-secret` directory targets.
+relative, or symlinked destination roots, and support/audit paths must end in
+`agent-secret`.
 
 ## Development Install
 

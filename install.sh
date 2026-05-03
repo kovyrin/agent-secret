@@ -17,12 +17,80 @@ require_dev_mode_for_env() {
   fi
 }
 
+strip_trailing_slashes() {
+  value="$1"
+  while [ "$value" != "/" ] && [ "${value%/}" != "$value" ]; do
+    value="${value%/}"
+  done
+  printf '%s\n' "$value"
+}
+
+require_custom_install_path_guard() {
+  label="$1"
+  path="$2"
+  default_path="$3"
+
+  if [ "$path" = "$default_path" ]; then
+    return
+  fi
+  if [ "$allow_custom_install_paths" = "1" ]; then
+    return
+  fi
+
+  die "$label path override requires AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1: $path"
+}
+
+validate_install_dir() {
+  label="$1"
+  path="$(strip_trailing_slashes "$2")"
+  default_path="$(strip_trailing_slashes "$3")"
+
+  require_custom_install_path_guard "$label" "$path" "$default_path"
+
+  if [ "$path" = "" ]; then
+    die "$label path is empty"
+  fi
+  case "$path" in
+    /*) ;;
+    *)
+      die "$label path must be absolute: $path"
+      ;;
+  esac
+  case "$path" in
+    "/" | "$HOME")
+      die "$label path is too broad: $path"
+      ;;
+    */../* | */.. | */./* | */.)
+      die "$label path must not contain dot segments: $path"
+      ;;
+  esac
+  if [ -L "$path" ]; then
+    die "$label path must not be a symlink: $path"
+  fi
+  if [ -e "$path" ] && [ ! -d "$path" ]; then
+    die "$label path is not a directory: $path"
+  fi
+}
+
+validate_install_paths() {
+  validate_install_dir "app" "$app_dir" "$default_app_dir"
+  validate_install_dir "bin" "$bin_dir" "$default_bin_dir"
+  validate_install_dir "skills" "$skills_dir" "$default_skills_dir"
+
+  app_dir="$(strip_trailing_slashes "$app_dir")"
+  bin_dir="$(strip_trailing_slashes "$bin_dir")"
+  skills_dir="$(strip_trailing_slashes "$skills_dir")"
+}
+
 production_repo="kovyrin/agent-secret"
 production_github_url="https://github.com"
 production_github_api="https://api.github.com"
 production_expected_team_id="B6L7QLWTZW"
 production_expected_app_bundle_id="com.kovyrin.agent-secret"
 production_expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
+default_app_dir="/Applications"
+default_bin_dir="$HOME/.local/bin"
+default_skills_dir="$HOME/.agents/skills"
 
 install_dev_mode="${AGENT_SECRET_INSTALL_DEV_MODE:-0}"
 case "$install_dev_mode" in
@@ -61,13 +129,23 @@ else
   expected_daemon_bundle_id="${AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID:-$production_expected_daemon_bundle_id}"
 fi
 
-app_dir="${AGENT_SECRET_APP_DIR:-/Applications}"
-bin_dir="${AGENT_SECRET_BIN_DIR:-$HOME/.local/bin}"
-skills_dir="${AGENT_SECRET_SKILLS_DIR:-$HOME/.agents/skills}"
+app_dir="${AGENT_SECRET_APP_DIR:-$default_app_dir}"
+bin_dir="${AGENT_SECRET_BIN_DIR:-$default_bin_dir}"
+skills_dir="${AGENT_SECRET_SKILLS_DIR:-$default_skills_dir}"
 version="${AGENT_SECRET_VERSION:-}"
 local_dmg="${AGENT_SECRET_DMG:-}"
 local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
+allow_custom_install_paths="${AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS:-0}"
+
+case "$allow_custom_install_paths" in
+  0 | 1) ;;
+  *)
+    die "AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS must be 0 or 1"
+    ;;
+esac
+
+validate_install_paths
 
 if [ "$install_dev_mode" = "1" ]; then
   echo "agent-secret install: development installer mode enabled" >&2
