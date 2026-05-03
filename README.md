@@ -87,12 +87,14 @@ scripts/build-app-bundle.sh
 ```
 
 `mise run test:smoke` runs the non-secret install, uninstall, release
-configuration, release version, release docs, and approver smoke checks:
+configuration, release ancestry, release version, release docs, and approver
+smoke checks:
 
 ```bash
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-release-ancestry.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh
