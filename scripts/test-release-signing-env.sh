@@ -43,11 +43,11 @@ write_path_trap_tools() {
   local tool=""
 
   mkdir -p "$trap_dir"
-  for tool in base64 security uuidgen codesign xcrun ditto hdiutil shasum \
+  for tool in bash dirname base64 security uuidgen codesign xcrun ditto hdiutil shasum \
     mktemp rm mkdir ln chmod install cp sips iconutil go swift uname mise; do
     cat >"$trap_dir/$tool" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 printf '%s\n' "${0##*/} $*" >>"$AGENT_SECRET_PATH_TRAP_LOG"
 exit 44
 BASH
@@ -204,6 +204,27 @@ expect_failure "inherited GOROOT does not match selected Go toolchain" \
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/goroot-trap-out"
 if [[ -s "$fake_goroot_log" ]]; then
   fail "release script executed fake GOROOT go: $(cat "$fake_goroot_log")"
+fi
+
+release_sensitive_scripts=(
+  "$build_release"
+  "$project_root/scripts/build-app-bundle.sh"
+  "$project_root/scripts/check-bundle-metadata.sh"
+  "$project_root/scripts/check-release-signing-env.sh"
+  "$import_certificate"
+  "$project_root/scripts/publish-draft-release.sh"
+)
+for script in "${release_sensitive_scripts[@]}"; do
+  read -r shebang <"$script"
+  if [[ "$shebang" != "#!/bin/bash" ]]; then
+    fail "$script must use fixed /bin/bash shebang"
+  fi
+done
+if grep -En 'dirname[[:space:]]+--[[:space:]]+"\$\{BASH_SOURCE\[0\]\}"' \
+  "$build_release" \
+  "$project_root/scripts/build-app-bundle.sh" \
+  "$project_root/scripts/check-bundle-metadata.sh"; then
+  fail "release bootstrap scripts must not use PATH-selected dirname"
 fi
 
 if grep -En '(^|[|;&][[:space:]]*)(base64|security|uuidgen|mktemp|rm|chmod)([[:space:]]|$)' "$import_certificate"; then

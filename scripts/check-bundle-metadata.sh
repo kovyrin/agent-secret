@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 usage() {
@@ -10,9 +10,15 @@ Verify generated Agent Secret app bundle Info.plist metadata.
 USAGE
 }
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+script_path="${BASH_SOURCE[0]}"
+script_dir_part="${script_path%/*}"
+if [[ "$script_dir_part" == "$script_path" ]]; then
+  script_dir_part="."
+fi
+script_dir="$(cd -- "$script_dir_part" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 # shellcheck source=scripts/bundle-metadata.sh
+# shellcheck disable=SC1091
 source "$project_root/scripts/bundle-metadata.sh"
 
 app_only=0

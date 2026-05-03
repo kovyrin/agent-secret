@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 usage() {
@@ -15,7 +15,12 @@ Flags:
 USAGE
 }
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+script_path="${BASH_SOURCE[0]}"
+script_dir_part="${script_path%/*}"
+if [[ "$script_dir_part" == "$script_path" ]]; then
+  script_dir_part="."
+fi
+script_dir="$(cd -- "$script_dir_part" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 output_dir="$project_root/dist"
 require_production_signing=0
