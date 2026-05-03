@@ -239,11 +239,20 @@ func (c *Client) setReadDeadline(ctx context.Context) error {
 }
 
 func (c *Client) setContextDeadline(ctx context.Context, set func(time.Time) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		return nil
 	}
-	return set(deadline)
+	if err := set(deadline); err != nil {
+		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *Client) clearDeadlines() {

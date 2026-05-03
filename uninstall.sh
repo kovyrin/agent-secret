@@ -10,6 +10,7 @@ skills_dir="${AGENT_SECRET_SKILLS_DIR:-$default_skills_dir}"
 remove_audit_logs="${AGENT_SECRET_REMOVE_AUDIT_LOGS:-0}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
 allow_custom_uninstall_paths="${AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS:-0}"
+force_remove_untrusted_app="${AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP:-0}"
 expected_team_id="B6L7QLWTZW"
 expected_app_bundle_id="com.kovyrin.agent-secret"
 expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
@@ -24,6 +25,13 @@ fail() {
   echo "agent-secret uninstall: $*" >&2
   exit 1
 }
+
+case "$force_remove_untrusted_app" in
+  0 | 1) ;;
+  *)
+    fail "AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP must be 0 or 1"
+    ;;
+esac
 
 plist_value() {
   plist="$1"
@@ -57,7 +65,7 @@ team_id_matches() {
   [ "$team_id" = "$expected_team_id" ]
 }
 
-existing_app_is_trusted_for_stop() {
+existing_app_is_trusted() {
   daemon_app="$target_app/Contents/Library/Helpers/AgentSecretDaemon.app"
   cli="$target_app/Contents/Resources/bin/agent-secret"
 
@@ -83,11 +91,31 @@ stop_existing_daemon() {
     return
   fi
 
-  if existing_app_is_trusted_for_stop; then
+  if existing_app_is_trusted; then
     "$existing" daemon stop >/dev/null 2>&1 || true
   else
     echo "agent-secret uninstall: skipping daemon stop because existing Agent Secret.app could not be verified" >&2
   fi
+}
+
+remove_app_bundle() {
+  echo "Removing $target_app"
+  if [ ! -d "$target_app" ]; then
+    return
+  fi
+
+  if existing_app_is_trusted; then
+    rm -rf "$target_app"
+    return
+  fi
+
+  if [ "$force_remove_untrusted_app" = "1" ]; then
+    echo "agent-secret uninstall: force-removing unverified Agent Secret.app: $target_app" >&2
+    rm -rf "$target_app"
+    return
+  fi
+
+  echo "agent-secret uninstall: leaving unverified Agent Secret.app in place: $target_app" >&2
 }
 
 remove_cli_link() {
@@ -304,9 +332,7 @@ skill_link="$skills_dir/agent-secret"
 stop_existing_daemon
 remove_cli_link
 remove_skill_link
-
-echo "Removing $target_app"
-rm -rf "$target_app"
+remove_app_bundle
 
 remove_known_support_dir
 

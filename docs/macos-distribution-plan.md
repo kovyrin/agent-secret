@@ -177,7 +177,9 @@ The uninstall script should:
 
 1. Stop the per-user daemon if it is running.
 2. Remove the Agent Secret CLI symlink if it points at an Agent Secret app.
-3. Remove `Agent Secret.app` from the configured app directory.
+3. Remove `Agent Secret.app` from the configured app directory only after the
+   app bundle, daemon helper bundle, bundled CLI, and Developer ID Team ID match
+   the expected production identity.
 4. Remove the Agent Secret skill symlink if it points at the app bundle.
 5. Remove `~/Library/Application Support/agent-secret`.
 6. Leave audit logs in place unless explicitly requested.
@@ -189,6 +191,7 @@ AGENT_SECRET_APP_DIR="$HOME/Applications" uninstall.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" uninstall.sh
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" uninstall.sh
 AGENT_SECRET_REMOVE_AUDIT_LOGS=1 uninstall.sh
+AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 uninstall.sh
 ```
 
 For isolated tests, `AGENT_SECRET_SUPPORT_DIR` and `AGENT_SECRET_AUDIT_DIR`
@@ -196,7 +199,8 @@ may point at temporary `agent-secret` directories only when
 `AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1` is also set. The script refuses
 empty, relative, broad, symlinked, and non-`agent-secret` support or audit
 directory targets. The same custom-path guard applies to app, command, and
-skill destination roots.
+skill destination roots. Unsigned or otherwise unverified app bundles are left
+in place unless `AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1` is set explicitly.
 
 Audit logs are durable by design and should require an explicit separate
 removal command:

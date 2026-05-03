@@ -52,6 +52,23 @@ make_symlink() {
   ln -s "$target" "$link"
 }
 
+make_untrusted_app() {
+  local app="$1"
+
+  mkdir -p "$app/Contents/Resources/bin"
+  printf 'keep\n' >"$app/keep.txt"
+  cat >"$app/Contents/Resources/bin/agent-secret" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-bundled-agent-secret' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+exit 0
+SCRIPT
+  chmod 755 "$app/Contents/Resources/bin/agent-secret"
+}
+
 custom_guard_rejects_override() {
   local run_dir="$tmp_dir/custom-guard"
   local support="$run_dir/important/agent-secret"
@@ -223,6 +240,7 @@ safe_custom_paths_remove_only_known_files() {
     safe \
     HOME="$home" \
     AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 \
     AGENT_SECRET_REMOVE_AUDIT_LOGS=1 \
     AGENT_SECRET_APP_DIR="$app_dir" \
     AGENT_SECRET_BIN_DIR="$bin_dir" \
@@ -235,6 +253,75 @@ safe_custom_paths_remove_only_known_files() {
       fail "safe uninstall left expected removed path in place: $path"
     fi
   done
+}
+
+untrusted_app_is_left_in_place_by_default() {
+  local run_dir="$tmp_dir/untrusted-app-default"
+  local home="$run_dir/home"
+  local app_dir="$run_dir/apps"
+  local app="$app_dir/Agent Secret.app"
+  local bin_dir="$run_dir/bin"
+  local skills_dir="$run_dir/skills"
+  local support="$run_dir/support/agent-secret"
+  local log="$run_dir/uninstall.log"
+
+  mkdir -p "$home" "$bin_dir" "$skills_dir" "$support"
+  : >"$log"
+  make_untrusted_app "$app"
+
+  run_uninstall \
+    untrusted-app-default \
+    HOME="$home" \
+    AGENT_SECRET_NO_STOP_DAEMON=0 \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_APP_DIR="$app_dir" \
+    AGENT_SECRET_BIN_DIR="$bin_dir" \
+    AGENT_SECRET_SKILLS_DIR="$skills_dir" \
+    AGENT_SECRET_SUPPORT_DIR="$support" \
+    AGENT_SECRET_UNINSTALL_TEST_LOG="$log"
+
+  if [ ! -f "$app/keep.txt" ]; then
+    fail "uninstaller removed an untrusted app bundle by default"
+  fi
+  if ! grep -F "leaving unverified Agent Secret.app in place" "$run_dir/stderr" >/dev/null; then
+    fail "uninstaller did not report preserving untrusted app: $(cat "$run_dir/stderr")"
+  fi
+  if grep -F "fake-bundled-agent-secret daemon stop" "$log" >/dev/null; then
+    fail "uninstaller executed untrusted bundled agent-secret"
+  fi
+}
+
+force_removes_untrusted_app_explicitly() {
+  local run_dir="$tmp_dir/untrusted-app-force"
+  local home="$run_dir/home"
+  local app_dir="$run_dir/apps"
+  local app="$app_dir/Agent Secret.app"
+  local bin_dir="$run_dir/bin"
+  local skills_dir="$run_dir/skills"
+  local support="$run_dir/support/agent-secret"
+  local log="$run_dir/uninstall.log"
+
+  mkdir -p "$home" "$bin_dir" "$skills_dir" "$support"
+  : >"$log"
+  make_untrusted_app "$app"
+
+  run_uninstall \
+    untrusted-app-force \
+    HOME="$home" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 \
+    AGENT_SECRET_APP_DIR="$app_dir" \
+    AGENT_SECRET_BIN_DIR="$bin_dir" \
+    AGENT_SECRET_SKILLS_DIR="$skills_dir" \
+    AGENT_SECRET_SUPPORT_DIR="$support" \
+    AGENT_SECRET_UNINSTALL_TEST_LOG="$log"
+
+  if [ -e "$app" ]; then
+    fail "explicit force uninstall left untrusted app bundle in place"
+  fi
+  if ! grep -F "force-removing unverified Agent Secret.app" "$run_dir/stderr" >/dev/null; then
+    fail "force uninstall did not report forced app removal: $(cat "$run_dir/stderr")"
+  fi
 }
 
 untrusted_existing_cli_is_not_used_for_daemon_stop() {
@@ -381,6 +468,9 @@ SCRIPT
   if grep -F "fake-bundled-agent-secret daemon stop" "$log" >/dev/null; then
     fail "uninstaller trusted fake app and executed bundled agent-secret"
   fi
+  if [ ! -d "$app" ]; then
+    fail "uninstaller removed app after refusing PATH-provided codesign trust"
+  fi
 }
 
 custom_guard_rejects_override
@@ -390,6 +480,8 @@ dangerous_destination_paths_are_rejected_even_with_guard
 symlinked_parent_dirs_are_rejected
 symlinked_dirs_are_rejected
 safe_custom_paths_remove_only_known_files
+untrusted_app_is_left_in_place_by_default
+force_removes_untrusted_app_explicitly
 untrusted_existing_cli_is_not_used_for_daemon_stop
 fake_path_codesign_is_not_used_for_trust_checks
 
