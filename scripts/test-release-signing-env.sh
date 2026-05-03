@@ -44,7 +44,7 @@ write_path_trap_tools() {
 
   mkdir -p "$trap_dir"
   for tool in base64 security uuidgen codesign xcrun ditto hdiutil shasum \
-    mktemp rm mkdir ln chmod install cp sips iconutil go swift uname; do
+    mktemp rm mkdir ln chmod install cp sips iconutil go swift uname mise; do
     cat >"$trap_dir/$tool" <<'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -98,6 +98,15 @@ expect_any_failure \
   AGENT_SECRET_CODESIGN_CERT_P12_BASE64=not-base64 \
   AGENT_SECRET_CODESIGN_CERT_PASSWORD=dummy-password \
   "$import_certificate"
+assert_path_trap_clean "$trap_log"
+
+expect_failure "refusing to re-exec PATH-discovered mise while release signing environment is present" \
+  env -i \
+  "PATH=$trap_dir:$test_path" \
+  AGENT_SECRET_PATH_TRAP_LOG="$trap_log" \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/mise-trap-out"
 assert_path_trap_clean "$trap_log"
 
 unsafe_keychain="$tmp_dir/unrelated-user-file"
