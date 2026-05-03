@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
+
+const managerHelperBindUnavailablePrefix = "AGENT_SECRET_DAEMON_MANAGER_HELPER_BIND_UNAVAILABLE:"
 
 func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_HELPER") == "1" {
@@ -43,7 +46,11 @@ func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_HELPER", "1")
 
 	if err := manager.EnsureRunning(context.Background()); err != nil {
-		t.Fatalf("EnsureRunning returned error: %v\nhelper output:\n%s", err, readManagerHelperOutput(t, output.Name()))
+		helperOutput := readManagerHelperOutput(t, output.Name())
+		if strings.Contains(helperOutput, managerHelperBindUnavailablePrefix) {
+			t.Skipf("Unix socket bind unavailable in daemon helper: %s", helperOutput)
+		}
+		t.Fatalf("EnsureRunning returned error: %v\nhelper output:\n%s", err, helperOutput)
 	}
 	status, err := manager.Status(context.Background())
 	if err != nil {
@@ -108,6 +115,10 @@ func runDaemonManagerHelper(t *testing.T) {
 	if err := server.ListenAndServe(context.Background(), socketPath); err != nil {
 		if len(aud.Events()) > 0 && aud.Events()[len(aud.Events())-1].Type == audit.EventDaemonStop {
 			os.Exit(0)
+		}
+		if unixsocket.IsBindUnavailable(err) {
+			_, _ = fmt.Fprintf(os.Stderr, "%s %v\n", managerHelperBindUnavailablePrefix, err)
+			os.Exit(75)
 		}
 		_, _ = fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 		os.Exit(70)

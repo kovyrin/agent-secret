@@ -12,12 +12,12 @@ func SkipIfBindUnavailable(tb testing.TB, err error) {
 	if err == nil {
 		return
 	}
-	if isBindUnavailable(err) {
+	if IsBindUnavailable(err) {
 		tb.Skipf("Unix socket bind unavailable in this environment: %v", err)
 	}
 }
 
-func isBindUnavailable(err error) bool {
+func IsBindUnavailable(err error) bool {
 	if errors.Is(err, syscall.EPERM) ||
 		errors.Is(err, syscall.EACCES) ||
 		errors.Is(err, syscall.EAFNOSUPPORT) ||
