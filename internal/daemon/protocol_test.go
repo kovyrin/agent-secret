@@ -204,6 +204,53 @@ func TestClientRoundTripHonorsContextDeadlineWaitingForResponse(t *testing.T) {
 	}
 }
 
+func TestClientRoundTripUsesDefaultDeadlineWithoutCallerDeadline(t *testing.T) {
+	t.Parallel()
+
+	client, requests, cleanup := startStallingDaemonClient(t)
+	defer cleanup()
+	client.DefaultTimeout = 25 * time.Millisecond
+
+	errc := make(chan error, 1)
+	go func() {
+		_, err := client.Status(context.Background())
+		errc <- err
+	}()
+
+	env := receiveStalledRequest(t, requests)
+	if env.Type != TypeDaemonStatus {
+		t.Fatalf("request type = %s, want %s", env.Type, TypeDaemonStatus)
+	}
+
+	err := receiveRoundTripError(t, errc)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected default deadline exceeded error, got %v", err)
+	}
+}
+
+func TestClientRequestExecDefaultDeadlineAllowsApprovalWaitUntilRequestExpiry(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
+		time.Sleep(60 * time.Millisecond)
+		return execResponseFrame(t, env, ExecResponsePayload{
+			Env:           map[string]string{"TOKEN": "value"},
+			SecretAliases: []string{"TOKEN"},
+		})
+	})
+	defer cleanup()
+	client.DefaultTimeout = 25 * time.Millisecond
+
+	req := testExecRequestAt(t, time.Now(), []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	got, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("RequestExec returned error before request expiry: %v", err)
+	}
+	if got.Env["TOKEN"] != "value" {
+		t.Fatalf("exec response env = %+v", got.Env)
+	}
+}
+
 func TestClientRejectsOversizedDaemonResponseFrame(t *testing.T) {
 	t.Parallel()
 
@@ -345,6 +392,20 @@ func boundedPaddingResponseFrame(t *testing.T, padding string) []byte {
 	}
 	if int64(len(frame)+1) > DefaultMaxProtocolFrameBytes {
 		t.Fatalf("test frame size %d exceeds max %d", len(frame)+1, DefaultMaxProtocolFrameBytes)
+	}
+	return append(frame, '\n')
+}
+
+func execResponseFrame(t *testing.T, request Envelope, payload ExecResponsePayload) []byte {
+	t.Helper()
+
+	env, err := NewEnvelope(TypeOK, request.RequestID, request.Nonce, payload)
+	if err != nil {
+		t.Fatalf("NewEnvelope returned error: %v", err)
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal exec response: %v", err)
 	}
 	return append(frame, '\n')
 }

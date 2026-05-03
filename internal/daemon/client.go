@@ -23,10 +23,13 @@ func (e *ProtocolError) Error() string {
 }
 
 type Client struct {
-	conn    *net.UnixConn
-	encoder *json.Encoder
-	reader  *bufio.Reader
+	conn           *net.UnixConn
+	encoder        *json.Encoder
+	reader         *bufio.Reader
+	DefaultTimeout time.Duration
 }
+
+const DefaultClientProtocolTimeout = DefaultProtocolReadTimeout
 
 func Connect(ctx context.Context, path string) (*Client, error) {
 	return ConnectWithPeerValidator(ctx, path, NewTrustedDaemonValidator(DefaultTrustedDaemonPaths()))
@@ -57,9 +60,10 @@ func validateDaemonPeer(conn *net.UnixConn, validator DaemonPeerValidator) error
 
 func NewClient(conn *net.UnixConn) *Client {
 	return &Client{
-		conn:    conn,
-		encoder: json.NewEncoder(conn),
-		reader:  bufio.NewReader(conn),
+		conn:           conn,
+		encoder:        json.NewEncoder(conn),
+		reader:         bufio.NewReader(conn),
+		DefaultTimeout: DefaultClientProtocolTimeout,
 	}
 }
 
@@ -106,6 +110,8 @@ func (c *Client) ReportCompleted(ctx context.Context, requestID string, nonce st
 
 func roundTrip[T any](ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) (T, error) {
 	var zero T
+	ctx, cancel := c.contextWithDefaultDeadline(ctx, messageType, payload)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return zero, fmt.Errorf("daemon request canceled: %w", err)
 	}
@@ -161,6 +167,32 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
+}
+
+func (c *Client) contextWithDefaultDeadline(
+	ctx context.Context,
+	messageType string,
+	payload any,
+) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	timeout := c.defaultTimeout()
+	now := time.Now()
+	deadline := now.Add(timeout)
+	if messageType == TypeRequestExec {
+		if req, ok := payload.(request.ExecRequest); ok && req.ExpiresAt.After(now) {
+			deadline = req.ExpiresAt.Add(timeout)
+		}
+	}
+	return context.WithDeadline(ctx, deadline)
+}
+
+func (c *Client) defaultTimeout() time.Duration {
+	if c != nil && c.DefaultTimeout > 0 {
+		return c.DefaultTimeout
+	}
+	return DefaultClientProtocolTimeout
 }
 
 func validateResponseCorrelation(resp Envelope, requestID string, nonce string) error {
