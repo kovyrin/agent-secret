@@ -17,6 +17,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -164,7 +165,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 	if strings.TrimSpace(stdout.String()) != "env-ok" {
 		t.Fatalf("stdout = %q, want env-ok", stdout.String())
 	}
-	if !postStartStoppedDaemonSaw(events, daemon.TypeCommandStarted) {
+	if !postStartStoppedDaemonSaw(events, protocol.TypeCommandStarted) {
 		t.Fatal("fake daemon did not receive command.started")
 	}
 	if strings.Contains(stderr.String(), "synthetic-secret-value") {
@@ -448,15 +449,15 @@ func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
 }
 
 func TestDaemonAuditReporterFatalStartedAuditClassification(t *testing.T) {
-	protocolErr := &daemon.ProtocolError{Code: daemon.ErrorCodeInvalidNonce, Message: "bad nonce"}
+	protocolErr := &daemon.ProtocolError{Code: protocol.ErrorCodeInvalidNonce, Message: "bad nonce"}
 	if !isFatalCommandStartedAuditFailure(protocolErr) {
 		t.Fatal("invalid nonce protocol error was not classified as fatal")
 	}
-	stoppedErr := &daemon.ProtocolError{Code: daemon.ErrorCodeDaemonStopped, Message: "daemon stopped"}
+	stoppedErr := &daemon.ProtocolError{Code: protocol.ErrorCodeDaemonStopped, Message: "daemon stopped"}
 	if isFatalCommandStartedAuditFailure(stoppedErr) {
 		t.Fatal("daemon stopped protocol error was classified as fatal")
 	}
-	if !isFatalCommandStartedAuditFailure(daemon.ErrMalformedEnvelope) {
+	if !isFatalCommandStartedAuditFailure(protocol.ErrMalformedEnvelope) {
 		t.Fatal("local malformed response error was not classified as fatal")
 	}
 	if isFatalCommandStartedAuditFailure(errors.New("network closed")) {
@@ -622,7 +623,7 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 	}
 }
 
-func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan daemon.MessageType, func()) {
+func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan protocol.MessageType, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-post-start-stop-")
@@ -639,7 +640,7 @@ func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan daemon.
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	errs := make(chan error, 1)
-	events := make(chan daemon.MessageType, 8)
+	events := make(chan protocol.MessageType, 8)
 	go func() {
 		defer close(done)
 		for {
@@ -674,7 +675,7 @@ func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan daemon.
 	}
 }
 
-func postStartStoppedDaemonSaw(events <-chan daemon.MessageType, want daemon.MessageType) bool {
+func postStartStoppedDaemonSaw(events <-chan protocol.MessageType, want protocol.MessageType) bool {
 	for {
 		select {
 		case got := <-events:
@@ -697,13 +698,13 @@ func reportPostStartStoppedDaemonError(errs chan<- error, err error) {
 	}
 }
 
-func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- daemon.MessageType) error {
+func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol.MessageType) error {
 	defer func() { _ = conn.Close() }()
 
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
 	for {
-		var env daemon.Envelope
+		var env protocol.Envelope
 		if err := decoder.Decode(&env); err != nil {
 			return err
 		}
@@ -712,32 +713,32 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- daemon.M
 		default:
 		}
 		switch env.Type {
-		case daemon.TypeDaemonStatus:
-			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, daemon.StatusPayload{PID: os.Getpid()}); err != nil {
+		case protocol.TypeDaemonStatus:
+			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, protocol.StatusPayload{PID: os.Getpid()}); err != nil {
 				return err
 			}
-		case daemon.TypeRequestExec:
-			payload := daemon.ExecResponsePayload{
+		case protocol.TypeRequestExec:
+			payload := protocol.ExecResponsePayload{
 				Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
 				SecretAliases: []string{"TOKEN"},
 			}
 			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, payload); err != nil {
 				return err
 			}
-		case daemon.TypeCommandStarted, daemon.TypeCommandCompleted:
-			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, daemon.ErrorCodeDaemonStopped, daemon.ErrDaemonStopped); err != nil {
+		case protocol.TypeCommandStarted, protocol.TypeCommandCompleted:
+			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemon.ErrDaemonStopped); err != nil {
 				return err
 			}
-		case daemon.TypeDaemonStop,
-			daemon.TypeApprovalPending,
-			daemon.TypeApprovalDecision,
-			daemon.TypeOK,
-			daemon.TypeError:
-			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, daemon.ErrorCodeBadType, daemon.ErrProtocolType); err != nil {
+		case protocol.TypeDaemonStop,
+			protocol.TypeApprovalPending,
+			protocol.TypeApprovalDecision,
+			protocol.TypeOK,
+			protocol.TypeError:
+			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, protocol.ErrProtocolType); err != nil {
 				return err
 			}
 		default:
-			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, daemon.ErrorCodeBadType, daemon.ErrProtocolType); err != nil {
+			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, protocol.ErrProtocolType); err != nil {
 				return err
 			}
 		}
@@ -745,16 +746,16 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- daemon.M
 }
 
 func writePostStartStoppedDaemonOK(encoder *json.Encoder, requestID string, nonce string, payload any) error {
-	env, err := daemon.NewEnvelope(daemon.TypeOK, requestID, nonce, payload)
+	env, err := protocol.NewEnvelope(protocol.TypeOK, requestID, nonce, payload)
 	if err != nil {
 		return err
 	}
 	return encoder.Encode(env)
 }
 
-func writePostStartStoppedDaemonError(encoder *json.Encoder, requestID string, nonce string, code daemon.ErrorCode, err error) error {
-	payload := daemon.ErrorPayload{Code: code, Message: err.Error()}
-	env, marshalErr := daemon.NewEnvelope(daemon.TypeError, requestID, nonce, payload)
+func writePostStartStoppedDaemonError(encoder *json.Encoder, requestID string, nonce string, code protocol.ErrorCode, err error) error {
+	payload := protocol.ErrorPayload{Code: code, Message: err.Error()}
+	env, marshalErr := protocol.NewEnvelope(protocol.TypeError, requestID, nonce, payload)
 	if marshalErr != nil {
 		return marshalErr
 	}

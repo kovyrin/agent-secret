@@ -12,29 +12,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 func TestProtocolHelpersRejectMalformedPayloads(t *testing.T) {
 	t.Parallel()
 
-	if _, err := NewEnvelope(TypeOK, "req_1", "nonce_1", make(chan int)); err == nil {
+	if _, err := protocol.NewEnvelope(protocol.TypeOK, "req_1", "nonce_1", make(chan int)); err == nil {
 		t.Fatal("expected unmarshalable payload error")
 	}
 
-	var env Envelope
-	if _, err := DecodePayload[StatusPayload](env); err != nil {
+	var env protocol.Envelope
+	if _, err := protocol.DecodePayload[protocol.StatusPayload](env); err != nil {
 		t.Fatalf("empty payload decode returned error: %v", err)
 	}
-	env = Envelope{Version: ProtocolVersion, Type: TypeOK, Payload: json.RawMessage(`{`)}
-	if _, err := DecodePayload[StatusPayload](env); !errors.Is(err, ErrMalformedEnvelope) {
+	env = protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeOK, Payload: json.RawMessage(`{`)}
+	if _, err := protocol.DecodePayload[protocol.StatusPayload](env); !errors.Is(err, protocol.ErrMalformedEnvelope) {
 		t.Fatalf("expected malformed payload error, got %v", err)
 	}
 
-	if err := validateEnvelope(Envelope{Version: 99, Type: TypeOK}); !errors.Is(err, ErrProtocolVersion) {
+	if err := protocol.ValidateEnvelope(protocol.Envelope{Version: 99, Type: protocol.TypeOK}); !errors.Is(err, protocol.ErrProtocolVersion) {
 		t.Fatalf("expected protocol version error, got %v", err)
 	}
-	if err := validateEnvelope(Envelope{Version: ProtocolVersion}); !errors.Is(err, ErrMalformedEnvelope) {
+	if err := protocol.ValidateEnvelope(protocol.Envelope{Version: protocol.ProtocolVersion}); !errors.Is(err, protocol.ErrMalformedEnvelope) {
 		t.Fatalf("expected missing type error, got %v", err)
 	}
 }
@@ -42,14 +43,14 @@ func TestProtocolHelpersRejectMalformedPayloads(t *testing.T) {
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	t.Parallel()
 
-	protocolErr := &ProtocolError{Code: ErrorCodeBadRequest, Message: "nope"}
+	protocolErr := &ProtocolError{Code: protocol.ErrorCodeBadRequest, Message: "nope"}
 	if protocolErr.Error() != "bad_request: nope" {
 		t.Fatalf("protocol error string = %q", protocolErr.Error())
 	}
-	if !IsProtocolError(protocolErr, ErrorCodeBadRequest) {
+	if !IsProtocolError(protocolErr, protocol.ErrorCodeBadRequest) {
 		t.Fatal("IsProtocolError did not match protocol error")
 	}
-	if IsProtocolError(errors.New("plain"), ErrorCodeBadRequest) {
+	if IsProtocolError(errors.New("plain"), protocol.ErrorCodeBadRequest) {
 		t.Fatal("IsProtocolError matched plain error")
 	}
 
@@ -59,7 +60,7 @@ func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := roundTrip[StatusPayload](ctx, client, TypeDaemonStatus, "", "", nil); !errors.Is(err, context.Canceled) {
+	if _, err := roundTrip[protocol.StatusPayload](ctx, client, protocol.TypeDaemonStatus, "", "", nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled round trip, got %v", err)
 	}
 }
@@ -79,8 +80,8 @@ func TestClientRoundTripHonorsContextCancellationWaitingForResponse(t *testing.T
 	}()
 
 	env := receiveStalledRequest(t, requests)
-	if env.Type != TypeDaemonStatus {
-		t.Fatalf("request type = %s, want %s", env.Type, TypeDaemonStatus)
+	if env.Type != protocol.TypeDaemonStatus {
+		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeDaemonStatus)
 	}
 
 	cancel()
@@ -105,8 +106,8 @@ func TestClientRoundTripHonorsContextDeadlineWaitingForResponse(t *testing.T) {
 	}()
 
 	env := receiveStalledRequest(t, requests)
-	if env.Type != TypeDaemonStatus {
-		t.Fatalf("request type = %s, want %s", env.Type, TypeDaemonStatus)
+	if env.Type != protocol.TypeDaemonStatus {
+		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeDaemonStatus)
 	}
 
 	err := receiveRoundTripError(t, errc)
@@ -129,8 +130,8 @@ func TestClientRoundTripUsesDefaultDeadlineWithoutCallerDeadline(t *testing.T) {
 	}()
 
 	env := receiveStalledRequest(t, requests)
-	if env.Type != TypeDaemonStatus {
-		t.Fatalf("request type = %s, want %s", env.Type, TypeDaemonStatus)
+	if env.Type != protocol.TypeDaemonStatus {
+		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeDaemonStatus)
 	}
 
 	err := receiveRoundTripError(t, errc)
@@ -142,9 +143,9 @@ func TestClientRoundTripUsesDefaultDeadlineWithoutCallerDeadline(t *testing.T) {
 func TestClientRequestExecDefaultDeadlineAllowsApprovalWaitUntilRequestExpiry(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
+	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
 		time.Sleep(60 * time.Millisecond)
-		return execResponseFrame(t, env, ExecResponsePayload{
+		return execResponseFrame(t, env, protocol.ExecResponsePayload{
 			Env:           map[string]string{"TOKEN": "value"},
 			SecretAliases: []string{"TOKEN"},
 		})
@@ -168,16 +169,16 @@ func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
 	req := testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
 	})
-	client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
-		if env.Type != TypeRequestExec {
-			t.Fatalf("request type = %s, want %s", env.Type, TypeRequestExec)
+	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+		if env.Type != protocol.TypeRequestExec {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeRequestExec)
 		}
 		return emptyOKResponseFrame(t, env)
 	})
 	defer cleanup()
 
 	_, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
-	if !errors.Is(err, ErrMalformedEnvelope) {
+	if !errors.Is(err, protocol.ErrMalformedEnvelope) {
 		t.Fatalf("expected malformed empty OK response error, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "missing payload") {
@@ -193,16 +194,16 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 	})
 	tests := []struct {
 		name       string
-		frame      func(t *testing.T, env Envelope) []byte
+		frame      func(t *testing.T, env protocol.Envelope) []byte
 		call       func(context.Context, *Client) error
 		wantErrMsg string
 	}{
 		{
 			name: "status pid",
-			frame: func(t *testing.T, env Envelope) []byte {
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
-				return okResponseFrame(t, env, StatusPayload{})
+				return okResponseFrame(t, env, protocol.StatusPayload{})
 			},
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.Status(ctx)
@@ -212,7 +213,7 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 		},
 		{
 			name: "pending request id",
-			frame: func(t *testing.T, env Envelope) []byte {
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
 				return okResponseFrame(t, env, ApprovalRequestPayload{
@@ -232,10 +233,10 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 		},
 		{
 			name: "exec aliases",
-			frame: func(t *testing.T, env Envelope) []byte {
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
-				return execResponseFrame(t, env, ExecResponsePayload{
+				return execResponseFrame(t, env, protocol.ExecResponsePayload{
 					Env:           map[string]string{"OTHER": "value"},
 					SecretAliases: []string{"OTHER"},
 				})
@@ -248,10 +249,10 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 		},
 		{
 			name: "exec env",
-			frame: func(t *testing.T, env Envelope) []byte {
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
-				return execResponseFrame(t, env, ExecResponsePayload{
+				return execResponseFrame(t, env, protocol.ExecResponsePayload{
 					Env:           map[string]string{"TOKEN": "value", "OTHER": "value"},
 					SecretAliases: []string{"TOKEN"},
 				})
@@ -264,10 +265,10 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 		},
 		{
 			name: "exec missing env",
-			frame: func(t *testing.T, env Envelope) []byte {
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
-				return execResponseFrame(t, env, ExecResponsePayload{
+				return execResponseFrame(t, env, protocol.ExecResponsePayload{
 					SecretAliases: []string{"TOKEN"},
 				})
 			},
@@ -283,13 +284,13 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
+			client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
 				return tc.frame(t, env)
 			})
 			defer cleanup()
 
 			err := tc.call(context.Background(), client)
-			if !errors.Is(err, ErrMalformedEnvelope) {
+			if !errors.Is(err, protocol.ErrMalformedEnvelope) {
 				t.Fatalf("expected malformed response error, got %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.wantErrMsg) {
@@ -302,14 +303,14 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 func TestClientRejectsOversizedDaemonResponseFrame(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte {
-		frame := bytes.Repeat([]byte("x"), int(DefaultMaxProtocolFrameBytes)+1)
+	client, cleanup := startRespondingDaemonClient(t, func(protocol.Envelope) []byte {
+		frame := bytes.Repeat([]byte("x"), int(protocol.DefaultMaxProtocolFrameBytes)+1)
 		return append(frame, '\n')
 	})
 	defer cleanup()
 
 	_, err := client.Status(context.Background())
-	if !errors.Is(err, ErrProtocolFrameSize) {
+	if !errors.Is(err, protocol.ErrProtocolFrameSize) {
 		t.Fatalf("expected protocol frame size error, got %v", err)
 	}
 }
@@ -330,7 +331,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 		{
 			name:       "request exec request id",
 			frame:      errorResponseFrame(t, "req_stale", "nonce_1"),
-			wantErr:    ErrMalformedEnvelope,
+			wantErr:    protocol.ErrMalformedEnvelope,
 			wantErrMsg: "response request id mismatch",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.RequestExec(
@@ -353,7 +354,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 		{
 			name:       "command completed request id",
 			frame:      errorResponseFrame(t, "req_stale", "nonce_1"),
-			wantErr:    ErrMalformedEnvelope,
+			wantErr:    protocol.ErrMalformedEnvelope,
 			wantErrMsg: "response request id mismatch",
 			call: func(ctx context.Context, client *Client) error {
 				return client.ReportCompleted(ctx, "req_1", "nonce_1", 0, "")
@@ -365,7 +366,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte { return tc.frame })
+			client, cleanup := startRespondingDaemonClient(t, func(protocol.Envelope) []byte { return tc.frame })
 			defer cleanup()
 
 			err := tc.call(context.Background(), client)
@@ -382,13 +383,13 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 func TestClientAllowsUncorrelatedStatusErrorResponse(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte {
+	client, cleanup := startRespondingDaemonClient(t, func(protocol.Envelope) []byte {
 		return errorResponseFrame(t, "req_other", "nonce_other")
 	})
 	defer cleanup()
 
 	_, err := client.Status(context.Background())
-	if !IsProtocolError(err, ErrorCodeBadRequest) {
+	if !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
 		t.Fatalf("expected daemon protocol error, got %v", err)
 	}
 }
@@ -396,7 +397,7 @@ func TestClientAllowsUncorrelatedStatusErrorResponse(t *testing.T) {
 func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
 	t.Helper()
 
-	env, err := NewEnvelope(TypeError, requestID, nonce, ErrorPayload{
+	env, err := protocol.NewEnvelope(protocol.TypeError, requestID, nonce, protocol.ErrorPayload{
 		Code:    "bad_request",
 		Message: "bad request",
 	})
@@ -410,12 +411,12 @@ func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
 	return append(frame, '\n')
 }
 
-func emptyOKResponseFrame(t *testing.T, request Envelope) []byte {
+func emptyOKResponseFrame(t *testing.T, request protocol.Envelope) []byte {
 	t.Helper()
 
-	env := Envelope{
-		Version:   ProtocolVersion,
-		Type:      TypeOK,
+	env := protocol.Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeOK,
 		RequestID: request.RequestID,
 		Nonce:     request.Nonce,
 	}
@@ -426,10 +427,10 @@ func emptyOKResponseFrame(t *testing.T, request Envelope) []byte {
 	return append(frame, '\n')
 }
 
-func okResponseFrame(t *testing.T, request Envelope, payload any) []byte {
+func okResponseFrame(t *testing.T, request protocol.Envelope, payload any) []byte {
 	t.Helper()
 
-	env, err := NewEnvelope(TypeOK, request.RequestID, request.Nonce, payload)
+	env, err := protocol.NewEnvelope(protocol.TypeOK, request.RequestID, request.Nonce, payload)
 	if err != nil {
 		t.Fatalf("NewEnvelope returned error: %v", err)
 	}
@@ -440,10 +441,10 @@ func okResponseFrame(t *testing.T, request Envelope, payload any) []byte {
 	return append(frame, '\n')
 }
 
-func execResponseFrame(t *testing.T, request Envelope, payload ExecResponsePayload) []byte {
+func execResponseFrame(t *testing.T, request protocol.Envelope, payload protocol.ExecResponsePayload) []byte {
 	t.Helper()
 
-	env, err := NewEnvelope(TypeOK, request.RequestID, request.Nonce, payload)
+	env, err := protocol.NewEnvelope(protocol.TypeOK, request.RequestID, request.Nonce, payload)
 	if err != nil {
 		t.Fatalf("NewEnvelope returned error: %v", err)
 	}
@@ -463,7 +464,7 @@ func TestSameUIDValidatorRejectsInspectFailure(t *testing.T) {
 	}
 }
 
-func startRespondingDaemonClient(t *testing.T, response func(Envelope) []byte) (*Client, func()) {
+func startRespondingDaemonClient(t *testing.T, response func(protocol.Envelope) []byte) (*Client, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-response-")
@@ -490,7 +491,7 @@ func startRespondingDaemonClient(t *testing.T, response func(Envelope) []byte) (
 		}
 		defer func() { _ = conn.Close() }()
 
-		var env Envelope
+		var env protocol.Envelope
 		if err := json.NewDecoder(conn).Decode(&env); err != nil {
 			serverDone <- err
 			return
@@ -521,7 +522,7 @@ func startRespondingDaemonClient(t *testing.T, response func(Envelope) []byte) (
 	}
 }
 
-func startStallingDaemonClient(t *testing.T) (*Client, <-chan Envelope, func()) {
+func startStallingDaemonClient(t *testing.T) (*Client, <-chan protocol.Envelope, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-stall-")
@@ -539,7 +540,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan Envelope, func()) 
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
 
-	requests := make(chan Envelope, 1)
+	requests := make(chan protocol.Envelope, 1)
 	release := make(chan struct{})
 	serverDone := make(chan error, 1)
 	go func() {
@@ -550,7 +551,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan Envelope, func()) 
 		}
 		defer func() { _ = conn.Close() }()
 
-		var env Envelope
+		var env protocol.Envelope
 		if err := json.NewDecoder(conn).Decode(&env); err != nil {
 			serverDone <- err
 			return
@@ -583,7 +584,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan Envelope, func()) 
 	}
 }
 
-func receiveStalledRequest(t *testing.T, requests <-chan Envelope) Envelope {
+func receiveStalledRequest(t *testing.T, requests <-chan protocol.Envelope) protocol.Envelope {
 	t.Helper()
 
 	select {
@@ -592,7 +593,7 @@ func receiveStalledRequest(t *testing.T, requests <-chan Envelope) Envelope {
 	case <-time.After(time.Second):
 		t.Fatal("daemon client did not write request")
 	}
-	return Envelope{}
+	return protocol.Envelope{}
 }
 
 func receiveRoundTripError(t *testing.T, errc <-chan error) error {

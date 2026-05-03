@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -190,7 +191,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
 	err = client.ReportStarted(context.Background(), "req_1", "wrong", 1234)
-	if !IsProtocolError(err, ErrorCodeInvalidNonce) {
+	if !IsProtocolError(err, protocol.ErrorCodeInvalidNonce) {
 		t.Fatalf("expected invalid nonce protocol error, got %v", err)
 	}
 }
@@ -212,17 +213,17 @@ func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
-	if err := encoder.Encode(Envelope{Version: 99, Type: TypeDaemonStatus}); err != nil {
+	if err := encoder.Encode(protocol.Envelope{Version: 99, Type: protocol.TypeDaemonStatus}); err != nil {
 		t.Fatalf("encode bad envelope: %v", err)
 	}
-	var resp Envelope
+	var resp protocol.Envelope
 	if err := decoder.Decode(&resp); err != nil {
 		t.Fatalf("decode bad envelope response: %v", err)
 	}
-	if resp.Type != TypeError {
+	if resp.Type != protocol.TypeError {
 		t.Fatalf("bad envelope response type = %s", resp.Type)
 	}
-	payload, err := DecodePayload[ErrorPayload](resp)
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 	if err != nil {
 		t.Fatalf("decode error payload: %v", err)
 	}
@@ -253,14 +254,14 @@ func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 		t.Fatalf("write oversized frame: %v", err)
 	}
 
-	var resp Envelope
+	var resp protocol.Envelope
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		t.Fatalf("decode oversized frame response: %v", err)
 	}
-	if resp.Type != TypeError {
+	if resp.Type != protocol.TypeError {
 		t.Fatalf("oversized frame response type = %s", resp.Type)
 	}
-	payload, err := DecodePayload[ErrorPayload](resp)
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 	if err != nil {
 		t.Fatalf("decode oversized frame error payload: %v", err)
 	}
@@ -322,9 +323,9 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	env := Envelope{
-		Version:   ProtocolVersion,
-		Type:      TypeRequestExec,
+	env := protocol.Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeRequestExec,
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
 		Payload:   json.RawMessage(`{"not":"a valid exec request"}`),
@@ -332,11 +333,11 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	if err := json.NewEncoder(conn).Encode(env); err != nil {
 		t.Fatalf("encode untrusted exec request: %v", err)
 	}
-	var resp Envelope
+	var resp protocol.Envelope
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		t.Fatalf("decode untrusted exec response: %v", err)
 	}
-	payload, err := DecodePayload[ErrorPayload](resp)
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 	if err != nil {
 		t.Fatalf("decode untrusted exec error payload: %v", err)
 	}
@@ -489,7 +490,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	defer func() { _ = client.Close() }()
 	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeRequestExpired) {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeRequestExpired) {
 		t.Fatalf("RequestExec error = %v, want request_expired", err)
 	}
 	waitForInactiveRequest(t, broker, "req_1")
@@ -539,16 +540,16 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 
 	writeRawExecRequest(t, encoder, "req_1", "nonce_1", req)
 	first := readRawEnvelope(t, decoder)
-	if first.Type != TypeOK {
-		t.Fatalf("first exec response type = %q, want %q", first.Type, TypeOK)
+	if first.Type != protocol.TypeOK {
+		t.Fatalf("first exec response type = %q, want %q", first.Type, protocol.TypeOK)
 	}
 
 	writeRawExecRequest(t, encoder, "req_2", "nonce_2", req)
 	second := readRawEnvelope(t, decoder)
-	if second.Type != TypeError {
-		t.Fatalf("second exec response type = %q, want %q", second.Type, TypeError)
+	if second.Type != protocol.TypeError {
+		t.Fatalf("second exec response type = %q, want %q", second.Type, protocol.TypeError)
 	}
-	errorPayload, err := DecodePayload[ErrorPayload](second)
+	errorPayload, err := protocol.DecodePayload[protocol.ErrorPayload](second)
 	if err != nil {
 		t.Fatalf("decode second exec error: %v", err)
 	}
@@ -709,7 +710,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	_, err = client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref},
 	}))
-	if !IsProtocolError(err, ErrorCodeDaemonStopped) {
+	if !IsProtocolError(err, protocol.ErrorCodeDaemonStopped) {
 		t.Fatalf("RequestExec after stop error = %v, want daemon_stopped", err)
 	}
 	if calls := resolver.Calls(); len(calls) != 0 {
@@ -746,7 +747,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	if _, err := client.Status(context.Background()); err != nil {
 		t.Fatalf("Status returned error: %v", err)
 	}
-	if _, err := client.Stop(context.Background()); !IsProtocolError(err, ErrorCodeUntrustedClient) {
+	if _, err := client.Stop(context.Background()); !IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
 		t.Fatalf("expected untrusted_client stop error, got %v", err)
 	}
 	if _, err := client.Status(context.Background()); err != nil {
@@ -776,7 +777,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	client, cleanup := startTestServerWithBroker(t, broker, approver, staticPeerValidator{info: peer})
 	defer cleanup()
 
-	execDone := make(chan ExecResponsePayload, 1)
+	execDone := make(chan protocol.ExecResponsePayload, 1)
 	execErr := make(chan error, 1)
 	go func() {
 		payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", approvalTestRequest(t, time.Now().Add(time.Minute)))
@@ -851,7 +852,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	client := NewClient(conn)
 	defer func() { _ = client.Close() }()
 
-	execDone := make(chan ExecResponsePayload, 1)
+	execDone := make(chan protocol.ExecResponsePayload, 1)
 	execErr := make(chan error, 1)
 	go func() {
 		payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", approvalTestRequest(t, time.Now().Add(time.Minute)))
@@ -907,14 +908,14 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 	defer cleanup()
 
 	_, err := client.FetchPendingApproval(context.Background())
-	if !IsProtocolError(err, ErrorCodeApprovalUnavailable) {
+	if !IsProtocolError(err, protocol.ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable protocol error, got %v", err)
 	}
 	if err := client.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
 		Decision:  ApprovalDecisionApproveOnce,
-	}); !IsProtocolError(err, ErrorCodeApprovalUnavailable) {
+	}); !IsProtocolError(err, protocol.ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable decision error, got %v", err)
 	}
 }
@@ -938,23 +939,23 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	decoder := json.NewDecoder(conn)
 
 	tests := []struct {
-		env      Envelope
+		env      protocol.Envelope
 		wantCode string
 	}{
 		{
-			env:      Envelope{Version: ProtocolVersion, Type: TypeRequestExec, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeRequestExec, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
 			wantCode: "bad_request",
 		},
 		{
-			env:      Envelope{Version: ProtocolVersion, Type: TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
 			wantCode: "bad_command_started",
 		},
 		{
-			env:      Envelope{Version: ProtocolVersion, Type: TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
 			wantCode: "bad_command_completed",
 		},
 		{
-			env:      Envelope{Version: ProtocolVersion, Type: "banana", RequestID: "req_1", Nonce: "nonce_1"},
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: "banana", RequestID: "req_1", Nonce: "nonce_1"},
 			wantCode: "bad_type",
 		},
 	}
@@ -962,11 +963,11 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 		if err := encoder.Encode(tt.env); err != nil {
 			t.Fatalf("encode %s: %v", tt.env.Type, err)
 		}
-		var resp Envelope
+		var resp protocol.Envelope
 		if err := decoder.Decode(&resp); err != nil {
 			t.Fatalf("decode response for %s: %v", tt.env.Type, err)
 		}
-		payload, err := DecodePayload[ErrorPayload](resp)
+		payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 		if err != nil {
 			t.Fatalf("decode error payload for %s: %v", tt.env.Type, err)
 		}
@@ -990,7 +991,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	req.Reason = "  fabricated metadata  "
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeBadRequest) {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1014,7 +1015,7 @@ func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
 	defer cleanup()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeBadRequest) {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1052,7 +1053,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	client := NewClient(conn)
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeUntrustedClient) {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
 		t.Fatalf("expected untrusted_client protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1093,7 +1094,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 	defer func() { _ = conn.Close() }()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	env, err := NewEnvelope(TypeRequestExec, "req_attacker", "nonce_attacker", req)
+	env, err := protocol.NewEnvelope(protocol.TypeRequestExec, "req_attacker", "nonce_attacker", req)
 	if err != nil {
 		t.Fatalf("marshal exec request: %v", err)
 	}
@@ -1101,14 +1102,14 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 		t.Fatalf("encode raw exec request: %v", err)
 	}
 
-	var resp Envelope
+	var resp protocol.Envelope
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		t.Fatalf("decode raw exec response: %v", err)
 	}
-	if resp.Type != TypeError {
-		t.Fatalf("raw exec response type = %q, want %q", resp.Type, TypeError)
+	if resp.Type != protocol.TypeError {
+		t.Fatalf("raw exec response type = %q, want %q", resp.Type, protocol.TypeError)
 	}
-	errorPayload, err := DecodePayload[ErrorPayload](resp)
+	errorPayload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 	if err != nil {
 		t.Fatalf("decode raw exec error payload: %v", err)
 	}
@@ -1148,20 +1149,20 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 		t.Fatalf("Dial returned error: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	if err := json.NewEncoder(conn).Encode(Envelope{
-		Version:   ProtocolVersion,
-		Type:      TypeApprovalDecision,
+	if err := json.NewEncoder(conn).Encode(protocol.Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeApprovalDecision,
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
 		Payload:   json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("encode bad approval decision: %v", err)
 	}
-	var resp Envelope
+	var resp protocol.Envelope
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		t.Fatalf("decode bad approval decision response: %v", err)
 	}
-	payload, err := DecodePayload[ErrorPayload](resp)
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 	if err != nil {
 		t.Fatalf("decode error payload: %v", err)
 	}
@@ -1190,14 +1191,14 @@ func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
 		t.Fatalf("Dial returned error: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	var resp Envelope
+	var resp protocol.Envelope
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		t.Fatalf("decode peer rejection: %v", err)
 	}
-	if resp.Type != TypeError {
+	if resp.Type != protocol.TypeError {
 		t.Fatalf("peer rejection response type = %s", resp.Type)
 	}
-	payload, err := DecodePayload[ErrorPayload](resp)
+	payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 	if err != nil {
 		t.Fatalf("decode peer rejection payload: %v", err)
 	}
@@ -1382,7 +1383,7 @@ func writeRawExecRequest(
 ) {
 	t.Helper()
 
-	env, err := NewEnvelope(TypeRequestExec, requestID, nonce, req)
+	env, err := protocol.NewEnvelope(protocol.TypeRequestExec, requestID, nonce, req)
 	if err != nil {
 		t.Fatalf("create exec envelope: %v", err)
 	}
@@ -1391,10 +1392,10 @@ func writeRawExecRequest(
 	}
 }
 
-func readRawEnvelope(t *testing.T, decoder *json.Decoder) Envelope {
+func readRawEnvelope(t *testing.T, decoder *json.Decoder) protocol.Envelope {
 	t.Helper()
 
-	var env Envelope
+	var env protocol.Envelope
 	if err := decoder.Decode(&env); err != nil {
 		t.Fatalf("decode raw envelope: %v", err)
 	}

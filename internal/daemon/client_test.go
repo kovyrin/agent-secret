@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -146,11 +147,11 @@ func startFakeExecDaemon(t *testing.T) (string, func()) {
 func serveFakeExecPayload(conn *net.UnixConn) {
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
-	var env Envelope
+	var env protocol.Envelope
 	if err := decoder.Decode(&env); err != nil {
 		return
 	}
-	resp, err := NewEnvelope(TypeOK, env.RequestID, env.Nonce, ExecResponsePayload{
+	resp, err := protocol.NewEnvelope(protocol.TypeOK, env.RequestID, env.Nonce, protocol.ExecResponsePayload{
 		Env:           map[string]string{"TOKEN": "attacker-controlled"},
 		SecretAliases: []string{"TOKEN"},
 	})

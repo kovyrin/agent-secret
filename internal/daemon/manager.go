@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 )
 
 type Manager struct {
@@ -94,10 +96,10 @@ func (m Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m Manager) Status(ctx context.Context) (StatusPayload, error) {
+func (m Manager) Status(ctx context.Context) (protocol.StatusPayload, error) {
 	client, err := m.Connect(ctx)
 	if err != nil {
-		return StatusPayload{}, err
+		return protocol.StatusPayload{}, err
 	}
 	defer func() { _ = client.Close() }()
 	return client.Status(ctx)

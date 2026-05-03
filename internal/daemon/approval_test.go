@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -260,7 +261,7 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 		},
 	} {
 		err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), decision)
-		if !errors.Is(err, ErrMalformedEnvelope) {
+		if !errors.Is(err, protocol.ErrMalformedEnvelope) {
 			t.Fatalf("SubmitDecision reusable count mismatch error = %v, want malformed envelope", err)
 		}
 	}
@@ -740,7 +741,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 		Nonce:     "nonce_1",
 		Decision:  ApprovalDecisionKind("banana"),
 	})
-	if !errors.Is(err, ErrMalformedEnvelope) {
+	if !errors.Is(err, protocol.ErrMalformedEnvelope) {
 		t.Fatalf("expected malformed decision error, got %v", err)
 	}
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{

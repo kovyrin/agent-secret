@@ -10,12 +10,13 @@ import (
 	"slices"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type ProtocolError struct {
-	Code    ErrorCode
+	Code    protocol.ErrorCode
 	Message string
 }
 
@@ -75,30 +76,30 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) Status(ctx context.Context) (StatusPayload, error) {
-	payload, err := roundTripPayload[StatusPayload](ctx, c, TypeDaemonStatus, "", "", nil)
+func (c *Client) Status(ctx context.Context) (protocol.StatusPayload, error) {
+	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStatus, "", "", nil)
 	if err != nil {
-		return StatusPayload{}, err
+		return protocol.StatusPayload{}, err
 	}
-	if err := validateStatusPayload(TypeDaemonStatus, payload); err != nil {
-		return StatusPayload{}, err
+	if err := validateStatusPayload(protocol.TypeDaemonStatus, payload); err != nil {
+		return protocol.StatusPayload{}, err
 	}
 	return payload, nil
 }
 
-func (c *Client) Stop(ctx context.Context) (StatusPayload, error) {
-	payload, err := roundTripPayload[StatusPayload](ctx, c, TypeDaemonStop, "", "", nil)
+func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
+	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStop, "", "", nil)
 	if err != nil {
-		return StatusPayload{}, err
+		return protocol.StatusPayload{}, err
 	}
-	if err := validateStatusPayload(TypeDaemonStop, payload); err != nil {
-		return StatusPayload{}, err
+	if err := validateStatusPayload(protocol.TypeDaemonStop, payload); err != nil {
+		return protocol.StatusPayload{}, err
 	}
 	return payload, nil
 }
 
 func (c *Client) FetchPendingApproval(ctx context.Context) (ApprovalRequestPayload, error) {
-	payload, err := roundTripPayload[ApprovalRequestPayload](ctx, c, TypeApprovalPending, "", "", nil)
+	payload, err := roundTripPayload[ApprovalRequestPayload](ctx, c, protocol.TypeApprovalPending, "", "", nil)
 	if err != nil {
 		return ApprovalRequestPayload{}, err
 	}
@@ -109,40 +110,40 @@ func (c *Client) FetchPendingApproval(ctx context.Context) (ApprovalRequestPaylo
 }
 
 func (c *Client) SubmitApprovalDecision(ctx context.Context, decision ApprovalDecisionPayload) error {
-	return roundTripAck(ctx, c, TypeApprovalDecision, decision.RequestID, decision.Nonce, decision)
+	return roundTripAck(ctx, c, protocol.TypeApprovalDecision, decision.RequestID, decision.Nonce, decision)
 }
 
-func (c *Client) RequestExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ExecResponsePayload, error) {
-	payload, err := roundTripPayload[ExecResponsePayload](ctx, c, TypeRequestExec, requestID, nonce, req)
+func (c *Client) RequestExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (protocol.ExecResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.ExecResponsePayload](ctx, c, protocol.TypeRequestExec, requestID, nonce, req)
 	if err != nil {
-		return ExecResponsePayload{}, err
+		return protocol.ExecResponsePayload{}, err
 	}
 	if err := validateExecResponsePayload(payload, req); err != nil {
-		return ExecResponsePayload{}, err
+		return protocol.ExecResponsePayload{}, err
 	}
 	return payload, nil
 }
 
 func (c *Client) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
-	return roundTripAck(ctx, c, TypeCommandStarted, requestID, nonce, CommandStartedPayload{ChildPID: childPID})
+	return roundTripAck(ctx, c, protocol.TypeCommandStarted, requestID, nonce, protocol.CommandStartedPayload{ChildPID: childPID})
 }
 
 func (c *Client) ReportCompleted(ctx context.Context, requestID string, nonce string, exitCode int, signal string) error {
-	return roundTripAck(ctx, c, TypeCommandCompleted, requestID, nonce, CommandCompletedPayload{
+	return roundTripAck(ctx, c, protocol.TypeCommandCompleted, requestID, nonce, protocol.CommandCompletedPayload{
 		ExitCode: exitCode,
 		Signal:   signal,
 	})
 }
 
-func roundTrip[T any](ctx context.Context, c *Client, messageType MessageType, requestID string, nonce string, payload any) (T, error) {
+func roundTrip[T any](ctx context.Context, c *Client, messageType protocol.MessageType, requestID string, nonce string, payload any) (T, error) {
 	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, false)
 }
 
-func roundTripPayload[T any](ctx context.Context, c *Client, messageType MessageType, requestID string, nonce string, payload any) (T, error) {
+func roundTripPayload[T any](ctx context.Context, c *Client, messageType protocol.MessageType, requestID string, nonce string, payload any) (T, error) {
 	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, true)
 }
 
-func roundTripAck(ctx context.Context, c *Client, messageType MessageType, requestID string, nonce string, payload any) error {
+func roundTripAck(ctx context.Context, c *Client, messageType protocol.MessageType, requestID string, nonce string, payload any) error {
 	_, err := roundTripResponse[struct{}](ctx, c, messageType, requestID, nonce, payload, false)
 	return err
 }
@@ -150,7 +151,7 @@ func roundTripAck(ctx context.Context, c *Client, messageType MessageType, reque
 func roundTripResponse[T any](
 	ctx context.Context,
 	c *Client,
-	messageType MessageType,
+	messageType protocol.MessageType,
 	requestID string,
 	nonce string,
 	payload any,
@@ -162,7 +163,7 @@ func roundTripResponse[T any](
 	if err := ctx.Err(); err != nil {
 		return zero, fmt.Errorf("daemon request canceled: %w", err)
 	}
-	env, err := NewEnvelope(messageType, requestID, nonce, payload)
+	env, err := protocol.NewEnvelope(messageType, requestID, nonce, payload)
 	if err != nil {
 		return zero, err
 	}
@@ -190,71 +191,71 @@ func roundTripResponse[T any](
 		}
 		return zero, fmt.Errorf("read daemon response %s: %w", messageType, err)
 	}
-	if err := validateEnvelope(resp); err != nil {
+	if err := protocol.ValidateEnvelope(resp); err != nil {
 		return zero, fmt.Errorf("validate daemon response %s: %w", messageType, err)
 	}
 	if err := validateResponseCorrelation(resp, requestID, nonce); err != nil {
 		return zero, err
 	}
-	if resp.Type == TypeError {
-		payload, err := DecodePayload[ErrorPayload](resp)
+	if resp.Type == protocol.TypeError {
+		payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 		if err != nil {
 			return zero, fmt.Errorf("decode daemon error response %s: %w", messageType, err)
 		}
 		return zero, &ProtocolError{Code: payload.Code, Message: payload.Message}
 	}
-	if resp.Type != TypeOK {
-		return zero, fmt.Errorf("%w: response type %s", ErrProtocolType, resp.Type)
+	if resp.Type != protocol.TypeOK {
+		return zero, fmt.Errorf("%w: response type %s", protocol.ErrProtocolType, resp.Type)
 	}
 	if len(resp.Payload) == 0 {
 		if requirePayload {
-			return zero, fmt.Errorf("%w: %s response missing payload", ErrMalformedEnvelope, messageType)
+			return zero, fmt.Errorf("%w: %s response missing payload", protocol.ErrMalformedEnvelope, messageType)
 		}
 		return zero, nil
 	}
 	var out T
 	if err := json.Unmarshal(resp.Payload, &out); err != nil {
-		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
+		return zero, fmt.Errorf("%w: %w", protocol.ErrMalformedEnvelope, err)
 	}
 	return out, nil
 }
 
-func validateStatusPayload(messageType MessageType, payload StatusPayload) error {
+func validateStatusPayload(messageType protocol.MessageType, payload protocol.StatusPayload) error {
 	if payload.PID <= 0 {
-		return fmt.Errorf("%w: %s response has invalid pid", ErrMalformedEnvelope, messageType)
+		return fmt.Errorf("%w: %s response has invalid pid", protocol.ErrMalformedEnvelope, messageType)
 	}
 	return nil
 }
 
 func validateApprovalRequestPayload(payload ApprovalRequestPayload) error {
 	if payload.RequestID == "" {
-		return fmt.Errorf("%w: approval.pending response missing request id", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: approval.pending response missing request id", protocol.ErrMalformedEnvelope)
 	}
 	if payload.Nonce == "" {
-		return fmt.Errorf("%w: approval.pending response missing nonce", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: approval.pending response missing nonce", protocol.ErrMalformedEnvelope)
 	}
 	if len(payload.Command) == 0 {
-		return fmt.Errorf("%w: approval.pending response missing command", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: approval.pending response missing command", protocol.ErrMalformedEnvelope)
 	}
 	if payload.ExpiresAt.IsZero() {
-		return fmt.Errorf("%w: approval.pending response missing expiry", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: approval.pending response missing expiry", protocol.ErrMalformedEnvelope)
 	}
 	if len(payload.Secrets) == 0 {
-		return fmt.Errorf("%w: approval.pending response missing secrets", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: approval.pending response missing secrets", protocol.ErrMalformedEnvelope)
 	}
 	return nil
 }
 
-func validateExecResponsePayload(payload ExecResponsePayload, req request.ExecRequest) error {
+func validateExecResponsePayload(payload protocol.ExecResponsePayload, req request.ExecRequest) error {
 	expectedAliases := secretAliases(req.Secrets)
 	if !slices.Equal(payload.SecretAliases, expectedAliases) {
-		return fmt.Errorf("%w: request.exec response secret aliases do not match request", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: request.exec response secret aliases do not match request", protocol.ErrMalformedEnvelope)
 	}
 	if payload.Env == nil {
-		return fmt.Errorf("%w: request.exec response missing env", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: request.exec response missing env", protocol.ErrMalformedEnvelope)
 	}
 	if gotAliases := envAliases(payload.Env); !slices.Equal(gotAliases, expectedAliases) {
-		return fmt.Errorf("%w: request.exec response env aliases do not match request", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: request.exec response env aliases do not match request", protocol.ErrMalformedEnvelope)
 	}
 	return nil
 }
@@ -279,7 +280,7 @@ func envAliases(env map[string]string) []string {
 
 func (c *Client) contextWithDefaultDeadline(
 	ctx context.Context,
-	messageType MessageType,
+	messageType protocol.MessageType,
 	payload any,
 ) (context.Context, context.CancelFunc) {
 	if _, ok := ctx.Deadline(); ok {
@@ -288,7 +289,7 @@ func (c *Client) contextWithDefaultDeadline(
 	timeout := c.defaultTimeout()
 	now := time.Now()
 	deadline := now.Add(timeout)
-	if messageType == TypeRequestExec {
+	if messageType == protocol.TypeRequestExec {
 		if req, ok := payload.(request.ExecRequest); ok {
 			if req.ExpiresAt.After(now) {
 				deadline = req.ExpiresAt.Add(timeout)
@@ -307,9 +308,9 @@ func (c *Client) defaultTimeout() time.Duration {
 	return DefaultClientProtocolTimeout
 }
 
-func validateResponseCorrelation(resp Envelope, requestID string, nonce string) error {
+func validateResponseCorrelation(resp protocol.Envelope, requestID string, nonce string) error {
 	if requestID != "" && resp.RequestID != requestID {
-		return fmt.Errorf("%w: response request id mismatch", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: response request id mismatch", protocol.ErrMalformedEnvelope)
 	}
 	if nonce != "" && resp.Nonce != nonce {
 		return ErrInvalidNonce
@@ -317,8 +318,8 @@ func validateResponseCorrelation(resp Envelope, requestID string, nonce string) 
 	return nil
 }
 
-func (c *Client) readEnvelope() (Envelope, error) {
-	return readEnvelopeFrame(c.reader, DefaultMaxProtocolFrameBytes)
+func (c *Client) readEnvelope() (protocol.Envelope, error) {
+	return protocol.ReadEnvelopeFrame(c.reader, protocol.DefaultMaxProtocolFrameBytes)
 }
 
 func (c *Client) closeOnContextCancel(ctx context.Context) func() {
@@ -388,7 +389,7 @@ func contextErrorAfterIOError(ctx context.Context, err error) error {
 	return nil
 }
 
-func IsProtocolError(err error, code ErrorCode) bool {
+func IsProtocolError(err error, code protocol.ErrorCode) bool {
 	var protocolErr *ProtocolError
 	return errors.As(err, &protocolErr) && protocolErr.Code == code
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
@@ -338,8 +339,8 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 
 func isFatalCommandStartedAuditFailure(err error) bool {
 	if errors.Is(err, daemon.ErrInvalidNonce) ||
-		errors.Is(err, daemon.ErrMalformedEnvelope) ||
-		errors.Is(err, daemon.ErrProtocolType) {
+		errors.Is(err, protocol.ErrMalformedEnvelope) ||
+		errors.Is(err, protocol.ErrProtocolType) {
 		return true
 	}
 
@@ -348,31 +349,31 @@ func isFatalCommandStartedAuditFailure(err error) bool {
 		return false
 	}
 	switch protocolErr.Code {
-	case daemon.ErrorCodeBadCommandStarted,
-		daemon.ErrorCodeBadEnvelope,
-		daemon.ErrorCodeBadType,
-		daemon.ErrorCodeInvalidNonce,
-		daemon.ErrorCodeRequestActive,
-		daemon.ErrorCodeRequestExpired,
-		daemon.ErrorCodeStaleApproval,
-		daemon.ErrorCodeUntrustedClient:
+	case protocol.ErrorCodeBadCommandStarted,
+		protocol.ErrorCodeBadEnvelope,
+		protocol.ErrorCodeBadType,
+		protocol.ErrorCodeInvalidNonce,
+		protocol.ErrorCodeRequestActive,
+		protocol.ErrorCodeRequestExpired,
+		protocol.ErrorCodeStaleApproval,
+		protocol.ErrorCodeUntrustedClient:
 		return true
-	case daemon.ErrorCodeApprovalDenied,
-		daemon.ErrorCodeApprovalUnavailable,
-		daemon.ErrorCodeApproverIdentityMismatch,
-		daemon.ErrorCodeApproverPeerMismatch,
-		daemon.ErrorCodeAuditFailed,
-		daemon.ErrorCodeBadApprovalDecision,
-		daemon.ErrorCodeBadCommandCompleted,
-		daemon.ErrorCodeBadRequest,
-		daemon.ErrorCodeContextCanceled,
-		daemon.ErrorCodeContextDeadlineExceeded,
-		daemon.ErrorCodeDaemonStopped,
-		daemon.ErrorCodeFrameTooLarge,
-		daemon.ErrorCodeNoPendingApproval,
-		daemon.ErrorCodePeerRejected,
-		daemon.ErrorCodeRequestFailed,
-		daemon.ErrorCodeResolveFailed:
+	case protocol.ErrorCodeApprovalDenied,
+		protocol.ErrorCodeApprovalUnavailable,
+		protocol.ErrorCodeApproverIdentityMismatch,
+		protocol.ErrorCodeApproverPeerMismatch,
+		protocol.ErrorCodeAuditFailed,
+		protocol.ErrorCodeBadApprovalDecision,
+		protocol.ErrorCodeBadCommandCompleted,
+		protocol.ErrorCodeBadRequest,
+		protocol.ErrorCodeContextCanceled,
+		protocol.ErrorCodeContextDeadlineExceeded,
+		protocol.ErrorCodeDaemonStopped,
+		protocol.ErrorCodeFrameTooLarge,
+		protocol.ErrorCodeNoPendingApproval,
+		protocol.ErrorCodePeerRejected,
+		protocol.ErrorCodeRequestFailed,
+		protocol.ErrorCodeResolveFailed:
 		return false
 	default:
 		return false

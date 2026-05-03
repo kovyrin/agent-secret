@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -236,22 +237,22 @@ func (a *SocketApprover) SubmitDecision(
 	case ApprovalDecisionTimeout:
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 	default:
-		return fmt.Errorf("%w: invalid approval decision %q", ErrMalformedEnvelope, decision.Decision)
+		return fmt.Errorf("%w: invalid approval decision %q", protocol.ErrMalformedEnvelope, decision.Decision)
 	}
 	return nil
 }
 
 func validateReusableDecisionUses(decision ApprovalDecisionPayload, expected int) error {
 	if expected <= 0 {
-		return fmt.Errorf("%w: invalid pending reusable use count %d", ErrMalformedEnvelope, expected)
+		return fmt.Errorf("%w: invalid pending reusable use count %d", protocol.ErrMalformedEnvelope, expected)
 	}
 	if decision.ReusableUses == nil {
-		return fmt.Errorf("%w: missing reusable use count", ErrMalformedEnvelope)
+		return fmt.Errorf("%w: missing reusable use count", protocol.ErrMalformedEnvelope)
 	}
 	if *decision.ReusableUses != expected {
 		return fmt.Errorf(
 			"%w: reusable use count %d does not match pending request count %d",
-			ErrMalformedEnvelope,
+			protocol.ErrMalformedEnvelope,
 			*decision.ReusableUses,
 			expected,
 		)
