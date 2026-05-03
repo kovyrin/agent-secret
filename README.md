@@ -264,6 +264,9 @@ curl -fsSL "$base_url/${version}/uninstall.sh" | sh
 By default uninstall removes the app, CLI symlink, skill symlink, and known
 application support files, but leaves `~/Library/Logs/agent-secret` audit logs
 in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
+App bundle removal is gated by the expected bundle identifiers and Developer ID
+Team ID. If the target app cannot be verified, uninstall leaves it in place
+unless `AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1` is set.
 To pin an uninstall to a specific installed release, set `version` to that
 release tag instead of resolving the latest release.
 Custom app, command, skill, support, or audit paths require
