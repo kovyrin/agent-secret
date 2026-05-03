@@ -19,6 +19,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
+	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -578,6 +579,10 @@ func (r failingRandomReader) Read(_ []byte) (int, error) {
 }
 
 type appAllowPeer struct{}
+
+func (appAllowPeer) Info(conn *net.UnixConn) (peercred.Info, error) {
+	return peercred.Inspect(conn)
+}
 
 func (appAllowPeer) Validate(_ *net.UnixConn) error {
 	return nil
