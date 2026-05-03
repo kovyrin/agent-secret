@@ -371,6 +371,38 @@ func TestRunForwardsInterruptToChild(t *testing.T) {
 	}
 }
 
+func TestRunForwardsRepeatedInterruptsToChild(t *testing.T) {
+	t.Parallel()
+
+	interrupts := make(chan os.Signal, 2)
+	var stdout bytes.Buffer
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		interrupts <- syscall.SIGINT
+		time.Sleep(100 * time.Millisecond)
+		interrupts <- syscall.SIGINT
+	}()
+
+	result, err := Run(context.Background(), Spec{
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "wait-two-signals"},
+		Env:                    helperEnv(),
+		Stdout:                 &stdout,
+	}, interrupts)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ExitCode != 130 {
+		t.Fatalf("exit code = %d, want 130; stdout=%q", result.ExitCode, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "signal-1") || !strings.Contains(stdout.String(), "signal-2") {
+		t.Fatalf("child did not observe both forwarded signals; stdout=%q", stdout.String())
+	}
+}
+
 func TestRunTerminatesChildOnContextCancel(t *testing.T) {
 	t.Parallel()
 
@@ -468,6 +500,15 @@ func TestExecHelperProcess(t *testing.T) {
 		fmt.Println("ready")
 		<-signals
 		fmt.Println("signal-ok")
+		os.Exit(130)
+	case "wait-two-signals":
+		signals := make(chan os.Signal, 2)
+		signalNotify(signals, syscall.SIGINT)
+		fmt.Println("ready")
+		<-signals
+		fmt.Println("signal-1")
+		<-signals
+		fmt.Println("signal-2")
 		os.Exit(130)
 	case "sleep-long":
 		time.Sleep(10 * time.Second)

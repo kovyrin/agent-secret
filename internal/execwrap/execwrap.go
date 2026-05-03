@@ -209,7 +209,6 @@ func forwardInterrupts(done <-chan struct{}, process *os.Process, interrupts <-c
 		return
 	}
 
-	seen := 0
 	for {
 		select {
 		case <-done:
@@ -219,12 +218,7 @@ func forwardInterrupts(done <-chan struct{}, process *os.Process, interrupts <-c
 				return
 			}
 			if sig != nil {
-				seen++
-				if seen == 1 {
-					_ = signalChild(process, sig)
-				} else {
-					terminateChildUntilDone(done, process)
-				}
+				_ = signalChild(process, sig)
 			}
 		}
 	}
