@@ -153,6 +153,29 @@ Do not print, commit, paste, or attach `.p8`, `.p12`, private key, or password
 material. If a notary API key must be recreated, use an App Store Connect Team
 Key and store the downloaded `.p8` directly in GitHub Secrets.
 
+## Toolchain Pin Maintenance
+
+The GitHub workflow pins both `jdx/mise-action` and the `mise` binary that the
+action downloads. When updating the CI toolchain, update these values together
+in `.github/workflows/ci.yml`:
+
+- `AGENT_SECRET_MISE_VERSION`
+- `AGENT_SECRET_MISE_SHA256_MACOS_ARM64`
+- each release matrix `mise_sha256` value
+
+Resolve checksums from the official `jdx/mise` release archive for every GitHub
+runner architecture:
+
+```bash
+version=2026.4.28
+shasum -a 256 "mise-v${version}-macos-arm64.tar.gz"
+shasum -a 256 "mise-v${version}-macos-x64.tar.gz"
+```
+
+Run `AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh` after any
+workflow change. That smoke test fails if a `jdx/mise-action` step does not set
+both `version` and `sha256`.
+
 ## Failed Release Runs
 
 If a tag-triggered release fails before publication:
