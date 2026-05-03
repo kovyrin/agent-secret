@@ -111,10 +111,12 @@ func (p BundleApproverIdentityPolicy) ValidateApproverExecutable(path string) (A
 	}
 
 	return ApproverIdentity{
-		ExecutablePath: path,
-		BundlePath:     bundlePath,
-		BundleID:       bundleID,
-		TeamID:         teamID,
+		ExecutablePath:  path,
+		BundlePath:      bundlePath,
+		BundleID:        bundleID,
+		TeamID:          teamID,
+		ExpectedTeamID:  p.ExpectedTeamID,
+		VerifySignature: p.VerifySignature,
 	}, nil
 }
 

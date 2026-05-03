@@ -31,6 +31,18 @@ func (allowApproverIdentityPolicy) ValidateApproverExecutable(path string) (Appr
 	return ApproverIdentity{ExecutablePath: path}, nil
 }
 
+type staticApproverIdentityPolicy struct {
+	identity ApproverIdentity
+}
+
+func (p staticApproverIdentityPolicy) ValidateApproverExecutable(path string) (ApproverIdentity, error) {
+	identity := p.identity
+	if identity.ExecutablePath == "" {
+		identity.ExecutablePath = path
+	}
+	return identity, nil
+}
+
 func (l *recordingLauncher) Launch(_ context.Context, _ string, payload ApprovalRequestPayload) (ExpectedApprover, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -166,6 +178,96 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	}
 	if err := <-errCh; !errors.Is(err, ErrApprovalDenied) {
 		t.Fatalf("ApproveExec error = %v, want denial", err)
+	}
+}
+
+func TestSocketApproverRejectsFetchFromWrongApproverProcessSignature(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "OTHERTEAM",
+	}
+	launcher := &recordingLauncher{
+		expected: ExpectedApprover{
+			PID:               os.Getpid(),
+			ExecutablePath:    exe,
+			ExpectedTeamID:    "TEAMID",
+			VerifySignature:   true,
+			signatureVerifier: verifier,
+		},
+	}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(ctx, "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	waitForPending(t, approver)
+
+	_, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
+	if !errors.Is(err, ErrApproverPeerMismatch) {
+		t.Fatalf("expected approver peer mismatch, got %v", err)
+	}
+	if !slices.Equal(verifier.pids, []int{os.Getpid()}) {
+		t.Fatalf("verified pids = %v, want [%d]", verifier.pids, os.Getpid())
+	}
+
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
+	}
+}
+
+func TestSocketApproverRejectsDecisionFromWrongApproverProcessSignature(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	launcher := &recordingLauncher{
+		expected: ExpectedApprover{
+			PID:               os.Getpid(),
+			ExecutablePath:    exe,
+			ExpectedTeamID:    "TEAMID",
+			VerifySignature:   true,
+			signatureVerifier: verifier,
+		},
+	}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(ctx, "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	waitForPending(t, approver)
+
+	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
+		t.Fatalf("FetchPending returned error: %v", err)
+	}
+	verifier.processTeamID = "OTHERTEAM"
+	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  "approve_once",
+	})
+	if !errors.Is(err, ErrApproverPeerMismatch) {
+		t.Fatalf("expected approver peer mismatch, got %v", err)
+	}
+	if !slices.Equal(verifier.pids, []int{os.Getpid(), os.Getpid()}) {
+		t.Fatalf("verified pids = %v, want [%d %d]", verifier.pids, os.Getpid(), os.Getpid())
+	}
+
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
 	}
 }
 
@@ -415,6 +517,39 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	}
 	if expected.ExecutablePath != helper {
 		t.Fatalf("expected executable path = %q, want %q", expected.ExecutablePath, helper)
+	}
+}
+
+func TestProcessApproverLauncherCarriesSignaturePolicyToExpectedPeer(t *testing.T) {
+	t.Parallel()
+
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
+		t.Fatalf("write helper: %v", err)
+	}
+
+	expected, err := (ProcessApproverLauncher{
+		AppPath: helper,
+		IdentityPolicy: staticApproverIdentityPolicy{identity: ApproverIdentity{
+			ExpectedTeamID:  "TEAMID",
+			VerifySignature: true,
+		}},
+	}).Launch(
+		context.Background(),
+		"/tmp/agent-secret-test.sock",
+		ApprovalRequestPayload{},
+	)
+	if err != nil {
+		t.Fatalf("Launch returned error: %v", err)
+	}
+	if expected.ExpectedTeamID != "TEAMID" {
+		t.Fatalf("ExpectedTeamID = %q, want TEAMID", expected.ExpectedTeamID)
+	}
+	if !expected.VerifySignature {
+		t.Fatal("VerifySignature = false, want true")
+	}
+	if expected.signatureVerifier == nil {
+		t.Fatal("signatureVerifier is nil")
 	}
 }
 
