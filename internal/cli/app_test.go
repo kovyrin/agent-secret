@@ -480,7 +480,10 @@ func TestDaemonAuditReporterWarnsOnDaemonStoppedAfterChildStart(t *testing.T) {
 		nonce:     "nonce_1",
 		stderr:    &stderr,
 	}
-	if err := reporter.Record(context.Background(), execwrap.AuditEvent{Type: "command_started", ChildPID: os.Getpid()}); err != nil {
+	if err := reporter.Record(context.Background(), execwrap.AuditEvent{
+		Type:     audit.EventCommandStarted,
+		ChildPID: os.Getpid(),
+	}); err != nil {
 		t.Fatalf("Record returned error: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "command_started audit was not recorded") {

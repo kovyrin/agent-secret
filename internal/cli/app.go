@@ -311,10 +311,11 @@ type daemonAuditReporter struct {
 }
 
 func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEvent) error {
+	//nolint:exhaustive // execwrap emits only command lifecycle audit events; default rejects unsupported values.
 	switch event.Type {
-	case "command_starting":
+	case audit.EventCommandStarting:
 		return nil
-	case "command_started":
+	case audit.EventCommandStarted:
 		if err := r.client.ReportStarted(ctx, r.requestID, r.nonce, event.ChildPID); err != nil {
 			if isFatalCommandStartedAuditFailure(err) {
 				return err
@@ -325,10 +326,12 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 				err,
 			)
 		}
-	case "command_completed":
+	case audit.EventCommandCompleted:
 		if err := r.client.ReportCompleted(ctx, r.requestID, r.nonce, event.ExitCode, event.Signal); err != nil {
 			_, _ = fmt.Fprintf(r.stderr, "agent-secret: warning: daemon completion audit was not recorded: %v\n", err)
 		}
+	default:
+		return fmt.Errorf("unsupported exec audit event type %q", event.Type)
 	}
 	return nil
 }

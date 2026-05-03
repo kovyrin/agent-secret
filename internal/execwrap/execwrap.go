@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
@@ -26,13 +27,13 @@ type AuditSink interface {
 }
 
 type AuditEvent struct {
-	Type          string   `json:"type"`
-	Command       []string `json:"command,omitempty"`
-	CWD           string   `json:"cwd,omitempty"`
-	SecretAliases []string `json:"secret_aliases,omitempty"`
-	ChildPID      int      `json:"child_pid,omitempty"`
-	ExitCode      int      `json:"exit_code,omitempty"`
-	Signal        string   `json:"signal,omitempty"`
+	Type          audit.EventType `json:"type"`
+	Command       []string        `json:"command,omitempty"`
+	CWD           string          `json:"cwd,omitempty"`
+	SecretAliases []string        `json:"secret_aliases,omitempty"`
+	ChildPID      int             `json:"child_pid,omitempty"`
+	ExitCode      int             `json:"exit_code,omitempty"`
+	Signal        string          `json:"signal,omitempty"`
 }
 
 type Spec struct {
@@ -82,7 +83,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 
 	argv := append([]string{spec.Path}, spec.Args...)
 	if err := record(ctx, spec.Audit, AuditEvent{
-		Type:          "command_starting",
+		Type:          audit.EventCommandStarting,
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
@@ -116,7 +117,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 	}
 
 	if err := record(ctx, spec.Audit, AuditEvent{
-		Type:          "command_started",
+		Type:          audit.EventCommandStarted,
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
@@ -142,7 +143,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 		childPID = cmd.ProcessState.Pid()
 	}
 	event := AuditEvent{
-		Type:          "command_completed",
+		Type:          audit.EventCommandCompleted,
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
