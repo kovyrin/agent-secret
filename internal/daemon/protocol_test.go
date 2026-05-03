@@ -251,6 +251,190 @@ func TestClientRequestExecDefaultDeadlineAllowsApprovalWaitUntilRequestExpiry(t 
 	}
 }
 
+func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		wantType string
+		call     func(*testing.T, context.Context, *Client) error
+	}{
+		{
+			name:     "status",
+			wantType: TypeDaemonStatus,
+			call: func(_ *testing.T, ctx context.Context, client *Client) error {
+				_, err := client.Status(ctx)
+				return err
+			},
+		},
+		{
+			name:     "stop",
+			wantType: TypeDaemonStop,
+			call: func(_ *testing.T, ctx context.Context, client *Client) error {
+				_, err := client.Stop(ctx)
+				return err
+			},
+		},
+		{
+			name:     "fetch pending approval",
+			wantType: TypeApprovalPending,
+			call: func(_ *testing.T, ctx context.Context, client *Client) error {
+				_, err := client.FetchPendingApproval(ctx)
+				return err
+			},
+		},
+		{
+			name:     "request exec",
+			wantType: TypeRequestExec,
+			call: func(t *testing.T, ctx context.Context, client *Client) error {
+				t.Helper()
+
+				req := testExecRequest(t, []request.SecretSpec{
+					{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+				})
+				_, err := client.RequestExec(ctx, "req_1", "nonce_1", req)
+				return err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
+				if env.Type != tc.wantType {
+					t.Fatalf("request type = %s, want %s", env.Type, tc.wantType)
+				}
+				return emptyOKResponseFrame(t, env)
+			})
+			defer cleanup()
+
+			err := tc.call(t, context.Background(), client)
+			if !errors.Is(err, ErrMalformedEnvelope) {
+				t.Fatalf("expected malformed empty OK response error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "missing payload") {
+				t.Fatalf("error %q does not mention missing payload", err)
+			}
+		})
+	}
+}
+
+func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	execReq := testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+	})
+	tests := []struct {
+		name       string
+		frame      func(t *testing.T, env Envelope) []byte
+		call       func(context.Context, *Client) error
+		wantErrMsg string
+	}{
+		{
+			name: "status pid",
+			frame: func(t *testing.T, env Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, StatusPayload{})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.Status(ctx)
+				return err
+			},
+			wantErrMsg: "invalid pid",
+		},
+		{
+			name: "pending request id",
+			frame: func(t *testing.T, env Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, ApprovalRequestPayload{
+					Nonce:     "nonce_1",
+					Command:   []string{"terraform", "plan"},
+					ExpiresAt: time.Now().Add(time.Minute),
+					Secrets: []ApprovalRequestedSecret{
+						{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+					},
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.FetchPendingApproval(ctx)
+				return err
+			},
+			wantErrMsg: "missing request id",
+		},
+		{
+			name: "exec aliases",
+			frame: func(t *testing.T, env Envelope) []byte {
+				t.Helper()
+
+				return execResponseFrame(t, env, ExecResponsePayload{
+					Env:           map[string]string{"OTHER": "value"},
+					SecretAliases: []string{"OTHER"},
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.RequestExec(ctx, "req_1", "nonce_1", execReq)
+				return err
+			},
+			wantErrMsg: "secret aliases do not match",
+		},
+		{
+			name: "exec env",
+			frame: func(t *testing.T, env Envelope) []byte {
+				t.Helper()
+
+				return execResponseFrame(t, env, ExecResponsePayload{
+					Env:           map[string]string{"TOKEN": "value", "OTHER": "value"},
+					SecretAliases: []string{"TOKEN"},
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.RequestExec(ctx, "req_1", "nonce_1", execReq)
+				return err
+			},
+			wantErrMsg: "env aliases do not match",
+		},
+		{
+			name: "exec missing env",
+			frame: func(t *testing.T, env Envelope) []byte {
+				t.Helper()
+
+				return execResponseFrame(t, env, ExecResponsePayload{
+					SecretAliases: []string{"TOKEN"},
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.RequestExec(ctx, "req_1", "nonce_1", execReq)
+				return err
+			},
+			wantErrMsg: "missing env",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
+				return tc.frame(t, env)
+			})
+			defer cleanup()
+
+			err := tc.call(context.Background(), client)
+			if !errors.Is(err, ErrMalformedEnvelope) {
+				t.Fatalf("expected malformed response error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrMsg) {
+				t.Fatalf("error %q does not contain %q", err, tc.wantErrMsg)
+			}
+		})
+	}
+}
+
 func TestClientRejectsOversizedDaemonResponseFrame(t *testing.T) {
 	t.Parallel()
 
@@ -392,6 +576,36 @@ func boundedPaddingResponseFrame(t *testing.T, padding string) []byte {
 	}
 	if int64(len(frame)+1) > DefaultMaxProtocolFrameBytes {
 		t.Fatalf("test frame size %d exceeds max %d", len(frame)+1, DefaultMaxProtocolFrameBytes)
+	}
+	return append(frame, '\n')
+}
+
+func emptyOKResponseFrame(t *testing.T, request Envelope) []byte {
+	t.Helper()
+
+	env := Envelope{
+		Version:   ProtocolVersion,
+		Type:      TypeOK,
+		RequestID: request.RequestID,
+		Nonce:     request.Nonce,
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal empty OK response: %v", err)
+	}
+	return append(frame, '\n')
+}
+
+func okResponseFrame(t *testing.T, request Envelope, payload any) []byte {
+	t.Helper()
+
+	env, err := NewEnvelope(TypeOK, request.RequestID, request.Nonce, payload)
+	if err != nil {
+		t.Fatalf("NewEnvelope returned error: %v", err)
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal OK response: %v", err)
 	}
 	return append(frame, '\n')
 }

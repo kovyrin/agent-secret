@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -75,40 +76,86 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Status(ctx context.Context) (StatusPayload, error) {
-	return roundTrip[StatusPayload](ctx, c, TypeDaemonStatus, "", "", nil)
+	payload, err := roundTripPayload[StatusPayload](ctx, c, TypeDaemonStatus, "", "", nil)
+	if err != nil {
+		return StatusPayload{}, err
+	}
+	if err := validateStatusPayload(TypeDaemonStatus, payload); err != nil {
+		return StatusPayload{}, err
+	}
+	return payload, nil
 }
 
 func (c *Client) Stop(ctx context.Context) (StatusPayload, error) {
-	return roundTrip[StatusPayload](ctx, c, TypeDaemonStop, "", "", nil)
+	payload, err := roundTripPayload[StatusPayload](ctx, c, TypeDaemonStop, "", "", nil)
+	if err != nil {
+		return StatusPayload{}, err
+	}
+	if err := validateStatusPayload(TypeDaemonStop, payload); err != nil {
+		return StatusPayload{}, err
+	}
+	return payload, nil
 }
 
 func (c *Client) FetchPendingApproval(ctx context.Context) (ApprovalRequestPayload, error) {
-	return roundTrip[ApprovalRequestPayload](ctx, c, TypeApprovalPending, "", "", nil)
+	payload, err := roundTripPayload[ApprovalRequestPayload](ctx, c, TypeApprovalPending, "", "", nil)
+	if err != nil {
+		return ApprovalRequestPayload{}, err
+	}
+	if err := validateApprovalRequestPayload(payload); err != nil {
+		return ApprovalRequestPayload{}, err
+	}
+	return payload, nil
 }
 
 func (c *Client) SubmitApprovalDecision(ctx context.Context, decision ApprovalDecisionPayload) error {
-	_, err := roundTrip[struct{}](ctx, c, TypeApprovalDecision, decision.RequestID, decision.Nonce, decision)
-	return err
+	return roundTripAck(ctx, c, TypeApprovalDecision, decision.RequestID, decision.Nonce, decision)
 }
 
 func (c *Client) RequestExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ExecResponsePayload, error) {
-	return roundTrip[ExecResponsePayload](ctx, c, TypeRequestExec, requestID, nonce, req)
+	payload, err := roundTripPayload[ExecResponsePayload](ctx, c, TypeRequestExec, requestID, nonce, req)
+	if err != nil {
+		return ExecResponsePayload{}, err
+	}
+	if err := validateExecResponsePayload(payload, req); err != nil {
+		return ExecResponsePayload{}, err
+	}
+	return payload, nil
 }
 
 func (c *Client) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
-	_, err := roundTrip[struct{}](ctx, c, TypeCommandStarted, requestID, nonce, CommandStartedPayload{ChildPID: childPID})
-	return err
+	return roundTripAck(ctx, c, TypeCommandStarted, requestID, nonce, CommandStartedPayload{ChildPID: childPID})
 }
 
 func (c *Client) ReportCompleted(ctx context.Context, requestID string, nonce string, exitCode int, signal string) error {
-	_, err := roundTrip[struct{}](ctx, c, TypeCommandCompleted, requestID, nonce, CommandCompletedPayload{
+	return roundTripAck(ctx, c, TypeCommandCompleted, requestID, nonce, CommandCompletedPayload{
 		ExitCode: exitCode,
 		Signal:   signal,
 	})
-	return err
 }
 
 func roundTrip[T any](ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) (T, error) {
+	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, false)
+}
+
+func roundTripPayload[T any](ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) (T, error) {
+	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, true)
+}
+
+func roundTripAck(ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) error {
+	_, err := roundTripResponse[struct{}](ctx, c, messageType, requestID, nonce, payload, false)
+	return err
+}
+
+func roundTripResponse[T any](
+	ctx context.Context,
+	c *Client,
+	messageType string,
+	requestID string,
+	nonce string,
+	payload any,
+	requirePayload bool,
+) (T, error) {
 	var zero T
 	ctx, cancel := c.contextWithDefaultDeadline(ctx, messageType, payload)
 	defer cancel()
@@ -160,6 +207,9 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("%w: response type %s", ErrProtocolType, resp.Type)
 	}
 	if len(resp.Payload) == 0 {
+		if requirePayload {
+			return zero, fmt.Errorf("%w: %s response missing payload", ErrMalformedEnvelope, messageType)
+		}
 		return zero, nil
 	}
 	var out T
@@ -167,6 +217,64 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
+}
+
+func validateStatusPayload(messageType string, payload StatusPayload) error {
+	if payload.PID <= 0 {
+		return fmt.Errorf("%w: %s response has invalid pid", ErrMalformedEnvelope, messageType)
+	}
+	return nil
+}
+
+func validateApprovalRequestPayload(payload ApprovalRequestPayload) error {
+	if payload.RequestID == "" {
+		return fmt.Errorf("%w: approval.pending response missing request id", ErrMalformedEnvelope)
+	}
+	if payload.Nonce == "" {
+		return fmt.Errorf("%w: approval.pending response missing nonce", ErrMalformedEnvelope)
+	}
+	if len(payload.Command) == 0 {
+		return fmt.Errorf("%w: approval.pending response missing command", ErrMalformedEnvelope)
+	}
+	if payload.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: approval.pending response missing expiry", ErrMalformedEnvelope)
+	}
+	if len(payload.Secrets) == 0 {
+		return fmt.Errorf("%w: approval.pending response missing secrets", ErrMalformedEnvelope)
+	}
+	return nil
+}
+
+func validateExecResponsePayload(payload ExecResponsePayload, req request.ExecRequest) error {
+	expectedAliases := secretAliases(req.Secrets)
+	if !slices.Equal(payload.SecretAliases, expectedAliases) {
+		return fmt.Errorf("%w: request.exec response secret aliases do not match request", ErrMalformedEnvelope)
+	}
+	if payload.Env == nil {
+		return fmt.Errorf("%w: request.exec response missing env", ErrMalformedEnvelope)
+	}
+	if gotAliases := envAliases(payload.Env); !slices.Equal(gotAliases, expectedAliases) {
+		return fmt.Errorf("%w: request.exec response env aliases do not match request", ErrMalformedEnvelope)
+	}
+	return nil
+}
+
+func secretAliases(secrets []request.Secret) []string {
+	aliases := make([]string, 0, len(secrets))
+	for _, secret := range secrets {
+		aliases = append(aliases, secret.Alias)
+	}
+	slices.Sort(aliases)
+	return aliases
+}
+
+func envAliases(env map[string]string) []string {
+	aliases := make([]string, 0, len(env))
+	for alias := range env {
+		aliases = append(aliases, alias)
+	}
+	slices.Sort(aliases)
+	return aliases
 }
 
 func (c *Client) contextWithDefaultDeadline(
