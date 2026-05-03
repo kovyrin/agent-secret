@@ -211,9 +211,12 @@ curl -fsSL \
   https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
 ```
 
-By default uninstall removes the app, CLI symlink, skill symlink, and
-application support state, but leaves `~/Library/Logs/agent-secret` audit logs
+By default uninstall removes the app, CLI symlink, skill symlink, and known
+application support files, but leaves `~/Library/Logs/agent-secret` audit logs
 in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
+Custom support or audit paths require
+`AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1`; the script refuses broad,
+relative, symlinked, or non-`agent-secret` directory targets.
 
 ## Development Install
 
