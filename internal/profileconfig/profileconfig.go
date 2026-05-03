@@ -29,6 +29,11 @@ type LoadOptions struct {
 	StartDir   string
 }
 
+type Metadata struct {
+	SourcePath string
+	Account    string
+}
+
 type Profile struct {
 	Name       string
 	SourcePath string
@@ -108,25 +113,9 @@ func (s *secretYAML) unmarshalMapping(value *yaml.Node) error {
 }
 
 func Load(opts LoadOptions) (Profile, error) {
-	path, err := Find(opts.ConfigPath, opts.StartDir)
+	path, doc, err := loadConfigFile(opts)
 	if err != nil {
 		return Profile{}, err
-	}
-
-	//nolint:gosec // G304: config path is selected from explicit project config discovery and parsed as configuration only.
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Profile{}, fmt.Errorf("read profile config %s: %w", path, err)
-	}
-
-	var doc configFile
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&doc); err != nil {
-		return Profile{}, fmt.Errorf("%w: parse %s: %w", ErrInvalidConfig, path, err)
-	}
-	if doc.Version != currentVersion {
-		return Profile{}, fmt.Errorf("%w: %s version must be %d", ErrInvalidConfig, path, currentVersion)
 	}
 	if len(doc.Profiles) == 0 {
 		return Profile{}, fmt.Errorf("%w: %s must define at least one profile", ErrInvalidConfig, path)
@@ -157,6 +146,41 @@ func Load(opts LoadOptions) (Profile, error) {
 		Secrets:    secrets,
 		TTL:        resolved.ttl,
 	}, nil
+}
+
+func LoadMetadata(opts LoadOptions) (Metadata, error) {
+	path, doc, err := loadConfigFile(opts)
+	if err != nil {
+		return Metadata{}, err
+	}
+	return Metadata{
+		SourcePath: path,
+		Account:    strings.TrimSpace(doc.Account),
+	}, nil
+}
+
+func loadConfigFile(opts LoadOptions) (string, configFile, error) {
+	path, err := Find(opts.ConfigPath, opts.StartDir)
+	if err != nil {
+		return "", configFile{}, err
+	}
+
+	//nolint:gosec // G304: config path is selected from explicit project config discovery and parsed as configuration only.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", configFile{}, fmt.Errorf("read profile config %s: %w", path, err)
+	}
+
+	var doc configFile
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&doc); err != nil {
+		return "", configFile{}, fmt.Errorf("%w: parse %s: %w", ErrInvalidConfig, path, err)
+	}
+	if doc.Version != currentVersion {
+		return "", configFile{}, fmt.Errorf("%w: %s version must be %d", ErrInvalidConfig, path, currentVersion)
+	}
+	return path, doc, nil
 }
 
 func resolveProfile(doc configFile, path string, profileName string, stack []string) (resolvedProfile, error) {

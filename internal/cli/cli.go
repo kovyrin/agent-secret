@@ -327,6 +327,10 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
+	configAccount, err := loadExecConfigAccount(*profileName, *configPath, hasExplicitSource, loadedProfile)
+	if err != nil {
+		return Command{}, err
+	}
 	onlyActive := len(only.aliases) > 0
 	if onlyActive && !loadedProfile && len(envFileValues.Secrets) == 0 {
 		return Command{}, fmt.Errorf("%w: --only requires a profile, default_profile, or --env-file secret refs", ErrInvalidArguments)
@@ -348,6 +352,9 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	accountFallback := execAccountFallback(*account)
+	if !loadedProfile && strings.TrimSpace(configAccount) != "" {
+		accountFallback = configAccount
+	}
 	var effectiveSecrets []request.SecretSpec
 	if loadedProfile {
 		profileSecrets = applyDefaultAccount(profileSecrets, accountFallback)
@@ -401,6 +408,22 @@ func loadExecProfile(profileName string, configPath string, hasExplicitSource bo
 		label = "default"
 	}
 	return profileconfig.Profile{}, false, fmt.Errorf("load profile %q: %w", label, err)
+}
+
+func loadExecConfigAccount(profileName string, configPath string, hasExplicitSource bool, loadedProfile bool) (string, error) {
+	if profileName != "" || !hasExplicitSource || loadedProfile {
+		return "", nil
+	}
+	metadata, err := profileconfig.LoadMetadata(profileconfig.LoadOptions{
+		ConfigPath: configPath,
+	})
+	if err == nil {
+		return metadata.Account, nil
+	}
+	if configPath == "" && errors.Is(err, profileconfig.ErrConfigNotFound) {
+		return "", nil
+	}
+	return "", fmt.Errorf("load config metadata: %w", err)
 }
 
 func applyDefaultAccount(secrets []request.SecretSpec, account string) []request.SecretSpec {

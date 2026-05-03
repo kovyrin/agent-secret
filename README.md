@@ -485,9 +485,10 @@ agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- \
 
 `--secret` flags can be combined with a profile for one-off additional refs; in
 that mode, explicit secrets inherit the loaded profile account. Explicit
-`--secret`-only invocations do not load `default_profile`. CLI `--reason` and
-`--ttl` override profile defaults. CLI `--account` supplies a default account
-for refs that do not already have a config/profile account. `--only` filters
+`--secret`-only invocations do not load `default_profile`, but still inherit a
+discovered or explicit config's top-level `account`. CLI `--reason` and `--ttl`
+override profile defaults. CLI `--account` supplies a default account for refs
+that do not already have a config/profile account. `--only` filters
 profile-loaded aliases and env-file secret refs before one-off `--secret` refs
 are added.
 
