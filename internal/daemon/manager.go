@@ -127,7 +127,7 @@ func (m Manager) Stop(ctx context.Context) error {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	return fmt.Errorf("%w: daemon still responds after stop", ErrDaemonUnavailable)
+	return fmt.Errorf("%w: daemon still responds after stop", ErrDaemonStillRunning)
 }
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {

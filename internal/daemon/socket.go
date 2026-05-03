@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrDaemonUnavailable       = errors.New("daemon unavailable")
+	ErrDaemonStillRunning      = errors.New("daemon still running")
 	ErrInsecureSocketDirectory = errors.New("insecure daemon socket directory")
 )
 
