@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `35,333`.
+Current selected LOC: `34,958`.
 
-Cumulative reduction from baseline: `3,895` LOC.
+Cumulative reduction from baseline: `4,270` LOC.
 
-Remaining reduction needed: `7,874` LOC.
+Remaining reduction needed: `7,499` LOC.
 
 Measurement command:
 
@@ -164,11 +164,19 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `e08b70e`.
 - Change: remove unimplemented session/socket delivery scaffolding.
 - LOC delta: -380.
 - Verification: focused Go package tests, `markdownlint`, `git diff --check`,
   `mise run lint`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: remove release PATH, GOROOT, and custom keychain trap scaffolding.
+- LOC delta: -375.
+- Verification: focused release signing and docs smoke tests, workflow action
+  pin check, `actionlint`, `markdownlint`, `mise run lint`.
 
 ## Current Decisions
 

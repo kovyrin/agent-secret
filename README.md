@@ -342,10 +342,8 @@ AGENT_SECRET_IN_MISE=1 scripts/build-release.sh v0.3.1 --require-production-sign
 
 `AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is
 only attempted when `AGENT_SECRET_NOTARIZE=1`. Signed local release builds must
-run from a trusted toolchain context with `AGENT_SECRET_IN_MISE=1`; the release
-builder refuses to discover `mise` through `PATH` while signing or notarization
-environment variables are present. Without Apple Developer ID and App Store
-Connect API key credentials, local release artifacts remain ad-hoc signed.
+run from the project toolchain. Without Apple Developer ID and App Store Connect
+API key credentials, local release artifacts remain ad-hoc signed.
 
 For this repository's maintainer releases, the current Developer ID identity is:
 

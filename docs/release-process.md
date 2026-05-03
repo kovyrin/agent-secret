@@ -184,14 +184,9 @@ Run `AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh` after any
 workflow change. That smoke test fails if a `jdx/mise-action` step does not set
 both `version` and `sha256`.
 
-Signed release builds must already be inside a trusted toolchain context. The
-release builder refuses to re-exec a `mise` binary discovered through `PATH`
-when signing or notarization environment variables are present; CI uses the
-pinned `jdx/mise-action` and invokes the release builder through `mise exec`
-with `AGENT_SECRET_IN_MISE=1`. The app bundle builder also rejects an inherited
-`GOROOT` that does not match the selected Go binary and runs Go commands with
-`GOROOT` unset, so caller environment variables cannot silently swap the
-compiler for signed artifacts.
+Signed release builds run through the pinned CI `mise` action and fixed macOS
+system tools for signing, notarization, and DMG assembly. Keep the workflow
+tool action version and checksum pinned when changing release automation.
 
 ## Failed Release Runs
 

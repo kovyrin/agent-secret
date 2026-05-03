@@ -121,7 +121,6 @@ jobs:
         env:
           AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
           AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
-          AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
         run: scripts/import-codesign-certificate.sh
 
       - name: Build release artifacts
@@ -151,11 +150,10 @@ jobs:
 
       - name: Delete temporary signing keychain
         if: ${{ always() }}
-        env:
-          AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
         run: |
-          if [ -f "$AGENT_SECRET_CODESIGN_KEYCHAIN_PATH" ]; then
-            security delete-keychain "$AGENT_SECRET_CODESIGN_KEYCHAIN_PATH"
+          keychain_path="$RUNNER_TEMP/agent-secret-codesign.keychain-db"
+          if [ -f "$keychain_path" ]; then
+            security delete-keychain "$keychain_path"
           fi
 
   publish-draft-release:

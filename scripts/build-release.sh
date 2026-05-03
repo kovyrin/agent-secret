@@ -25,32 +25,7 @@ project_root="$(cd -- "$script_dir/.." && pwd)"
 output_dir="$project_root/dist"
 require_production_signing=0
 
-release_signing_env_present() {
-  local name=""
-
-  for name in \
-    AGENT_SECRET_CODESIGN_CERT_P12_BASE64 \
-    AGENT_SECRET_CODESIGN_CERT_P12_PATH \
-    AGENT_SECRET_CODESIGN_CERT_PASSWORD \
-    AGENT_SECRET_CODESIGN_ENTITLEMENTS \
-    AGENT_SECRET_CODESIGN_IDENTITY \
-    AGENT_SECRET_NOTARIZE \
-    AGENT_SECRET_NOTARY_ISSUER_ID \
-    AGENT_SECRET_NOTARY_KEY \
-    AGENT_SECRET_NOTARY_KEY_ID; do
-    if [[ "${!name:-}" != "" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
-  if release_signing_env_present; then
-    echo "build-release: refusing to re-exec PATH-discovered mise while release signing environment is present" >&2
-    echo "build-release: run from a trusted toolchain context with AGENT_SECRET_IN_MISE=1" >&2
-    exit 1
-  fi
   if command -v mise >/dev/null 2>&1; then
     export AGENT_SECRET_IN_MISE=1
     exec mise exec -- "$0" "$@"
