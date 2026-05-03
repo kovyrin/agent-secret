@@ -23,7 +23,8 @@ final class UnixSocketLineTransport: LineTransport {
         try self.init(
             path: path,
             maxFrameBytes: Self.defaultMaxFrameBytes,
-            ioTimeout: Self.defaultIOTimeout
+            ioTimeout: Self.defaultIOTimeout,
+            peerValidator: TrustedDaemonPeerValidator.defaultForCurrentProcess()
         )
     }
 
@@ -31,13 +32,18 @@ final class UnixSocketLineTransport: LineTransport {
         init(
             socketFileDescriptor descriptor: Int32,
             maxFrameBytes: Int = defaultMaxFrameBytes,
-            ioTimeout: TimeInterval = defaultIOTimeout
+            ioTimeout: TimeInterval = defaultIOTimeout,
+            peerValidator: DaemonPeerValidator? = nil
         ) throws {
             try Self.validate(maxFrameBytes: maxFrameBytes)
             do {
                 try Self.configureTimeouts(
                     for: descriptor,
                     ioTimeout: ioTimeout
+                )
+                try DaemonPeerInspector.validate(
+                    socketFileDescriptor: descriptor,
+                    using: peerValidator
                 )
             } catch {
                 close(descriptor)
@@ -48,10 +54,11 @@ final class UnixSocketLineTransport: LineTransport {
         }
     #endif
 
-    private init(
+    init(
         path: String,
         maxFrameBytes: Int,
-        ioTimeout: TimeInterval
+        ioTimeout: TimeInterval,
+        peerValidator: DaemonPeerValidator?
     ) throws {
         #if canImport(Darwin)
             try Self.validate(maxFrameBytes: maxFrameBytes)
@@ -88,6 +95,10 @@ final class UnixSocketLineTransport: LineTransport {
                     for: descriptor,
                     ioTimeout: ioTimeout
                 )
+                try DaemonPeerInspector.validate(
+                    socketFileDescriptor: descriptor,
+                    using: peerValidator
+                )
             } catch {
                 close(descriptor)
                 throw error
@@ -98,6 +109,7 @@ final class UnixSocketLineTransport: LineTransport {
             _ = path
             _ = maxFrameBytes
             _ = ioTimeout
+            _ = peerValidator
             throw SocketDaemonClientError.socketUnavailable
         #endif
     }
@@ -164,6 +176,7 @@ final class UnixSocketLineTransport: LineTransport {
         private static func isTimeout(_ errnoValue: Int32) -> Bool {
             errnoValue == EAGAIN || errnoValue == EWOULDBLOCK
         }
+
     #endif
 
     func readLine() throws -> Data {

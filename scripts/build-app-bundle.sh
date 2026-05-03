@@ -33,6 +33,7 @@ version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 codesign_entitlements="${AGENT_SECRET_CODESIGN_ENTITLEMENTS:-}"
+approver_team_id=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -259,6 +260,8 @@ cat >"$app_bundle/Contents/Info.plist" <<PLIST
   <string>$AGENT_SECRET_ICON_FILE</string>
   <key>CFBundleIdentifier</key>
   <string>$AGENT_SECRET_APP_BUNDLE_ID</string>
+  <key>AgentSecretExpectedTeamID</key>
+  <string>$approver_team_id</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>$AGENT_SECRET_INFO_DICTIONARY_VERSION</string>
   <key>CFBundleName</key>
