@@ -35,16 +35,36 @@ public final class ApprovalController {
         logger.record("approval_request_loaded", requestID: request.requestID)
 
         let decisionKind: ApprovalDecisionKind = presenter.decide(for: request)
-        let reusableUses: Int? = decisionKind == .approveReusable ? request.reusableUses : nil
-        let decision = ApprovalDecision(
+        let decision: ApprovalDecision = decision(
+            for: decisionKind,
             requestID: request.requestID,
             nonce: request.nonce,
-            decision: decisionKind,
-            reusableUses: reusableUses
+            reusableUses: request.reusableUses
         )
 
         try await client.submit(decision)
         logger.record("approval_decision_submitted", requestID: request.requestID)
         return decision
+    }
+
+    private func decision(
+        for decisionKind: ApprovalDecisionKind,
+        requestID: String,
+        nonce: String,
+        reusableUses: Int
+    ) -> ApprovalDecision {
+        switch decisionKind {
+        case .approveOnce:
+            .approveOnce(requestID: requestID, nonce: nonce)
+
+        case .approveReusable:
+            .approveReusable(requestID: requestID, nonce: nonce, reusableUses: reusableUses)
+
+        case .deny:
+            .deny(requestID: requestID, nonce: nonce)
+
+        case .timeout:
+            .timeout(requestID: requestID, nonce: nonce)
+        }
     }
 }
