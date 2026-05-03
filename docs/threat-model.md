@@ -133,9 +133,35 @@ The model does not try to defend against:
 - 1Password Desktop or the official 1Password SDK returning the wrong value.
 - Apple notarization or Developer ID infrastructure being compromised.
 - Secrets exposed by downstream tools once the approved child receives them.
+- Defense-in-depth hardening that materially increases product complexity
+  without protecting a stated asset, trust boundary, or security goal in this
+  document.
 
 These non-goals do not excuse avoidable local trust-boundary mistakes. They only
 define where Agent Secret stops claiming protection.
+
+## Scope and Complexity Discipline
+
+This model is also a guardrail against over-hardening. Agent Secret should stay
+small enough that reviewers can understand the trust boundaries and reason about
+the secret path end to end.
+
+Security findings should be release-blocking only when they identify concrete
+product harm inside this model. A same-UID local process is in scope when it can
+cross a stated boundary, such as impersonating a daemon socket, replacing an
+approved executable, or causing the installer to trust the wrong artifact. The
+same attacker capability should not justify unbounded hardening of every helper
+tool, parser, shell snippet, or test fixture unless that component is part of a
+documented trust decision.
+
+Prefer these outcomes when fixing findings:
+
+- Delete or simplify code when a lower-level invariant already covers the risk.
+- Enforce the trust boundary closest to the asset being protected.
+- Keep one focused regression per invariant instead of many tests for the same
+  hypothetical attack shape.
+- Move non-release-blocking hardening ideas to the backlog when the product
+  contract is already satisfied.
 
 ## Trust Boundaries
 
