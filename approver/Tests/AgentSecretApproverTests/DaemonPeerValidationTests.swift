@@ -63,9 +63,12 @@ import XCTest
                 }
             }
 
-            func acceptOneConnection() {
+            func acceptOneConnection(holdOpenUntil release: DispatchSemaphore? = nil) {
                 let client = accept(descriptor, nil, nil)
                 if client >= 0 {
+                    if let release {
+                        _ = release.wait(timeout: .now() + 5)
+                    }
                     close(client)
                 }
             }
@@ -216,10 +219,12 @@ import XCTest
 
         func testPathTransportRejectsSocketBeforeProtocolWhenPeerIsUntrusted() throws {
             let server = try Self.makeServer(testCase: self)
+            let releaseConnection = DispatchSemaphore(value: 0)
             let acceptThread = Thread {
-                server.acceptOneConnection()
+                server.acceptOneConnection(holdOpenUntil: releaseConnection)
             }
             acceptThread.start()
+            defer { releaseConnection.signal() }
 
             XCTAssertThrowsError(try UnixSocketLineTransport(path: server.path)) { error in
                 guard case .untrustedDaemon = error as? SocketDaemonClientError else {
@@ -230,10 +235,12 @@ import XCTest
 
         func testPathTransportCanTrustCurrentExecutableForLocalPeer() throws {
             let server = try Self.makeServer(testCase: self)
+            let releaseConnection = DispatchSemaphore(value: 0)
             let acceptThread = Thread {
-                server.acceptOneConnection()
+                server.acceptOneConnection(holdOpenUntil: releaseConnection)
             }
             acceptThread.start()
+            defer { releaseConnection.signal() }
 
             let validator = try TrustedDaemonPeerValidator(
                 expectedExecutablePaths: [Self.currentExecutablePath()]
@@ -244,6 +251,7 @@ import XCTest
                 ioTimeout: 0.05,
                 peerValidator: validator
             )
+            releaseConnection.signal()
 
             XCTAssertThrowsError(try transport.readLine()) { error in
                 XCTAssertEqual(error as? SocketDaemonClientError, .disconnected)
