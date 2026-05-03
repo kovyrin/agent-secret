@@ -241,7 +241,7 @@ func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err 
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ErrRequestExpired) {
+	if errors.Is(err, ErrApprovalDenied) || errors.Is(err, ErrRequestExpired) {
 		return err
 	}
 	if activeErr := b.requestActive(ctx, req); activeErr != nil {
@@ -714,7 +714,9 @@ func (b *Broker) recordApprovalError(
 func (b *Broker) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
 	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
 	event.ErrorCode = "approval_denied"
-	return b.recordRequiredAudit(ctx, event)
+	auditCtx, cancel := terminalAuditContext(ctx)
+	defer cancel()
+	return b.recordRequiredAudit(auditCtx, event)
 }
 
 func (b *Broker) recordSecretFetchFailed(

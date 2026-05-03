@@ -207,18 +207,23 @@ func (a *SocketApprover) SubmitDecision(
 	if decision.RequestID != job.payload.RequestID || decision.Nonce != job.payload.Nonce {
 		return ErrStaleApproval
 	}
-	if !a.now().Before(job.payload.ExpiresAt) || decision.Decision == "timeout" {
-		a.complete(job, approvalResult{err: ErrRequestExpired})
-		return nil
-	}
-
 	switch decision.Decision {
 	case "approve_once":
+		if !a.now().Before(job.payload.ExpiresAt) {
+			a.complete(job, approvalResult{err: ErrRequestExpired})
+			return nil
+		}
 		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true}})
 	case "approve_reusable":
+		if !a.now().Before(job.payload.ExpiresAt) {
+			a.complete(job, approvalResult{err: ErrRequestExpired})
+			return nil
+		}
 		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true, Reusable: true}})
 	case "deny":
 		a.complete(job, approvalResult{err: ErrApprovalDenied})
+	case "timeout":
+		a.complete(job, approvalResult{err: ErrRequestExpired})
 	default:
 		return fmt.Errorf("%w: invalid approval decision %q", ErrMalformedEnvelope, decision.Decision)
 	}
