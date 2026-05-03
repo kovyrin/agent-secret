@@ -95,6 +95,7 @@ AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh
 cd approver && swift run agent-secret-approver-smoke
 ```
 
