@@ -285,7 +285,7 @@ func (b *Broker) ensureGrantStillActive(
 	if err := b.requestActive(ctx, req); err != nil {
 		return err
 	}
-	return b.reusable.active(approvalID, approvalExpiresAt)
+	return b.reusable.ensureApprovalActive(approvalID, approvalExpiresAt)
 }
 
 func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err error) error {
@@ -319,7 +319,7 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 		b.markActivePayloadDelivered(requestID)
 		return nil
 	}
-	if err := b.reusable.active(active.approvalID, active.approvalExpiresAt); err != nil {
+	if err := b.reusable.ensureApprovalActive(active.approvalID, active.approvalExpiresAt); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}

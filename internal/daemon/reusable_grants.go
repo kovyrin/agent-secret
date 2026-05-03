@@ -123,7 +123,7 @@ func (m *reusableGrantManager) releaseReservation(approvalID string) {
 	m.finishPrePayloadFailure(approvalID)
 }
 
-func (m *reusableGrantManager) active(approvalID string, expiresAt time.Time) error {
+func (m *reusableGrantManager) ensureApprovalActive(approvalID string, expiresAt time.Time) error {
 	if approvalID == "" || expiresAt.IsZero() {
 		return nil
 	}
@@ -174,14 +174,14 @@ func (m *reusableGrantManager) cacheResolvedValues(
 	refValues map[secretIdentity]string,
 ) error {
 	for identity, value := range refValues {
-		if err := m.active(approvalID, expiresAt); err != nil {
+		if err := m.ensureApprovalActive(approvalID, expiresAt); err != nil {
 			return err
 		}
 		if err := m.cache.Put(approvalID, identity.ref, identity.account, value); err != nil {
 			return fmt.Errorf("cache approved secret in locked memory: %w", err)
 		}
 	}
-	if err := m.active(approvalID, expiresAt); err != nil {
+	if err := m.ensureApprovalActive(approvalID, expiresAt); err != nil {
 		return err
 	}
 	return nil
