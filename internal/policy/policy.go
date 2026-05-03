@@ -166,7 +166,13 @@ func (s *Store) addReusableWithLimit(
 	return *approval, nil
 }
 
-func (s *Store) FindReusable(ctx context.Context, req request.ExecRequest, sink ReuseAuditSink) (ReusableApproval, error) {
+// MatchReusableForReuseAudit finds a reusable approval, prunes stale matches,
+// and records approval reuse when a live match is found.
+func (s *Store) MatchReusableForReuseAudit(
+	ctx context.Context,
+	req request.ExecRequest,
+	sink ReuseAuditSink,
+) (ReusableApproval, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

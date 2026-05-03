@@ -1120,7 +1120,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
 		t.Fatal("expired reusable approval cache scope remained after force refresh")
 	}
-	if _, err := broker.store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, err := broker.store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("expired reusable approval remained in store: %v", err)
 	}
 }
@@ -1305,7 +1305,7 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	if len(cache.clearedScopes) != 1 {
 		t.Fatalf("cleared scopes = %v, want one rollback clear", cache.clearedScopes)
 	}
-	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("reusable approval survived cache insertion failure: %v", err)
 	}
 	if approver.calls != 1 {
@@ -1355,7 +1355,7 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 	if _, ok := cache.Get(cache.clearedScopes[0], ref, ""); ok {
 		t.Fatal("reusable cache scope survived command_starting audit failure")
 	}
-	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("reusable approval survived command_starting audit failure: %v", err)
 	}
 	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
