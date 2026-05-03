@@ -55,6 +55,7 @@ reject_threat_model_text() {
 require_text "AGENT_SECRET_IN_MISE=1 scripts/test-install.sh"
 require_text "AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh"
 require_text "AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh"
+require_text "AGENT_SECRET_IN_MISE=1 scripts/test-release-ancestry.sh"
 require_text "AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh"
 require_text "AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh"
 require_text "AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh"
@@ -66,6 +67,7 @@ reject_text "Local and CI builds are ad-hoc signed by default"
 reject_text "Developer ID signing and notarization are opt-in release settings"
 
 require_release_process_text "## Toolchain Pin Maintenance"
+require_release_process_text "reachable from \`origin/main\`"
 require_release_process_text "AGENT_SECRET_MISE_VERSION"
 require_release_process_text "scripts/test-workflow-actions-pinned.sh"
 
