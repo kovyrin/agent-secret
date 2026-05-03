@@ -31,6 +31,12 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
+Current selected LOC: `38,847`.
+
+Cumulative reduction from baseline: `381` LOC.
+
+Remaining reduction needed: `11,388` LOC.
+
 Measurement command:
 
 ```sh
@@ -135,10 +141,17 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `7b0705e`.
 - Change: add simplification ledger and model discipline.
-- LOC delta: pending.
+- LOC delta: +191.
 - Verification: `markdownlint`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: remove historical review report and fake `awk` trust fixture.
+- LOC delta: -572.
+- Verification: pending.
 
 ## Current Decisions
 

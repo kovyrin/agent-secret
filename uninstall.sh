@@ -17,7 +17,6 @@ expected_team_id="B6L7QLWTZW"
 expected_app_bundle_id="com.kovyrin.agent-secret"
 expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
 codesign_path="/usr/bin/codesign"
-awk_path="/usr/bin/awk"
 default_support_dir="$HOME/Library/Application Support/agent-secret"
 default_audit_dir="$HOME/Library/Logs/agent-secret"
 
@@ -56,10 +55,9 @@ bundle_identifier_matches() {
 codesign_team_id() {
   path="$1"
 
-  [ -x "$awk_path" ] || return 1
   details="$("$codesign_path" -dv --verbose=4 "$path" 2>&1)" || return 1
   printf '%s\n' "$details" |
-    "$awk_path" -F= "\$1 == \"TeamIdentifier\" { print \$2; found = 1; exit } END { if (!found) exit 1 }"
+    awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }'
 }
 
 team_id_matches() {

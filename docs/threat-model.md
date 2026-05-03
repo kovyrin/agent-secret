@@ -273,8 +273,8 @@ Severity should describe concrete product harm, not generic security anxiety.
 
 This document is the stable review contract, not the live issue tracker.
 Current open findings live in GitHub issues named `ASR-NNN`. Historical review
-reports live in `docs/release-code-review-*.md` and may describe findings that
-have since been fixed.
+reports may be archived outside the product repository when they describe
+findings that have since been fixed.
 
 When a review produces a finding, the finding should map to one of the trust
 boundaries above, or it should propose an explicit update to this threat model.
