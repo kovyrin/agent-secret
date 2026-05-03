@@ -26,7 +26,7 @@ var (
 	ErrUseExhausted  = errors.New("reusable approval use count exhausted")
 )
 
-const DefaultReusableUses = 3
+const DefaultReusableUses = request.DefaultReusableUses
 
 type ReuseAuditSink interface {
 	ApprovalReused(ctx context.Context, event ReuseAuditEvent) error
@@ -65,6 +65,7 @@ type ReuseKey struct {
 	Secrets                []SecretGrant
 	DeliveryMode           request.DeliveryMode
 	TTL                    time.Duration
+	ReusableUses           int
 	OverrideEnv            bool
 	OverriddenAliases      []string
 	AllowMutableExecutable bool
@@ -119,8 +120,23 @@ func NewStore(now func() time.Time) *Store {
 }
 
 func (s *Store) AddReusable(req request.ExecRequest, id string, nonce string) (ReusableApproval, error) {
+	return s.AddReusableWithLimit(req, request.ReusableUsesOrDefault(req.ReusableUses), id, nonce)
+}
+
+func (s *Store) AddReusableWithLimit(
+	req request.ExecRequest,
+	maxUses int,
+	id string,
+	nonce string,
+) (ReusableApproval, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	maxUses = request.ReusableUsesOrDefault(maxUses)
+	if maxUses < 1 || maxUses > request.MaxReusableUses {
+		return ReusableApproval{}, fmt.Errorf("%w: must be between 1 and %d", request.ErrInvalidReusableUses, request.MaxReusableUses)
+	}
+	req.ReusableUses = maxUses
 
 	if id == "" {
 		var err error
@@ -142,7 +158,7 @@ func (s *Store) AddReusable(req request.ExecRequest, id string, nonce string) (R
 		Nonce:     nonce,
 		Key:       NewReuseKey(req),
 		ExpiresAt: req.ExpiresAt,
-		MaxUses:   DefaultReusableUses,
+		MaxUses:   maxUses,
 	}
 	s.approvals[id] = approval
 
@@ -357,6 +373,7 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 		Secrets:                secrets,
 		DeliveryMode:           req.DeliveryMode,
 		TTL:                    req.TTL,
+		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      overridden,
 		AllowMutableExecutable: req.AllowMutableExecutable,
@@ -373,6 +390,7 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 		slices.Equal(k.Secrets, other.Secrets) &&
 		k.DeliveryMode == other.DeliveryMode &&
 		k.TTL == other.TTL &&
+		k.ReusableUses == other.ReusableUses &&
 		k.OverrideEnv == other.OverrideEnv &&
 		k.AllowMutableExecutable == other.AllowMutableExecutable &&
 		slices.Equal(k.OverriddenAliases, other.OverriddenAliases)

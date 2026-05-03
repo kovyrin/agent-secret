@@ -92,6 +92,7 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 		{name: "overridden alias", mutate: func(r *request.ExecRequest) { r.OverriddenAliases = []string{"TOKEN"} }},
 		{name: "mutable executable opt-in", mutate: func(r *request.ExecRequest) { r.AllowMutableExecutable = true }},
 		{name: "ttl", mutate: func(r *request.ExecRequest) { r.TTL = 5 * time.Minute }},
+		{name: "reusable uses", mutate: func(r *request.ExecRequest) { r.ReusableUses = request.DefaultReusableUses + 1 }},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +107,40 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 				t.Fatalf("expected mismatch, got %v", err)
 			}
 		})
+	}
+}
+
+func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	req := testRequest(t, now)
+	req.ReusableUses = 2
+
+	approval, err := store.AddReusableWithLimit(req, 2, "appr_1", "nonce_1")
+	if err != nil {
+		t.Fatalf("AddReusableWithLimit returned error: %v", err)
+	}
+	if approval.MaxUses != 2 {
+		t.Fatalf("max uses = %d, want 2", approval.MaxUses)
+	}
+
+	audit := &memoryReuseAudit{}
+	if _, err := store.FindReusable(context.Background(), req, audit); err != nil {
+		t.Fatalf("FindReusable returned error: %v", err)
+	}
+	if len(audit.events) != 1 || audit.events[0].RemainingUse != 2 {
+		t.Fatalf("unexpected audit events: %+v", audit.events)
+	}
+
+	for range 2 {
+		if _, err := store.FinishReusableAttempt(approval.ID, DeliveryPayloadDelivered); err != nil {
+			t.Fatalf("FinishReusableAttempt returned error: %v", err)
+		}
+	}
+	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("expected two-use approval to be removed, got %v", err)
 	}
 }
 

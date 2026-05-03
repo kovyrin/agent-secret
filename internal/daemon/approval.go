@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -223,7 +222,11 @@ func (a *SocketApprover) SubmitDecision(
 		if err := validateReusableDecisionUses(decision, job.payload.ReusableUses); err != nil {
 			return err
 		}
-		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true, Reusable: true}})
+		a.complete(job, approvalResult{decision: ApprovalDecision{
+			Approved:     true,
+			Reusable:     true,
+			ReusableUses: job.payload.ReusableUses,
+		}})
 	case "deny":
 		a.complete(job, approvalResult{err: ErrApprovalDenied})
 	case "timeout":
@@ -386,7 +389,7 @@ func approvalPayload(requestID string, nonce string, req request.ExecRequest) Ap
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      slices.Clone(req.OverriddenAliases),
 		AllowMutableExecutable: req.AllowMutableExecutable,
-		ReusableUses:           policy.DefaultReusableUses,
+		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 	}
 }
 
