@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -202,12 +203,119 @@ func TestClientRoundTripHonorsContextDeadlineWaitingForResponse(t *testing.T) {
 	}
 }
 
+func TestClientRejectsOversizedDaemonResponseFrame(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte {
+		frame := bytes.Repeat([]byte("x"), int(DefaultMaxProtocolFrameBytes)+1)
+		return append(frame, '\n')
+	})
+	defer cleanup()
+
+	_, err := client.Status(context.Background())
+	if !errors.Is(err, ErrProtocolFrameSize) {
+		t.Fatalf("expected protocol frame size error, got %v", err)
+	}
+}
+
+func TestClientAcceptsBoundedDaemonResponseFrame(t *testing.T) {
+	t.Parallel()
+
+	padding := string(bytes.Repeat([]byte("a"), 512*1024))
+	frame := boundedPaddingResponseFrame(t, padding)
+	client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte { return frame })
+	defer cleanup()
+
+	got, err := roundTrip[map[string]string](context.Background(), client, TypeDaemonStatus, "", "", nil)
+	if err != nil {
+		t.Fatalf("roundTrip returned error: %v", err)
+	}
+	if got["padding"] != padding {
+		t.Fatalf("padding length = %d, want %d", len(got["padding"]), len(padding))
+	}
+}
+
+func boundedPaddingResponseFrame(t *testing.T, padding string) []byte {
+	t.Helper()
+
+	env, err := NewEnvelope(TypeOK, "", "", map[string]string{"padding": padding})
+	if err != nil {
+		t.Fatalf("NewEnvelope returned error: %v", err)
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	if int64(len(frame)+1) > DefaultMaxProtocolFrameBytes {
+		t.Fatalf("test frame size %d exceeds max %d", len(frame)+1, DefaultMaxProtocolFrameBytes)
+	}
+	return append(frame, '\n')
+}
+
 func TestSameUIDValidatorRejectsInspectFailure(t *testing.T) {
 	t.Parallel()
 
 	err := (SameUIDValidator{}).Validate(&net.UnixConn{})
 	if err == nil {
 		t.Fatal("expected invalid unix connection error")
+	}
+}
+
+func startRespondingDaemonClient(t *testing.T, response func(Envelope) []byte) (*Client, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-response-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: socket tests need an owner-searchable private listener directory.
+		_ = os.RemoveAll(dir)
+		t.Fatalf("secure socket test directory: %v", err)
+	}
+	path := filepath.Join(dir, "daemon.sock")
+	listener, err := ListenUnix(path)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.AcceptUnix()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		var env Envelope
+		if err := json.NewDecoder(conn).Decode(&env); err != nil {
+			serverDone <- err
+			return
+		}
+		_, err = conn.Write(response(env))
+		serverDone <- err
+	}()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		_ = listener.Close()
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	client := NewClient(conn)
+
+	return client, func() {
+		_ = client.Close()
+		_ = listener.Close()
+		defer func() { _ = os.RemoveAll(dir) }()
+		select {
+		case err := <-serverDone:
+			if err != nil && !errors.Is(err, net.ErrClosed) {
+				t.Fatalf("responding daemon returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("responding daemon did not stop")
+		}
 	}
 }
 

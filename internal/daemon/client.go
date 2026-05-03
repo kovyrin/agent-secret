@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,7 +25,7 @@ func (e *ProtocolError) Error() string {
 type Client struct {
 	conn    *net.UnixConn
 	encoder *json.Encoder
-	decoder *json.Decoder
+	reader  *bufio.Reader
 }
 
 func Connect(ctx context.Context, path string) (*Client, error) {
@@ -58,7 +59,7 @@ func NewClient(conn *net.UnixConn) *Client {
 	return &Client{
 		conn:    conn,
 		encoder: json.NewEncoder(conn),
-		decoder: json.NewDecoder(conn),
+		reader:  bufio.NewReader(conn),
 	}
 }
 
@@ -129,8 +130,8 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 	if err := c.setReadDeadline(ctx); err != nil {
 		return zero, fmt.Errorf("set daemon read deadline %s: %w", messageType, err)
 	}
-	var resp Envelope
-	if err := c.decoder.Decode(&resp); err != nil {
+	resp, err := c.readEnvelope()
+	if err != nil {
 		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
 			return zero, fmt.Errorf("daemon request canceled: %w", ctxErr)
 		}
@@ -163,6 +164,10 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
+}
+
+func (c *Client) readEnvelope() (Envelope, error) {
+	return readEnvelopeFrame(c.reader, DefaultMaxProtocolFrameBytes)
 }
 
 func (c *Client) closeOnContextCancel(ctx context.Context) func() {
