@@ -802,8 +802,96 @@ profiles:
 	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
 		t.Fatalf("default profile leaked into explicit secret request: %+v", req.Secrets)
 	}
-	if req.Secrets[0].Account != opresolver.DefaultDesktopAccount {
-		t.Fatalf("secret account = %q, want built-in default", req.Secrets[0].Account)
+	if req.Secrets[0].Account != "Default Account" {
+		t.Fatalf("secret account = %q, want top-level config account", req.Secrets[0].Account)
+	}
+}
+
+func TestParseExecExplicitEnvFileSecretsUseTopLevelConfigAccount(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+account: Default Account
+default_profile: extra
+profiles:
+  extra:
+    reason: Extra
+    secrets:
+      EXTRA_TOKEN: op://Example/Extra/token
+`)
+	envPath := filepath.Join(root, ".env.deploy")
+	writeConfigFile(t, envPath, "TOKEN=op://Example/Item/token\n")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Explicit env file",
+		"--env-file", envPath,
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
+		t.Fatalf("default profile leaked into explicit env-file request: %+v", req.Secrets)
+	}
+	if req.Secrets[0].Account != "Default Account" {
+		t.Fatalf("secret account = %q, want top-level config account", req.Secrets[0].Account)
+	}
+}
+
+func TestParseExecExplicitConfigSecretsUseTopLevelAccount(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	configPath := filepath.Join(root, "explicit.yml")
+	writeConfigFile(t, configPath, `
+version: 1
+account: Explicit Config Account
+default_profile: extra
+profiles:
+  extra:
+    reason: Extra
+    secrets:
+      EXTRA_TOKEN: op://Example/Extra/token
+`)
+	t.Chdir(t.TempDir())
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--config", configPath,
+		"--reason", "Explicit config",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
+		t.Fatalf("default profile leaked into explicit config request: %+v", req.Secrets)
+	}
+	if req.Secrets[0].Account != "Explicit Config Account" {
+		t.Fatalf("secret account = %q, want explicit config account", req.Secrets[0].Account)
 	}
 }
 

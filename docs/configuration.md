@@ -198,7 +198,8 @@ Explicit `--secret` flags may be combined with `--profile` for one-off
 additional refs. In that mode, explicit secrets inherit the loaded profile
 account. `--only` filters profile-loaded aliases and env-file secret refs
 before one-off `--secret` refs are added. Explicit `--secret`-only invocations
-do not load `default_profile`.
+do not load `default_profile`, but still inherit a discovered or explicit
+config's top-level `account`.
 
 `--env-file` may be combined with `--profile` or `--secret`. It is intended for
 migrating `op run --env-file` workflows without rewriting every caller at once:

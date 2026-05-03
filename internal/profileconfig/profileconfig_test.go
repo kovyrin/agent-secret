@@ -264,6 +264,30 @@ profiles:
 	}
 }
 
+func TestLoadMetadataReadsTopLevelAccountWithoutDefaultProfile(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+account: Default Account
+profiles:
+  one:
+    reason: One
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+
+	metadata, err := LoadMetadata(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("LoadMetadata returned error: %v", err)
+	}
+	if metadata.Account != "Default Account" {
+		t.Fatalf("Account = %q", metadata.Account)
+	}
+	if metadata.SourcePath != filepath.Join(root, "agent-secret.yml") {
+		t.Fatalf("SourcePath = %q", metadata.SourcePath)
+	}
+}
+
 func TestLoadReportsMissingDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
