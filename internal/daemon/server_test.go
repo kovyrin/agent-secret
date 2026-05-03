@@ -1093,17 +1093,11 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 	defer func() { _ = conn.Close() }()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	payload, err := marshalPayload(req)
+	env, err := NewEnvelope(TypeRequestExec, "req_attacker", "nonce_attacker", req)
 	if err != nil {
 		t.Fatalf("marshal exec request: %v", err)
 	}
-	if err := json.NewEncoder(conn).Encode(Envelope{
-		Version:   ProtocolVersion,
-		Type:      TypeRequestExec,
-		RequestID: "req_attacker",
-		Nonce:     "nonce_attacker",
-		Payload:   payload,
-	}); err != nil {
+	if err := json.NewEncoder(conn).Encode(env); err != nil {
 		t.Fatalf("encode raw exec request: %v", err)
 	}
 
