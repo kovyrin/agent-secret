@@ -140,6 +140,9 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 	if err := validateEnvelope(resp); err != nil {
 		return zero, fmt.Errorf("validate daemon response %s: %w", messageType, err)
 	}
+	if err := validateResponseCorrelation(resp, requestID, nonce); err != nil {
+		return zero, err
+	}
 	if resp.Type == TypeError {
 		payload, err := DecodePayload[ErrorPayload](resp)
 		if err != nil {
@@ -150,12 +153,6 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 	if resp.Type != TypeOK {
 		return zero, fmt.Errorf("%w: response type %s", ErrProtocolType, resp.Type)
 	}
-	if requestID != "" && resp.RequestID != requestID {
-		return zero, fmt.Errorf("%w: response request id mismatch", ErrMalformedEnvelope)
-	}
-	if nonce != "" && resp.Nonce != nonce {
-		return zero, ErrInvalidNonce
-	}
 	if len(resp.Payload) == 0 {
 		return zero, nil
 	}
@@ -164,6 +161,16 @@ func roundTrip[T any](ctx context.Context, c *Client, messageType string, reques
 		return zero, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
 	return out, nil
+}
+
+func validateResponseCorrelation(resp Envelope, requestID string, nonce string) error {
+	if requestID != "" && resp.RequestID != requestID {
+		return fmt.Errorf("%w: response request id mismatch", ErrMalformedEnvelope)
+	}
+	if nonce != "" && resp.Nonce != nonce {
+		return ErrInvalidNonce
+	}
+	return nil
 }
 
 func (c *Client) readEnvelope() (Envelope, error) {
