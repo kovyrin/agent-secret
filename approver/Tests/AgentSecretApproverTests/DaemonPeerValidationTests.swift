@@ -6,6 +6,25 @@ import XCTest
     import Darwin
 
     final class DaemonPeerValidationTests: XCTestCase {
+        private final class FakeSignatureChecker: DaemonCodeSignatureChecking {
+            var staticTeamIDResult: Result<String, Error> = .success("TEAMID")
+            var processTeamIDResult: Result<String, Error> = .success("TEAMID")
+            private(set) var processPIDs: [pid_t] = []
+
+            func staticCodeTeamID(for _: String) throws -> String {
+                try staticTeamIDResult.get()
+            }
+
+            func processTeamID(for pid: pid_t) throws -> String {
+                processPIDs.append(pid)
+                return try processTeamIDResult.get()
+            }
+
+            deinit {
+                /* Required by SwiftLint. */
+            }
+        }
+
         private final class UnixSocketServer: @unchecked Sendable {
             let path: String
             private let descriptor: Int32
@@ -61,6 +80,19 @@ import XCTest
             try XCTUnwrap(Bundle.main.executableURL?.path)
         }
 
+        private static func currentPeerInfo(
+            uid: uid_t = getuid(),
+            gid: gid_t = getgid(),
+            pid: pid_t = getpid()
+        ) throws -> DaemonPeerInfo {
+            try DaemonPeerInfo(
+                uid: uid,
+                gid: gid,
+                pid: pid,
+                executablePath: currentExecutablePath()
+            )
+        }
+
         private static func makeServer(testCase: XCTestCase) throws -> UnixSocketServer {
             let directory = URL(fileURLWithPath: "/tmp")
                 .appendingPathComponent("agent-secret-swift-tests-\(UUID().uuidString)")
@@ -89,6 +121,48 @@ import XCTest
             XCTAssertNoThrow(try validator.validateDaemonPeer(info))
         }
 
+        func testTrustedDaemonValidatorRejectsDifferentUID() throws {
+            let validator = try TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [Self.currentExecutablePath()]
+            )
+            let info = try Self.currentPeerInfo(uid: getuid() + 1)
+
+            XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
+                XCTAssertEqual(
+                    error as? SocketDaemonClientError,
+                    .untrustedDaemon("daemon uid does not match current user")
+                )
+            }
+        }
+
+        func testTrustedDaemonValidatorRejectsDifferentGID() throws {
+            let validator = try TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [Self.currentExecutablePath()]
+            )
+            let info = try Self.currentPeerInfo(gid: getgid() + 1)
+
+            XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
+                XCTAssertEqual(
+                    error as? SocketDaemonClientError,
+                    .untrustedDaemon("daemon gid does not match current user")
+                )
+            }
+        }
+
+        func testTrustedDaemonValidatorRejectsMissingPID() throws {
+            let validator = try TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [Self.currentExecutablePath()]
+            )
+            let info = try Self.currentPeerInfo(pid: 0)
+
+            XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
+                XCTAssertEqual(
+                    error as? SocketDaemonClientError,
+                    .untrustedDaemon("daemon pid is unavailable")
+                )
+            }
+        }
+
         func testTrustedDaemonValidatorRejectsUnexpectedExecutablePeer() throws {
             var descriptors = [Int32](repeating: -1, count: 2)
             XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors), 0)
@@ -106,6 +180,38 @@ import XCTest
                     .untrustedDaemon("daemon executable is not trusted")
                 )
             }
+        }
+
+        func testTrustedDaemonValidatorChecksProcessTeamIDWhenExpected() throws {
+            let checker = FakeSignatureChecker()
+            let validator = try TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "TEAMID",
+                signatureChecker: checker
+            )
+            let info = try Self.currentPeerInfo()
+
+            XCTAssertNoThrow(try validator.validateDaemonPeer(info))
+            XCTAssertEqual(checker.processPIDs, [getpid()])
+        }
+
+        func testTrustedDaemonValidatorRejectsMismatchedProcessTeamID() throws {
+            let checker = FakeSignatureChecker()
+            checker.processTeamIDResult = .success("OTHERTEAM")
+            let validator = try TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "TEAMID",
+                signatureChecker: checker
+            )
+            let info = try Self.currentPeerInfo()
+
+            XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
+                XCTAssertEqual(
+                    error as? SocketDaemonClientError,
+                    .untrustedDaemon("daemon process Team ID does not match")
+                )
+            }
+            XCTAssertEqual(checker.processPIDs, [getpid()])
         }
 
         func testPathTransportRejectsSocketBeforeProtocolWhenPeerIsUntrusted() throws {
