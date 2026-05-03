@@ -67,6 +67,39 @@ final class ApprovalControllerTests: XCTestCase {
         ]
     }
 
+    private static var longScopeRequest: ApprovalRequest {
+        ApprovalRequest(
+            requestID: "req_long_scope",
+            nonce: "nonce_long_scope",
+            reason: "Run deployment with account-qualified references",
+            command: [
+                "/tmp/project/bin/deploy-with-secrets",
+                "--environment",
+                "production"
+            ],
+            cwd: "/tmp/project/services/release/with/a/very/long/path/component/that/must/stay-visible",
+            expiresAt: Date(timeIntervalSince1970: sampleExpiration),
+            secrets: [
+                RequestedSecret(
+                    alias: "SERVICE_TOKEN",
+                    ref: "op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-a",
+                    account: "production-east-account-with-long-suffix-a"
+                ),
+                RequestedSecret(
+                    alias: "SERVICE_TOKEN_BACKUP",
+                    ref: "op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-b",
+                    account: "production-east-account-with-long-suffix-b"
+                ),
+                RequestedSecret(
+                    alias: "DEPLOY_KEY",
+                    ref: "op://Very Long Production Vault/Deploy Key/private-key",
+                    account: "production-security-account"
+                )
+            ],
+            resolvedExecutable: "/tmp/project/bin/deploy-with-secrets"
+        )
+    }
+
     private static func fixtureData(_ name: String) throws -> Data {
         let url: URL = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json"))
         return try Data(contentsOf: url)
@@ -205,6 +238,30 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(viewModel.requestedSecrets.first?.symbolName, "person")
         XCTAssertTrue(viewModel.footerMessage.contains("The secrets are injected"))
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
+    }
+
+    func testRequestInspectionTextContainsFullScopeValues() {
+        let request: ApprovalRequest = Self.longScopeRequest
+        let viewModel = ApprovalRequestViewModel(
+            request: request,
+            now: Date(timeIntervalSince1970: Self.viewModelNow)
+        )
+        let inspection: String = viewModel.requestInspectionText
+
+        XCTAssertTrue(inspection.contains(request.cwd))
+        XCTAssertTrue(inspection.contains("/tmp/project/bin/deploy-with-secrets"))
+        XCTAssertTrue(
+            inspection.contains("op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-a")
+        )
+        XCTAssertTrue(
+            inspection.contains("op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-b")
+        )
+        XCTAssertTrue(inspection.contains("Account: production-east-account-with-long-suffix-a"))
+        XCTAssertTrue(inspection.contains("Account: production-east-account-with-long-suffix-b"))
+        XCTAssertTrue(inspection.contains("DEPLOY_KEY [Account: production-security-account]"))
+        XCTAssertFalse(inspection.contains(Self.canarySecretValue))
+        XCTAssertFalse(inspection.contains(request.requestID))
+        XCTAssertFalse(inspection.contains(request.nonce))
     }
 
     func testMutableExecutableWarningIsVisibleOutsideCollapsedDetails() {
