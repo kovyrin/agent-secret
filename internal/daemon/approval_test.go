@@ -25,6 +25,10 @@ type recordingLauncher struct {
 	err      error
 }
 
+type blockingLauncher struct {
+	started chan struct{}
+}
+
 type allowApproverIdentityPolicy struct{}
 
 func (allowApproverIdentityPolicy) ValidateApproverExecutable(path string) (ApproverIdentity, error) {
@@ -57,6 +61,18 @@ func (l *recordingLauncher) Count() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.launched)
+}
+
+func newBlockingLauncher() *blockingLauncher {
+	return &blockingLauncher{
+		started: make(chan struct{}),
+	}
+}
+
+func (l *blockingLauncher) Launch(ctx context.Context, _ string, _ ApprovalRequestPayload) (ExpectedApprover, error) {
+	close(l.started)
+	<-ctx.Done()
+	return ExpectedApprover{}, ctx.Err()
 }
 
 func TestApprovalFixturesDecodeInGo(t *testing.T) {
@@ -329,6 +345,79 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 	_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("ApproveExec error = %v, want expired", err)
+	}
+}
+
+func TestSocketApproverFetchPendingHonorsContextWhileApproverLaunchIsBlocked(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	launcher := newBlockingLauncher()
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	approveCtx, cancelApprove := context.WithCancel(context.Background())
+	defer cancelApprove()
+	approveErr := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(approveCtx, "req_1", "nonce_1", req)
+		approveErr <- err
+	}()
+	receiveApprovalSignal(t, launcher.started, "approver launch did not start")
+
+	fetchCtx, cancelFetch := context.WithCancel(context.Background())
+	fetchErr := make(chan error, 1)
+	go func() {
+		_, err := approver.FetchPending(fetchCtx, peerInfoForTest(t, os.Getpid(), exe))
+		fetchErr <- err
+	}()
+	cancelFetch()
+	if err := receiveApprovalError(t, fetchErr, "FetchPending did not observe context cancellation"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("FetchPending error = %v, want context cancellation", err)
+	}
+
+	cancelApprove()
+	if err := receiveApprovalError(t, approveErr, "ApproveExec did not observe context cancellation"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
+	}
+}
+
+func TestSocketApproverSubmitDecisionHonorsContextWhileApproverLaunchIsBlocked(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	launcher := newBlockingLauncher()
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	approveCtx, cancelApprove := context.WithCancel(context.Background())
+	defer cancelApprove()
+	approveErr := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(approveCtx, "req_1", "nonce_1", req)
+		approveErr <- err
+	}()
+	receiveApprovalSignal(t, launcher.started, "approver launch did not start")
+
+	decisionCtx, cancelDecision := context.WithCancel(context.Background())
+	decisionErr := make(chan error, 1)
+	go func() {
+		decisionErr <- approver.SubmitDecision(
+			decisionCtx,
+			peerInfoForTest(t, os.Getpid(), exe),
+			ApprovalDecisionPayload{
+				RequestID: "req_1",
+				Nonce:     "nonce_1",
+				Decision:  "approve_once",
+			},
+		)
+	}()
+	cancelDecision()
+	if err := receiveApprovalError(t, decisionErr, "SubmitDecision did not observe context cancellation"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("SubmitDecision error = %v, want context cancellation", err)
+	}
+
+	cancelApprove()
+	if err := receiveApprovalError(t, approveErr, "ApproveExec did not observe context cancellation"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
 	}
 }
 
@@ -866,4 +955,24 @@ func waitForPending(t *testing.T, approver *SocketApprover) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("timed out waiting for pending approval")
+}
+
+func receiveApprovalSignal(t *testing.T, ch <-chan struct{}, message string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal(message)
+	}
+}
+
+func receiveApprovalError(t *testing.T, ch <-chan error, message string) error {
+	t.Helper()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(time.Second):
+		t.Fatal(message)
+		return nil
+	}
 }
