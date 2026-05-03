@@ -79,6 +79,21 @@ func TestValidateStableExecutableRejectsCurrentUserWritableFile(t *testing.T) {
 	}
 }
 
+func TestValidateStableExecutableRejectsCurrentUserOwnedReadOnlyFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "tool")
+	writeExecutable(t, path, "exit 0\n")
+	if err := os.Chmod(path, 0o555); err != nil { //nolint:gosec // G302: stability test needs executable permissions without owner write.
+		t.Fatalf("chmod executable: %v", err)
+	}
+
+	err := ValidateStableExecutable(path)
+	if !errors.Is(err, ErrMutable) {
+		t.Fatalf("ValidateStableExecutable error = %v, want %v", err, ErrMutable)
+	}
+}
+
 func TestValidateStableExecutableRejectsCurrentUserWritableParent(t *testing.T) {
 	t.Parallel()
 
@@ -87,6 +102,34 @@ func TestValidateStableExecutableRejectsCurrentUserWritableParent(t *testing.T) 
 	if err := os.Chmod(path, 0o555); err != nil { //nolint:gosec // G302: stability test needs executable permissions without owner write.
 		t.Fatalf("chmod executable: %v", err)
 	}
+
+	err := ValidateStableExecutable(path)
+	if !errors.Is(err, ErrMutable) {
+		t.Fatalf("ValidateStableExecutable error = %v, want %v", err, ErrMutable)
+	}
+}
+
+func TestValidateStableExecutableRejectsCurrentUserOwnedReadOnlyParent(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "darwin" {
+		t.Skip("system executable symlink fixture is macOS-specific")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "bin")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatalf("mkdir executable dir: %v", err)
+	}
+	path := filepath.Join(dir, "sh")
+	if err := os.Symlink("/bin/sh", path); err != nil {
+		t.Fatalf("symlink executable: %v", err)
+	}
+	if err := os.Chmod(dir, 0o550); err != nil { //nolint:gosec // G302: stability test needs executable permissions without owner write.
+		t.Fatalf("chmod executable parent: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o750) //nolint:gosec // G302: restore temp fixture permissions for cleanup.
+	})
 
 	err := ValidateStableExecutable(path)
 	if !errors.Is(err, ErrMutable) {
