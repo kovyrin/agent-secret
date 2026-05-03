@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,6 +234,102 @@ func TestClientAcceptsBoundedDaemonResponseFrame(t *testing.T) {
 	if got["padding"] != padding {
 		t.Fatalf("padding length = %d, want %d", len(got["padding"]), len(padding))
 	}
+}
+
+func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
+	t.Parallel()
+
+	execReq := testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
+	})
+	tests := []struct {
+		name       string
+		frame      []byte
+		call       func(context.Context, *Client) error
+		wantErr    error
+		wantErrMsg string
+	}{
+		{
+			name:       "request exec request id",
+			frame:      errorResponseFrame(t, "req_stale", "nonce_1"),
+			wantErr:    ErrMalformedEnvelope,
+			wantErrMsg: "response request id mismatch",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.RequestExec(
+					ctx,
+					"req_1",
+					"nonce_1",
+					execReq,
+				)
+				return err
+			},
+		},
+		{
+			name:    "command started nonce",
+			frame:   errorResponseFrame(t, "req_1", "nonce_stale"),
+			wantErr: ErrInvalidNonce,
+			call: func(ctx context.Context, client *Client) error {
+				return client.ReportStarted(ctx, "req_1", "nonce_1", 1234)
+			},
+		},
+		{
+			name:       "command completed request id",
+			frame:      errorResponseFrame(t, "req_stale", "nonce_1"),
+			wantErr:    ErrMalformedEnvelope,
+			wantErrMsg: "response request id mismatch",
+			call: func(ctx context.Context, client *Client) error {
+				return client.ReportCompleted(ctx, "req_1", "nonce_1", 0, "")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte { return tc.frame })
+			defer cleanup()
+
+			err := tc.call(context.Background(), client)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+			if tc.wantErrMsg != "" && !strings.Contains(err.Error(), tc.wantErrMsg) {
+				t.Fatalf("error %q does not contain %q", err, tc.wantErrMsg)
+			}
+		})
+	}
+}
+
+func TestClientAllowsUncorrelatedStatusErrorResponse(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte {
+		return errorResponseFrame(t, "req_other", "nonce_other")
+	})
+	defer cleanup()
+
+	_, err := client.Status(context.Background())
+	if !IsProtocolError(err, "bad_request") {
+		t.Fatalf("expected daemon protocol error, got %v", err)
+	}
+}
+
+func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
+	t.Helper()
+
+	env, err := NewEnvelope(TypeError, requestID, nonce, ErrorPayload{
+		Code:    "bad_request",
+		Message: "bad request",
+	})
+	if err != nil {
+		t.Fatalf("NewEnvelope returned error: %v", err)
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal error response: %v", err)
+	}
+	return append(frame, '\n')
 }
 
 func boundedPaddingResponseFrame(t *testing.T, padding string) []byte {
