@@ -1,0 +1,210 @@
+package daemon
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/kovyrin/agent-secret/internal/policy"
+	"github.com/kovyrin/agent-secret/internal/request"
+)
+
+type reusableGrantManager struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	store   *policy.Store
+	cache   SecretCache
+	expiry  map[string]*time.Timer
+	stopped func() bool
+}
+
+func newReusableGrantManager(
+	now func() time.Time,
+	store *policy.Store,
+	cache SecretCache,
+	stopped func() bool,
+) *reusableGrantManager {
+	if stopped == nil {
+		stopped = func() bool { return false }
+	}
+	return &reusableGrantManager{
+		now:     now,
+		store:   store,
+		cache:   cache,
+		expiry:  make(map[string]*time.Timer),
+		stopped: stopped,
+	}
+}
+
+func (m *reusableGrantManager) clear() {
+	m.mu.Lock()
+	for id, timer := range m.expiry {
+		timer.Stop()
+		delete(m.expiry, id)
+	}
+	m.mu.Unlock()
+	m.cache.Clear()
+	m.store.Clear()
+}
+
+func (m *reusableGrantManager) reserve(
+	ctx context.Context,
+	req request.ExecRequest,
+	sink policy.ReuseAuditSink,
+) (policy.ReusableApproval, error) {
+	approval, err := m.store.ReserveReusable(ctx, req, sink)
+	if err != nil {
+		if errors.Is(err, policy.ErrAuditFailed) {
+			return policy.ReusableApproval{}, err
+		}
+		if approval.ID != "" && errors.Is(err, policy.ErrExpired) {
+			m.clearScope(approval.ID)
+		}
+		if approval.ID != "" &&
+			errors.Is(err, policy.ErrUseExhausted) &&
+			approval.Uses >= approval.MaxUses &&
+			approval.ReservedUses == 0 {
+			m.clearScope(approval.ID)
+		}
+		return policy.ReusableApproval{}, nil
+	}
+	return approval, nil
+}
+
+func (m *reusableGrantManager) addReserved(
+	req request.ExecRequest,
+	maxUses int,
+) (policy.ReusableApproval, error) {
+	approval, err := m.store.AddReusableWithReservedUse(req, maxUses, "", "")
+	if err != nil {
+		return policy.ReusableApproval{}, err
+	}
+	return approval, nil
+}
+
+func (m *reusableGrantManager) finishPayloadDelivered(approvalID string) error {
+	approval, err := m.store.FinishReusableAttempt(approvalID, policy.DeliveryPayloadDelivered)
+	if err != nil {
+		m.clearScope(approvalID)
+		if errors.Is(err, policy.ErrExpired) {
+			return ErrRequestExpired
+		}
+		return err
+	}
+	if approval.Uses >= approval.MaxUses {
+		m.clearScope(approval.ID)
+	}
+	return nil
+}
+
+func (m *reusableGrantManager) finishPrePayloadFailure(approvalID string) {
+	if approvalID == "" {
+		return
+	}
+	if _, err := m.store.FinishReusableAttempt(approvalID, policy.DeliveryPrePayloadFailure); err != nil {
+		if errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted) {
+			m.clearScope(approvalID)
+		}
+	}
+}
+
+func (m *reusableGrantManager) rollbackApproval(approvalID string) {
+	if approvalID == "" {
+		return
+	}
+	m.store.RemoveReusable(approvalID)
+	m.clearScope(approvalID)
+}
+
+func (m *reusableGrantManager) rollbackGrant(grant ExecGrant) {
+	if grant.reusableMutationID != "" {
+		m.rollbackApproval(grant.reusableMutationID)
+		return
+	}
+	m.releaseReservation(grant.ApprovalID)
+}
+
+func (m *reusableGrantManager) releaseReservation(approvalID string) {
+	m.finishPrePayloadFailure(approvalID)
+}
+
+func (m *reusableGrantManager) active(approvalID string, expiresAt time.Time) error {
+	if approvalID == "" || expiresAt.IsZero() {
+		return nil
+	}
+	if m.stopped() {
+		m.rollbackApproval(approvalID)
+		return ErrDaemonStopped
+	}
+	if m.now().Before(expiresAt) {
+		return nil
+	}
+	m.rollbackApproval(approvalID)
+	return ErrRequestExpired
+}
+
+func (m *reusableGrantManager) scheduleExpiry(approvalID string, expiresAt time.Time) {
+	ttl := expiresAt.Sub(m.now())
+	if ttl <= 0 {
+		m.store.RemoveReusable(approvalID)
+		m.clearScope(approvalID)
+		return
+	}
+
+	m.mu.Lock()
+	if previous := m.expiry[approvalID]; previous != nil {
+		previous.Stop()
+	}
+	timer := time.AfterFunc(ttl, func() {
+		m.store.RemoveReusable(approvalID)
+		m.clearScope(approvalID)
+	})
+	m.expiry[approvalID] = timer
+	m.mu.Unlock()
+}
+
+func (m *reusableGrantManager) clearScope(approvalID string) {
+	m.mu.Lock()
+	if timer := m.expiry[approvalID]; timer != nil {
+		timer.Stop()
+		delete(m.expiry, approvalID)
+	}
+	m.mu.Unlock()
+	m.cache.ClearScope(approvalID)
+}
+
+func (m *reusableGrantManager) cacheResolvedValues(
+	approvalID string,
+	expiresAt time.Time,
+	refValues map[secretIdentity]string,
+) error {
+	for identity, value := range refValues {
+		if err := m.active(approvalID, expiresAt); err != nil {
+			return err
+		}
+		if err := m.cache.Put(approvalID, identity.ref, identity.account, value); err != nil {
+			return fmt.Errorf("cache approved secret in locked memory: %w", err)
+		}
+	}
+	if err := m.active(approvalID, expiresAt); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *reusableGrantManager) cachedValues(
+	approvalID string,
+	secrets []request.Secret,
+) (map[string]string, error) {
+	env := make(map[string]string, len(secrets))
+	for _, secret := range secrets {
+		value, ok := m.cache.Get(approvalID, secret.Ref.Raw, secret.Account)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrMissingCache, secret.Ref.Raw)
+		}
+		env[secret.Alias] = value
+	}
+	return env, nil
+}
