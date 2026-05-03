@@ -388,7 +388,7 @@ func contextErrorAfterIOError(ctx context.Context, err error) error {
 	return nil
 }
 
-func IsProtocolError(err error, code string) bool {
+func IsProtocolError(err error, code ErrorCode) bool {
 	var protocolErr *ProtocolError
-	return errors.As(err, &protocolErr) && string(protocolErr.Code) == code
+	return errors.As(err, &protocolErr) && protocolErr.Code == code
 }

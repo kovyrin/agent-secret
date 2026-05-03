@@ -24,8 +24,6 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private static let protocolVersion: Int = 1
-    private static let typeError: DaemonMessageType = "error"
-    private static let typeOK: DaemonMessageType = "ok"
 
     private let transport: LineTransport
     private let decoder: JSONDecoder
@@ -50,7 +48,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             nonce: nil,
             payload: nil,
             requestID: nil,
-            type: "approval.pending",
+            type: .approvalPending,
             version: Self.protocolVersion
         )
         try send(request)
@@ -71,7 +69,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             nonce: decision.nonce,
             payload: decision,
             requestID: decision.requestID,
-            type: "approval.decision",
+            type: .approvalDecision,
             version: Self.protocolVersion
         )
         try send(request)
@@ -88,7 +86,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         let data: Data = try transport.readLine()
         let header: DaemonHeader = try decodeHeader(from: data)
         try validateHeader(header)
-        if header.type == Self.typeError {
+        if header.type == .error {
             let response: DaemonEnvelope<DaemonErrorPayload> = try decodeEnvelope(
                 DaemonEnvelope<DaemonErrorPayload>.self,
                 from: data,
@@ -97,7 +95,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
             throw daemonError(from: response)
         }
-        guard header.type == Self.typeOK else {
+        guard header.type == .okResponse else {
             throw SocketDaemonClientError.invalidResponse("unexpected response type")
         }
         let response: DaemonEnvelope<Payload> = try decodeEnvelope(

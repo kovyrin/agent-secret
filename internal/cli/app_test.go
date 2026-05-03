@@ -448,11 +448,11 @@ func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
 }
 
 func TestDaemonAuditReporterFatalStartedAuditClassification(t *testing.T) {
-	protocolErr := &daemon.ProtocolError{Code: "invalid_nonce", Message: "bad nonce"}
+	protocolErr := &daemon.ProtocolError{Code: daemon.ErrorCodeInvalidNonce, Message: "bad nonce"}
 	if !isFatalCommandStartedAuditFailure(protocolErr) {
 		t.Fatal("invalid nonce protocol error was not classified as fatal")
 	}
-	stoppedErr := &daemon.ProtocolError{Code: "daemon_stopped", Message: "daemon stopped"}
+	stoppedErr := &daemon.ProtocolError{Code: daemon.ErrorCodeDaemonStopped, Message: "daemon stopped"}
 	if isFatalCommandStartedAuditFailure(stoppedErr) {
 		t.Fatal("daemon stopped protocol error was classified as fatal")
 	}

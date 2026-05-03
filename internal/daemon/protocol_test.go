@@ -42,14 +42,14 @@ func TestProtocolHelpersRejectMalformedPayloads(t *testing.T) {
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	t.Parallel()
 
-	protocolErr := &ProtocolError{Code: "bad_request", Message: "nope"}
+	protocolErr := &ProtocolError{Code: ErrorCodeBadRequest, Message: "nope"}
 	if protocolErr.Error() != "bad_request: nope" {
 		t.Fatalf("protocol error string = %q", protocolErr.Error())
 	}
-	if !IsProtocolError(protocolErr, "bad_request") {
+	if !IsProtocolError(protocolErr, ErrorCodeBadRequest) {
 		t.Fatal("IsProtocolError did not match protocol error")
 	}
-	if IsProtocolError(errors.New("plain"), "bad_request") {
+	if IsProtocolError(errors.New("plain"), ErrorCodeBadRequest) {
 		t.Fatal("IsProtocolError matched plain error")
 	}
 
@@ -388,7 +388,7 @@ func TestClientAllowsUncorrelatedStatusErrorResponse(t *testing.T) {
 	defer cleanup()
 
 	_, err := client.Status(context.Background())
-	if !IsProtocolError(err, "bad_request") {
+	if !IsProtocolError(err, ErrorCodeBadRequest) {
 		t.Fatalf("expected daemon protocol error, got %v", err)
 	}
 }

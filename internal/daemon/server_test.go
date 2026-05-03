@@ -190,7 +190,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
 	err = client.ReportStarted(context.Background(), "req_1", "wrong", 1234)
-	if !IsProtocolError(err, "invalid_nonce") {
+	if !IsProtocolError(err, ErrorCodeInvalidNonce) {
 		t.Fatalf("expected invalid nonce protocol error, got %v", err)
 	}
 }
@@ -489,7 +489,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	defer func() { _ = client.Close() }()
 	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "request_expired") {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeRequestExpired) {
 		t.Fatalf("RequestExec error = %v, want request_expired", err)
 	}
 	waitForInactiveRequest(t, broker, "req_1")
@@ -709,7 +709,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	_, err = client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref},
 	}))
-	if !IsProtocolError(err, "daemon_stopped") {
+	if !IsProtocolError(err, ErrorCodeDaemonStopped) {
 		t.Fatalf("RequestExec after stop error = %v, want daemon_stopped", err)
 	}
 	if calls := resolver.Calls(); len(calls) != 0 {
@@ -746,7 +746,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	if _, err := client.Status(context.Background()); err != nil {
 		t.Fatalf("Status returned error: %v", err)
 	}
-	if _, err := client.Stop(context.Background()); !IsProtocolError(err, "untrusted_client") {
+	if _, err := client.Stop(context.Background()); !IsProtocolError(err, ErrorCodeUntrustedClient) {
 		t.Fatalf("expected untrusted_client stop error, got %v", err)
 	}
 	if _, err := client.Status(context.Background()); err != nil {
@@ -907,14 +907,14 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 	defer cleanup()
 
 	_, err := client.FetchPendingApproval(context.Background())
-	if !IsProtocolError(err, "approval_unavailable") {
+	if !IsProtocolError(err, ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable protocol error, got %v", err)
 	}
 	if err := client.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
 		Decision:  ApprovalDecisionApproveOnce,
-	}); !IsProtocolError(err, "approval_unavailable") {
+	}); !IsProtocolError(err, ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable decision error, got %v", err)
 	}
 }
@@ -990,7 +990,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	req.Reason = "  fabricated metadata  "
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1014,7 +1014,7 @@ func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
 	defer cleanup()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1052,7 +1052,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	client := NewClient(conn)
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "untrusted_client") {
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, ErrorCodeUntrustedClient) {
 		t.Fatalf("expected untrusted_client protocol error, got %v", err)
 	}
 	if approver.calls != 0 {

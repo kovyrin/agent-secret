@@ -1,6 +1,16 @@
 import Foundation
 
 struct DaemonMessageType: Codable, Equatable, ExpressibleByStringLiteral, Hashable, RawRepresentable {
+    static let daemonStatus = Self(rawValue: "daemon.status")
+    static let daemonStop = Self(rawValue: "daemon.stop")
+    static let approvalPending = Self(rawValue: "approval.pending")
+    static let approvalDecision = Self(rawValue: "approval.decision")
+    static let requestExec = Self(rawValue: "request.exec")
+    static let commandStarted = Self(rawValue: "command.started")
+    static let commandCompleted = Self(rawValue: "command.completed")
+    static let okResponse = Self(rawValue: "ok")
+    static let error = Self(rawValue: "error")
+
     let rawValue: String
 
     init(rawValue: String) {
