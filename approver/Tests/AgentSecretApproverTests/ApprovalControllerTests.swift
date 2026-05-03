@@ -154,6 +154,7 @@ final class ApprovalControllerTests: XCTestCase {
     func testViewModelContainsApprovalContextWithoutSecretValuesOrDebugIdentifiers() {
         var request: ApprovalRequest = Self.sampleRequest
         request.overrideEnv = true
+        request.allowMutableExecutable = true
         request.overriddenAliases = ["EXAMPLE_TOKEN"]
         let viewModel = ApprovalRequestViewModel(
             request: request,
@@ -170,6 +171,7 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertTrue(viewModel.renderedText.contains("Resolved binary: /opt/homebrew/bin/terraform"))
         XCTAssertTrue(viewModel.renderedText.contains("Time remaining: 2 minutes"))
         XCTAssertTrue(viewModel.renderedText.contains("Will replace existing variables: EXAMPLE_TOKEN"))
+        XCTAssertTrue(viewModel.renderedText.contains("Mutable executable opt-in"))
         XCTAssertEqual(viewModel.executable, "terraform")
         XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following secret?")
         XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")

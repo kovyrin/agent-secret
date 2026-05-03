@@ -56,16 +56,17 @@ type ReusableApproval struct {
 }
 
 type ReuseKey struct {
-	Reason             string
-	Command            []string
-	ResolvedExecutable string
-	ExecutableIdentity fileidentity.Identity
-	CWD                string
-	Secrets            []SecretGrant
-	DeliveryMode       request.DeliveryMode
-	TTL                time.Duration
-	OverrideEnv        bool
-	OverriddenAliases  []string
+	Reason                 string
+	Command                []string
+	ResolvedExecutable     string
+	ExecutableIdentity     fileidentity.Identity
+	CWD                    string
+	Secrets                []SecretGrant
+	DeliveryMode           request.DeliveryMode
+	TTL                    time.Duration
+	OverrideEnv            bool
+	OverriddenAliases      []string
+	AllowMutableExecutable bool
 }
 
 type SecretGrant struct {
@@ -334,16 +335,17 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 	slices.Sort(overridden)
 
 	return ReuseKey{
-		Reason:             req.Reason,
-		Command:            slices.Clone(req.Command),
-		ResolvedExecutable: req.ResolvedExecutable,
-		ExecutableIdentity: req.ExecutableIdentity,
-		CWD:                req.CWD,
-		Secrets:            secrets,
-		DeliveryMode:       req.DeliveryMode,
-		TTL:                req.TTL,
-		OverrideEnv:        req.OverrideEnv,
-		OverriddenAliases:  overridden,
+		Reason:                 req.Reason,
+		Command:                slices.Clone(req.Command),
+		ResolvedExecutable:     req.ResolvedExecutable,
+		ExecutableIdentity:     req.ExecutableIdentity,
+		CWD:                    req.CWD,
+		Secrets:                secrets,
+		DeliveryMode:           req.DeliveryMode,
+		TTL:                    req.TTL,
+		OverrideEnv:            req.OverrideEnv,
+		OverriddenAliases:      overridden,
+		AllowMutableExecutable: req.AllowMutableExecutable,
 	}
 }
 
@@ -357,6 +359,7 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 		k.DeliveryMode == other.DeliveryMode &&
 		k.TTL == other.TTL &&
 		k.OverrideEnv == other.OverrideEnv &&
+		k.AllowMutableExecutable == other.AllowMutableExecutable &&
 		slices.Equal(k.OverriddenAliases, other.OverriddenAliases)
 }
 

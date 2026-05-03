@@ -25,6 +25,7 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 		"--ttl", "90s",
 		"--secret", "TOKEN=op://Example Vault/Cloudflare/token",
 		"--force-refresh",
+		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -35,7 +36,7 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 		t.Fatalf("kind = %s, want exec", command.Kind)
 	}
 	req := command.ExecRequest
-	if req.Reason != "Terraform plan" || req.TTL != 90*time.Second || !req.ForceRefresh {
+	if req.Reason != "Terraform plan" || req.TTL != 90*time.Second || !req.ForceRefresh || !req.AllowMutableExecutable {
 		t.Fatalf("unexpected request policy: %+v", req)
 	}
 	if req.Command[0] != "terraform" || req.ResolvedExecutable == "" {
@@ -75,6 +76,7 @@ profiles:
 	command, err := parser.Parse([]string{
 		"exec",
 		"--profile", "terraform-cloudflare",
+		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -128,6 +130,7 @@ profiles:
 		"--profile", "ansible",
 		"--only", "B_TOKEN,A_TOKEN",
 		"--secret", "EXTRA_TOKEN=op://Example/Extra/token",
+		"--allow-mutable-executable",
 		"--",
 		"ansible-playbook", "site.yml",
 	})
@@ -179,6 +182,7 @@ NEXT=op://Example/Next/token
 		"--reason", "Env file command",
 		"--env-file", firstEnv,
 		"--env-file", secondEnv,
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -235,6 +239,7 @@ profiles:
 		"exec",
 		"--reason", "Plain env file",
 		"--env-file", envPath,
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -266,6 +271,7 @@ PLAIN=kept
 		"--reason", "Env file command",
 		"--env-file", envPath,
 		"--only", "BETA_TOKEN",
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -318,6 +324,7 @@ PLAIN=kept
 		"--env-file", envPath,
 		"--only", "PROFILE_KEEP,FILE_KEEP",
 		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -361,6 +368,7 @@ func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
 		"--account", "fixture.1password.com",
 		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
 		"--env-file", envPath,
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -409,6 +417,7 @@ profiles:
 		"--account", "CLI Account",
 		"--env-file", envPath,
 		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -456,6 +465,7 @@ profiles:
 		"exec",
 		"--profile", "deploy",
 		"--account", "fixture.1password.com",
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -496,6 +506,7 @@ profiles:
 		"--profile", "deploy",
 		"--account", "CLI Account",
 		"--env-file", envPath,
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -557,6 +568,24 @@ profiles:
 	}
 }
 
+func TestParseExecRejectsMutableExecutableWithoutOptIn(t *testing.T) {
+	dir := t.TempDir()
+	writeExecutable(t, dir, "tool")
+	t.Setenv("PATH", dir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	_, err := parser.Parse([]string{
+		"exec",
+		"--reason", "reason",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, request.ErrMutableExecutable) {
+		t.Fatalf("Parse error = %v, want %v", err, request.ErrMutableExecutable)
+	}
+}
+
 func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -581,6 +610,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -627,6 +657,7 @@ profiles:
 	command, err := parser.Parse([]string{
 		"exec",
 		"--config", configPath,
+		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -668,6 +699,7 @@ profiles:
 		"exec",
 		"--reason", "Explicit only",
 		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -711,6 +743,7 @@ profiles:
 		"--reason", "CLI reason",
 		"--ttl", "90s",
 		"--secret", "CADDY_TOKEN=op://Example/Caddy/token",
+		"--allow-mutable-executable",
 		"--",
 		"ansible-playbook", "site.yml",
 	})

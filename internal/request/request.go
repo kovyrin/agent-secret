@@ -25,6 +25,7 @@ var (
 	ErrInvalidCommand      = errors.New("invalid command")
 	ErrInvalidDeliveryMode = errors.New("invalid delivery mode")
 	ErrInvalidMaxReads     = errors.New("invalid max reads")
+	ErrMutableExecutable   = errors.New("mutable executable requires explicit opt-in")
 	ErrInvalidReason       = errors.New("invalid reason")
 	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
 	ErrInvalidRequest      = errors.New("invalid exec request")
@@ -61,35 +62,37 @@ type Secret struct {
 }
 
 type ExecOptions struct {
-	Reason       string
-	Command      []string
-	CWD          string
-	Env          []string
-	Secrets      []SecretSpec
-	TTL          time.Duration
-	ReceivedAt   time.Time
-	DeliveryMode DeliveryMode
-	MaxReads     int
-	OverrideEnv  bool
-	ForceRefresh bool
+	Reason                 string
+	Command                []string
+	CWD                    string
+	Env                    []string
+	Secrets                []SecretSpec
+	TTL                    time.Duration
+	ReceivedAt             time.Time
+	DeliveryMode           DeliveryMode
+	MaxReads               int
+	OverrideEnv            bool
+	ForceRefresh           bool
+	AllowMutableExecutable bool
 }
 
 type ExecRequest struct {
-	Reason             string
-	Command            []string
-	ResolvedExecutable string
-	ExecutableIdentity fileidentity.Identity
-	CWD                string
-	Env                []string `json:"-"`
-	Secrets            []Secret
-	TTL                time.Duration
-	ReceivedAt         time.Time
-	ExpiresAt          time.Time
-	DeliveryMode       DeliveryMode
-	MaxReads           int
-	OverrideEnv        bool
-	OverriddenAliases  []string
-	ForceRefresh       bool
+	Reason                 string
+	Command                []string
+	ResolvedExecutable     string
+	ExecutableIdentity     fileidentity.Identity
+	CWD                    string
+	Env                    []string `json:"-"`
+	Secrets                []Secret
+	TTL                    time.Duration
+	ReceivedAt             time.Time
+	ExpiresAt              time.Time
+	DeliveryMode           DeliveryMode
+	MaxReads               int
+	OverrideEnv            bool
+	OverriddenAliases      []string
+	ForceRefresh           bool
+	AllowMutableExecutable bool
 }
 
 func (r ExecRequest) Expired(at time.Time) bool {
@@ -186,6 +189,11 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	if err != nil {
 		return ExecRequest{}, fmt.Errorf("%w: capture executable identity: %w", ErrInvalidCommand, err)
 	}
+	if !opts.AllowMutableExecutable {
+		if err := fileidentity.ValidateStableExecutable(resolved); err != nil {
+			return ExecRequest{}, fmt.Errorf("%w: %w", ErrMutableExecutable, err)
+		}
+	}
 
 	secrets, err := parseSecrets(opts.Secrets)
 	if err != nil {
@@ -198,21 +206,22 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	}
 
 	return ExecRequest{
-		Reason:             reason,
-		Command:            command,
-		ResolvedExecutable: resolved,
-		ExecutableIdentity: executableIdentity,
-		CWD:                cwd,
-		Env:                env,
-		Secrets:            secrets,
-		TTL:                ttl,
-		ReceivedAt:         receivedAt,
-		ExpiresAt:          receivedAt.Add(ttl),
-		DeliveryMode:       mode,
-		MaxReads:           opts.MaxReads,
-		OverrideEnv:        opts.OverrideEnv,
-		OverriddenAliases:  overriddenAliases,
-		ForceRefresh:       opts.ForceRefresh,
+		Reason:                 reason,
+		Command:                command,
+		ResolvedExecutable:     resolved,
+		ExecutableIdentity:     executableIdentity,
+		CWD:                    cwd,
+		Env:                    env,
+		Secrets:                secrets,
+		TTL:                    ttl,
+		ReceivedAt:             receivedAt,
+		ExpiresAt:              receivedAt.Add(ttl),
+		DeliveryMode:           mode,
+		MaxReads:               opts.MaxReads,
+		OverrideEnv:            opts.OverrideEnv,
+		OverriddenAliases:      overriddenAliases,
+		ForceRefresh:           opts.ForceRefresh,
+		AllowMutableExecutable: opts.AllowMutableExecutable,
 	}, nil
 }
 

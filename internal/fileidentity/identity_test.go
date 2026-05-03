@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -63,6 +64,44 @@ func TestCaptureReportsStatFailure(t *testing.T) {
 	_, err := Capture(filepath.Join(t.TempDir(), "missing-tool"))
 	if err == nil {
 		t.Fatal("expected missing executable error")
+	}
+}
+
+func TestValidateStableExecutableRejectsCurrentUserWritableFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "tool")
+	writeExecutable(t, path, "exit 0\n")
+
+	err := ValidateStableExecutable(path)
+	if !errors.Is(err, ErrMutable) {
+		t.Fatalf("ValidateStableExecutable error = %v, want %v", err, ErrMutable)
+	}
+}
+
+func TestValidateStableExecutableRejectsCurrentUserWritableParent(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "tool")
+	writeExecutable(t, path, "exit 0\n")
+	if err := os.Chmod(path, 0o555); err != nil { //nolint:gosec // G302: stability test needs executable permissions without owner write.
+		t.Fatalf("chmod executable: %v", err)
+	}
+
+	err := ValidateStableExecutable(path)
+	if !errors.Is(err, ErrMutable) {
+		t.Fatalf("ValidateStableExecutable error = %v, want %v", err, ErrMutable)
+	}
+}
+
+func TestValidateStableExecutableAcceptsSystemExecutable(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "darwin" {
+		t.Skip("system executable ownership expectation is macOS-specific")
+	}
+	if err := ValidateStableExecutable("/bin/sh"); err != nil {
+		t.Fatalf("ValidateStableExecutable returned error: %v", err)
 	}
 }
 

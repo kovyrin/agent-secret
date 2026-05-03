@@ -136,6 +136,7 @@ Safety rules:
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
+  - Commands from current-user-writable files or directories are rejected unless --allow-mutable-executable is set.
   - exec has no --json mode and never prints secret values.
   - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
@@ -174,6 +175,8 @@ Flags:
   --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
   --override-env      Allow approved aliases to replace existing child environment variables.
   --force-refresh     For matching reusable approvals, refetch approved refs before delivery.
+  --allow-mutable-executable
+                      Permit a project or temp executable that can be replaced by the current user.
   -h, --help          Show this help.
 
 Project profiles:
@@ -292,6 +295,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	account := fs.String("account", "", "1Password account")
 	overrideEnv := fs.Bool("override-env", false, "override existing env aliases")
 	forceRefresh := fs.Bool("force-refresh", false, "refresh reusable approval values")
+	allowMutableExecutable := fs.Bool("allow-mutable-executable", false, "allow mutable executable path")
 	jsonOutput := fs.Bool("json", false, "unsupported")
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&secrets, "secret", "secret mapping")
@@ -355,16 +359,17 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	req, err := request.NewExec(request.ExecOptions{
-		Reason:       effectiveReason,
-		Command:      command,
-		CWD:          *cwd,
-		Env:          childEnv,
-		Secrets:      effectiveSecrets,
-		TTL:          effectiveTTL,
-		ReceivedAt:   p.now(),
-		DeliveryMode: request.DeliveryEnvExec,
-		OverrideEnv:  *overrideEnv,
-		ForceRefresh: *forceRefresh,
+		Reason:                 effectiveReason,
+		Command:                command,
+		CWD:                    *cwd,
+		Env:                    childEnv,
+		Secrets:                effectiveSecrets,
+		TTL:                    effectiveTTL,
+		ReceivedAt:             p.now(),
+		DeliveryMode:           request.DeliveryEnvExec,
+		OverrideEnv:            *overrideEnv,
+		ForceRefresh:           *forceRefresh,
+		AllowMutableExecutable: *allowMutableExecutable,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build exec request: %w", err)

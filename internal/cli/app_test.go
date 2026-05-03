@@ -40,6 +40,7 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=" + ref,
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecRunsChildWithApprovedEnvAndPassthrough", "--", "child",
 	})
@@ -85,6 +86,7 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--env-file", envFilePath,
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv", "--", "child",
 	})
@@ -117,6 +119,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecStopsBeforeSpawnOnApprovalDenial", "--", "child",
 	})
@@ -301,6 +304,7 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReportsDaemonStartFailureBeforeSpawn", "--", "child",
 	})
@@ -335,6 +339,7 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=" + ref,
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReportsRandomIDFailureBeforeRequest", "--", "child",
 	})
