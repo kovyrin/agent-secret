@@ -38,23 +38,25 @@ func (SameUIDValidator) Validate(conn *net.UnixConn) error {
 }
 
 type Server struct {
-	broker        *Broker
-	approvals     ApprovalEndpoint
-	validator     PeerValidator
-	execValidator ExecPeerValidator
-	maxFrameBytes int64
-	readTimeout   time.Duration
-	stopOnce      sync.Once
-	stop          chan struct{}
+	broker                  *Broker
+	approvals               ApprovalEndpoint
+	validator               PeerValidator
+	execValidator           ExecPeerValidator
+	maxFrameBytes           int64
+	readTimeout             time.Duration
+	beforeExecResponseWrite func()
+	stopOnce                sync.Once
+	stop                    chan struct{}
 }
 
 type ServerOptions struct {
-	Broker        *Broker
-	Approvals     ApprovalEndpoint
-	Validator     PeerValidator
-	ExecValidator ExecPeerValidator
-	MaxFrameBytes int64
-	ReadTimeout   time.Duration
+	Broker                  *Broker
+	Approvals               ApprovalEndpoint
+	Validator               PeerValidator
+	ExecValidator           ExecPeerValidator
+	MaxFrameBytes           int64
+	ReadTimeout             time.Duration
+	beforeExecResponseWrite func()
 }
 
 const DefaultProtocolReadTimeout = 30 * time.Second
@@ -80,13 +82,14 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		readTimeout = DefaultProtocolReadTimeout
 	}
 	return &Server{
-		broker:        opts.Broker,
-		approvals:     opts.Approvals,
-		validator:     validator,
-		execValidator: execValidator,
-		maxFrameBytes: maxFrameBytes,
-		readTimeout:   readTimeout,
-		stop:          make(chan struct{}),
+		broker:                  opts.Broker,
+		approvals:               opts.Approvals,
+		validator:               validator,
+		execValidator:           execValidator,
+		maxFrameBytes:           maxFrameBytes,
+		readTimeout:             readTimeout,
+		beforeExecResponseWrite: opts.beforeExecResponseWrite,
+		stop:                    make(chan struct{}),
 	}, nil
 }
 
@@ -311,6 +314,16 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
 		return ""
 	}
+	if s.beforeExecResponseWrite != nil {
+		s.beforeExecResponseWrite()
+	}
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, grant.deliveryExpiresAt)
+	if err != nil {
+		s.broker.MarkPayloadDeliveryFailed(env.RequestID)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ""
+	}
+	defer clearWriteDeadline()
 	if err := writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
 		Env:           grant.Env,
 		SecretAliases: grant.SecretAliases,
@@ -322,6 +335,20 @@ func (s *Server) handleRequestExec(
 		return ""
 	}
 	return env.RequestID
+}
+
+func (s *Server) setExecResponseWriteDeadline(conn *net.UnixConn, expiresAt time.Time) (func(), error) {
+	if expiresAt.IsZero() {
+		return func() {}, nil
+	}
+	remaining := expiresAt.Sub(s.broker.now())
+	if remaining <= 0 {
+		return func() {}, ErrRequestExpired
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(remaining)); err != nil {
+		return func() {}, fmt.Errorf("set exec response write deadline: %w", err)
+	}
+	return func() { _ = conn.SetWriteDeadline(time.Time{}) }, nil
 }
 
 func (s *Server) handleCommandStarted(

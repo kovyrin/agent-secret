@@ -73,6 +73,7 @@ type ExecGrant struct {
 	ApprovalID         string
 	reusableMutationID string
 	approvalExpiresAt  time.Time
+	deliveryExpiresAt  time.Time
 }
 
 type activeExec struct {
@@ -172,6 +173,7 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	if err := b.reusableApprovalActive(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
 		return ExecGrant{}, err
 	}
+	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.approvalExpiresAt)
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
 	if err := b.recordRequiredAudit(execCtx, event); err != nil {
@@ -196,6 +198,13 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	b.mu.Unlock()
 
 	return grant, nil
+}
+
+func grantDeliveryExpiresAt(req request.ExecRequest, approvalExpiresAt time.Time) time.Time {
+	if !approvalExpiresAt.IsZero() && approvalExpiresAt.Before(req.ExpiresAt) {
+		return approvalExpiresAt
+	}
+	return req.ExpiresAt
 }
 
 func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (context.Context, context.CancelFunc) {

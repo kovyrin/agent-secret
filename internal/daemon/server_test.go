@@ -15,6 +15,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -431,6 +432,77 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 		if event.Type == audit.EventExecClientDisconnectedAfterPayload && event.RequestID == "req_1" {
 			t.Fatalf("failed response write produced post-payload disconnect audit: %+v", event)
 		}
+	}
+}
+
+func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
+	t.Parallel()
+
+	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	now := daemonNow
+	ref := "op://Example/Item/token"
+	cache := policy.NewSecretCache()
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 1}}
+	broker := newTestBroker(t, BrokerOptions{
+		Now:      func() time.Time { return now },
+		Cache:    cache,
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	var hookOnce sync.Once
+	var approvalMu sync.Mutex
+	var approvalID string
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:        broker,
+		Validator:     allowPeerValidator{},
+		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		beforeExecResponseWrite: func() {
+			hookOnce.Do(func() {
+				broker.mu.Lock()
+				if active := broker.active["req_1"]; active != nil {
+					approvalMu.Lock()
+					approvalID = active.approvalID
+					approvalMu.Unlock()
+				}
+				broker.mu.Unlock()
+				now = daemonNow.Add(request.DefaultExecTTL + time.Second)
+			})
+		},
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	client := NewClient(conn)
+	defer func() { _ = client.Close() }()
+	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
+
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "request_expired") {
+		t.Fatalf("RequestExec error = %v, want request_expired", err)
+	}
+	waitForInactiveRequest(t, broker, "req_1")
+	approvalMu.Lock()
+	gotApprovalID := approvalID
+	approvalMu.Unlock()
+	if gotApprovalID == "" {
+		t.Fatal("server did not create a reusable approval before payload delivery")
+	}
+	if _, ok := cache.Get(gotApprovalID, ref, "Work"); ok {
+		t.Fatal("expired reusable approval cache scope remained after failed payload delivery")
+	}
+
+	payload, err := client.RequestExec(context.Background(), "req_2", "nonce_2", req)
+	if err != nil {
+		t.Fatalf("second RequestExec returned error: %v", err)
+	}
+	if payload.Env["TOKEN"] != "value" {
+		t.Fatalf("second payload env = %+v", payload.Env)
+	}
+	if approver.calls != 2 {
+		t.Fatalf("expired payload write reused stale approval; approver calls = %d, want 2", approver.calls)
 	}
 }
 
