@@ -20,7 +20,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let resolvedExecutable: String?
         let secretRows: [String]
         let timeRemaining: String
-        let overrideWarning: String?
         let cautionMessages: [String]
     }
 
@@ -78,6 +77,10 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let allowReusableTitle: String
     /// True when the command commonly prints its environment.
     public let printsEnvironmentWarning: Bool
+    /// True when approved aliases replace existing child environment variables.
+    public let overrideEnv: Bool
+    /// Sanitized aliases that replace existing child environment variables.
+    public let overriddenAliases: [String]
     /// Environment override warning when applicable.
     public let overrideWarning: String?
     /// Mutable executable opt-in warning when applicable.
@@ -116,11 +119,12 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         compactTimeRemaining = timeRemaining
         let reusableUseLimit: Int = request.reusableUses
         reusableUses = reusableUseLimit
-        let remainingText: String = compactTimeRemaining
-        scopeSummary = Self.scopeSummary(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
-        allowReusableTitle = Self.reuseTitle(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
+        scopeSummary = Self.scopeSummary(uses: reusableUseLimit, remaining: timeRemaining, expired: isExpired)
+        allowReusableTitle = Self.reuseTitle(uses: reusableUseLimit, remaining: timeRemaining, expired: isExpired)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
         printsEnvironmentWarning = warnings.printsEnvironment
+        overrideEnv = request.overrideEnv
+        overriddenAliases = request.overriddenAliases.map(Self.sanitizedDisplayText)
         overrideWarning = warnings.override
         mutableExecutableWarning = warnings.mutableExecutable
         cautionMessages = warnings.cautionMessages
@@ -137,7 +141,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
                 resolvedExecutable: resolvedExecutable,
                 secretRows: secretRows,
                 timeRemaining: timeRemaining,
-                overrideWarning: overrideWarning,
                 cautionMessages: cautionMessages
             )
         )
@@ -208,9 +211,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             "Reusable approval keeps values in daemon memory for this window " +
                 "and is limited to \(request.reusableUses) uses."
         )
-        if let overrideWarning: String = viewModel.overrideWarning {
-            lines.append(overrideWarning)
-        }
         lines.append(contentsOf: viewModel.cautionMessages)
         return lines.joined(separator: "\n")
     }
