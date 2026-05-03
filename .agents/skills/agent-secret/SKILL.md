@@ -142,7 +142,7 @@ Use `--only` when one env file contains refs for multiple command surfaces:
 ```bash
 agent-secret exec \
   --reason "Deploy beta" \
-  --account fixture.1password.com \
+  --account example.1password.com \
   --env-file .env.deploy.op \
   --only VERCEL_DEPLOY_HOOK_URL_BETA,VERCEL_TOKEN \
   -- npm run deploy:beta

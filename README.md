@@ -88,7 +88,7 @@ scripts/build-app-bundle.sh
 
 `mise run test:smoke` runs the non-secret install, uninstall, release
 configuration, release ancestry, release notes, release publication, release
-version, release docs, and approver smoke checks:
+version, release docs, public docs, and approver smoke checks:
 
 ```bash
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
@@ -99,6 +99,7 @@ AGENT_SECRET_IN_MISE=1 scripts/test-release-notes.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-publish.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-public-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh
 cd approver && swift run agent-secret-approver-smoke
 ```
@@ -476,14 +477,14 @@ default_profile: terraform-cloudflare
 
 profiles:
   terraform-cloudflare:
-    account: Fixture
+    account: Example Corp
     reason: Terraform DNS management
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
       PREVIEW_TOKEN:
         ref: op://Example/Preview/token
-        account: Fixture Preview
+        account: Example Preview
 
   ansible:
     include:
