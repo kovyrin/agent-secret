@@ -4,12 +4,10 @@ import Foundation
 public final class StaticDecisionPresenter: ApprovalPresenter {
     private let decision: ApprovalDecisionKind
 
-    /// Creates a presenter that always returns the supplied decision.
     public init(decision: ApprovalDecisionKind) {
         self.decision = decision
     }
 
-    /// Returns the configured static decision.
     public func decide(for _: ApprovalRequest) -> ApprovalDecisionKind {
         decision
     }

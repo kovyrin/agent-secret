@@ -2,6 +2,6 @@ import Foundation
 
 /// Records non-secret approval lifecycle diagnostics.
 public protocol ApprovalLogger {
-    /// Records a metadata-only event for troubleshooting.
+    /// Event names and request IDs must be metadata-only and value-free.
     func record(_ event: String, requestID: String?)
 }

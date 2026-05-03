@@ -45,7 +45,6 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         encoder.dateEncodingStrategy = .iso8601
     }
 
-    /// Fetches the pending approval request from the daemon.
     public func fetchPendingRequest() throws -> ApprovalRequest {
         let request = DaemonEnvelope<EmptyPayload>(
             nonce: nil,
@@ -67,7 +66,6 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         return payload
     }
 
-    /// Submits an approval decision to the daemon.
     public func submit(_ decision: ApprovalDecision) throws {
         let request = DaemonEnvelope<ApprovalDecision>(
             nonce: decision.nonce,

@@ -7,17 +7,14 @@ public struct SecretVaultGroupViewModel: Equatable, Sendable {
     /// Secrets requested from this vault.
     public let secrets: [RequestedSecretRowViewModel]
 
-    /// Number of requested secrets in this vault.
     public var secretCount: Int {
         secrets.count
     }
 
-    /// Human-readable count label.
     public var countLabel: String {
         secretCount == 1 ? "1 secret" : "\(secretCount) secrets"
     }
 
-    /// Comma-separated aliases for the compact vault row.
     public var aliasSummary: String {
         secrets.map(\.alias).joined(separator: ", ")
     }
