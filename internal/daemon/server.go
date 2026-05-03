@@ -142,7 +142,7 @@ func (s *Server) stopWithAudit(ctx context.Context, event audit.Event) {
 func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	defer func() { _ = conn.Close() }()
 	if err := s.validator.Validate(conn); err != nil {
-		_ = writeError(conn, "", "", "peer_rejected", err)
+		_ = writeError(conn, "", "", ErrorCodePeerRejected, err)
 		return
 	}
 
@@ -158,14 +158,14 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				s.broker.ClientDisconnected(ctx, activeRequestID)
 			}
 			if errors.Is(err, ErrProtocolFrameSize) {
-				_ = writeErrorEncoder(encoder, "", "", "frame_too_large", err)
+				_ = writeErrorEncoder(encoder, "", "", ErrorCodeFrameTooLarge, err)
 			} else if errors.Is(err, ErrMalformedEnvelope) {
-				_ = writeErrorEncoder(encoder, "", "", "bad_envelope", err)
+				_ = writeErrorEncoder(encoder, "", "", ErrorCodeBadEnvelope, err)
 			}
 			return
 		}
 		if err := validateEnvelope(env); err != nil {
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_envelope", err)
+			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadEnvelope, err)
 			continue
 		}
 		if s.stopped() && env.Type != TypeDaemonStatus {
@@ -191,17 +191,17 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 		case TypeApprovalDecision:
 			if s.approvals == nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "approval_unavailable", ErrApprovalUnavailable)
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
 				continue
 			}
 			payload, err := DecodePayload[ApprovalDecisionPayload](env)
 			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_approval_decision", err)
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadApprovalDecision, err)
 				continue
 			}
 			peer, err := s.peerInfo(conn)
 			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
+				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodePeerRejected, err)
 				continue
 			}
 			if err := s.approvals.SubmitDecision(ctx, peer, payload); err != nil {
@@ -231,7 +231,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				nextReadTimeout = s.readTimeout
 			}
 		default:
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_type", fmt.Errorf("%w: %s", ErrProtocolType, env.Type))
+			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadType, fmt.Errorf("%w: %s", ErrProtocolType, env.Type))
 		}
 	}
 }
@@ -243,12 +243,12 @@ func (s *Server) handleApprovalPending(
 	env Envelope,
 ) (ApprovalRequestPayload, bool) {
 	if s.approvals == nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "approval_unavailable", ErrApprovalUnavailable)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
 		return ApprovalRequestPayload{}, false
 	}
 	peer, err := s.peerInfo(conn)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodePeerRejected, err)
 		return ApprovalRequestPayload{}, false
 	}
 	payload, err := s.approvals.FetchPending(ctx, peer)
@@ -270,7 +270,7 @@ func (s *Server) handleDaemonStop(
 ) bool {
 	peer, err := s.peerInfo(conn)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodePeerRejected, err)
 		return false
 	}
 	if err := s.execValidator.ValidateExecPeer(peer); err != nil {
@@ -295,11 +295,11 @@ func (s *Server) handleRequestExec(
 	}
 	req, err := DecodePayload[request.ExecRequest](env)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadRequest, err)
 		return ""
 	}
 	if err := req.ValidateForDaemon(); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_request", err)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadRequest, err)
 		return ""
 	}
 	grant, err := s.broker.HandleExec(ctx, env.RequestID, env.Nonce, req)
@@ -361,7 +361,7 @@ func (s *Server) handleCommandStarted(
 	}
 	payload, err := DecodePayload[CommandStartedPayload](env)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_started", err)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadCommandStarted, err)
 		return false
 	}
 	if err := s.broker.ReportStarted(ctx, env.RequestID, env.Nonce, payload.ChildPID); err != nil {
@@ -384,7 +384,7 @@ func (s *Server) handleCommandCompleted(
 	}
 	payload, err := DecodePayload[CommandCompletedPayload](env)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_completed", err)
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadCommandCompleted, err)
 		return false
 	}
 	if err := s.broker.ReportCompleted(ctx, env.RequestID, env.Nonce, payload.ExitCode, payload.Signal); err != nil {
@@ -473,29 +473,29 @@ func writeErrorEncoder(encoder *json.Encoder, requestID string, nonce string, co
 func codeForError(err error) string {
 	switch {
 	case errors.Is(err, ErrApprovalDenied):
-		return "approval_denied"
+		return ErrorCodeApprovalDenied
 	case errors.Is(err, ErrAuditRequired):
-		return "audit_failed"
+		return ErrorCodeAuditFailed
 	case errors.Is(err, ErrInvalidNonce):
-		return "invalid_nonce"
+		return ErrorCodeInvalidNonce
 	case errors.Is(err, ErrApproverPeerMismatch):
-		return "approver_peer_mismatch"
+		return ErrorCodeApproverPeerMismatch
 	case errors.Is(err, ErrApproverIdentity):
-		return "approver_identity_mismatch"
+		return ErrorCodeApproverIdentityMismatch
 	case errors.Is(err, ErrNoPendingApproval):
-		return "no_pending_approval"
+		return ErrorCodeNoPendingApproval
 	case errors.Is(err, ErrRequestAlreadyActive):
-		return "request_active"
+		return ErrorCodeRequestActive
 	case errors.Is(err, ErrDaemonStopped):
-		return "daemon_stopped"
+		return ErrorCodeDaemonStopped
 	case errors.Is(err, ErrRequestExpired):
-		return "request_expired"
+		return ErrorCodeRequestExpired
 	case errors.Is(err, ErrStaleApproval):
-		return "stale_approval"
+		return ErrorCodeStaleApproval
 	case errors.Is(err, ErrUntrustedClient):
-		return "untrusted_client"
+		return ErrorCodeUntrustedClient
 	default:
-		return "request_failed"
+		return ErrorCodeRequestFailed
 	}
 }
 

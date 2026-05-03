@@ -19,12 +19,14 @@ enum DaemonErrorDisplay {
         "bad_envelope": "daemon rejected malformed protocol envelope",
         "bad_request": "daemon rejected malformed request",
         "bad_type": "daemon rejected unsupported message type",
+        "daemon_stopped": "daemon stopped",
         "frame_too_large": "daemon response frame was too large",
         "invalid_nonce": "request nonce did not match",
         "no_pending_approval": "no pending approval request",
         "peer_rejected": "daemon rejected peer identity",
         "request_active": "connection already has an active request",
         "request_expired": "request expired",
+        "request_failed": "daemon request failed",
         "stale_approval": "stale approval response",
         "untrusted_client": "daemon rejected untrusted client"
     ]

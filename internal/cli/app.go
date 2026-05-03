@@ -348,14 +348,14 @@ func isFatalCommandStartedAuditFailure(err error) bool {
 		return false
 	}
 	switch protocolErr.Code {
-	case "bad_command_started",
-		"bad_envelope",
-		"bad_type",
-		"invalid_nonce",
-		"request_active",
-		"request_expired",
-		"stale_approval",
-		"untrusted_client":
+	case daemon.ErrorCodeBadCommandStarted,
+		daemon.ErrorCodeBadEnvelope,
+		daemon.ErrorCodeBadType,
+		daemon.ErrorCodeInvalidNonce,
+		daemon.ErrorCodeRequestActive,
+		daemon.ErrorCodeRequestExpired,
+		daemon.ErrorCodeStaleApproval,
+		daemon.ErrorCodeUntrustedClient:
 		return true
 	default:
 		return false

@@ -24,6 +24,30 @@ const (
 	TypeError            = "error"
 )
 
+const (
+	ErrorCodeApprovalDenied           = "approval_denied"
+	ErrorCodeApprovalUnavailable      = "approval_unavailable"
+	ErrorCodeApproverIdentityMismatch = "approver_identity_mismatch"
+	ErrorCodeApproverPeerMismatch     = "approver_peer_mismatch"
+	ErrorCodeAuditFailed              = "audit_failed"
+	ErrorCodeBadApprovalDecision      = "bad_approval_decision"
+	ErrorCodeBadCommandCompleted      = "bad_command_completed"
+	ErrorCodeBadCommandStarted        = "bad_command_started"
+	ErrorCodeBadEnvelope              = "bad_envelope"
+	ErrorCodeBadRequest               = "bad_request"
+	ErrorCodeBadType                  = "bad_type"
+	ErrorCodeDaemonStopped            = "daemon_stopped"
+	ErrorCodeFrameTooLarge            = "frame_too_large"
+	ErrorCodeInvalidNonce             = "invalid_nonce"
+	ErrorCodeNoPendingApproval        = "no_pending_approval"
+	ErrorCodePeerRejected             = "peer_rejected"
+	ErrorCodeRequestActive            = "request_active"
+	ErrorCodeRequestExpired           = "request_expired"
+	ErrorCodeRequestFailed            = "request_failed"
+	ErrorCodeStaleApproval            = "stale_approval"
+	ErrorCodeUntrustedClient          = "untrusted_client"
+)
+
 var (
 	ErrMalformedEnvelope = errors.New("malformed protocol envelope")
 	ErrProtocolFrameSize = errors.New("protocol frame exceeds maximum size")

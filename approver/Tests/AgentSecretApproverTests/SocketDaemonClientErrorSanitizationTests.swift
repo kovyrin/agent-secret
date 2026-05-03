@@ -124,6 +124,11 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
         }
     }
 
+    func testDaemonErrorDisplayIncludesDaemonStopAndFallbackCodes() {
+        XCTAssertEqual(DaemonErrorDisplay.message(for: "daemon_stopped"), "daemon stopped")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: "request_failed"), "daemon request failed")
+    }
+
     func testUnexpectedResponseTypeDoesNotEchoDaemonText() throws {
         let response = try Self.rawResponse(type: Self.secretCanary)
         let client = SocketDaemonClient(
