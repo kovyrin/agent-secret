@@ -73,8 +73,8 @@ case "${2:-}" in
         ;;
     esac
     ;;
-  upload | create)
-    ;;
+	upload | create | edit)
+		;;
   *)
     echo "unexpected gh release command: $*" >&2
     exit 2
@@ -109,6 +109,7 @@ expect_log "release create v1.0.0 $artifact_arm $artifact_intel $checksums --dra
 : >"$tmp_dir/gh.log"
 run_publish draft
 expect_log "release view v1.0.0 --json isDraft --jq .isDraft"
+expect_log "release edit v1.0.0 --title v1.0.0 --notes-file $notes_file"
 expect_log "release upload v1.0.0 $artifact_arm $artifact_intel $checksums --clobber"
 
 expect_failure "release v1.0.0 is already published; refusing to replace assets" run_publish published
