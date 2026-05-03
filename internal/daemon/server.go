@@ -148,8 +148,10 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	reader := bufio.NewReader(conn)
 	encoder := json.NewEncoder(conn)
 	activeRequestID := ""
+	commandStarted := false
+	nextReadTimeout := s.readTimeout
 	for {
-		env, err := s.readEnvelope(conn, reader)
+		env, err := s.readEnvelope(conn, reader, nextReadTimeout)
 		if err != nil {
 			if activeRequestID != "" {
 				s.broker.ClientDisconnected(ctx, activeRequestID)
@@ -164,6 +166,11 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		if err := validateEnvelope(env); err != nil {
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_envelope", err)
 			continue
+		}
+
+		nextReadTimeout = s.readTimeout
+		if commandStarted {
+			nextReadTimeout = 0
 		}
 
 		switch env.Type {
@@ -198,7 +205,9 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 				continue
 			}
-			_ = writeOK(encoder, payload.RequestID, payload.Nonce, payload)
+			if err := writeOK(encoder, payload.RequestID, payload.Nonce, payload); err == nil {
+				nextReadTimeout = s.approvalDecisionReadTimeout(payload.ExpiresAt)
+			}
 		case TypeApprovalDecision:
 			if s.approvals == nil {
 				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "approval_unavailable", ErrApprovalUnavailable)
@@ -226,12 +235,19 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
 				activeRequestID = requestID
+				commandStarted = false
+				nextReadTimeout = s.readTimeout
 			}
 		case TypeCommandStarted:
-			s.handleCommandStarted(ctx, conn, encoder, env)
+			if s.handleCommandStarted(ctx, conn, encoder, env) {
+				commandStarted = true
+				nextReadTimeout = 0
+			}
 		case TypeCommandCompleted:
 			if s.handleCommandCompleted(ctx, conn, encoder, env) {
 				activeRequestID = ""
+				commandStarted = false
+				nextReadTimeout = s.readTimeout
 			}
 		default:
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_type", fmt.Errorf("%w: %s", ErrProtocolType, env.Type))
@@ -278,21 +294,22 @@ func (s *Server) handleCommandStarted(
 	conn *net.UnixConn,
 	encoder *json.Encoder,
 	env Envelope,
-) {
+) bool {
 	if err := s.validateTrustedClientPeer(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-		return
+		return false
 	}
 	payload, err := DecodePayload[CommandStartedPayload](env)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_command_started", err)
-		return
+		return false
 	}
 	if err := s.broker.ReportStarted(ctx, env.RequestID, env.Nonce, payload.ChildPID); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-		return
+		return false
 	}
 	_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+	return true
 }
 
 func (s *Server) handleCommandCompleted(
@@ -328,14 +345,25 @@ func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 	return peercred.Inspect(conn)
 }
 
-func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader) (Envelope, error) {
-	if s.readTimeout > 0 {
-		if err := conn.SetReadDeadline(time.Now().Add(s.readTimeout)); err != nil {
+func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader, timeout time.Duration) (Envelope, error) {
+	if timeout > 0 {
+		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 			return Envelope{}, fmt.Errorf("set daemon read deadline: %w", err)
 		}
 		defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
 	}
 	return readEnvelopeFrame(reader, s.maxFrameBytes)
+}
+
+func (s *Server) approvalDecisionReadTimeout(expiresAt time.Time) time.Duration {
+	if s.readTimeout <= 0 {
+		return 0
+	}
+	remaining := time.Until(expiresAt)
+	if remaining <= 0 {
+		return s.readTimeout
+	}
+	return remaining + s.readTimeout
 }
 
 func daemonStopAuditEvent(peer peercred.Info, err error) audit.Event {

@@ -77,6 +77,51 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    aud,
+	})
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:        broker,
+		Validator:     allowPeerValidator{},
+		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ReadTimeout:   20 * time.Millisecond,
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	client := NewClient(conn)
+	defer func() { _ = client.Close() }()
+
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: ref},
+	})); err != nil {
+		t.Fatalf("RequestExec returned error: %v", err)
+	}
+	if err := client.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	if err := client.ReportCompleted(context.Background(), "req_1", "nonce_1", 0, ""); err != nil {
+		t.Fatalf("ReportCompleted returned error after protocol read timeout: %v", err)
+	}
+	got := auditEventTypes(aud.Events())
+	if len(got) == 0 || got[len(got)-1] != audit.EventCommandCompleted {
+		t.Fatalf("audit events = %v; last event should be %s", got, audit.EventCommandCompleted)
+	}
+}
+
 func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -509,6 +554,80 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 		Decision:  "approve_once",
 	}); err != nil {
 		t.Fatalf("SubmitApprovalDecision returned error: %v", err)
+	}
+
+	select {
+	case payload := <-execDone:
+		if payload.Env["TOKEN"] != "value" {
+			t.Fatalf("exec payload = %+v", payload)
+		}
+	case err := <-execErr:
+		t.Fatalf("RequestExec returned error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for exec response")
+	}
+}
+
+func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	ref := "op://Example/Item/token"
+	launcher := &recordingLauncher{expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:        broker,
+		Approvals:     approver,
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ReadTimeout:   20 * time.Millisecond,
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial exec client returned error: %v", err)
+	}
+	client := NewClient(conn)
+	defer func() { _ = client.Close() }()
+
+	execDone := make(chan ExecResponsePayload, 1)
+	execErr := make(chan error, 1)
+	go func() {
+		payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", approvalTestRequest(t, time.Now().Add(time.Minute)))
+		if err != nil {
+			execErr <- err
+			return
+		}
+		execDone <- payload
+	}()
+	waitForPendingOrExecError(t, approver, execErr)
+
+	appConn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial app client returned error: %v", err)
+	}
+	appClient := NewClient(appConn)
+	defer func() { _ = appClient.Close() }()
+	pending, err := appClient.FetchPendingApproval(context.Background())
+	if err != nil {
+		t.Fatalf("FetchPendingApproval returned error: %v", err)
+	}
+
+	time.Sleep(60 * time.Millisecond)
+
+	if err := appClient.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
+		RequestID: pending.RequestID,
+		Nonce:     pending.Nonce,
+		Decision:  "approve_once",
+	}); err != nil {
+		t.Fatalf("SubmitApprovalDecision returned error after protocol read timeout: %v", err)
 	}
 
 	select {
