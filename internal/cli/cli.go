@@ -84,6 +84,11 @@ type execInputSources struct {
 	configAccount  string
 }
 
+type filteredExecSecretSources struct {
+	profileSecrets []request.SecretSpec
+	envFileSecrets []request.SecretSpec
+}
+
 func (p Parser) Parse(args []string) (Command, error) {
 	if len(args) == 0 {
 		return Command{Kind: KindHelp, HelpText: TopHelp()}, ErrHelpRequested
@@ -417,9 +422,17 @@ func loadExecInputSources(flags execFlags) (execInputSources, error) {
 }
 
 func resolveExecSecrets(flags execFlags, sources execInputSources) ([]request.SecretSpec, error) {
+	filtered, err := filterExecSecretsByOnly(flags, sources)
+	if err != nil {
+		return nil, err
+	}
+	return assembleExecSecrets(flags, sources, filtered), nil
+}
+
+func filterExecSecretsByOnly(flags execFlags, sources execInputSources) (filteredExecSecretSources, error) {
 	onlyActive := len(flags.only.aliases) > 0
 	if onlyActive && !sources.loadedProfile && len(sources.envFileSecrets) == 0 {
-		return nil, fmt.Errorf("%w: --only requires a profile, default_profile, or --env-file secret refs", ErrInvalidArguments)
+		return filteredExecSecretSources{}, fmt.Errorf("%w: --only requires a profile, default_profile, or --env-file secret refs", ErrInvalidArguments)
 	}
 	remainingOnly := newOnlySet(flags.only.aliases)
 	envFileSecrets := filterSecretsByOnly(sources.envFileSecrets, remainingOnly, onlyActive)
@@ -428,25 +441,32 @@ func resolveExecSecrets(flags execFlags, sources execInputSources) ([]request.Se
 		profileSecrets = filterSecretsByOnly(sources.profile.Secrets, remainingOnly, onlyActive)
 	}
 	if onlyActive && len(remainingOnly) > 0 {
-		return nil, missingOnlyError(remainingOnly)
+		return filteredExecSecretSources{}, missingOnlyError(remainingOnly)
 	}
+	return filteredExecSecretSources{profileSecrets: profileSecrets, envFileSecrets: envFileSecrets}, nil
+}
 
+func assembleExecSecrets(
+	flags execFlags,
+	sources execInputSources,
+	filtered filteredExecSecretSources,
+) []request.SecretSpec {
 	accountFallback := execAccountFallback(flags.account)
 	if !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
 		accountFallback = sources.configAccount
 	}
 	var effectiveSecrets []request.SecretSpec
 	if sources.loadedProfile {
-		profileSecrets = applyDefaultAccount(profileSecrets, accountFallback)
+		profileSecrets := applyDefaultAccount(filtered.profileSecrets, accountFallback)
 		cliAccount := sources.profile.Account
 		if strings.TrimSpace(cliAccount) == "" {
 			cliAccount = accountFallback
 		}
-		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(flags.secrets.specs), envFileSecrets...), cliAccount)...)
+		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(flags.secrets.specs), filtered.envFileSecrets...), cliAccount)...)
 	} else {
-		effectiveSecrets = append(applyDefaultAccount(slices.Clone(flags.secrets.specs), accountFallback), applyDefaultAccount(envFileSecrets, accountFallback)...)
+		effectiveSecrets = append(applyDefaultAccount(slices.Clone(flags.secrets.specs), accountFallback), applyDefaultAccount(filtered.envFileSecrets, accountFallback)...)
 	}
-	return effectiveSecrets, nil
+	return effectiveSecrets
 }
 
 func loadExecProfile(profileName string, configPath string, hasExplicitSource bool) (profileconfig.Profile, bool, error) {
