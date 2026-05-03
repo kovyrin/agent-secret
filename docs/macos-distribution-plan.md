@@ -422,14 +422,15 @@ test -f "$TMPDIR/agent-secret-skills/agent-secret/SKILL.md"
 
 ### Epic 3: Release Artifact Builder
 
-Status: Implemented for unsigned/ad-hoc artifacts
+Status: Implemented for local ad-hoc artifacts and tag-triggered signed
+artifacts when release secrets are configured
 
 Deliverables:
 
 - Script to produce `Agent-Secret-vX.Y.Z-macos-arm64.dmg`.
 - DMG contains app bundle and `/Applications` symlink.
 - Checksums are generated.
-- CI can build artifacts on tag push.
+- CI can build artifacts on tag push after production signing preflight passes.
 
 Acceptance checks:
 
@@ -441,13 +442,16 @@ hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
 
 ### Epic 4: Signed and Notarized Releases
 
-Status: Signing hooks implemented; full verification blocked on Developer ID
+Status: Implemented; tag-triggered maintainer releases require Developer ID
 certificate and notarization secrets
 
 Deliverables:
 
-- Optional Developer ID signing in the app bundle and release artifact builder.
-- Optional notarization using App Store Connect API key credentials.
+- Optional Developer ID signing in local app bundle and release artifact builds.
+- Required Developer ID signing and notarization for tag-triggered GitHub
+  releases from this repository.
+- Release signing preflight before GitHub Actions imports certificates or
+  builds artifacts.
 - Stapled artifact when `AGENT_SECRET_NOTARIZE=1` is used.
 - Gatekeeper verification documented for signed/notarized releases.
 
@@ -462,12 +466,17 @@ AGENT_SECRET_NOTARY_KEY_ID=KEYID
 AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
 ```
 
-`AGENT_SECRET_NOTARY_KEY` may also be a path to a `.p8` API key file. Without
-`AGENT_SECRET_CODESIGN_IDENTITY`, builds use ad-hoc signing. Without
-`AGENT_SECRET_NOTARIZE=1`, the release builder does not submit to Apple.
+`AGENT_SECRET_NOTARY_KEY` may also be a path to a `.p8` API key file. Local
+builds without `AGENT_SECRET_CODESIGN_IDENTITY` use ad-hoc signing, and local
+builds without `AGENT_SECRET_NOTARIZE=1` do not submit to Apple. Tag-triggered
+GitHub releases fail preflight instead of publishing ad-hoc artifacts when any
+production signing input is missing.
 
 GitHub release signing imports a Developer ID certificate into a temporary
-keychain before building artifacts. Configure these repository secrets:
+keychain before building artifacts. Before import, the workflow runs
+`scripts/check-release-signing-env.sh`; artifact builds then call
+`scripts/build-release.sh "$GITHUB_REF_NAME" --require-production-signing`.
+Configure these repository secrets:
 
 ```text
 AGENT_SECRET_CODESIGN_IDENTITY
@@ -494,14 +503,16 @@ Acceptance checks:
 
 ```bash
 scripts/build-release.sh v0.0.0-dev
+scripts/check-release-signing-env.sh
+scripts/build-release.sh v0.0.0-dev --require-production-signing
 codesign --verify --deep --strict "/Applications/Agent Secret.app"
 spctl --assess --type execute --verbose "/Applications/Agent Secret.app"
 xcrun stapler validate "/Applications/Agent Secret.app"
 ```
 
 Only the ad-hoc release builder path can be verified locally without Apple
-credentials. The Developer ID path must be verified once the certificate and App
-Store Connect API key are available in the release environment.
+credentials. The Developer ID path requires the certificate and App Store
+Connect API key in the release environment.
 
 ### Epic 5: Unattended Installer
 
