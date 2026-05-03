@@ -518,7 +518,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 				broker.mu.Lock()
 				if active := broker.active["req_1"]; active != nil {
 					approvalMu.Lock()
-					approvalID = active.reusable.approvalID
+					approvalID = active.delivery.approvalID()
 					approvalMu.Unlock()
 				}
 				broker.mu.Unlock()

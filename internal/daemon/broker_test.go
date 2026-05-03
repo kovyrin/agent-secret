@@ -875,7 +875,7 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first HandleExec returned error: %v", err)
 	}
-	if first.reusable.approvalID == "" {
+	if first.delivery.approvalID() == "" {
 		t.Fatal("expected reusable approval id")
 	}
 	if err := broker.markPayloadDelivered("req_1"); err != nil {
@@ -909,7 +909,7 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("force refresh did not update cached value: %+v", third.Env)
 	}
-	if value, ok := cache.Get(first.reusable.approvalID, ref, ""); !ok || value != "second" {
+	if value, ok := cache.Get(first.delivery.approvalID(), ref, ""); !ok || value != "second" {
 		t.Fatalf("force refresh cache value = %q, %v; want second, true", value, ok)
 	}
 	if len(resolver.Calls()) != 2 {
@@ -941,7 +941,7 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first HandleExec returned error: %v", err)
 	}
-	if first.reusable.approvalID == "" {
+	if first.delivery.approvalID() == "" {
 		t.Fatal("expected reusable approval id")
 	}
 	if err := broker.markPayloadDelivered("req_1"); err != nil {
@@ -959,7 +959,7 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	if err := broker.markPayloadDelivered("req_2"); err != nil {
 		t.Fatalf("second markPayloadDelivered returned error: %v", err)
 	}
-	if _, ok := cache.Get(first.reusable.approvalID, ref, ""); ok {
+	if _, ok := cache.Get(first.delivery.approvalID(), ref, ""); ok {
 		t.Fatal("two-use approval cache scope remained after two deliveries")
 	}
 
@@ -970,8 +970,8 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("fresh approval after exhaustion used stale value: %+v", third.Env)
 	}
-	if third.reusable.approvalID == first.reusable.approvalID {
-		t.Fatalf("fresh approval reused exhausted approval id %q", first.reusable.approvalID)
+	if third.delivery.approvalID() == first.delivery.approvalID() {
+		t.Fatalf("fresh approval reused exhausted approval id %q", first.delivery.approvalID())
 	}
 	if approver.calls != 2 {
 		t.Fatalf("approver calls = %d, want fresh approval after two deliveries", approver.calls)
@@ -1005,8 +1005,12 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second HandleExec returned error: %v", err)
 	}
-	if second.reusable.approvalID != first.reusable.approvalID {
-		t.Fatalf("second approval id = %q, want reusable approval %q", second.reusable.approvalID, first.reusable.approvalID)
+	if second.delivery.approvalID() != first.delivery.approvalID() {
+		t.Fatalf(
+			"second approval id = %q, want reusable approval %q",
+			second.delivery.approvalID(),
+			first.delivery.approvalID(),
+		)
 	}
 	if second.Env["TOKEN"] != "first" {
 		t.Fatalf("second delivery did not reuse cached first value: %+v", second.Env)
@@ -1053,7 +1057,7 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	if err := broker.markPayloadDelivered("req_1"); err != nil {
 		t.Fatalf("markPayloadDelivered returned error: %v", err)
 	}
-	if _, ok := cache.Get(first.reusable.approvalID, ref, ""); !ok {
+	if _, ok := cache.Get(first.delivery.approvalID(), ref, ""); !ok {
 		t.Fatal("expected first reusable value in cache")
 	}
 
@@ -1067,10 +1071,10 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	if second.Env["TOKEN"] != "second" {
 		t.Fatalf("fresh approval after expiry used stale value: %+v", second.Env)
 	}
-	if second.reusable.approvalID == first.reusable.approvalID {
-		t.Fatalf("fresh approval reused expired approval id %q", second.reusable.approvalID)
+	if second.delivery.approvalID() == first.delivery.approvalID() {
+		t.Fatalf("fresh approval reused expired approval id %q", second.delivery.approvalID())
 	}
-	if _, ok := cache.Get(first.reusable.approvalID, ref, ""); ok {
+	if _, ok := cache.Get(first.delivery.approvalID(), ref, ""); ok {
 		t.Fatal("expired reusable approval cache scope remained reachable")
 	}
 }
@@ -1101,7 +1105,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	if err := broker.markPayloadDelivered("req_1"); err != nil {
 		t.Fatalf("markPayloadDelivered returned error: %v", err)
 	}
-	if _, ok := cache.Get(first.reusable.approvalID, ref, ""); !ok {
+	if _, ok := cache.Get(first.delivery.approvalID(), ref, ""); !ok {
 		t.Fatal("expected reusable value in cache before force refresh")
 	}
 
@@ -1119,7 +1123,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected expired reusable approval during refresh, got %v", err)
 	}
-	if _, ok := cache.Get(first.reusable.approvalID, ref, ""); ok {
+	if _, ok := cache.Get(first.delivery.approvalID(), ref, ""); ok {
 		t.Fatal("expired reusable approval cache scope remained after force refresh")
 	}
 	if _, err := broker.grants.reusable.store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
@@ -1163,7 +1167,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 	if err := broker.markPayloadDelivered("req_2"); !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected reusable approval expiry before payload delivery, got %v", err)
 	}
-	if _, ok := cache.Get(first.reusable.approvalID, ref, ""); ok {
+	if _, ok := cache.Get(first.delivery.approvalID(), ref, ""); ok {
 		t.Fatal("expired reusable approval cache scope remained before payload delivery")
 	}
 	if err := broker.markPayloadDelivered("req_2"); !errors.Is(err, ErrUnknownRequest) {
@@ -1188,11 +1192,11 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleExec returned error: %v", err)
 	}
-	if _, ok := cache.Get(grant.reusable.approvalID, ref, ""); !ok {
+	if _, ok := cache.Get(grant.delivery.approvalID(), ref, ""); !ok {
 		t.Fatal("expected reusable value in cache")
 	}
 	broker.Stop(context.Background())
-	if _, ok := cache.Get(grant.reusable.approvalID, ref, ""); ok {
+	if _, ok := cache.Get(grant.delivery.approvalID(), ref, ""); ok {
 		t.Fatal("daemon stop left reusable cache scope reachable")
 	}
 }
@@ -1324,7 +1328,7 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	if grant.Env["TOKEN"] != "value" {
 		t.Fatalf("retry grant = %+v, want TOKEN value", grant)
 	}
-	if grant.reusable.approvalID == "" {
+	if grant.delivery.approvalID() == "" {
 		t.Fatal("retry should create a usable reusable approval")
 	}
 }

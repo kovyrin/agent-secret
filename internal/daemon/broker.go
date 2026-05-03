@@ -65,19 +65,6 @@ type Broker struct {
 	stop     chan struct{}
 }
 
-type ExecGrant struct {
-	Env               map[string]string
-	SecretAliases     []string
-	reusable          reusableGrantAttempt
-	deliveryExpiresAt time.Time
-}
-
-type reusableGrantAttempt struct {
-	approvalID string
-	mutationID string
-	expiresAt  time.Time
-}
-
 type execDelivery struct {
 	broker    *Broker
 	requestID string
@@ -88,7 +75,7 @@ type execDelivery struct {
 type activeExec struct {
 	nonce            string
 	req              request.ExecRequest
-	reusable         reusableGrantAttempt
+	delivery         grantDelivery
 	payloadDelivered bool
 	started          bool
 	childPID         *int
@@ -202,18 +189,11 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 	b.active[requestID] = &activeExec{
 		nonce:    nonce,
 		req:      req,
-		reusable: grant.reusable,
+		delivery: grant.delivery,
 	}
 	b.mu.Unlock()
 
 	return grant, nil
-}
-
-func grantDeliveryExpiresAt(req request.ExecRequest, approvalExpiresAt time.Time) time.Time {
-	if !approvalExpiresAt.IsZero() && approvalExpiresAt.Before(req.ExpiresAt) {
-		return approvalExpiresAt
-	}
-	return req.ExpiresAt
 }
 
 func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (context.Context, context.CancelFunc) {
@@ -249,7 +229,7 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 		b.removeActiveExec(requestID)
 		return ErrDaemonStopped
 	}
-	if err := b.grants.finishPayloadDelivered(active.reusable); err != nil {
+	if err := active.delivery.markPayloadDelivered(); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}
@@ -293,7 +273,7 @@ func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 		return
 	}
 
-	b.grants.finishPrePayloadFailure(active.reusable)
+	active.delivery.markPrePayloadFailure()
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
@@ -375,13 +355,6 @@ func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event)
 		event.Type = audit.EventDaemonStop
 	}
 	_ = b.audit.Record(ctx, event)
-}
-
-func reusableMutationID(mutated bool, approvalID string) string {
-	if !mutated {
-		return ""
-	}
-	return approvalID
 }
 
 func terminalAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {

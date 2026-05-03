@@ -107,18 +107,6 @@ func (m *reusableGrantManager) rollbackApproval(approvalID string) {
 	m.clearScope(approvalID)
 }
 
-func (m *reusableGrantManager) rollbackGrant(grant ExecGrant) {
-	if grant.reusable.mutationID != "" {
-		m.rollbackApproval(grant.reusable.mutationID)
-		return
-	}
-	m.releaseReservation(grant.reusable.approvalID)
-}
-
-func (m *reusableGrantManager) releaseReservation(approvalID string) {
-	m.finishPrePayloadFailure(approvalID)
-}
-
 func (m *reusableGrantManager) ensureApprovalActive(approvalID string, expiresAt time.Time) error {
 	if approvalID == "" || expiresAt.IsZero() {
 		return nil
