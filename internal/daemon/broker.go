@@ -188,7 +188,7 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()
-	if err := b.requestActive(execCtx, req); err != nil {
+	if err := b.ensureRequestActive(execCtx, req); err != nil {
 		return ExecGrant{}, err
 	}
 
@@ -258,7 +258,7 @@ func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (c
 	}
 }
 
-func (b *Broker) requestActive(ctx context.Context, req request.ExecRequest) error {
+func (b *Broker) ensureRequestActive(ctx context.Context, req request.ExecRequest) error {
 	if err := ctx.Err(); err != nil {
 		if errors.Is(context.Cause(ctx), ErrDaemonStopped) {
 			return ErrDaemonStopped
@@ -283,7 +283,7 @@ func (b *Broker) ensureGrantStillActive(
 	approvalID string,
 	approvalExpiresAt time.Time,
 ) error {
-	if err := b.requestActive(ctx, req); err != nil {
+	if err := b.ensureRequestActive(ctx, req); err != nil {
 		return err
 	}
 	return b.reusable.ensureApprovalActive(approvalID, approvalExpiresAt)
@@ -296,7 +296,7 @@ func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err 
 	if errors.Is(err, ErrApprovalDenied) || errors.Is(err, ErrRequestExpired) {
 		return err
 	}
-	if activeErr := b.requestActive(ctx, req); activeErr != nil {
+	if activeErr := b.ensureRequestActive(ctx, req); activeErr != nil {
 		if errors.Is(activeErr, ErrDaemonStopped) || errors.Is(activeErr, ErrRequestExpired) {
 			return activeErr
 		}
@@ -504,13 +504,13 @@ func (b *Broker) freshGrant(
 		}
 		return ExecGrant{}, ErrApprovalDenied
 	}
-	if err := b.requestActive(ctx, req); err != nil {
+	if err := b.ensureRequestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
 	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, requestID, req)); err != nil {
 		return ExecGrant{}, err
 	}
-	if err := b.requestActive(ctx, req); err != nil {
+	if err := b.ensureRequestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
 
@@ -518,7 +518,7 @@ func (b *Broker) freshGrant(
 	if err != nil {
 		return ExecGrant{}, b.requestError(ctx, req, err)
 	}
-	if err := b.requestActive(ctx, req); err != nil {
+	if err := b.ensureRequestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
