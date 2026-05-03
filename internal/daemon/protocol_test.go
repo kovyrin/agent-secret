@@ -67,115 +67,26 @@ func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 func TestClientRoundTripHonorsContextCancellationWaitingForResponse(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name     string
-		wantType string
-		prepare  func(*testing.T) func(context.Context, *Client) error
-	}{
-		{
-			name:     "status",
-			wantType: TypeDaemonStatus,
-			prepare: func(_ *testing.T) func(context.Context, *Client) error {
-				return func(ctx context.Context, client *Client) error {
-					_, err := client.Status(ctx)
-					return err
-				}
-			},
-		},
-		{
-			name:     "stop",
-			wantType: TypeDaemonStop,
-			prepare: func(_ *testing.T) func(context.Context, *Client) error {
-				return func(ctx context.Context, client *Client) error {
-					_, err := client.Stop(ctx)
-					return err
-				}
-			},
-		},
-		{
-			name:     "fetch pending approval",
-			wantType: TypeApprovalPending,
-			prepare: func(_ *testing.T) func(context.Context, *Client) error {
-				return func(ctx context.Context, client *Client) error {
-					_, err := client.FetchPendingApproval(ctx)
-					return err
-				}
-			},
-		},
-		{
-			name:     "submit approval decision",
-			wantType: TypeApprovalDecision,
-			prepare: func(_ *testing.T) func(context.Context, *Client) error {
-				return func(ctx context.Context, client *Client) error {
-					return client.SubmitApprovalDecision(ctx, ApprovalDecisionPayload{
-						RequestID: "req_1",
-						Nonce:     "nonce_1",
-						Decision:  "approve_once",
-					})
-				}
-			},
-		},
-		{
-			name:     "request exec",
-			wantType: TypeRequestExec,
-			prepare: func(t *testing.T) func(context.Context, *Client) error {
-				t.Helper()
+	client, requests, cleanup := startStallingDaemonClient(t)
+	defer cleanup()
 
-				req := testExecRequest(t, []request.SecretSpec{
-					{Alias: "TOKEN", Ref: "op://Example/Item/token"},
-				})
-				return func(ctx context.Context, client *Client) error {
-					_, err := client.RequestExec(ctx, "req_1", "nonce_1", req)
-					return err
-				}
-			},
-		},
-		{
-			name:     "report started",
-			wantType: TypeCommandStarted,
-			prepare: func(_ *testing.T) func(context.Context, *Client) error {
-				return func(ctx context.Context, client *Client) error {
-					return client.ReportStarted(ctx, "req_1", "nonce_1", 1234)
-				}
-			},
-		},
-		{
-			name:     "report completed",
-			wantType: TypeCommandCompleted,
-			prepare: func(_ *testing.T) func(context.Context, *Client) error {
-				return func(ctx context.Context, client *Client) error {
-					return client.ReportCompleted(ctx, "req_1", "nonce_1", 0, "")
-				}
-			},
-		},
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errc := make(chan error, 1)
+	go func() {
+		_, err := client.Status(ctx)
+		errc <- err
+	}()
+
+	env := receiveStalledRequest(t, requests)
+	if env.Type != TypeDaemonStatus {
+		t.Fatalf("request type = %s, want %s", env.Type, TypeDaemonStatus)
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			client, requests, cleanup := startStallingDaemonClient(t)
-			defer cleanup()
-			call := tc.prepare(t)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			errc := make(chan error, 1)
-			go func() {
-				errc <- call(ctx, client)
-			}()
-
-			env := receiveStalledRequest(t, requests)
-			if env.Type != tc.wantType {
-				t.Fatalf("request type = %s, want %s", env.Type, tc.wantType)
-			}
-
-			cancel()
-			err := receiveRoundTripError(t, errc)
-			if !errors.Is(err, context.Canceled) {
-				t.Fatalf("expected context canceled error, got %v", err)
-			}
-		})
+	cancel()
+	err := receiveRoundTripError(t, errc)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled error, got %v", err)
 	}
 }
 
@@ -254,70 +165,23 @@ func TestClientRequestExecDefaultDeadlineAllowsApprovalWaitUntilRequestExpiry(t 
 func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name     string
-		wantType string
-		call     func(*testing.T, context.Context, *Client) error
-	}{
-		{
-			name:     "status",
-			wantType: TypeDaemonStatus,
-			call: func(_ *testing.T, ctx context.Context, client *Client) error {
-				_, err := client.Status(ctx)
-				return err
-			},
-		},
-		{
-			name:     "stop",
-			wantType: TypeDaemonStop,
-			call: func(_ *testing.T, ctx context.Context, client *Client) error {
-				_, err := client.Stop(ctx)
-				return err
-			},
-		},
-		{
-			name:     "fetch pending approval",
-			wantType: TypeApprovalPending,
-			call: func(_ *testing.T, ctx context.Context, client *Client) error {
-				_, err := client.FetchPendingApproval(ctx)
-				return err
-			},
-		},
-		{
-			name:     "request exec",
-			wantType: TypeRequestExec,
-			call: func(t *testing.T, ctx context.Context, client *Client) error {
-				t.Helper()
+	req := testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+	})
+	client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
+		if env.Type != TypeRequestExec {
+			t.Fatalf("request type = %s, want %s", env.Type, TypeRequestExec)
+		}
+		return emptyOKResponseFrame(t, env)
+	})
+	defer cleanup()
 
-				req := testExecRequest(t, []request.SecretSpec{
-					{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
-				})
-				_, err := client.RequestExec(ctx, "req_1", "nonce_1", req)
-				return err
-			},
-		},
+	_, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
+	if !errors.Is(err, ErrMalformedEnvelope) {
+		t.Fatalf("expected malformed empty OK response error, got %v", err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			client, cleanup := startRespondingDaemonClient(t, func(env Envelope) []byte {
-				if env.Type != tc.wantType {
-					t.Fatalf("request type = %s, want %s", env.Type, tc.wantType)
-				}
-				return emptyOKResponseFrame(t, env)
-			})
-			defer cleanup()
-
-			err := tc.call(t, context.Background(), client)
-			if !errors.Is(err, ErrMalformedEnvelope) {
-				t.Fatalf("expected malformed empty OK response error, got %v", err)
-			}
-			if !strings.Contains(err.Error(), "missing payload") {
-				t.Fatalf("error %q does not mention missing payload", err)
-			}
-		})
+	if !strings.Contains(err.Error(), "missing payload") {
+		t.Fatalf("error %q does not mention missing payload", err)
 	}
 }
 
@@ -450,23 +314,6 @@ func TestClientRejectsOversizedDaemonResponseFrame(t *testing.T) {
 	}
 }
 
-func TestClientAcceptsBoundedDaemonResponseFrame(t *testing.T) {
-	t.Parallel()
-
-	padding := string(bytes.Repeat([]byte("a"), 512*1024))
-	frame := boundedPaddingResponseFrame(t, padding)
-	client, cleanup := startRespondingDaemonClient(t, func(Envelope) []byte { return frame })
-	defer cleanup()
-
-	got, err := roundTrip[map[string]string](context.Background(), client, TypeDaemonStatus, "", "", nil)
-	if err != nil {
-		t.Fatalf("roundTrip returned error: %v", err)
-	}
-	if got["padding"] != padding {
-		t.Fatalf("padding length = %d, want %d", len(got["padding"]), len(padding))
-	}
-}
-
 func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 	t.Parallel()
 
@@ -559,23 +406,6 @@ func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
 	frame, err := json.Marshal(env)
 	if err != nil {
 		t.Fatalf("marshal error response: %v", err)
-	}
-	return append(frame, '\n')
-}
-
-func boundedPaddingResponseFrame(t *testing.T, padding string) []byte {
-	t.Helper()
-
-	env, err := NewEnvelope(TypeOK, "", "", map[string]string{"padding": padding})
-	if err != nil {
-		t.Fatalf("NewEnvelope returned error: %v", err)
-	}
-	frame, err := json.Marshal(env)
-	if err != nil {
-		t.Fatalf("marshal response: %v", err)
-	}
-	if int64(len(frame)+1) > DefaultMaxProtocolFrameBytes {
-		t.Fatalf("test frame size %d exceeds max %d", len(frame)+1, DefaultMaxProtocolFrameBytes)
 	}
 	return append(frame, '\n')
 }

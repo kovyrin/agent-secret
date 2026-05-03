@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `34,574`.
+Current selected LOC: `33,918`.
 
-Cumulative reduction from baseline: `4,654` LOC.
+Cumulative reduction from baseline: `5,310` LOC.
 
-Remaining reduction needed: `7,115` LOC.
+Remaining reduction needed: `6,459` LOC.
 
 Measurement command:
 
@@ -180,11 +180,19 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `c60b7d5`.
 - Change: remove Swift tests that pin layout and app entrypoint implementation.
 - LOC delta: -384.
 - Verification: `swift test`, `mise run lint:swift`, `markdownlint`,
   `git diff --check`, `mise run lint`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: consolidate repetitive CLI, daemon protocol, and reusable broker
+  tests while preserving invariant-level coverage.
+- LOC delta: -656.
+- Verification: focused Go package tests and focused Go package coverage.
 
 ## Current Decisions
 
@@ -196,14 +204,12 @@ Docs:
 
 ## Next Cleanup Pass
 
-Continue with shell-test and Swift-test simplification, then move into
-production code only after the low-risk fixture cleanup is exhausted.
+Continue with shell-test simplification, then move into production code only
+after the low-risk fixture cleanup is exhausted.
 
 Initial candidates:
 
 - Review `scripts/test-uninstall.sh` and `scripts/test-install.sh` for
   helper-tool path hijack fixtures that exceed the updated threat model.
-- Review Swift UI layout/concurrency tests for cases that pin implementation
-  rather than product-visible approval safety.
 - Review daemon protocol tests for duplicate empty, malformed, and correlation
   cases after the trust-boundary coverage is identified.

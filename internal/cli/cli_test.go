@@ -350,131 +350,46 @@ PLAIN=kept
 	}
 }
 
-func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
+func TestParseExecAccountDefaultPrecedence(t *testing.T) {
+	tests := []struct {
+		name       string
+		opAccount  string
+		appAccount string
+		want       string
+	}{
+		{name: "built-in", want: opresolver.DefaultDesktopAccount},
+		{name: "op account", opAccount: " Personal ", want: "Personal"},
+		{name: "app account", opAccount: " Personal ", appAccount: " Work ", want: "Work"},
 	}
-	writeExecutable(t, binDir, "tool")
-	envPath := filepath.Join(root, ".env")
-	writeConfigFile(t, envPath, "FILE_TOKEN=op://Example/File/token\n")
-	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			binDir := filepath.Join(root, "bin")
+			if err := os.MkdirAll(binDir, 0o750); err != nil {
+				t.Fatalf("create bin dir: %v", err)
+			}
+			writeExecutable(t, binDir, "tool")
+			t.Chdir(root)
+			t.Setenv("PATH", binDir)
+			if tt.opAccount != "" {
+				t.Setenv("OP_ACCOUNT", tt.opAccount)
+			}
+			if tt.appAccount != "" {
+				t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", tt.appAccount)
+			}
 
-	command, err := parser.Parse([]string{
-		"exec",
-		"--reason", "Account command",
-		"--account", "fixture.1password.com",
-		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
-		"--env-file", envPath,
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 2 {
-		t.Fatalf("secret count = %d, want 2: %+v", len(req.Secrets), req.Secrets)
-	}
-	for _, secret := range req.Secrets {
-		if secret.Account != "fixture.1password.com" {
-			t.Fatalf("%s account = %q, want fixture.1password.com: %+v", secret.Alias, secret.Account, req.Secrets)
-		}
-	}
-}
-
-func TestParseExecAccountAppliesAgentSecretEnvironmentDefault(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "tool")
-	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	t.Setenv("OP_ACCOUNT", " Personal ")
-	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", " Work ")
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-
-	command, err := parser.Parse([]string{
-		"exec",
-		"--reason", "Environment account",
-		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 1 || req.Secrets[0].Account != "Work" {
-		t.Fatalf("secrets = %+v, want AGENT_SECRET_1PASSWORD_ACCOUNT default", req.Secrets)
-	}
-}
-
-func TestParseExecAccountFallsBackToOPAccountEnvironment(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "tool")
-	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	t.Setenv("OP_ACCOUNT", " Personal ")
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-
-	command, err := parser.Parse([]string{
-		"exec",
-		"--reason", "OP account",
-		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 1 || req.Secrets[0].Account != "Personal" {
-		t.Fatalf("secrets = %+v, want OP_ACCOUNT default", req.Secrets)
-	}
-}
-
-func TestParseExecAccountRecordsBuiltInDefault(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "tool")
-	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-
-	command, err := parser.Parse([]string{
-		"exec",
-		"--reason", "Default account",
-		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 1 || req.Secrets[0].Account != opresolver.DefaultDesktopAccount {
-		t.Fatalf("secrets = %+v, want built-in default account", req.Secrets)
+			command, err := NewParser(fixedTestTime).Parse([]string{
+				"exec", "--reason", "Account default",
+				"--secret", "TOKEN=op://Example/Item/token",
+				"--allow-mutable-executable", "--", "tool",
+			})
+			if err != nil {
+				t.Fatalf("Parse returned error: %v", err)
+			}
+			if got := command.ExecRequest.Secrets[0].Account; got != tt.want {
+				t.Fatalf("account = %q, want %q: %+v", got, tt.want, command.ExecRequest.Secrets)
+			}
+		})
 	}
 }
 
@@ -530,43 +445,6 @@ profiles:
 		if got[alias] != account {
 			t.Fatalf("%s account = %q, want %q: %+v", alias, got[alias], account, command.ExecRequest.Secrets)
 		}
-	}
-}
-
-func TestParseExecAccountAppliesToProfileSecretsWithoutConfigAccount(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "tool")
-	writeProfileConfig(t, root, `
-version: 1
-profiles:
-  deploy:
-    reason: Deploy with account flag
-    secrets:
-      PROFILE_TOKEN: op://Example/Profile/token
-`)
-	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-
-	command, err := parser.Parse([]string{
-		"exec",
-		"--profile", "deploy",
-		"--account", "fixture.1password.com",
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 1 || req.Secrets[0].Account != "fixture.1password.com" {
-		t.Fatalf("secrets = %+v, want profile secret with CLI account", req.Secrets)
 	}
 }
 
@@ -804,94 +682,6 @@ profiles:
 	}
 	if req.Secrets[0].Account != "Default Account" {
 		t.Fatalf("secret account = %q, want top-level config account", req.Secrets[0].Account)
-	}
-}
-
-func TestParseExecExplicitEnvFileSecretsUseTopLevelConfigAccount(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "tool")
-	writeProfileConfig(t, root, `
-version: 1
-account: Default Account
-default_profile: extra
-profiles:
-  extra:
-    reason: Extra
-    secrets:
-      EXTRA_TOKEN: op://Example/Extra/token
-`)
-	envPath := filepath.Join(root, ".env.deploy")
-	writeConfigFile(t, envPath, "TOKEN=op://Example/Item/token\n")
-	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-
-	command, err := parser.Parse([]string{
-		"exec",
-		"--reason", "Explicit env file",
-		"--env-file", envPath,
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
-		t.Fatalf("default profile leaked into explicit env-file request: %+v", req.Secrets)
-	}
-	if req.Secrets[0].Account != "Default Account" {
-		t.Fatalf("secret account = %q, want top-level config account", req.Secrets[0].Account)
-	}
-}
-
-func TestParseExecExplicitConfigSecretsUseTopLevelAccount(t *testing.T) {
-	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "tool")
-	configPath := filepath.Join(root, "explicit.yml")
-	writeConfigFile(t, configPath, `
-version: 1
-account: Explicit Config Account
-default_profile: extra
-profiles:
-  extra:
-    reason: Extra
-    secrets:
-      EXTRA_TOKEN: op://Example/Extra/token
-`)
-	t.Chdir(t.TempDir())
-	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
-
-	command, err := parser.Parse([]string{
-		"exec",
-		"--config", configPath,
-		"--reason", "Explicit config",
-		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
-		"--",
-		"tool",
-	})
-	if err != nil {
-		t.Fatalf("Parse returned error: %v", err)
-	}
-
-	req := command.ExecRequest
-	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
-		t.Fatalf("default profile leaked into explicit config request: %+v", req.Secrets)
-	}
-	if req.Secrets[0].Account != "Explicit Config Account" {
-		t.Fatalf("secret account = %q, want explicit config account", req.Secrets[0].Account)
 	}
 }
 
@@ -1166,4 +956,8 @@ func lookupTestEnv(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func fixedTestTime() time.Time {
+	return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 }

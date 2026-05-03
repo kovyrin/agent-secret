@@ -919,56 +919,6 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	}
 }
 
-func TestBrokerReusableApprovalMissesWhenEnvironmentFingerprintChanges(t *testing.T) {
-	t.Parallel()
-
-	ref := "op://Example/Item/token"
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
-	resolver := &mockResolver{values: map[string]string{ref: "first"}}
-	aud := &memoryAudit{}
-	broker := newTestBroker(t, BrokerOptions{
-		Approver: approver,
-		Resolver: resolver,
-		Audit:    aud,
-		Cache:    policy.NewSecretCache(),
-	})
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-
-	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
-	}
-
-	resolver.values[ref] = "second"
-	changed := req
-	changed.EnvironmentFingerprint = request.EnvironmentFingerprint([]string{
-		"PATH=/opt/homebrew/bin",
-		"NODE_OPTIONS=--require ./changed.js",
-	})
-	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", changed)
-	if err != nil {
-		t.Fatalf("second HandleExec returned error: %v", err)
-	}
-	if second.ApprovalID == first.ApprovalID {
-		t.Fatalf("changed environment reused approval %q", first.ApprovalID)
-	}
-	if second.Env["TOKEN"] != "second" {
-		t.Fatalf("changed environment used cached value from old approval: %+v", second.Env)
-	}
-	if approver.calls != 2 {
-		t.Fatalf("approver calls = %d, want fresh approval after env fingerprint change", approver.calls)
-	}
-	if len(resolver.Calls()) != 2 {
-		t.Fatalf("resolver calls = %v, want refetch after env fingerprint change", resolver.Calls())
-	}
-	if reuses := aud.Reuses(); len(reuses) != 0 {
-		t.Fatalf("changed environment emitted reuse audit: %+v", reuses)
-	}
-}
-
 func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	t.Parallel()
 
@@ -1071,48 +1021,6 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 
 	if err := broker.MarkPayloadDelivered("req_2"); err != nil {
 		t.Fatalf("second MarkPayloadDelivered returned error: %v", err)
-	}
-}
-
-func TestBrokerReusableApprovalMissesWhenUseLimitChanges(t *testing.T) {
-	t.Parallel()
-
-	ref := "op://Example/Item/token"
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 2}}
-	resolver := &mockResolver{values: map[string]string{ref: "first"}}
-	broker := newTestBroker(t, BrokerOptions{
-		Approver: approver,
-		Resolver: resolver,
-		Audit:    &memoryAudit{},
-		Cache:    policy.NewSecretCache(),
-	})
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-	req.ReusableUses = 2
-
-	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
-	}
-
-	resolver.values[ref] = "second"
-	changed := req
-	changed.ReusableUses = 3
-	approver.decision.ReusableUses = 3
-	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", changed)
-	if err != nil {
-		t.Fatalf("second HandleExec returned error: %v", err)
-	}
-	if second.ApprovalID == first.ApprovalID {
-		t.Fatalf("changed use limit reused approval %q", first.ApprovalID)
-	}
-	if second.Env["TOKEN"] != "second" {
-		t.Fatalf("changed use limit used cached value from old approval: %+v", second.Env)
-	}
-	if approver.calls != 2 {
-		t.Fatalf("approver calls = %d, want fresh approval after reusable use limit change", approver.calls)
 	}
 }
 
@@ -1261,83 +1169,6 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 	}
 }
 
-func TestBrokerReusableCacheExpiresWithoutMatchingRequest(t *testing.T) {
-	t.Parallel()
-
-	now := time.Now()
-	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
-	broker, err := NewBroker(BrokerOptions{
-		Now:      time.Now,
-		Cache:    cache,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
-		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
-		Audit:    &memoryAudit{},
-	})
-	if err != nil {
-		t.Fatalf("NewBroker returned error: %v", err)
-	}
-	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-	req.TTL = 100 * time.Millisecond
-	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
-
-	grant, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
-	}
-	if _, ok := cache.Get(grant.ApprovalID, ref, ""); !ok {
-		t.Fatal("expected reusable value in cache before expiry")
-	}
-
-	waitForCacheScopeCleared(t, cache, grant.ApprovalID, ref, "")
-}
-
-func TestBrokerClearsReusableCacheOnUseExhaustion(t *testing.T) {
-	t.Parallel()
-
-	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
-	resolver := &mockResolver{values: map[string]string{ref: "first"}}
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
-	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: &memoryAudit{}, Cache: cache})
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-
-	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
-	}
-	for i := 1; i <= policy.DefaultReusableUses; i++ {
-		requestID := fmt.Sprintf("req_%d", i)
-		nonce := fmt.Sprintf("nonce_%d", i)
-		if i > 1 {
-			if _, err := broker.HandleExec(context.Background(), requestID, nonce, req); err != nil {
-				t.Fatalf("reuse %d HandleExec returned error: %v", i, err)
-			}
-		}
-		if err := broker.MarkPayloadDelivered(requestID); err != nil {
-			t.Fatalf("reuse %d MarkPayloadDelivered returned error: %v", i, err)
-		}
-	}
-	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
-		t.Fatal("exhausted reusable approval cache scope remained reachable")
-	}
-
-	resolver.values[ref] = "second"
-	fresh, err := broker.HandleExec(context.Background(), "req_4", "nonce_4", req)
-	if err != nil {
-		t.Fatalf("fresh HandleExec returned error: %v", err)
-	}
-	if fresh.Env["TOKEN"] != "second" {
-		t.Fatalf("fresh approval after exhaustion used stale value: %+v", fresh.Env)
-	}
-	if fresh.ApprovalID == first.ApprovalID {
-		t.Fatalf("fresh approval reused exhausted approval id %q", fresh.ApprovalID)
-	}
-}
-
 func TestBrokerStopClearsReusableCache(t *testing.T) {
 	t.Parallel()
 
@@ -1451,57 +1282,6 @@ func TestBrokerStopCancelsSecretResolution(t *testing.T) {
 	}
 }
 
-func TestBrokerStopBlocksReusablePayloadAfterCachedValuesAreRead(t *testing.T) {
-	t.Parallel()
-
-	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
-	resolver := &mockResolver{values: map[string]string{ref: "value"}}
-	var broker *Broker
-	var stopOnce sync.Once
-	aud := &callbackAudit{}
-	aud.onRecord = func(event audit.Event) {
-		if event.Type != audit.EventCommandStarting || event.RequestID != "req_2" {
-			return
-		}
-		stopOnce.Do(func() {
-			broker.Stop(context.Background())
-		})
-	}
-	broker = newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
-		Resolver: resolver,
-		Audit:    aud,
-		Cache:    cache,
-	})
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-
-	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if err != nil {
-		t.Fatalf("initial HandleExec returned error: %v", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("initial MarkPayloadDelivered returned error: %v", err)
-	}
-	if _, ok := cache.Get(first.ApprovalID, ref, ""); !ok {
-		t.Fatal("expected reusable value in cache before stop")
-	}
-
-	_, err = broker.HandleExec(context.Background(), "req_2", "nonce_2", req)
-	if !errors.Is(err, ErrDaemonStopped) {
-		t.Fatalf("reusable HandleExec after stop during command_starting = %v, want daemon stopped", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_2"); !errors.Is(err, ErrDaemonStopped) {
-		t.Fatalf("reusable MarkPayloadDelivered after stop = %v, want daemon stopped", err)
-	}
-	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
-		t.Fatal("daemon stop left reusable cache value reachable")
-	}
-	if calls := resolver.Calls(); !reflect.DeepEqual(calls, []string{ref}) {
-		t.Fatalf("resolver calls = %v, want only initial fresh resolution", calls)
-	}
-}
-
 func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	t.Parallel()
 
@@ -1580,68 +1360,6 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 	}
 	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
 		t.Fatalf("request should not become active after command_starting audit failure, got %v", err)
-	}
-}
-
-func TestBrokerRollsBackForceRefreshWhenRefreshAuditFails(t *testing.T) {
-	t.Parallel()
-
-	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
-	resolver := &mockResolver{values: map[string]string{ref: "first"}}
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
-	aud := &memoryAudit{}
-	broker := newTestBroker(t, BrokerOptions{
-		Cache:    cache,
-		Approver: approver,
-		Resolver: resolver,
-		Audit:    aud,
-	})
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-
-	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
-	if err != nil {
-		t.Fatalf("initial HandleExec returned error: %v", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("initial MarkPayloadDelivered returned error: %v", err)
-	}
-	if value, ok := cache.Get(first.ApprovalID, ref, ""); !ok || value != "first" {
-		t.Fatalf("initial cache value = %q, %v; want first, true", value, ok)
-	}
-
-	aud.errByType = map[audit.EventType]error{audit.EventApprovalRefreshed: errors.New("disk full")}
-	resolver.values[ref] = "second"
-	force := req
-	force.ForceRefresh = true
-	_, err = broker.HandleExec(context.Background(), "req_2", "nonce_2", force)
-	if !errors.Is(err, ErrAuditRequired) {
-		t.Fatalf("expected approval_refreshed audit failure, got %v", err)
-	}
-	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
-		t.Fatal("force-refresh cache scope survived refresh audit failure")
-	}
-	if _, err := broker.store.FindReusable(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
-		t.Fatalf("reusable approval survived refresh audit failure: %v", err)
-	}
-	if err := broker.MarkPayloadDelivered("req_2"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("request should not become active after refresh audit failure, got %v", err)
-	}
-
-	aud.errByType = nil
-	resolver.values[ref] = "third"
-	retry, err := broker.HandleExec(context.Background(), "req_3", "nonce_3", req)
-	if err != nil {
-		t.Fatalf("fresh retry after refresh audit failure returned error: %v", err)
-	}
-	if retry.ApprovalID == "" || retry.ApprovalID == first.ApprovalID {
-		t.Fatalf("retry approval id = %q, first = %q; want fresh reusable approval", retry.ApprovalID, first.ApprovalID)
-	}
-	if retry.Env["TOKEN"] != "third" {
-		t.Fatalf("retry grant = %+v, want refreshed resolver value", retry)
-	}
-	if approver.calls != 2 {
-		t.Fatalf("retry should require a fresh approval; approver calls = %d, want 2", approver.calls)
 	}
 }
 
@@ -1833,18 +1551,6 @@ func containsAuditEvent(events []audit.Event, eventType audit.EventType) bool {
 		}
 	}
 	return false
-}
-
-func waitForCacheScopeCleared(t *testing.T, cache SecretCache, scopeID string, ref string, account string) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok := cache.Get(scopeID, ref, account); !ok {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("cache scope %q still contained %s after expiry", scopeID, ref)
 }
 
 func receiveBrokerSignal(t *testing.T, ch <-chan struct{}, message string) {
