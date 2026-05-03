@@ -212,6 +212,9 @@ NEXT=op://Example/Next/token
 	if got := lookupTestEnv(req.Env, "REMOVED"); got != "plain-now" {
 		t.Fatalf("REMOVED = %q, want plain-now", got)
 	}
+	if req.EnvironmentFingerprint != request.EnvironmentFingerprint(req.Env) {
+		t.Fatalf("environment fingerprint = %q, want fingerprint of effective env", req.EnvironmentFingerprint)
+	}
 }
 
 func TestParseExecEnvFileDoesNotLoadDefaultProfile(t *testing.T) {

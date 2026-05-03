@@ -1036,11 +1036,15 @@ func approvalTestRequest(t *testing.T, expiresAt time.Time) request.ExecRequest 
 		ResolvedExecutable: "/opt/homebrew/bin/terraform",
 		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
 		CWD:                "/tmp/project",
-		Secrets:            []request.Secret{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
-		ReceivedAt:         expiresAt.Add(-request.DefaultExecTTL),
-		ExpiresAt:          expiresAt,
-		TTL:                request.DefaultExecTTL,
-		DeliveryMode:       request.DeliveryEnvExec,
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{
+			"PATH=/opt/homebrew/bin",
+			"NODE_OPTIONS=--require ./safe.js",
+		}),
+		Secrets:      []request.Secret{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		ReceivedAt:   expiresAt.Add(-request.DefaultExecTTL),
+		ExpiresAt:    expiresAt,
+		TTL:          request.DefaultExecTTL,
+		DeliveryMode: request.DeliveryEnvExec,
 	}
 }
 
