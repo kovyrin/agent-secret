@@ -243,24 +243,14 @@ Use these priorities for review findings:
 
 Severity should describe concrete product harm, not generic security anxiety.
 
-## Current Finding Map
+## Review Finding Ledger
 
-The 2026-05-03 review produced these findings against this model:
+This document is the stable review contract, not the live issue tracker.
+Current open findings live in GitHub issues named `ASR-NNN`. Historical review
+reports live in `docs/release-code-review-*.md` and may describe findings that
+have since been fixed.
 
-- ASR-021 violates the release and install boundary because the installer checks
-  Apple acceptance but not the expected Agent Secret signer or bundle identity.
-- ASR-022 is a residual CLI-to-child-process launch issue because executable
-  identity is verified by path before `exec`, not launched atomically.
-- ASR-023 violates the CLI-to-daemon startup boundary because readiness can be
-  reported against a live but untrusted socket.
-- ASR-024 violates the daemon-to-approver boundary because the Swift approver
-  renders requests from any socket it is pointed at.
-- ASR-025 violates the audit filesystem boundary because audit log opens follow
-  symlinks and can append to an arbitrary user-owned file.
-- ASR-026 violates the release and install boundary because uninstall can
-  recursively delete environment-selected paths.
-- ASR-027 violates the documentation goal because release and smoke-test docs
-  describe behavior that no longer matches the code.
-
-Future reviews should either map findings to the boundaries above or propose an
-explicit update to this document.
+When a review produces a finding, the finding should map to one of the trust
+boundaries above, or it should propose an explicit update to this threat model.
+Fix status, PR links, and closure evidence belong in the GitHub issue and PR
+history rather than in this model.
