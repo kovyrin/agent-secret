@@ -61,6 +61,7 @@ type ReuseKey struct {
 	ResolvedExecutable     string
 	ExecutableIdentity     fileidentity.Identity
 	CWD                    string
+	EnvironmentFingerprint string
 	Secrets                []SecretGrant
 	DeliveryMode           request.DeliveryMode
 	TTL                    time.Duration
@@ -344,6 +345,7 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 		ResolvedExecutable:     req.ResolvedExecutable,
 		ExecutableIdentity:     req.ExecutableIdentity,
 		CWD:                    req.CWD,
+		EnvironmentFingerprint: req.EnvironmentFingerprint,
 		Secrets:                secrets,
 		DeliveryMode:           req.DeliveryMode,
 		TTL:                    req.TTL,
@@ -359,6 +361,7 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 		k.ResolvedExecutable == other.ResolvedExecutable &&
 		k.ExecutableIdentity == other.ExecutableIdentity &&
 		k.CWD == other.CWD &&
+		k.EnvironmentFingerprint == other.EnvironmentFingerprint &&
 		slices.Equal(k.Secrets, other.Secrets) &&
 		k.DeliveryMode == other.DeliveryMode &&
 		k.TTL == other.TTL &&

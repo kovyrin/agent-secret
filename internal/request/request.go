@@ -1,6 +1,8 @@
 package request
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -83,6 +85,7 @@ type ExecRequest struct {
 	ExecutableIdentity     fileidentity.Identity
 	CWD                    string
 	Env                    []string `json:"-"`
+	EnvironmentFingerprint string
 	Secrets                []Secret
 	TTL                    time.Duration
 	ReceivedAt             time.Time
@@ -136,6 +139,9 @@ func (r ExecRequest) ValidateForDaemon() error {
 	}
 	if r.ExecutableIdentity.IsZero() {
 		return fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
+	}
+	if err := validateEnvironmentFingerprint(r.EnvironmentFingerprint); err != nil {
+		return err
 	}
 	if len(r.Command) == 0 || r.Command[0] == "" {
 		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
@@ -218,6 +224,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		ExecutableIdentity:     executableIdentity,
 		CWD:                    cwd,
 		Env:                    env,
+		EnvironmentFingerprint: EnvironmentFingerprint(env),
 		Secrets:                secrets,
 		TTL:                    ttl,
 		ReceivedAt:             receivedAt,
@@ -229,6 +236,16 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		ForceRefresh:           opts.ForceRefresh,
 		AllowMutableExecutable: opts.AllowMutableExecutable,
 	}, nil
+}
+
+func EnvironmentFingerprint(env []string) string {
+	canonical := canonicalEnv(env)
+	sum := sha256.New()
+	for _, entry := range canonical {
+		sum.Write([]byte(entry))
+		sum.Write([]byte{0})
+	}
+	return "env-v1:" + hex.EncodeToString(sum.Sum(nil))
 }
 
 func ParseSecretRef(ref string) (SecretRef, error) {
@@ -499,6 +516,48 @@ func lookupEnv(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func validateEnvironmentFingerprint(value string) error {
+	const prefix = "env-v1:"
+	if !strings.HasPrefix(value, prefix) {
+		return fmt.Errorf("%w: environment fingerprint is required", ErrInvalidRequest)
+	}
+	raw := strings.TrimPrefix(value, prefix)
+	decoded, err := hex.DecodeString(raw)
+	if err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("%w: invalid environment fingerprint", ErrInvalidRequest)
+	}
+	return nil
+}
+
+func canonicalEnv(env []string) []string {
+	values := make(map[string]string, len(env))
+	malformed := make([]string, 0)
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			malformed = append(malformed, entry)
+			continue
+		}
+		values[key] = value
+	}
+
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	out := make([]string, 0, len(keys)+len(malformed))
+	for _, key := range keys {
+		out = append(out, key+"="+values[key])
+	}
+	slices.Sort(malformed)
+	for _, entry := range malformed {
+		out = append(out, "malformed:"+entry)
+	}
+	return out
 }
 
 func evalPath(path string) string {

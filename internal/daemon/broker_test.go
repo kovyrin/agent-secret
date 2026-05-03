@@ -750,6 +750,56 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	}
 }
 
+func TestBrokerReusableApprovalMissesWhenEnvironmentFingerprintChanges(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+		Cache:    policy.NewSecretCache(),
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+
+	resolver.values[ref] = "second"
+	changed := req
+	changed.EnvironmentFingerprint = request.EnvironmentFingerprint([]string{
+		"PATH=/opt/homebrew/bin",
+		"NODE_OPTIONS=--require ./changed.js",
+	})
+	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", changed)
+	if err != nil {
+		t.Fatalf("second HandleExec returned error: %v", err)
+	}
+	if second.ApprovalID == first.ApprovalID {
+		t.Fatalf("changed environment reused approval %q", first.ApprovalID)
+	}
+	if second.Env["TOKEN"] != "second" {
+		t.Fatalf("changed environment used cached value from old approval: %+v", second.Env)
+	}
+	if approver.calls != 2 {
+		t.Fatalf("approver calls = %d, want fresh approval after env fingerprint change", approver.calls)
+	}
+	if len(resolver.Calls()) != 2 {
+		t.Fatalf("resolver calls = %v, want refetch after env fingerprint change", resolver.Calls())
+	}
+	if reuses := aud.Reuses(); len(reuses) != 0 {
+		t.Fatalf("changed environment emitted reuse audit: %+v", reuses)
+	}
+}
+
 func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	t.Parallel()
 
@@ -1311,11 +1361,15 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 		ResolvedExecutable: "/opt/homebrew/bin/terraform",
 		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
 		CWD:                "/tmp/project",
-		Secrets:            reqSecrets,
-		TTL:                request.DefaultExecTTL,
-		ReceivedAt:         now,
-		ExpiresAt:          now.Add(request.DefaultExecTTL),
-		DeliveryMode:       request.DeliveryEnvExec,
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{
+			"PATH=/opt/homebrew/bin",
+			"NODE_OPTIONS=--require ./safe.js",
+		}),
+		Secrets:      reqSecrets,
+		TTL:          request.DefaultExecTTL,
+		ReceivedAt:   now,
+		ExpiresAt:    now.Add(request.DefaultExecTTL),
+		DeliveryMode: request.DeliveryEnvExec,
 	}
 }
 

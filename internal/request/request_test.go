@@ -1,6 +1,7 @@
 package request
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -52,6 +53,12 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	}
 	if req.ExecutableIdentity.IsZero() {
 		t.Fatal("executable identity was not captured")
+	}
+	if req.EnvironmentFingerprint == "" {
+		t.Fatal("environment fingerprint was not captured")
+	}
+	if req.EnvironmentFingerprint != EnvironmentFingerprint(req.Env) {
+		t.Fatalf("environment fingerprint = %q, want fingerprint of request env", req.EnvironmentFingerprint)
 	}
 	if len(req.Secrets) != 2 || req.Secrets[0].Ref.Raw != req.Secrets[1].Ref.Raw {
 		t.Fatalf("duplicate refs with different aliases should be preserved: %+v", req.Secrets)
@@ -202,6 +209,60 @@ func TestNewExecRecordsOverrideAliases(t *testing.T) {
 	}
 }
 
+func TestEnvironmentFingerprintBindsEffectiveEnvWithoutRawValues(t *testing.T) {
+	t.Parallel()
+
+	base := []string{
+		"PATH=/usr/bin",
+		"NODE_OPTIONS=--require ./safe.js",
+		"DUP=first",
+		"DUP=last",
+	}
+	reordered := []string{
+		"DUP=first",
+		"NODE_OPTIONS=--require ./safe.js",
+		"PATH=/usr/bin",
+		"DUP=last",
+	}
+	if EnvironmentFingerprint(base) != EnvironmentFingerprint(reordered) {
+		t.Fatal("same effective environment produced different fingerprints")
+	}
+
+	changedValue := []string{"PATH=/usr/bin", "NODE_OPTIONS=--require ./evil.js", "DUP=last"}
+	if EnvironmentFingerprint(base) == EnvironmentFingerprint(changedValue) {
+		t.Fatal("changed environment value did not change fingerprint")
+	}
+
+	addedVariable := append(slices.Clone(base), "AWS_PROFILE=prod")
+	if EnvironmentFingerprint(base) == EnvironmentFingerprint(addedVariable) {
+		t.Fatal("added environment variable did not change fingerprint")
+	}
+}
+
+func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir)
+	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
+		o.Env = append(o.Env, "CANARY_SECRET_ENV=do-not-serialize")
+	}))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	if strings.Contains(string(raw), "CANARY_SECRET_ENV") || strings.Contains(string(raw), "do-not-serialize") {
+		t.Fatalf("request JSON included raw environment data: %s", raw)
+	}
+	if !strings.Contains(string(raw), req.EnvironmentFingerprint) {
+		t.Fatalf("request JSON omitted environment fingerprint: %s", raw)
+	}
+}
+
 func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T) {
 	t.Parallel()
 
@@ -243,6 +304,8 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 		{name: "relative cwd", mutate: func(r *ExecRequest) { r.CWD = "project" }, want: ErrInvalidRequest},
 		{name: "relative resolved executable", mutate: func(r *ExecRequest) { r.ResolvedExecutable = "tool" }, want: ErrInvalidRequest},
 		{name: "missing executable identity", mutate: func(r *ExecRequest) { r.ExecutableIdentity = fileidentity.Identity{} }, want: ErrInvalidRequest},
+		{name: "missing environment fingerprint", mutate: func(r *ExecRequest) { r.EnvironmentFingerprint = "" }, want: ErrInvalidRequest},
+		{name: "malformed environment fingerprint", mutate: func(r *ExecRequest) { r.EnvironmentFingerprint = "env-v1:not-hex" }, want: ErrInvalidRequest},
 		{name: "missing command", mutate: func(r *ExecRequest) { r.Command = nil }, want: ErrInvalidCommand},
 		{name: "session socket delivery", mutate: func(r *ExecRequest) {
 			r.DeliveryMode = DeliverySessionSocket
