@@ -146,14 +146,14 @@ default_profile: terraform-cloudflare
 
 profiles:
   terraform-cloudflare:
-    account: Fixture
+    account: Example Corp
     reason: Terraform DNS management
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
       PREVIEW_TOKEN:
         ref: op://Example/Preview/token
-        account: Fixture Preview
+        account: Example Preview
 
   ansible-with-dns:
     include:

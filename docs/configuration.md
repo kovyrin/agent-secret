@@ -49,14 +49,14 @@ default_profile: terraform-cloudflare
 
 profiles:
   terraform-cloudflare:
-    account: Fixture
+    account: Example Corp
     reason: Terraform DNS management
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
       PREVIEW_TOKEN:
         ref: op://Example/Preview/token
-        account: Fixture Preview
+        account: Example Preview
 
   ansible:
     include:
@@ -132,7 +132,7 @@ Secret entries can also be objects when one secret needs its own account:
 secrets:
   TOKEN:
     ref: op://Example/Item/token
-    account: Fixture Preview
+    account: Example Preview
 ```
 
 Aliases must look like environment variable names, for example
