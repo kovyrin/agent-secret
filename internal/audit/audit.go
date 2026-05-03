@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/policy"
@@ -176,44 +177,114 @@ func openPath(path string, now func() time.Time) (*Writer, error) {
 	if now == nil {
 		now = time.Now
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("create audit directory: %w", err)
-	}
-	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil { //nolint:gosec // G302: audit directories need owner execute/search while denying group and other access.
-		return nil, fmt.Errorf("secure audit directory: %w", err)
+	if err := prepareAuditDirectory(filepath.Dir(path)); err != nil {
+		return nil, err
 	}
 	if err := rejectInsecureFile(path); err != nil {
 		return nil, err
 	}
 
-	//nolint:gosec // G304: audit path is daemon-owned; openPath rejects insecure existing files before and after creation.
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := openAuditLog(path)
 	if err != nil {
-		return nil, fmt.Errorf("open audit log: %w", err)
-	}
-	if err := rejectInsecureFile(path); err != nil {
-		_ = file.Close()
 		return nil, err
 	}
 
 	return &Writer{now: now, file: file}, nil
 }
 
+func prepareAuditDirectory(dir string) error {
+	_, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create audit directory: %w", err)
+		}
+		return rejectInsecureDirectory(dir)
+	}
+	if err != nil {
+		return fmt.Errorf("stat audit directory: %w", err)
+	}
+	return rejectInsecureDirectory(dir)
+}
+
+func rejectInsecureDirectory(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("stat audit directory: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s is a symlink", ErrInsecureAuditLog, dir)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s is not a directory", ErrInsecureAuditLog, dir)
+	}
+	if info.Mode().Perm() != 0o700 {
+		return fmt.Errorf("%w: %s has mode %s", ErrInsecureAuditLog, dir, info.Mode().Perm())
+	}
+	if uid, ok := fileOwnerUID(info); ok && uid != os.Getuid() {
+		return fmt.Errorf("%w: %s is owned by uid %d", ErrInsecureAuditLog, dir, uid)
+	}
+	return nil
+}
+
 func rejectInsecureFile(path string) error {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("stat audit log: %w", err)
 	}
-	if info.IsDir() {
-		return fmt.Errorf("%w: %s is a directory", ErrInsecureAuditLog, path)
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s is a symlink", ErrInsecureAuditLog, path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s is not a regular file", ErrInsecureAuditLog, path)
 	}
 	if info.Mode().Perm() != 0o600 {
 		return fmt.Errorf("%w: %s has mode %s", ErrInsecureAuditLog, path, info.Mode().Perm())
 	}
+	if uid, ok := fileOwnerUID(info); ok && uid != os.Getuid() {
+		return fmt.Errorf("%w: %s is owned by uid %d", ErrInsecureAuditLog, path, uid)
+	}
 	return nil
+}
+
+func openAuditLog(path string) (*os.File, error) {
+	//nolint:gosec // G304: audit path is fixed under the user's home; O_NOFOLLOW and fstat checks bind it to a regular owner-private file.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open audit log: %w", err)
+	}
+	if err := rejectInsecureOpenFile(file, path); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+func rejectInsecureOpenFile(file *os.File, path string) error {
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat open audit log: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s is not a regular file", ErrInsecureAuditLog, path)
+	}
+	if info.Mode().Perm() != 0o600 {
+		return fmt.Errorf("%w: %s has mode %s", ErrInsecureAuditLog, path, info.Mode().Perm())
+	}
+	if uid, ok := fileOwnerUID(info); ok && uid != os.Getuid() {
+		return fmt.Errorf("%w: %s is owned by uid %d", ErrInsecureAuditLog, path, uid)
+	}
+	return nil
+}
+
+func fileOwnerUID(info os.FileInfo) (int, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return int(stat.Uid), true
 }
 
 func secretRefs(secrets []request.Secret) []SecretRef {
