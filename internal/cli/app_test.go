@@ -31,10 +31,9 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 		Audit:    &appAudit{},
 	})
 	defer cleanup()
-	socketPath := client.SocketPath
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: socketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
 	code := app.Run(context.Background(), []string{
@@ -76,7 +75,7 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 	t.Setenv("AGENT_SECRET_APP_EXPECT_PLAIN", "from-file")
 	t.Setenv("TOKEN", "parent-token")
@@ -111,7 +110,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
 	code := app.Run(context.Background(), []string{
@@ -139,7 +138,7 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 	app.DoctorApproverCheck = func(context.Context) error { return nil }
 	app.DoctorOnePasswordCheck = func(context.Context) error { return nil }
 
@@ -172,7 +171,7 @@ func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 	app.DoctorApproverCheck = func(context.Context) error { return nil }
 	app.DoctorOnePasswordCheck = func(context.Context) error {
 		return errors.New("desktop integration unavailable")
@@ -199,7 +198,7 @@ func TestAppDaemonStartAndStopCommands(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 
 	if code := app.Run(context.Background(), []string{"daemon", "start"}); code != 0 {
 		t.Fatalf("daemon start exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
@@ -328,7 +327,7 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 	entropyErr := errors.New("entropy unavailable")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: client.SocketPath}, &stdout, &stderr)
+	app := NewApp(appTestManager(client), &stdout, &stderr)
 	app.RandomReader = failingRandomReader{err: entropyErr}
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
@@ -401,6 +400,10 @@ func runAppExecHelper() {
 
 type appTestClient struct {
 	SocketPath string
+}
+
+func appTestManager(client appTestClient) daemon.Manager {
+	return daemon.Manager{SocketPath: client.SocketPath, DaemonPath: os.Args[0]}
 }
 
 type appApprover struct {
