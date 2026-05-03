@@ -40,7 +40,7 @@ func newGrantIssuer(
 		fetchLimit: fetchLimit,
 		stopped:    stopped,
 	}
-	issuer.reusable = newReusableGrantManager(now, store, cache, stopped, audit, issuer)
+	issuer.reusable = newReusableGrantManager(now, store, cache, stopped)
 	return issuer
 }
 
@@ -54,7 +54,7 @@ func (g *grantIssuer) issue(
 		return ExecGrant{}, err
 	}
 
-	grant, err := g.reusable.issueGrant(ctx, req)
+	grant, err := g.issueReusableGrant(ctx, req)
 	if err != nil {
 		return ExecGrant{}, g.requestError(ctx, req, err)
 	}
@@ -129,6 +129,54 @@ func (g *grantIssuer) requestError(ctx context.Context, req request.ExecRequest,
 	return err
 }
 
+func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRequest) (ExecGrant, error) {
+	approval, err := g.reusable.reserve(ctx, req, g.audit)
+	if err != nil {
+		return ExecGrant{}, err
+	}
+	if approval.ID == "" {
+		return ExecGrant{}, nil
+	}
+	delivered := false
+	defer func() {
+		if !delivered {
+			g.reusable.releaseReservation(approval.ID)
+		}
+	}()
+	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
+		return ExecGrant{}, err
+	}
+
+	var values map[string]string
+	if req.ForceRefresh {
+		refValues, err := g.resolveReusableRefresh(ctx, req)
+		if err != nil {
+			return ExecGrant{}, err
+		}
+		values, err = g.refreshedReusableValues(ctx, approval, req, refValues)
+		if err != nil {
+			return ExecGrant{}, err
+		}
+	} else {
+		values, err = g.reusable.cachedValues(approval.ID, req.Secrets)
+		if err != nil {
+			return ExecGrant{}, err
+		}
+	}
+	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
+		return ExecGrant{}, err
+	}
+
+	delivered = true
+	return ExecGrant{
+		Env:                values,
+		SecretAliases:      aliases(req.Secrets),
+		ApprovalID:         approval.ID,
+		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
+		approvalExpiresAt:  approval.ExpiresAt,
+	}, nil
+}
+
 func (g *grantIssuer) resolveReusableRefresh(
 	ctx context.Context,
 	req request.ExecRequest,
@@ -150,11 +198,29 @@ func (g *grantIssuer) recordReusableRefresh(
 	return g.recordRequiredAudit(ctx, event)
 }
 
-func (g *grantIssuer) ensureReusableRequestActive(
+func (g *grantIssuer) refreshedReusableValues(
 	ctx context.Context,
+	approval policy.ReusableApproval,
 	req request.ExecRequest,
-) error {
-	return g.ensureRequestActive(ctx, req)
+	refValues map[secretIdentity]string,
+) (map[string]string, error) {
+	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
+		return nil, err
+	}
+	values := fanoutValues(req.Secrets, refValues)
+	if err := g.reusable.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
+		g.reusable.rollbackApproval(approval.ID)
+		return nil, err
+	}
+	if err := g.recordReusableRefresh(ctx, req, approval); err != nil {
+		g.reusable.rollbackApproval(approval.ID)
+		return nil, err
+	}
+	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
+		g.reusable.rollbackApproval(approval.ID)
+		return nil, err
+	}
+	return values, nil
 }
 
 func (g *grantIssuer) preflightAudit(ctx context.Context) error {

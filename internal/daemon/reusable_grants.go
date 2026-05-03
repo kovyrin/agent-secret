@@ -18,14 +18,6 @@ type reusableGrantManager struct {
 	cache   SecretCache
 	expiry  map[string]*time.Timer
 	stopped func() bool
-	audit   policy.ReuseAuditSink
-	deps    reusableGrantDependencies
-}
-
-type reusableGrantDependencies interface {
-	resolveReusableRefresh(ctx context.Context, req request.ExecRequest) (map[secretIdentity]string, error)
-	recordReusableRefresh(ctx context.Context, req request.ExecRequest, approval policy.ReusableApproval) error
-	ensureReusableRequestActive(ctx context.Context, req request.ExecRequest) error
 }
 
 func newReusableGrantManager(
@@ -33,8 +25,6 @@ func newReusableGrantManager(
 	store *policy.Store,
 	cache SecretCache,
 	stopped func() bool,
-	audit policy.ReuseAuditSink,
-	deps reusableGrantDependencies,
 ) *reusableGrantManager {
 	if stopped == nil {
 		stopped = func() bool { return false }
@@ -45,8 +35,6 @@ func newReusableGrantManager(
 		cache:   cache,
 		expiry:  make(map[string]*time.Timer),
 		stopped: stopped,
-		audit:   audit,
-		deps:    deps,
 	}
 }
 
@@ -146,17 +134,6 @@ func (m *reusableGrantManager) ensureApprovalActive(approvalID string, expiresAt
 	return ErrRequestExpired
 }
 
-func (m *reusableGrantManager) ensureGrantActive(
-	ctx context.Context,
-	req request.ExecRequest,
-	approval policy.ReusableApproval,
-) error {
-	if err := m.deps.ensureReusableRequestActive(ctx, req); err != nil {
-		return err
-	}
-	return m.ensureApprovalActive(approval.ID, approval.ExpiresAt)
-}
-
 func (m *reusableGrantManager) scheduleExpiry(approvalID string, expiresAt time.Time) {
 	ttl := expiresAt.Sub(m.now())
 	if ttl <= 0 {
@@ -219,82 +196,6 @@ func (m *reusableGrantManager) cachedValues(
 		env[secret.Alias] = value
 	}
 	return env, nil
-}
-
-func (m *reusableGrantManager) issueGrant(
-	ctx context.Context,
-	req request.ExecRequest,
-) (ExecGrant, error) {
-	approval, err := m.reserve(ctx, req, m.audit)
-	if err != nil {
-		return ExecGrant{}, err
-	}
-	if approval.ID == "" {
-		return ExecGrant{}, nil
-	}
-	delivered := false
-	defer func() {
-		if !delivered {
-			m.releaseReservation(approval.ID)
-		}
-	}()
-	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
-		return ExecGrant{}, err
-	}
-
-	var values map[string]string
-	if req.ForceRefresh {
-		refValues, err := m.deps.resolveReusableRefresh(ctx, req)
-		if err != nil {
-			return ExecGrant{}, err
-		}
-		values, err = m.refreshedValues(ctx, approval, req, refValues)
-		if err != nil {
-			return ExecGrant{}, err
-		}
-	} else {
-		values, err = m.cachedValues(approval.ID, req.Secrets)
-		if err != nil {
-			return ExecGrant{}, err
-		}
-	}
-	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
-		return ExecGrant{}, err
-	}
-
-	delivered = true
-	return ExecGrant{
-		Env:                values,
-		SecretAliases:      aliases(req.Secrets),
-		ApprovalID:         approval.ID,
-		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
-		approvalExpiresAt:  approval.ExpiresAt,
-	}, nil
-}
-
-func (m *reusableGrantManager) refreshedValues(
-	ctx context.Context,
-	approval policy.ReusableApproval,
-	req request.ExecRequest,
-	refValues map[secretIdentity]string,
-) (map[string]string, error) {
-	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
-		return nil, err
-	}
-	values := fanoutValues(req.Secrets, refValues)
-	if err := m.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
-		m.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	if err := m.deps.recordReusableRefresh(ctx, req, approval); err != nil {
-		m.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
-		m.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	return values, nil
 }
 
 func (m *reusableGrantManager) createGrant(
