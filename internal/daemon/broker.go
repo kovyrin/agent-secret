@@ -165,11 +165,8 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 			return ExecGrant{}, b.requestError(execCtx, req, err)
 		}
 	}
-	if err := b.requestActive(execCtx, req); err != nil {
+	if err := b.ensureGrantStillActive(execCtx, req, grant.ApprovalID, grant.approvalExpiresAt); err != nil {
 		b.reusable.rollbackGrant(grant)
-		return ExecGrant{}, err
-	}
-	if err := b.reusable.active(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
 		return ExecGrant{}, err
 	}
 	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.approvalExpiresAt)
@@ -179,11 +176,8 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 		b.reusable.rollbackGrant(grant)
 		return ExecGrant{}, err
 	}
-	if err := b.requestActive(execCtx, req); err != nil {
+	if err := b.ensureGrantStillActive(execCtx, req, grant.ApprovalID, grant.approvalExpiresAt); err != nil {
 		b.reusable.rollbackGrant(grant)
-		return ExecGrant{}, err
-	}
-	if err := b.reusable.active(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
 		return ExecGrant{}, err
 	}
 
@@ -244,6 +238,18 @@ func (b *Broker) requestActive(ctx context.Context, req request.ExecRequest) err
 		return ErrRequestExpired
 	}
 	return nil
+}
+
+func (b *Broker) ensureGrantStillActive(
+	ctx context.Context,
+	req request.ExecRequest,
+	approvalID string,
+	approvalExpiresAt time.Time,
+) error {
+	if err := b.requestActive(ctx, req); err != nil {
+		return err
+	}
+	return b.reusable.active(approvalID, approvalExpiresAt)
 }
 
 func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err error) error {
@@ -423,7 +429,7 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 			b.reusable.releaseReservation(approval.ID)
 		}
 	}()
-	if err := b.requestActive(ctx, req); err != nil {
+	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
 		return ExecGrant{}, err
 	}
 
@@ -432,15 +438,12 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 	if req.ForceRefresh {
 		values, valueErr = b.refreshedReusableValues(ctx, approval, req)
 	} else {
-		if err := b.reusable.active(approval.ID, approval.ExpiresAt); err != nil {
-			return ExecGrant{}, err
-		}
 		values, valueErr = b.reusable.cachedValues(approval.ID, req.Secrets)
 	}
 	if valueErr != nil {
 		return ExecGrant{}, valueErr
 	}
-	if err := b.reusable.active(approval.ID, approval.ExpiresAt); err != nil {
+	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
 		return ExecGrant{}, err
 	}
 
@@ -615,10 +618,7 @@ func (b *Broker) refreshedReusableValues(
 	if err != nil {
 		return nil, b.requestError(ctx, req, err)
 	}
-	if err := b.requestActive(ctx, req); err != nil {
-		return nil, err
-	}
-	if err := b.reusable.active(approval.ID, approval.ExpiresAt); err != nil {
+	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
 		return nil, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
@@ -632,11 +632,8 @@ func (b *Broker) refreshedReusableValues(
 		b.reusable.rollbackApproval(approval.ID)
 		return nil, err
 	}
-	if err := b.requestActive(ctx, req); err != nil {
+	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
 		b.reusable.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	if err := b.reusable.active(approval.ID, approval.ExpiresAt); err != nil {
 		return nil, err
 	}
 	return values, nil
