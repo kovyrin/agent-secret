@@ -10,6 +10,9 @@ skills_dir="${AGENT_SECRET_SKILLS_DIR:-$default_skills_dir}"
 remove_audit_logs="${AGENT_SECRET_REMOVE_AUDIT_LOGS:-0}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
 allow_custom_uninstall_paths="${AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS:-0}"
+expected_team_id="B6L7QLWTZW"
+expected_app_bundle_id="com.kovyrin.agent-secret"
+expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
 default_support_dir="$HOME/Library/Application Support/agent-secret"
 default_audit_dir="$HOME/Library/Logs/agent-secret"
 
@@ -21,22 +24,68 @@ fail() {
   exit 1
 }
 
+plist_value() {
+  plist="$1"
+  key="$2"
+
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null
+}
+
+bundle_identifier_matches() {
+  bundle="$1"
+  expected="$2"
+  plist="$bundle/Contents/Info.plist"
+
+  [ -f "$plist" ] || return 1
+  got="$(plist_value "$plist" CFBundleIdentifier)" || return 1
+  [ "$got" = "$expected" ]
+}
+
+codesign_team_id() {
+  path="$1"
+
+  details="$(codesign -dv --verbose=4 "$path" 2>&1)" || return 1
+  printf '%s\n' "$details" |
+    awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }'
+}
+
+team_id_matches() {
+  path="$1"
+
+  team_id="$(codesign_team_id "$path")" || return 1
+  [ "$team_id" = "$expected_team_id" ]
+}
+
+existing_app_is_trusted_for_stop() {
+  daemon_app="$target_app/Contents/Library/Helpers/AgentSecretDaemon.app"
+  cli="$target_app/Contents/Resources/bin/agent-secret"
+
+  [ -x "$cli" ] || return 1
+  command -v /usr/libexec/PlistBuddy >/dev/null 2>&1 || return 1
+  command -v codesign >/dev/null 2>&1 || return 1
+  bundle_identifier_matches "$target_app" "$expected_app_bundle_id" || return 1
+  [ -d "$daemon_app" ] || return 1
+  bundle_identifier_matches "$daemon_app" "$expected_daemon_bundle_id" || return 1
+  codesign --verify --deep --strict "$target_app" >/dev/null 2>&1 || return 1
+  team_id_matches "$target_app" || return 1
+  team_id_matches "$daemon_app" || return 1
+  team_id_matches "$cli" || return 1
+}
+
 stop_existing_daemon() {
   if [ "$no_stop_daemon" = "1" ]; then
     return
   fi
 
-  existing=""
-  if [ -x "$cli_link" ]; then
-    existing="$cli_link"
-  elif [ -x "$target_app/Contents/Resources/bin/agent-secret" ]; then
-    existing="$target_app/Contents/Resources/bin/agent-secret"
-  elif command -v agent-secret >/dev/null 2>&1; then
-    existing="$(command -v agent-secret)"
+  existing="$target_app/Contents/Resources/bin/agent-secret"
+  if [ ! -d "$target_app" ]; then
+    return
   fi
 
-  if [ -n "$existing" ]; then
+  if existing_app_is_trusted_for_stop; then
     "$existing" daemon stop >/dev/null 2>&1 || true
+  else
+    echo "agent-secret uninstall: skipping daemon stop because existing Agent Secret.app could not be verified" >&2
   fi
 }
 

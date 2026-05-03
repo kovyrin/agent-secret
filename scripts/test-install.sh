@@ -79,6 +79,16 @@ printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
 exit "${AGENT_SECRET_INSTALL_TEST_XCRUN_STATUS:-0}"
 SCRIPT
 
+  cat >"$fake_bin/agent-secret" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-path-agent-secret' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+exit 0
+SCRIPT
+
   cat >"$fake_bin/ditto" <<'SCRIPT'
 #!/bin/sh
 printf 'ditto %s %s\n' "$1" "$2" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
@@ -175,6 +185,7 @@ exit 64
 SCRIPT
 
   chmod 755 "$fake_bin/codesign" "$fake_bin/spctl" "$fake_bin/xcrun" \
+    "$fake_bin/agent-secret" \
     "$fake_bin/ditto" "$fake_bin/hdiutil"
 }
 
@@ -199,6 +210,17 @@ run_installer() {
 
   make_fixture "$run_dir"
   write_fake_tools "$fake_bin"
+  mkdir -p "$run_dir/bin-dir"
+  cat >"$run_dir/bin-dir/agent-secret" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-bin-dir-agent-secret' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+exit 0
+SCRIPT
+  chmod 755 "$run_dir/bin-dir/agent-secret"
   : >"$log"
 
   env \
@@ -352,6 +374,17 @@ test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
   fi
 }
 
+test_untrusted_existing_cli_is_not_used_for_daemon_stop() {
+  run_installer untrusted-existing-cli AGENT_SECRET_NO_STOP_DAEMON=0
+  log="$tmp_dir/untrusted-existing-cli/tools.log"
+
+  if grep -E '^fake-(bin-dir|path)-agent-secret daemon stop$' "$log" >/dev/null; then
+    echo "---- tool log ----" >&2
+    cat "$log" >&2
+    fail "installer executed an untrusted existing agent-secret during daemon stop"
+  fi
+}
+
 test_identity_checks_run
 test_identity_failure_stops_install
 test_wrong_team_id_stops_install
@@ -362,5 +395,6 @@ test_destination_overrides_require_guard
 test_destination_validation_rejects_bad_paths
 test_destination_validation_rejects_symlinked_parent_dirs
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
+test_untrusted_existing_cli_is_not_used_for_daemon_stop
 
 echo "test-install: ok"

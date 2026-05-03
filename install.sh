@@ -345,17 +345,15 @@ stop_existing_daemon() {
   fi
 
   target_app="$app_dir/Agent Secret.app"
-  existing=""
-  if [ -x "$target_app/Contents/Resources/bin/agent-secret" ]; then
-    existing="$target_app/Contents/Resources/bin/agent-secret"
-  elif [ -x "$bin_dir/agent-secret" ]; then
-    existing="$bin_dir/agent-secret"
-  elif command -v agent-secret >/dev/null 2>&1; then
-    existing="$(command -v agent-secret)"
+  existing="$target_app/Contents/Resources/bin/agent-secret"
+  if [ ! -d "$target_app" ]; then
+    return
   fi
 
-  if [ -n "$existing" ]; then
+  if (verify_app_identity "$target_app") >/dev/null 2>&1; then
     "$existing" daemon stop >/dev/null 2>&1 || true
+  else
+    echo "agent-secret install: skipping daemon stop because existing Agent Secret.app could not be verified" >&2
   fi
 }
 
