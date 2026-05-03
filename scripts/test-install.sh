@@ -263,8 +263,6 @@ SCRIPT
 
   local env_args=(
     PATH="$fake_bin:$PATH"
-    AGENT_SECRET_DMG="$artifact"
-    AGENT_SECRET_CHECKSUMS_FILE="$checksums"
     AGENT_SECRET_APP_DIR="$run_dir/apps"
     AGENT_SECRET_BIN_DIR="$run_dir/bin-dir"
     AGENT_SECRET_SKILLS_DIR="$run_dir/skills"
@@ -274,6 +272,8 @@ SCRIPT
   )
   if [ "$tool_mode" = "dev" ]; then
     env_args+=(
+      AGENT_SECRET_DMG="$artifact"
+      AGENT_SECRET_CHECKSUMS_FILE="$checksums"
       AGENT_SECRET_INSTALL_DEV_MODE=1
       AGENT_SECRET_INSTALL_TOOL_DIR="$fake_bin"
     )
@@ -367,9 +367,26 @@ test_trust_root_overrides_require_dev_mode() {
   fi
 }
 
+test_local_artifact_overrides_require_dev_mode() {
+  if run_installer_production local-dmg-override AGENT_SECRET_DMG="$tmp_dir/local.dmg"; then
+    fail "installer accepted local DMG override without dev mode"
+  fi
+  if run_installer_production local-checksums-override AGENT_SECRET_CHECKSUMS_FILE="$tmp_dir/checksums.txt"; then
+    fail "installer accepted local checksum override without dev mode"
+  fi
+  for name in local-dmg-override local-checksums-override; do
+    log="$tmp_dir/$name/tools.log"
+    if grep -E '^(hdiutil|ditto) ' "$log" >/dev/null; then
+      echo "---- tool log ----" >&2
+      cat "$log" >&2
+      fail "installer mounted or copied artifacts before rejecting $name"
+    fi
+  done
+}
+
 test_production_mode_ignores_fake_path_tools() {
-  if run_installer_production production-ignores-path; then
-    fail "production installer unexpectedly accepted the synthetic unsigned DMG"
+  if run_installer_production production-ignores-path AGENT_SECRET_DMG="$tmp_dir/local.dmg"; then
+    fail "production installer unexpectedly accepted a local DMG override"
   fi
 
   log="$tmp_dir/production-ignores-path/tools.log"
@@ -460,6 +477,7 @@ test_wrong_team_id_stops_install
 test_wrong_app_bundle_id_stops_install
 test_wrong_daemon_bundle_id_stops_install
 test_trust_root_overrides_require_dev_mode
+test_local_artifact_overrides_require_dev_mode
 test_production_mode_ignores_fake_path_tools
 test_destination_overrides_require_guard
 test_destination_validation_rejects_bad_paths
