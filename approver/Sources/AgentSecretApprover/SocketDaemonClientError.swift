@@ -1,35 +1,20 @@
 import Foundation
 
-/// Errors returned while talking to the local daemon socket.
 enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
-    /// The socket connect syscall failed.
     case connectFailed(Int32)
-    /// The daemon returned a structured error response.
     case daemonError(DaemonErrorCode)
-    /// The daemon closed the connection before a full line arrived.
     case disconnected
-    /// The daemon socket line exceeded the configured frame limit.
     case frameTooLarge(Int)
-    /// The daemon returned an unexpected response shape.
     case invalidResponse(String)
-    /// The daemon returned a response that could not be decoded.
     case malformedResponse(String, underlying: Error)
-    /// The socket path does not fit in a Unix socket address.
     case pathTooLong(String)
-    /// The socket read syscall failed.
     case readFailed(Int32)
-    /// The daemon did not send a complete response before the read timeout.
     case readTimedOut
-    /// Unix sockets are unavailable on this platform.
     case socketUnavailable
-    /// The connected socket peer is not the trusted Agent Secret daemon.
     case untrustedDaemon(String)
-    /// The socket write syscall failed.
     case writeFailed(Int32)
-    /// The daemon did not accept the request before the write timeout.
     case writeTimedOut
 
-    /// Human-readable error message for CLI output.
     var description: String {
         switch self {
         case let .connectFailed(errnoValue):

@@ -41,12 +41,10 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
         )
     }
 
-    /// Creates a one-time approval response.
     public static func approveOnce(requestID: String, nonce: String) -> Self {
         Self(requestID: requestID, nonce: nonce, decision: .approveOnce, reusableUses: nil)
     }
 
-    /// Creates a reusable approval response with the daemon-provided use limit.
     public static func approveReusable(requestID: String, nonce: String, reusableUses: Int) -> Self {
         Self(
             requestID: requestID,
@@ -56,12 +54,10 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
         )
     }
 
-    /// Creates a denial response.
     public static func deny(requestID: String, nonce: String) -> Self {
         Self(requestID: requestID, nonce: nonce, decision: .deny, reusableUses: nil)
     }
 
-    /// Creates a timeout response.
     public static func timeout(requestID: String, nonce: String) -> Self {
         Self(requestID: requestID, nonce: nonce, decision: .timeout, reusableUses: nil)
     }
