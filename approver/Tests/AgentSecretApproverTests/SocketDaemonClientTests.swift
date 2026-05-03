@@ -155,7 +155,7 @@ final class SocketDaemonClientTests: XCTestCase {
             )
         )
 
-        assertInvalidResponse("unexpected response type approval.pending") {
+        assertInvalidResponse("unexpected response type") {
             _ = try client.fetchPendingRequest()
         }
     }

@@ -18,7 +18,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
 
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "invalid ISO8601 date: \(value)"
+                debugDescription: "invalid ISO8601 date"
             )
         }
     }
@@ -88,22 +88,47 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         nonce: String? = nil
     ) throws -> DaemonEnvelope<Payload> {
         let data: Data = try transport.readLine()
-        let header: DaemonHeader = try decoder.decode(DaemonHeader.self, from: data)
+        let header: DaemonHeader = try decodeHeader(from: data)
         try validateHeader(header)
         if header.type == Self.typeError {
-            let response: DaemonEnvelope<DaemonErrorPayload> = try decoder.decode(
+            let response: DaemonEnvelope<DaemonErrorPayload> = try decodeEnvelope(
                 DaemonEnvelope<DaemonErrorPayload>.self,
-                from: data
+                from: data,
+                invalidMessage: "malformed daemon error response"
             )
             try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
             throw daemonError(from: response)
         }
         guard header.type == Self.typeOK else {
-            throw SocketDaemonClientError.invalidResponse("unexpected response type \(header.type)")
+            throw SocketDaemonClientError.invalidResponse("unexpected response type")
         }
-        let response: DaemonEnvelope<Payload> = try decoder.decode(DaemonEnvelope<Payload>.self, from: data)
+        let response: DaemonEnvelope<Payload> = try decodeEnvelope(
+            DaemonEnvelope<Payload>.self,
+            from: data,
+            invalidMessage: "malformed daemon response payload"
+        )
         try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
         return response
+    }
+
+    private func decodeHeader(from data: Data) throws -> DaemonHeader {
+        do {
+            return try decoder.decode(DaemonHeader.self, from: data)
+        } catch {
+            throw SocketDaemonClientError.invalidResponse("malformed daemon response header")
+        }
+    }
+
+    private func decodeEnvelope<Payload: Codable>(
+        _ type: DaemonEnvelope<Payload>.Type,
+        from data: Data,
+        invalidMessage: String
+    ) throws -> DaemonEnvelope<Payload> {
+        do {
+            return try decoder.decode(type, from: data)
+        } catch {
+            throw SocketDaemonClientError.invalidResponse(invalidMessage)
+        }
     }
 
     private func validateHeader(_ header: DaemonHeader) throws {
