@@ -162,6 +162,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -182,18 +185,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          artifacts=(
-            "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg"
-            "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-x86_64.dmg"
+          scripts/publish-draft-release.sh "$GITHUB_REF_NAME" \
+            "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \
+            "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-x86_64.dmg" \
             "dist/checksums.txt"
-          )
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${artifacts[@]}" --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              "${artifacts[@]}" \
-              --draft \
-              --verify-tag \
-              --title "$GITHUB_REF_NAME" \
-              --notes "macOS arm64 and x86_64 artifacts built from $GITHUB_SHA."
-          fi

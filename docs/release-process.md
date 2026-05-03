@@ -187,7 +187,9 @@ If a tag-triggered release fails before publication:
 1. Fix the issue on `main`.
 2. Use a new tag for the next release attempt when the previous draft assets
    should remain available for debugging.
-3. Delete failed test releases and tags when they are no longer useful:
+3. Rerun tag workflows only while the GitHub Release is still a draft. The
+   workflow refuses to replace assets on a published release.
+4. Delete failed test releases and tags when they are no longer useful:
 
    ```bash
    gh release delete vX.Y.Z-test.N --cleanup-tag --yes
