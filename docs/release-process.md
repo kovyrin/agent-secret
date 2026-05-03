@@ -159,10 +159,11 @@ Key and store the downloaded `.p8` directly in GitHub Secrets.
 
 ## Installer Bootstrap Documentation
 
-Unattended install examples must fetch `install.sh` from an immutable release
-tag. Pinned installs set `AGENT_SECRET_VERSION` to that same tag. Latest
-installs resolve the latest release tag first, then fetch `install.sh` from that
-tag. Do not pipe `main/install.sh` into a shell.
+Unattended install and uninstall examples must fetch `install.sh` or
+`uninstall.sh` from an immutable release tag. Pinned installs set
+`AGENT_SECRET_VERSION` to that same tag. Latest installs and uninstalls resolve
+the latest release tag first, then fetch the script from that tag. Do not pipe
+`main/install.sh` or `main/uninstall.sh` into a shell.
 
 ## Toolchain Pin Maintenance
 
