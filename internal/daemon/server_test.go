@@ -15,8 +15,8 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
 
 type allowPeerValidator struct{}
@@ -450,7 +450,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	now := daemonNow
 	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 1}}
 	broker := newTestBroker(t, BrokerOptions{
 		Now:      func() time.Time { return now },

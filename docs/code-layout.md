@@ -28,6 +28,7 @@ agent-secret/
     processhardening/            # Process-level hardening hooks
     profileconfig/               # Project-local profile config loading
     request/                     # Exec request model and secret ref parsing
+    secretcache/                 # Reusable/session secret value cache
     secretmem/                   # In-memory secret value handling
   approver/
     Sources/
@@ -59,8 +60,9 @@ owns approval ordering, reusable approval/cache state, socket request handling,
 `internal/daemon` is the main trust-boundary package. It contains the Unix
 socket protocol client/server, daemon manager, broker orchestration,
 approver-request queue, process launcher, peer validation hooks, stop/status
-handlers, and reusable secret cache. It depends on narrower packages for policy,
-request shapes, peer credentials, secret values, and audit output.
+handlers, and reusable approval coordination. It depends on narrower packages
+for policy, request shapes, peer credentials, cached secret values, and audit
+output.
 
 `internal/request` defines the value-free request model shared by CLI, daemon,
 policy, audit, and protocol code. It parses and validates `op://` reference
@@ -68,8 +70,8 @@ syntax but does not contact 1Password.
 
 `internal/policy` validates request rules and tracks reusable approvals,
 sessions, use counts, TTLs, and nonces without storing raw secret values.
-Reusable approval cache values live in `internal/daemon`, keyed by the policy
-scope.
+Reusable approval cache values live in `internal/secretcache`, keyed by the
+policy scope.
 
 `internal/opresolver` is the only Go package that creates the 1Password SDK
 desktop-app integration client and resolves approved refs. Integration tests for
@@ -88,6 +90,11 @@ refs become normal request secrets.
 `internal/secretmem` holds in-memory secret value primitives used where raw
 values are unavoidable after approval. It is deliberately separate from policy
 objects and audit data.
+
+`internal/secretcache` owns the daemon-controlled reusable/session cache built
+on `internal/secretmem`. It stores raw approved values only after approval and
+keeps that value-bearing surface out of policy objects, audit data, and approval
+view models.
 
 ## Swift Approver Boundary
 

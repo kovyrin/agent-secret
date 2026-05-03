@@ -16,6 +16,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
 
 const canarySecretValue = "synthetic-secret-value"
@@ -228,12 +229,12 @@ type failingSecretCache struct {
 	err           error
 	failPuts      int
 	puts          int
-	delegate      *policy.SecretCache
+	delegate      *secretcache.SecretCache
 	clearedScopes []string
 }
 
 func newFailingSecretCache(err error, failPuts int) *failingSecretCache {
-	return &failingSecretCache{err: err, failPuts: failPuts, delegate: policy.NewSecretCache()}
+	return &failingSecretCache{err: err, failPuts: failPuts, delegate: secretcache.NewSecretCache()}
 }
 
 func (c *failingSecretCache) Put(scopeID string, ref string, account string, value string) error {
@@ -674,7 +675,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
 		Resolver: resolver,
 		Audit:    aud,
-		Cache:    policy.NewSecretCache(),
+		Cache:    secretcache.NewSecretCache(),
 	})
 	if err != nil {
 		t.Fatalf("NewBroker returned error: %v", err)
@@ -865,7 +866,7 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	aud := &memoryAudit{}
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: aud, Cache: cache})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
@@ -925,7 +926,7 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	ref := "op://Example/Item/token"
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 2}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: approver,
 		Resolver: resolver,
@@ -986,7 +987,7 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 		Approver: approver,
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
-		Cache:    policy.NewSecretCache(),
+		Cache:    secretcache.NewSecretCache(),
 	})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 	req.ReusableUses = 2
@@ -1029,7 +1030,7 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 
 	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
 	broker, err := NewBroker(BrokerOptions{
@@ -1078,7 +1079,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 
 	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      func() time.Time { return now },
@@ -1130,7 +1131,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 
 	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	broker, err := NewBroker(BrokerOptions{
 		Now:      func() time.Time { return now },
 		Cache:    cache,
@@ -1173,7 +1174,7 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	cache := policy.NewSecretCache()
+	cache := secretcache.NewSecretCache()
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
 		Resolver: &mockResolver{values: map[string]string{ref: "value"}},

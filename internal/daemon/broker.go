@@ -11,6 +11,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
 
 var (
@@ -117,7 +118,7 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 	}
 	cache := opts.Cache
 	if cache == nil {
-		cache = policy.NewSecretCache()
+		cache = secretcache.NewSecretCache()
 	}
 	fetchLimit := opts.FetchLimit
 	if fetchLimit <= 0 {
