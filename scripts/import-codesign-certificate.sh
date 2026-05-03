@@ -24,13 +24,17 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+die() {
+  echo "import-codesign-certificate: $*" >&2
+  exit 1
+}
+
 require_tool() {
   local name="$1"
   local path="$2"
 
   if [[ ! -x "$path" ]]; then
-    echo "import-codesign-certificate: required command not found or not executable: $name ($path)" >&2
-    exit 1
+    die "required command not found or not executable: $name ($path)"
   fi
 }
 
@@ -64,11 +68,94 @@ append_keychain_to_search_list() {
   "$tool_security" list-keychains -d user -s "$keychain_path" "${existing_keychains[@]}"
 }
 
+strip_trailing_slashes() {
+  local value="$1"
+
+  while [[ "$value" != "/" && "${value%/}" != "$value" ]]; do
+    value="${value%/}"
+  done
+  printf '%s\n' "$value"
+}
+
+is_system_root_alias() {
+  case "$1" in
+    /etc | /tmp | /var)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+reject_symlinked_parent_dirs() {
+  local label="$1"
+  local path="$2"
+  local current="${path%/*}"
+  local next=""
+
+  if [[ "$current" == "$path" || "$current" == "" ]]; then
+    return
+  fi
+
+  while [[ "$current" != "/" ]]; do
+    if [[ -L "$current" ]] && ! is_system_root_alias "$current"; then
+      die "$label must not contain symlinked parent directories: $current"
+    fi
+
+    next="${current%/*}"
+    if [[ "$next" == "$current" || "$next" == "" ]]; then
+      current="/"
+    else
+      current="$next"
+    fi
+  done
+}
+
+validate_keychain_path() {
+  local path="$1"
+  local trusted_dir="$2"
+  local file_name="${path##*/}"
+
+  if [[ "$path" == "" ]]; then
+    die "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH is empty"
+  fi
+  case "$path" in
+    /*) ;;
+    *)
+      die "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH must be absolute: $path"
+      ;;
+  esac
+  case "$path" in
+    */../* | */.. | */./* | */.)
+      die "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH must not contain dot segments: $path"
+      ;;
+  esac
+  case "$file_name" in
+    agent-secret-codesign.keychain-db | agent-secret-codesign-*.keychain-db) ;;
+    *)
+      die "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH filename must be agent-secret-codesign*.keychain-db: $path"
+      ;;
+  esac
+  case "$path" in
+    "$trusted_dir"/*) ;;
+    *)
+      die "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH must be under trusted temp directory $trusted_dir: $path"
+      ;;
+  esac
+  reject_symlinked_parent_dirs "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH" "$path"
+}
+
 require_tool base64 "$tool_base64"
 require_tool security "$tool_security"
 require_tool uuidgen "$tool_uuidgen"
 require_tool mktemp "$tool_mktemp"
 require_tool rm "$tool_rm"
+
+trusted_keychain_dir="$(strip_trailing_slashes "${RUNNER_TEMP:-${TMPDIR:-/tmp}}")"
+if [[ "$trusted_keychain_dir" == "" ]]; then
+  trusted_keychain_dir="/tmp"
+fi
 
 cert_base64="${AGENT_SECRET_CODESIGN_CERT_P12_BASE64:-}"
 cert_path="${AGENT_SECRET_CODESIGN_CERT_P12_PATH:-}"
@@ -77,18 +164,17 @@ keychain_path="${AGENT_SECRET_CODESIGN_KEYCHAIN_PATH:-}"
 keychain_password="${AGENT_SECRET_CODESIGN_KEYCHAIN_PASSWORD:-}"
 
 if [[ "$cert_base64" == "" && "$cert_path" == "" ]]; then
-  echo "import-codesign-certificate: set AGENT_SECRET_CODESIGN_CERT_P12_BASE64 or AGENT_SECRET_CODESIGN_CERT_P12_PATH" >&2
-  exit 1
+  die "set AGENT_SECRET_CODESIGN_CERT_P12_BASE64 or AGENT_SECRET_CODESIGN_CERT_P12_PATH"
 fi
 
 if [[ "$cert_password" == "" ]]; then
-  echo "import-codesign-certificate: set AGENT_SECRET_CODESIGN_CERT_PASSWORD" >&2
-  exit 1
+  die "set AGENT_SECRET_CODESIGN_CERT_PASSWORD"
 fi
 
 if [[ "$keychain_path" == "" ]]; then
-  keychain_path="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/agent-secret-codesign.keychain-db"
+  keychain_path="$trusted_keychain_dir/agent-secret-codesign.keychain-db"
 fi
+validate_keychain_path "$keychain_path" "$trusted_keychain_dir"
 
 if [[ "$keychain_password" == "" ]]; then
   keychain_password="$("$tool_uuidgen")"
@@ -106,8 +192,7 @@ if [[ "$cert_base64" != "" ]]; then
 fi
 
 if [[ ! -f "$cert_path" ]]; then
-  echo "import-codesign-certificate: certificate file does not exist: $cert_path" >&2
-  exit 1
+  die "certificate file does not exist: $cert_path"
 fi
 
 "$tool_rm" -f "$keychain_path"
