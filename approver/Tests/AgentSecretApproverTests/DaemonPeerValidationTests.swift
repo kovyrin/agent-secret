@@ -118,7 +118,8 @@ import XCTest
 
             let info = try DaemonPeerInspector.inspect(socketFileDescriptor: descriptors[0])
             let validator = try TrustedDaemonPeerValidator(
-                expectedExecutablePaths: [Self.currentExecutablePath()]
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "-"
             )
 
             XCTAssertNoThrow(try validator.validateDaemonPeer(info))
@@ -126,7 +127,8 @@ import XCTest
 
         func testTrustedDaemonValidatorRejectsDifferentUID() throws {
             let validator = try TrustedDaemonPeerValidator(
-                expectedExecutablePaths: [Self.currentExecutablePath()]
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "-"
             )
             let info = try Self.currentPeerInfo(uid: getuid() + 1)
 
@@ -140,7 +142,8 @@ import XCTest
 
         func testTrustedDaemonValidatorRejectsDifferentGID() throws {
             let validator = try TrustedDaemonPeerValidator(
-                expectedExecutablePaths: [Self.currentExecutablePath()]
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "-"
             )
             let info = try Self.currentPeerInfo(gid: getgid() + 1)
 
@@ -154,7 +157,8 @@ import XCTest
 
         func testTrustedDaemonValidatorRejectsMissingPID() throws {
             let validator = try TrustedDaemonPeerValidator(
-                expectedExecutablePaths: [Self.currentExecutablePath()]
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "-"
             )
             let info = try Self.currentPeerInfo(pid: 0)
 
@@ -243,7 +247,8 @@ import XCTest
             defer { releaseConnection.signal() }
 
             let validator = try TrustedDaemonPeerValidator(
-                expectedExecutablePaths: [Self.currentExecutablePath()]
+                expectedExecutablePaths: [Self.currentExecutablePath()],
+                expectedTeamID: "-"
             )
             let transport = try UnixSocketLineTransport(
                 path: server.path,

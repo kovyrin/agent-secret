@@ -33,7 +33,7 @@ version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 codesign_entitlements="${AGENT_SECRET_CODESIGN_ENTITLEMENTS:-}"
-approver_team_id=""
+approver_team_id="-"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -222,8 +222,8 @@ if [[ "$codesign_identity" != "-" ]]; then
     echo "build-app-bundle: codesign identity must end with a Team ID in parentheses" >&2
     exit 1
   }
-  go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultDeveloperIDTeamID=$approver_team_id")
 fi
+go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultDeveloperIDTeamID=$approver_team_id")
 "$tool_go" build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
 "$tool_go" build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
 

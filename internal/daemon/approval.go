@@ -554,8 +554,20 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	if expected.PID != 0 && got.PID != expected.PID {
 		return fmt.Errorf("%w: pid %d != %d", ErrApproverPeerMismatch, got.PID, expected.PID)
 	}
+	expectedTeamID := strings.TrimSpace(expected.ExpectedTeamID)
+	enforceTeamID := false
+	if expected.VerifySignature {
+		var err error
+		expectedTeamID, enforceTeamID, err = expectedTeamIDForSignatureValidation(
+			expectedTeamID,
+			ErrApproverPeerMismatch,
+		)
+		if err != nil {
+			return err
+		}
+	}
 	if expected.ExecutablePath == "" {
-		if expected.VerifySignature && strings.TrimSpace(expected.ExpectedTeamID) != "" {
+		if enforceTeamID {
 			return fmt.Errorf("%w: executable path is unavailable for signature validation", ErrApproverPeerMismatch)
 		}
 		return nil
@@ -571,18 +583,15 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	if gotPath != expectedPath {
 		return fmt.Errorf("%w: executable %q != %q", ErrApproverPeerMismatch, gotPath, expectedPath)
 	}
-	if expected.VerifySignature {
-		expectedTeamID := strings.TrimSpace(expected.ExpectedTeamID)
-		if expectedTeamID != "" {
-			if err := validatePeerSignature(
-				got,
-				expectedPath,
-				expectedTeamID,
-				expected.signatureVerifier,
-				ErrApproverPeerMismatch,
-			); err != nil {
-				return err
-			}
+	if enforceTeamID {
+		if err := validatePeerSignature(
+			got,
+			expectedPath,
+			expectedTeamID,
+			expected.signatureVerifier,
+			ErrApproverPeerMismatch,
+		); err != nil {
+			return err
 		}
 	}
 	return nil

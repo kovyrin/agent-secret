@@ -224,10 +224,25 @@ func (e trustedExecutable) validatePeer(
 			return fmt.Errorf("%w: executable %q is outside expected app bundle %q", errKind, path, e.bundlePath)
 		}
 	}
-	if expectedTeamID != "" && verifySignature {
-		return validatePeerSignature(info, path, expectedTeamID, verifier, errKind)
+	if !verifySignature || (expectedTeamID == "" && !e.isBundledPath(path)) {
+		return nil
+	}
+	requiredTeamID, enforceTeamID, err := expectedTeamIDForSignatureValidation(expectedTeamID, errKind)
+	if err != nil {
+		return err
+	}
+	if enforceTeamID {
+		return validatePeerSignature(info, path, requiredTeamID, verifier, errKind)
 	}
 	return nil
+}
+
+func (e trustedExecutable) isBundledPath(path string) bool {
+	if e.bundlePath != "" {
+		return true
+	}
+	_, ok := containingAppBundlePath(path)
+	return ok
 }
 
 func validatePeerSignature(

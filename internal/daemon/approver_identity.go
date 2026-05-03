@@ -16,6 +16,7 @@ import (
 const (
 	DefaultApproverBundleID   = "com.kovyrin.agent-secret"
 	DefaultApproverExecutable = "Agent Secret"
+	developmentExpectedTeamID = "-"
 )
 
 //nolint:gochecknoglobals // Release builds set this with -ldflags to bind local helpers to the signing Team ID.
@@ -54,6 +55,20 @@ func DefaultApproverIdentityPolicy() BundleApproverIdentityPolicy {
 
 func defaultExpectedTeamID() string {
 	return strings.TrimSpace(defaultDeveloperIDTeamID)
+}
+
+func expectedTeamIDForSignatureValidation(expectedTeamID string, errKind error) (string, bool, error) {
+	if errKind == nil {
+		errKind = ErrApproverIdentity
+	}
+	expectedTeamID = strings.TrimSpace(expectedTeamID)
+	if expectedTeamID == "" {
+		return "", false, fmt.Errorf("%w: expected Developer ID Team ID is required for signature validation", errKind)
+	}
+	if expectedTeamID == developmentExpectedTeamID {
+		return expectedTeamID, false, nil
+	}
+	return expectedTeamID, true, nil
 }
 
 func (p BundleApproverIdentityPolicy) ValidateApproverExecutable(path string) (ApproverIdentity, error) {
@@ -100,14 +115,20 @@ func (p BundleApproverIdentityPolicy) ValidateApproverExecutable(path string) (A
 	}
 
 	teamID := ""
+	expectedTeamID := strings.TrimSpace(p.ExpectedTeamID)
 	if p.VerifySignature {
+		var enforceTeamID bool
+		expectedTeamID, enforceTeamID, err = expectedTeamIDForSignatureValidation(expectedTeamID, ErrApproverIdentity)
+		if err != nil {
+			return ApproverIdentity{}, err
+		}
 		teamID, err = verifyCodeSignature(bundlePath)
 		if err != nil {
 			return ApproverIdentity{}, err
 		}
-	}
-	if p.ExpectedTeamID != "" && teamID != p.ExpectedTeamID {
-		return ApproverIdentity{}, fmt.Errorf("%w: team id %q != %q", ErrApproverIdentity, teamID, p.ExpectedTeamID)
+		if enforceTeamID && teamID != expectedTeamID {
+			return ApproverIdentity{}, fmt.Errorf("%w: team id %q != %q", ErrApproverIdentity, teamID, expectedTeamID)
+		}
 	}
 
 	return ApproverIdentity{
@@ -115,7 +136,7 @@ func (p BundleApproverIdentityPolicy) ValidateApproverExecutable(path string) (A
 		BundlePath:      bundlePath,
 		BundleID:        bundleID,
 		TeamID:          teamID,
-		ExpectedTeamID:  p.ExpectedTeamID,
+		ExpectedTeamID:  expectedTeamID,
 		VerifySignature: p.VerifySignature,
 	}, nil
 }
