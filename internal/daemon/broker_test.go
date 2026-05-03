@@ -40,6 +40,21 @@ func (m *mockApprover) ApproveExec(
 	return m.decision, m.err
 }
 
+type recordingApprover struct {
+	decision ApprovalDecision
+	seen     chan request.ExecRequest
+}
+
+func (r *recordingApprover) ApproveExec(
+	_ context.Context,
+	_ string,
+	_ string,
+	req request.ExecRequest,
+) (ApprovalDecision, error) {
+	r.seen <- req
+	return r.decision, nil
+}
+
 type sleepingApprover struct {
 	delay    time.Duration
 	decision ApprovalDecision
@@ -1086,8 +1101,10 @@ func TestBrokerAuditFailureStopsBeforePayload(t *testing.T) {
 
 func newTestBroker(t *testing.T, opts BrokerOptions) *Broker {
 	t.Helper()
-	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
-	opts.Now = func() time.Time { return now }
+	if opts.Now == nil {
+		now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+		opts.Now = func() time.Time { return now }
+	}
 	broker, err := NewBroker(opts)
 	if err != nil {
 		t.Fatalf("NewBroker returned error: %v", err)

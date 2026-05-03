@@ -99,6 +99,12 @@ func (r ExecRequest) Expired(at time.Time) bool {
 	return !at.Before(r.ExpiresAt)
 }
 
+func (r ExecRequest) WithReceiptTime(receivedAt time.Time) ExecRequest {
+	r.ReceivedAt = receivedAt
+	r.ExpiresAt = receivedAt.Add(r.TTL)
+	return r
+}
+
 func (r ExecRequest) ValidateForDaemon() error {
 	reason, err := validateReason(r.Reason)
 	if err != nil {
