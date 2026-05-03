@@ -486,6 +486,12 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeStaleApproval
 	case errors.Is(err, ErrUntrustedClient):
 		return protocol.ErrorCodeUntrustedClient
+	case errors.Is(err, context.Canceled):
+		return protocol.ErrorCodeContextCanceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return protocol.ErrorCodeContextDeadlineExceeded
+	case errors.Is(err, ErrSecretResolveFailed):
+		return protocol.ErrorCodeResolveFailed
 	default:
 		return protocol.ErrorCodeRequestFailed
 	}

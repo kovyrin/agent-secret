@@ -22,6 +22,7 @@ var (
 	ErrInvalidNonce         = errors.New("invalid request nonce")
 	ErrMissingCache         = errors.New("approved secret cache entry missing")
 	ErrNoResolver           = errors.New("secret resolver unavailable")
+	ErrSecretResolveFailed  = errors.New("secret resolve failed")
 	ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
 	ErrDaemonStopped        = errors.New("daemon stopped")
 	ErrRequestExpired       = errors.New("request expired")
@@ -599,7 +600,7 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 			); auditErr != nil {
 				return nil, auditErr
 			}
-			return nil, fmt.Errorf("resolve approved ref: %w", err)
+			return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, err)
 		}
 
 		if got.err != nil {
@@ -607,7 +608,7 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 			if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
 				return nil, err
 			}
-			return nil, fmt.Errorf("resolve approved ref: %w", got.err)
+			return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, got.err)
 		}
 		resolved[got.identity] = got.value
 	}

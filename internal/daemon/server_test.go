@@ -1225,6 +1225,9 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrRequestExpired, want: "request_expired"},
 		{err: ErrStaleApproval, want: "stale_approval"},
 		{err: ErrUntrustedClient, want: "untrusted_client"},
+		{err: context.Canceled, want: "context_canceled"},
+		{err: context.DeadlineExceeded, want: "context_deadline_exceeded"},
+		{err: ErrSecretResolveFailed, want: "resolve_failed"},
 		{err: errors.New("other"), want: "request_failed"},
 	}
 	for _, tt := range tests {
