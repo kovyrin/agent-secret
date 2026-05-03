@@ -6,7 +6,7 @@ private enum AgentSecretApproverMain {
     private static let usageExitCode: Int32 = 64
 
     @MainActor
-    static func main() {
+    static func main() async {
         do {
             let arguments: [String] = Array(CommandLine.arguments.dropFirst())
             if arguments == ["--health-check"] {
@@ -20,7 +20,7 @@ private enum AgentSecretApproverMain {
             let presenter: ApprovalPresenter = AppKitApprovalPresenter()
             let client: ApprovalDaemonClient = try SocketDaemonClient(socketPath: socketPath)
             let controller = ApprovalController(client: client, presenter: presenter)
-            _ = try controller.run()
+            _ = try await controller.run()
         } catch {
             FileHandle.standardError.write(Data("agent-secret-approver: \(error)\n".utf8))
             exit(usageExitCode)

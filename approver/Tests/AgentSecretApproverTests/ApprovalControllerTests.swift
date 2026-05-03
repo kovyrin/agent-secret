@@ -73,7 +73,7 @@ final class ApprovalControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testReusableDecisionCarriesThreeUseLimit() throws {
+    func testReusableDecisionCarriesThreeUseLimit() async throws {
         let request: ApprovalRequest = Self.sampleRequest
         let client = MockDaemonClient(request: request)
         let controller = ApprovalController(
@@ -82,7 +82,7 @@ final class ApprovalControllerTests: XCTestCase {
             logger: RecordingLogger()
         )
 
-        let decision: ApprovalDecision = try controller.run()
+        let decision: ApprovalDecision = try await controller.run()
 
         XCTAssertEqual(decision.decision, .approveReusable)
         XCTAssertEqual(decision.reusableUses, Self.expectedReusableUses)
@@ -123,7 +123,7 @@ final class ApprovalControllerTests: XCTestCase {
     }
 
     @MainActor
-    func testSubmitsApproveOnceDecisionWithoutSecretValues() throws {
+    func testSubmitsApproveOnceDecisionWithoutSecretValues() async throws {
         let request: ApprovalRequest = Self.sampleRequest
         let client = MockDaemonClient(request: request)
         let logger = RecordingLogger()
@@ -133,7 +133,7 @@ final class ApprovalControllerTests: XCTestCase {
             logger: logger
         )
 
-        let decision: ApprovalDecision = try controller.run()
+        let decision: ApprovalDecision = try await controller.run()
 
         XCTAssertEqual(
             decision,
