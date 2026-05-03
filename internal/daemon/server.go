@@ -233,7 +233,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				nextReadTimeout = s.readTimeout
 			}
 		case protocol.TypeOK, protocol.TypeError:
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
+			fallthrough
 		default:
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
 		}
