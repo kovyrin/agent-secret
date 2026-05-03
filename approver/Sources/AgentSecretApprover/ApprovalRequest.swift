@@ -63,7 +63,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.reusableUses = Self.boundedReusableUses(reusableUses)
     }
 
-    /// Decodes daemon payloads while preserving compatibility with older fields.
+    /// Decodes current daemon protocol payloads.
     public init(from decoder: Decoder) throws {
         let container: KeyedDecodingContainer<CodingKeys> = try decoder.container(keyedBy: CodingKeys.self)
         requestID = try container.decode(String.self, forKey: .requestID)
@@ -74,13 +74,13 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         resolvedExecutable = try container.decodeIfPresent(String.self, forKey: .resolvedExecutable)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
-        overrideEnv = try container.decodeIfPresent(Bool.self, forKey: .overrideEnv) ?? false
-        allowMutableExecutable = try container.decodeIfPresent(Bool.self, forKey: .allowMutableExecutable) ?? false
-        overriddenAliases = try container.decodeIfPresent([String].self, forKey: .overriddenAliases) ?? []
-        let decodedReusableUses: Int = try container.decodeIfPresent(
+        overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)
+        allowMutableExecutable = try container.decode(Bool.self, forKey: .allowMutableExecutable)
+        overriddenAliases = try container.decode([String].self, forKey: .overriddenAliases)
+        let decodedReusableUses: Int = try container.decode(
             Int.self,
             forKey: .reusableUses
-        ) ?? Self.defaultReusableUses
+        )
         reusableUses = Self.boundedReusableUses(decodedReusableUses)
     }
 

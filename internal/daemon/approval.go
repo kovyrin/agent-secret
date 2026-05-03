@@ -30,8 +30,8 @@ type ApprovalRequestPayload struct {
 	ExpiresAt              time.Time                 `json:"expiresAt"`
 	Secrets                []ApprovalRequestedSecret `json:"secrets"`
 	OverrideEnv            bool                      `json:"overrideEnv"`
-	OverriddenAliases      []string                  `json:"overriddenAliases,omitempty"`
-	AllowMutableExecutable bool                      `json:"allowMutableExecutable,omitempty"`
+	OverriddenAliases      []string                  `json:"overriddenAliases"`
+	AllowMutableExecutable bool                      `json:"allowMutableExecutable"`
 	ReusableUses           int                       `json:"reusableUses"`
 }
 
@@ -268,6 +268,10 @@ func approvalPayload(requestID string, nonce string, req request.ExecRequest) Ap
 			Account: secret.Account,
 		})
 	}
+	overriddenAliases := slices.Clone(req.OverriddenAliases)
+	if overriddenAliases == nil {
+		overriddenAliases = []string{}
+	}
 	return ApprovalRequestPayload{
 		RequestID:              requestID,
 		Nonce:                  nonce,
@@ -278,7 +282,7 @@ func approvalPayload(requestID string, nonce string, req request.ExecRequest) Ap
 		ExpiresAt:              req.ExpiresAt,
 		Secrets:                secrets,
 		OverrideEnv:            req.OverrideEnv,
-		OverriddenAliases:      slices.Clone(req.OverriddenAliases),
+		OverriddenAliases:      overriddenAliases,
 		AllowMutableExecutable: req.AllowMutableExecutable,
 		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 	}

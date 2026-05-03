@@ -144,6 +144,33 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 	}
 }
 
+func TestApprovalPayloadEncodesCurrentProtocolFields(t *testing.T) {
+	t.Parallel()
+
+	payload := approvalPayload("req_123", "nonce_456", request.ExecRequest{
+		Reason:    "Run tests",
+		Command:   []string{"/usr/bin/true"},
+		CWD:       "/tmp/project",
+		ExpiresAt: time.Unix(1_800_000_000, 0).UTC(),
+	})
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal approval payload: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("decode approval payload object: %v", err)
+	}
+	for _, field := range []string{"overrideEnv", "overriddenAliases", "allowMutableExecutable", "reusableUses"} {
+		if _, ok := fields[field]; !ok {
+			t.Fatalf("approval payload omitted current protocol field %q: %s", field, data)
+		}
+	}
+	if got := string(fields["overriddenAliases"]); got != "[]" {
+		t.Fatalf("overriddenAliases should encode as an empty array, got %s", got)
+	}
+}
+
 func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	t.Parallel()
 
