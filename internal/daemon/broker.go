@@ -166,7 +166,7 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 		}
 	}
 	if err := b.requestActive(execCtx, req); err != nil {
-		b.rollbackReusableApproval(grant.reusableMutationID)
+		b.rollbackReusableGrant(grant)
 		return ExecGrant{}, err
 	}
 	if err := b.reusableApprovalActive(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
@@ -175,11 +175,11 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
 	if err := b.recordRequiredAudit(execCtx, event); err != nil {
-		b.rollbackReusableApproval(grant.reusableMutationID)
+		b.rollbackReusableGrant(grant)
 		return ExecGrant{}, err
 	}
 	if err := b.requestActive(execCtx, req); err != nil {
-		b.rollbackReusableApproval(grant.reusableMutationID)
+		b.rollbackReusableGrant(grant)
 		return ExecGrant{}, err
 	}
 	if err := b.reusableApprovalActive(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
@@ -286,10 +286,10 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	approval, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
 	if err != nil {
 		b.clearReusableCacheScope(active.approvalID)
+		b.mu.Lock()
+		delete(b.active, requestID)
+		b.mu.Unlock()
 		if errors.Is(err, policy.ErrExpired) {
-			b.mu.Lock()
-			delete(b.active, requestID)
-			b.mu.Unlock()
 			return ErrRequestExpired
 		}
 		return err
@@ -416,16 +416,28 @@ func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event)
 }
 
 func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (ExecGrant, error) {
-	approval, err := b.store.FindReusable(ctx, req, b.audit)
+	approval, err := b.store.ReserveReusable(ctx, req, b.audit)
 	if err != nil {
 		if errors.Is(err, policy.ErrAuditFailed) {
 			return ExecGrant{}, err
 		}
-		if approval.ID != "" && (errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted)) {
+		if approval.ID != "" && errors.Is(err, policy.ErrExpired) {
+			b.clearReusableCacheScope(approval.ID)
+		}
+		if approval.ID != "" &&
+			errors.Is(err, policy.ErrUseExhausted) &&
+			approval.Uses >= approval.MaxUses &&
+			approval.ReservedUses == 0 {
 			b.clearReusableCacheScope(approval.ID)
 		}
 		return ExecGrant{}, nil
 	}
+	delivered := false
+	defer func() {
+		if !delivered {
+			b.releaseReusableReservation(approval.ID)
+		}
+	}()
 	if err := b.requestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
@@ -447,6 +459,7 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 		return ExecGrant{}, err
 	}
 
+	delivered = true
 	return ExecGrant{
 		Env:                values,
 		SecretAliases:      aliases(req.Secrets),
@@ -513,7 +526,7 @@ func (b *Broker) freshGrant(
 	approvalID := ""
 	approvalExpiresAt := time.Time{}
 	if decision.Reusable {
-		approval, err := b.store.AddReusableWithLimit(req, decision.ReusableUses, "", "")
+		approval, err := b.store.AddReusableWithReservedUse(req, decision.ReusableUses, "", "")
 		if err != nil {
 			return ExecGrant{}, err
 		}
@@ -548,6 +561,25 @@ func (b *Broker) rollbackReusableApproval(approvalID string) {
 	}
 	b.store.RemoveReusable(approvalID)
 	b.clearReusableCacheScope(approvalID)
+}
+
+func (b *Broker) rollbackReusableGrant(grant ExecGrant) {
+	if grant.reusableMutationID != "" {
+		b.rollbackReusableApproval(grant.reusableMutationID)
+		return
+	}
+	b.releaseReusableReservation(grant.ApprovalID)
+}
+
+func (b *Broker) releaseReusableReservation(approvalID string) {
+	if approvalID == "" {
+		return
+	}
+	if _, err := b.store.FinishReusableAttempt(approvalID, policy.DeliveryPrePayloadFailure); err != nil {
+		if errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted) {
+			b.clearReusableCacheScope(approvalID)
+		}
+	}
 }
 
 func (b *Broker) reusableApprovalActive(approvalID string, expiresAt time.Time) error {
