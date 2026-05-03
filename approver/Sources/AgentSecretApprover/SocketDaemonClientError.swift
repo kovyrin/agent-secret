@@ -1,11 +1,11 @@
 import Foundation
 
 /// Errors returned while talking to the local daemon socket.
-public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
+enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
     /// The socket connect syscall failed.
     case connectFailed(Int32)
     /// The daemon returned a structured error response.
-    case daemonError(String, String)
+    case daemonError(DaemonErrorCode)
     /// The daemon closed the connection before a full line arrived.
     case disconnected
     /// The daemon socket line exceeded the configured frame limit.
@@ -30,12 +30,12 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
     case writeTimedOut
 
     /// Human-readable error message for CLI output.
-    public var description: String {
+    var description: String {
         switch self {
         case let .connectFailed(errnoValue):
             "connect failed: errno \(errnoValue)"
 
-        case let .daemonError(code, _):
+        case let .daemonError(code):
             Self.daemonErrorDescription(code: code)
 
         case .disconnected:
@@ -73,13 +73,12 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
         }
     }
 
-    private static func daemonErrorDescription(code: String) -> String {
-        let errorCode = DaemonErrorCode(rawValue: code)
-        let displayCode = DaemonErrorDisplay.sanitizedCode(errorCode).rawValue
-        return "daemon error \(displayCode): \(DaemonErrorDisplay.message(for: errorCode))"
+    private static func daemonErrorDescription(code: DaemonErrorCode) -> String {
+        let displayCode = DaemonErrorDisplay.sanitizedCode(code).rawValue
+        return "daemon error \(displayCode): \(DaemonErrorDisplay.message(for: code))"
     }
 
-    public static func == (lhs: Self, rhs: Self) -> Bool {
+    static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.description == rhs.description
     }
 }

@@ -92,7 +92,7 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
         XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
             XCTAssertEqual(
                 error as? SocketDaemonClientError,
-                .daemonError("bad_request", "daemon rejected malformed request")
+                .daemonError(.badRequest)
             )
             let displayed = String(describing: error)
             XCTAssertEqual(displayed, "daemon error bad_request: daemon rejected malformed request")
@@ -112,7 +112,7 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
         )
 
         XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
-            XCTAssertEqual(error as? SocketDaemonClientError, .daemonError("unknown", "daemon returned an error"))
+            XCTAssertEqual(error as? SocketDaemonClientError, .daemonError(.unknown))
             let displayed = String(describing: error)
             XCTAssertEqual(displayed, "daemon error unknown: daemon returned an error")
             XCTAssertFalse(displayed.contains("op://"))

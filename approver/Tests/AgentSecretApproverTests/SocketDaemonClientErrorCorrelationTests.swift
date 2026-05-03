@@ -117,7 +117,7 @@ final class SocketDaemonClientErrorCorrelationTests: XCTestCase {
         XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
             XCTAssertEqual(
                 error as? SocketDaemonClientError,
-                .daemonError("stale_approval", "stale approval response")
+                .daemonError(.staleApproval)
             )
         }
     }
