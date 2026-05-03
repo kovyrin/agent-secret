@@ -479,10 +479,10 @@ Deliverables:
 - Stapled artifact when `AGENT_SECRET_NOTARIZE=1` is used.
 - Gatekeeper verification documented for signed/notarized releases.
 
-Release signing environment:
+Maintainer release signing environment:
 
 ```bash
-AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
+AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
 AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
 AGENT_SECRET_NOTARIZE=1
 AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
@@ -492,7 +492,9 @@ AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
 
 `AGENT_SECRET_NOTARY_KEY` may also be a path to a `.p8` API key file. Local
 builds without `AGENT_SECRET_CODESIGN_IDENTITY` use ad-hoc signing, and local
-builds without `AGENT_SECRET_NOTARIZE=1` do not submit to Apple. Tag-triggered
+builds without `AGENT_SECRET_NOTARIZE=1` do not submit to Apple. Local builds
+for another Developer ID team can use that team's identity, but this
+repository's maintainer preflight expects Team ID `B6L7QLWTZW`. Tag-triggered
 GitHub releases fail preflight instead of publishing ad-hoc artifacts when any
 production signing input is missing.
 

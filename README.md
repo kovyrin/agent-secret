@@ -324,10 +324,12 @@ The maintainer release checklist is documented in
 the matching section in [Changelog](CHANGELOG.md).
 
 Developer ID signing and notarization are optional for local release-candidate
-builds and required for this repository's tag-triggered maintainer releases:
+builds and required for this repository's tag-triggered maintainer releases.
+The maintainer preflight enforces Team ID `B6L7QLWTZW`, so runnable maintainer
+release examples must use that identity:
 
 ```bash
-AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Example, Inc. (TEAMID)"
+AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
 AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
 AGENT_SECRET_NOTARIZE=1
 AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
