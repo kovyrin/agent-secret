@@ -267,58 +267,61 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	if b.stopped() {
 		return ErrDaemonStopped
 	}
-	b.mu.Lock()
-	active, ok := b.active[requestID]
-	b.mu.Unlock()
+	active, ok := b.lookupActiveExec(requestID)
 	if !ok {
 		return ErrUnknownRequest
 	}
 	if b.stopped() {
-		b.mu.Lock()
-		delete(b.active, requestID)
-		b.mu.Unlock()
+		b.removeActiveExec(requestID)
 		return ErrDaemonStopped
 	}
 	if active.approvalID == "" {
-		b.mu.Lock()
-		if current := b.active[requestID]; current != nil {
-			current.payloadDelivered = true
-		}
-		b.mu.Unlock()
+		b.markActivePayloadDelivered(requestID)
 		return nil
 	}
 	if err := b.reusableApprovalActive(active.approvalID, active.approvalExpiresAt); err != nil {
-		b.mu.Lock()
-		delete(b.active, requestID)
-		b.mu.Unlock()
+		b.removeActiveExec(requestID)
 		return err
 	}
 	approval, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
 	if err != nil {
 		b.clearReusableCacheScope(active.approvalID)
-		b.mu.Lock()
-		delete(b.active, requestID)
-		b.mu.Unlock()
+		b.removeActiveExec(requestID)
 		if errors.Is(err, policy.ErrExpired) {
 			return ErrRequestExpired
 		}
 		return err
 	}
 	if b.stopped() {
-		b.mu.Lock()
-		delete(b.active, requestID)
-		b.mu.Unlock()
+		b.removeActiveExec(requestID)
 		return ErrDaemonStopped
 	}
 	if approval.Uses >= approval.MaxUses {
 		b.clearReusableCacheScope(approval.ID)
 	}
+	b.markActivePayloadDelivered(requestID)
+	return nil
+}
+
+func (b *Broker) lookupActiveExec(requestID string) (*activeExec, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	active, ok := b.active[requestID]
+	return active, ok
+}
+
+func (b *Broker) removeActiveExec(requestID string) {
+	b.mu.Lock()
+	delete(b.active, requestID)
+	b.mu.Unlock()
+}
+
+func (b *Broker) markActivePayloadDelivered(requestID string) {
 	b.mu.Lock()
 	if current := b.active[requestID]; current != nil {
 		current.payloadDelivered = true
 	}
 	b.mu.Unlock()
-	return nil
 }
 
 func (b *Broker) MarkPayloadDeliveryFailed(requestID string) {
