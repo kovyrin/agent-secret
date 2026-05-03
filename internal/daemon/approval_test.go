@@ -15,6 +15,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -157,7 +158,10 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	if payload.Secrets[0].Account != "Work" {
 		t.Fatalf("payload secret account = %q, want Work", payload.Secrets[0].Account)
 	}
-	uses := 3
+	if payload.ReusableUses != policy.DefaultReusableUses {
+		t.Fatalf("payload reusable uses = %d, want policy default %d", payload.ReusableUses, policy.DefaultReusableUses)
+	}
+	uses := policy.DefaultReusableUses
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID:    "req_1",
 		Nonce:        "nonce_1",
@@ -166,6 +170,72 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("SubmitDecision returned error: %v", err)
+	}
+
+	select {
+	case decision := <-resultCh:
+		if !decision.Approved || !decision.Reusable {
+			t.Fatalf("unexpected approval result: %+v", decision)
+		}
+	case err := <-errCh:
+		t.Fatalf("ApproveExec returned error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for approval result")
+	}
+}
+
+func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	launcher := &recordingLauncher{expected: ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	resultCh := make(chan ApprovalDecision, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		decision, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- decision
+	}()
+	waitForPending(t, approver)
+
+	payload, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
+	if err != nil {
+		t.Fatalf("FetchPending returned error: %v", err)
+	}
+	mismatchedUses := payload.ReusableUses + 1
+	for _, decision := range []ApprovalDecisionPayload{
+		{
+			RequestID: "req_1",
+			Nonce:     "nonce_1",
+			Decision:  "approve_reusable",
+		},
+		{
+			RequestID:    "req_1",
+			Nonce:        "nonce_1",
+			Decision:     "approve_reusable",
+			ReusableUses: &mismatchedUses,
+		},
+	} {
+		err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), decision)
+		if !errors.Is(err, ErrMalformedEnvelope) {
+			t.Fatalf("SubmitDecision reusable count mismatch error = %v, want malformed envelope", err)
+		}
+	}
+
+	uses := payload.ReusableUses
+	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID:    "req_1",
+		Nonce:        "nonce_1",
+		Decision:     "approve_reusable",
+		ReusableUses: &uses,
+	})
+	if err != nil {
+		t.Fatalf("SubmitDecision matching reusable count returned error: %v", err)
 	}
 
 	select {
