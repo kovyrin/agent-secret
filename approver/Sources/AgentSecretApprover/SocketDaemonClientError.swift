@@ -20,6 +20,8 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
     case readTimedOut
     /// Unix sockets are unavailable on this platform.
     case socketUnavailable
+    /// The connected socket peer is not the trusted Agent Secret daemon.
+    case untrustedDaemon(String)
     /// The socket write syscall failed.
     case writeFailed(Int32)
     /// The daemon did not accept the request before the write timeout.
@@ -54,6 +56,9 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
 
         case .socketUnavailable:
             "unix sockets are unavailable on this platform"
+
+        case let .untrustedDaemon(message):
+            "untrusted daemon peer: \(message)"
 
         case let .writeFailed(errnoValue):
             "write failed: errno \(errnoValue)"
