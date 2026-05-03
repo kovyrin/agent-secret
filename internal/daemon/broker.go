@@ -638,7 +638,7 @@ func (b *Broker) recordApprovalError(
 		return b.recordApprovalDenied(ctx, requestID, req)
 	case errors.Is(err, ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
-		event.ErrorCode = string(protocol.ErrorCodeRequestExpired)
+		event.ErrorCode = protocol.ErrorCodeRequestExpired
 		auditCtx, cancel := terminalAuditContext(ctx)
 		defer cancel()
 		return b.recordRequiredAudit(auditCtx, event)
@@ -649,7 +649,7 @@ func (b *Broker) recordApprovalError(
 
 func (b *Broker) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
 	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
-	event.ErrorCode = string(protocol.ErrorCodeApprovalDenied)
+	event.ErrorCode = protocol.ErrorCodeApprovalDenied
 	auditCtx, cancel := terminalAuditContext(ctx)
 	defer cancel()
 	return b.recordRequiredAudit(auditCtx, event)
@@ -685,7 +685,7 @@ func (b *Broker) recordSecretFetchFailureEvent(
 		Type:       audit.EventSecretFetchFailed,
 		RequestID:  requestID,
 		SecretRefs: refs,
-		ErrorCode:  string(secretFetchErrorCode(err)),
+		ErrorCode:  secretFetchErrorCode(err),
 	}
 	auditCtx, cancel := terminalAuditContext(ctx)
 	defer cancel()

@@ -757,7 +757,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	if len(events) != 1 || events[0].Type != audit.EventDaemonStop {
 		t.Fatalf("stop audit events = %+v", events)
 	}
-	assertRequesterAudit(t, events[0], peer, "untrusted_client")
+	assertRequesterAudit(t, events[0], peer, protocol.ErrorCodeUntrustedClient)
 }
 
 func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
@@ -1212,26 +1212,26 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 
 	tests := []struct {
 		err  error
-		want string
+		want protocol.ErrorCode
 	}{
-		{err: ErrApprovalDenied, want: "approval_denied"},
-		{err: ErrAuditRequired, want: "audit_failed"},
-		{err: ErrInvalidNonce, want: "invalid_nonce"},
-		{err: ErrApproverPeerMismatch, want: "approver_peer_mismatch"},
-		{err: ErrApproverIdentity, want: "approver_identity_mismatch"},
-		{err: ErrNoPendingApproval, want: "no_pending_approval"},
-		{err: ErrRequestAlreadyActive, want: "request_active"},
-		{err: ErrDaemonStopped, want: "daemon_stopped"},
-		{err: ErrRequestExpired, want: "request_expired"},
-		{err: ErrStaleApproval, want: "stale_approval"},
-		{err: ErrUntrustedClient, want: "untrusted_client"},
-		{err: context.Canceled, want: "context_canceled"},
-		{err: context.DeadlineExceeded, want: "context_deadline_exceeded"},
-		{err: ErrSecretResolveFailed, want: "resolve_failed"},
-		{err: errors.New("other"), want: "request_failed"},
+		{err: ErrApprovalDenied, want: protocol.ErrorCodeApprovalDenied},
+		{err: ErrAuditRequired, want: protocol.ErrorCodeAuditFailed},
+		{err: ErrInvalidNonce, want: protocol.ErrorCodeInvalidNonce},
+		{err: ErrApproverPeerMismatch, want: protocol.ErrorCodeApproverPeerMismatch},
+		{err: ErrApproverIdentity, want: protocol.ErrorCodeApproverIdentityMismatch},
+		{err: ErrNoPendingApproval, want: protocol.ErrorCodeNoPendingApproval},
+		{err: ErrRequestAlreadyActive, want: protocol.ErrorCodeRequestActive},
+		{err: ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
+		{err: ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
+		{err: ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
+		{err: ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
+		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
+		{err: context.DeadlineExceeded, want: protocol.ErrorCodeContextDeadlineExceeded},
+		{err: ErrSecretResolveFailed, want: protocol.ErrorCodeResolveFailed},
+		{err: errors.New("other"), want: protocol.ErrorCodeRequestFailed},
 	}
 	for _, tt := range tests {
-		if got := codeForError(tt.err); string(got) != tt.want {
+		if got := codeForError(tt.err); got != tt.want {
 			t.Fatalf("codeForError(%v) = %q, want %q", tt.err, got, tt.want)
 		}
 	}
@@ -1451,7 +1451,7 @@ func writeExecutableAt(t *testing.T, dir string, name string) string {
 	return path
 }
 
-func assertRequesterAudit(t *testing.T, event audit.Event, peer peercred.Info, wantErrorCode string) {
+func assertRequesterAudit(t *testing.T, event audit.Event, peer peercred.Info, wantErrorCode protocol.ErrorCode) {
 	t.Helper()
 
 	if event.RequesterPID == nil || *event.RequesterPID != peer.PID {

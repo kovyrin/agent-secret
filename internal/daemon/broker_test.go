@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -383,7 +384,7 @@ func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 		name:      "denial",
 		err:       ErrApprovalDenied,
 		eventType: audit.EventApprovalDenied,
-		errorCode: "approval_denied",
+		errorCode: protocol.ErrorCodeApprovalDenied,
 	})
 }
 
@@ -394,7 +395,7 @@ func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testi
 		name:      "timeout",
 		err:       ErrRequestExpired,
 		eventType: audit.EventApprovalTimedOut,
-		errorCode: "request_expired",
+		errorCode: protocol.ErrorCodeRequestExpired,
 	})
 }
 
@@ -407,7 +408,7 @@ func TestBrokerApprovalTimeoutAuditIgnoresExpiredRequestContext(t *testing.T) {
 		done:      done,
 		err:       ErrRequestExpired,
 		eventType: audit.EventApprovalTimedOut,
-		errorCode: "request_expired",
+		errorCode: protocol.ErrorCodeRequestExpired,
 		name:      "approval timeout",
 	})
 }
@@ -421,7 +422,7 @@ func TestBrokerLateDenialAuditsDenialWithoutResolveOrCommandStart(t *testing.T) 
 		done:      done,
 		err:       ErrApprovalDenied,
 		eventType: audit.EventApprovalDenied,
-		errorCode: "approval_denied",
+		errorCode: protocol.ErrorCodeApprovalDenied,
 		name:      "late denial",
 	})
 }
@@ -431,7 +432,7 @@ type deadlineApprovalFailureCase struct {
 	done      <-chan struct{}
 	err       error
 	eventType audit.EventType
-	errorCode string
+	errorCode protocol.ErrorCode
 	name      string
 }
 
@@ -478,7 +479,7 @@ type approvalFailureAuditCase struct {
 	name      string
 	err       error
 	eventType audit.EventType
-	errorCode string
+	errorCode protocol.ErrorCode
 }
 
 func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
@@ -602,7 +603,7 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
 	failure := events[len(events)-1]
-	if failure.ErrorCode != "resolve_failed" {
+	if failure.ErrorCode != protocol.ErrorCodeResolveFailed {
 		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
 	}
 	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failingRef {
@@ -696,7 +697,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
-	if events[len(events)-1].ErrorCode != "context_deadline_exceeded" {
+	if events[len(events)-1].ErrorCode != protocol.ErrorCodeContextDeadlineExceeded {
 		t.Fatalf("fetch failure error code = %q", events[len(events)-1].ErrorCode)
 	}
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
@@ -758,7 +759,7 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
 	failure := events[len(events)-1]
-	if failure.ErrorCode != "context_deadline_exceeded" {
+	if failure.ErrorCode != protocol.ErrorCodeContextDeadlineExceeded {
 		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
 	}
 	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "TOKEN" || failure.SecretRefs[0].Ref != ref {

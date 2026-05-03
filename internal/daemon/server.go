@@ -428,7 +428,7 @@ func daemonStopAuditEvent(peer peercred.Info, err error) audit.Event {
 		RequesterPath: peer.ExecutablePath,
 	}
 	if err != nil {
-		event.ErrorCode = string(codeForError(err))
+		event.ErrorCode = codeForError(err)
 	}
 	return event
 }
