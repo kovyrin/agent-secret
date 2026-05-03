@@ -15,6 +15,40 @@ final class ApprovalControllerConcurrencyTests: XCTestCase {
         case background
     }
 
+    private final class BlockingFactoryState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var factoryObservation: ThreadObservation = .unrecorded
+        private var watchdogDidReleaseFactory = false
+
+        var factoryThreadObservation: ThreadObservation {
+            lock.lock()
+            defer { lock.unlock() }
+            return factoryObservation
+        }
+
+        var watchdogReleasedFactory: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return watchdogDidReleaseFactory
+        }
+
+        func recordFactoryThread() {
+            lock.lock()
+            factoryObservation = Thread.isMainThread ? .main : .background
+            lock.unlock()
+        }
+
+        func recordWatchdogRelease() {
+            lock.lock()
+            watchdogDidReleaseFactory = true
+            lock.unlock()
+        }
+
+        deinit {
+            /* Required by SwiftLint. */
+        }
+    }
+
     private final class ThreadRecordingDaemonClient: ApprovalDaemonClient {
         private let lock = NSLock()
         private let request: ApprovalRequest
@@ -102,6 +136,45 @@ final class ApprovalControllerConcurrencyTests: XCTestCase {
 
         XCTAssertEqual(client.fetchThreadObservation, .background)
         XCTAssertEqual(client.submitThreadObservation, .background)
+        XCTAssertTrue(presenter.decideRanOnMainThread)
+    }
+
+    @MainActor
+    func testDaemonClientFactoryDoesNotBlockMainActor() async throws {
+        let factoryStarted = expectation(description: "daemon client factory started")
+        let releaseFactory = DispatchSemaphore(value: 0)
+        let state = BlockingFactoryState()
+        let presenter = ThreadRecordingPresenter()
+        let controller = ApprovalController(
+            clientFactory: {
+                state.recordFactoryThread()
+                factoryStarted.fulfill()
+                releaseFactory.wait()
+                return ThreadRecordingDaemonClient(request: Self.sampleRequest)
+            },
+            presenter: presenter,
+            logger: NoopApprovalLogger()
+        )
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+            state.recordWatchdogRelease()
+            releaseFactory.signal()
+        }
+
+        let runTask = Task { @MainActor in
+            try await controller.run()
+        }
+
+        await fulfillment(of: [factoryStarted], timeout: 1)
+
+        XCTAssertEqual(state.factoryThreadObservation, .background)
+        XCTAssertFalse(
+            state.watchdogReleasedFactory,
+            "MainActor stayed blocked until the watchdog released daemon client construction"
+        )
+
+        releaseFactory.signal()
+        _ = try await runTask.value
         XCTAssertTrue(presenter.decideRanOnMainThread)
     }
 

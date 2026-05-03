@@ -18,8 +18,10 @@ private enum AgentSecretApproverMain {
                 exit(0)
             }
             let presenter: ApprovalPresenter = AppKitApprovalPresenter()
-            let client: ApprovalDaemonClient = try SocketDaemonClient(socketPath: socketPath)
-            let controller = ApprovalController(client: client, presenter: presenter)
+            let controller = ApprovalController(
+                clientFactory: { try SocketDaemonClient(socketPath: socketPath) },
+                presenter: presenter
+            )
             _ = try await controller.run()
         } catch {
             FileHandle.standardError.write(Data("agent-secret-approver: \(error)\n".utf8))
