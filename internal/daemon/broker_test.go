@@ -72,6 +72,21 @@ func (s *sleepingApprover) ApproveExec(
 	return s.decision, nil
 }
 
+type contextExpiringApprover struct {
+	done chan struct{}
+}
+
+func (a *contextExpiringApprover) ApproveExec(
+	ctx context.Context,
+	_ string,
+	_ string,
+	_ request.ExecRequest,
+) (ApprovalDecision, error) {
+	<-ctx.Done()
+	close(a.done)
+	return ApprovalDecision{}, ErrRequestExpired
+}
+
 type mockResolver struct {
 	mu     sync.Mutex
 	values map[string]string
@@ -216,6 +231,17 @@ func (m *memoryAudit) Record(_ context.Context, event audit.Event) error {
 	return nil
 }
 
+type contextCheckingAudit struct {
+	memoryAudit
+}
+
+func (m *contextCheckingAudit) Record(ctx context.Context, event audit.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return m.memoryAudit.Record(ctx, event)
+}
+
 func (m *memoryAudit) ApprovalReused(_ context.Context, event policy.ReuseAuditEvent) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -301,6 +327,46 @@ func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testi
 		eventType: audit.EventApprovalTimedOut,
 		errorCode: "request_expired",
 	})
+}
+
+func TestBrokerApprovalTimeoutAuditIgnoresExpiredRequestContext(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Now()
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.TTL = 25 * time.Millisecond
+	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+	approver := &contextExpiringApprover{done: make(chan struct{})}
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	aud := &contextCheckingAudit{}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      time.Now,
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+
+	_, err = broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if !errors.Is(err, ErrRequestExpired) {
+		t.Fatalf("expected request expiry, got %v", err)
+	}
+	receiveBrokerSignal(t, approver.done, "approver did not observe request deadline")
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver was called after approval timeout: %v", calls)
+	}
+
+	events := aud.Events()
+	want := []audit.EventType{audit.EventApprovalRequested, audit.EventApprovalTimedOut}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	if events[1].ErrorCode != "request_expired" {
+		t.Fatalf("approval timeout error code = %q", events[1].ErrorCode)
+	}
 }
 
 type approvalFailureAuditCase struct {
@@ -498,7 +564,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	req.TTL = 50 * time.Millisecond
 	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
 	resolver := &deadlineObservingResolver{done: make(chan struct{})}
-	aud := &memoryAudit{}
+	aud := &contextCheckingAudit{}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      time.Now,
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
@@ -515,6 +581,19 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 		t.Fatalf("expected request expiry while resolving, got %v", err)
 	}
 	receiveBrokerSignal(t, resolver.done, "resolver did not observe request deadline")
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSecretFetchFailed,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	if events[len(events)-1].ErrorCode != "context_deadline_exceeded" {
+		t.Fatalf("fetch failure error code = %q", events[len(events)-1].ErrorCode)
+	}
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
 		t.Fatal("command_starting was audited after request deadline expired during fetch")
 	}
