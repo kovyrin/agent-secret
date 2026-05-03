@@ -90,17 +90,23 @@ jobs:
       - name: Install project dependencies
         run: mise run setup
 
+      - name: Verify release signing configuration
+        env:
+          AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
+          AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
+          AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
+          AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
+          AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
+          AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
+        run: scripts/check-release-signing-env.sh
+
       - name: Import Developer ID certificate
         env:
           AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
           AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
           AGENT_SECRET_CODESIGN_KEYCHAIN_PATH: ${{ runner.temp }}/agent-secret-codesign.keychain-db
-        run: |
-          if [ -n "$AGENT_SECRET_CODESIGN_CERT_P12_BASE64" ]; then
-            scripts/import-codesign-certificate.sh
-          else
-            echo "No Developer ID certificate secret configured; skipping keychain import."
-          fi
+        run: scripts/import-codesign-certificate.sh
 
       - name: Build release artifacts
         env:
@@ -110,7 +116,7 @@ jobs:
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
           AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
-        run: scripts/build-release.sh "$GITHUB_REF_NAME"
+        run: scripts/build-release.sh "$GITHUB_REF_NAME" --require-production-signing
 
       - name: Verify release artifact architecture
         run: |
