@@ -1002,7 +1002,8 @@ Status: Not started
 
 - Risk: public distribution needs stronger binary identity than private dogfood.
 - Mitigation: defer signing/notarization and installation-integrity guidance to
-  the release path; v1 does not police local execution paths.
+  the release path; `exec` rejects current-user-writable executable paths unless
+  the caller explicitly opts into mutable local executable launch.
 
 ### Epic 7 Tasks
 

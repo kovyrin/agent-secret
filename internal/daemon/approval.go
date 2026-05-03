@@ -26,17 +26,18 @@ var (
 )
 
 type ApprovalRequestPayload struct {
-	RequestID          string                    `json:"requestID"`
-	Nonce              string                    `json:"nonce"`
-	Reason             string                    `json:"reason"`
-	Command            []string                  `json:"command"`
-	CWD                string                    `json:"cwd"`
-	ResolvedExecutable string                    `json:"resolvedExecutable,omitempty"`
-	ExpiresAt          time.Time                 `json:"expiresAt"`
-	Secrets            []ApprovalRequestedSecret `json:"secrets"`
-	OverrideEnv        bool                      `json:"overrideEnv"`
-	OverriddenAliases  []string                  `json:"overriddenAliases,omitempty"`
-	ReusableUses       int                       `json:"reusableUses"`
+	RequestID              string                    `json:"requestID"`
+	Nonce                  string                    `json:"nonce"`
+	Reason                 string                    `json:"reason"`
+	Command                []string                  `json:"command"`
+	CWD                    string                    `json:"cwd"`
+	ResolvedExecutable     string                    `json:"resolvedExecutable,omitempty"`
+	ExpiresAt              time.Time                 `json:"expiresAt"`
+	Secrets                []ApprovalRequestedSecret `json:"secrets"`
+	OverrideEnv            bool                      `json:"overrideEnv"`
+	OverriddenAliases      []string                  `json:"overriddenAliases,omitempty"`
+	AllowMutableExecutable bool                      `json:"allowMutableExecutable,omitempty"`
+	ReusableUses           int                       `json:"reusableUses"`
 }
 
 type ApprovalRequestedSecret struct {
@@ -322,17 +323,18 @@ func approvalPayload(requestID string, nonce string, req request.ExecRequest) Ap
 		})
 	}
 	return ApprovalRequestPayload{
-		RequestID:          requestID,
-		Nonce:              nonce,
-		Reason:             req.Reason,
-		Command:            slices.Clone(req.Command),
-		CWD:                req.CWD,
-		ResolvedExecutable: req.ResolvedExecutable,
-		ExpiresAt:          req.ExpiresAt,
-		Secrets:            secrets,
-		OverrideEnv:        req.OverrideEnv,
-		OverriddenAliases:  slices.Clone(req.OverriddenAliases),
-		ReusableUses:       3,
+		RequestID:              requestID,
+		Nonce:                  nonce,
+		Reason:                 req.Reason,
+		Command:                slices.Clone(req.Command),
+		CWD:                    req.CWD,
+		ResolvedExecutable:     req.ResolvedExecutable,
+		ExpiresAt:              req.ExpiresAt,
+		Secrets:                secrets,
+		OverrideEnv:            req.OverrideEnv,
+		OverriddenAliases:      slices.Clone(req.OverriddenAliases),
+		AllowMutableExecutable: req.AllowMutableExecutable,
+		ReusableUses:           3,
 	}
 }
 

@@ -163,6 +163,7 @@ func TestFromExecRequestUsesValidatedTrimmedReason(t *testing.T) {
 		Secrets: []request.SecretSpec{
 			{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
 		},
+		AllowMutableExecutable: true,
 	})
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)

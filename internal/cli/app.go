@@ -126,17 +126,18 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		stderr:    a.Stderr,
 	}
 	result, err := execwrap.Run(ctx, execwrap.Spec{
-		Path:          command.ExecRequest.ResolvedExecutable,
-		PathIdentity:  command.ExecRequest.ExecutableIdentity,
-		Args:          command.ExecRequest.Command[1:],
-		Dir:           command.ExecRequest.CWD,
-		BaseEnv:       command.ExecRequest.Env,
-		Env:           payload.Env,
-		SecretAliases: payload.SecretAliases,
-		OverrideEnv:   command.ExecRequest.OverrideEnv,
-		Stdout:        a.Stdout,
-		Stderr:        a.Stderr,
-		Audit:         reporter,
+		Path:                   command.ExecRequest.ResolvedExecutable,
+		PathIdentity:           command.ExecRequest.ExecutableIdentity,
+		Args:                   command.ExecRequest.Command[1:],
+		Dir:                    command.ExecRequest.CWD,
+		BaseEnv:                command.ExecRequest.Env,
+		Env:                    payload.Env,
+		SecretAliases:          payload.SecretAliases,
+		OverrideEnv:            command.ExecRequest.OverrideEnv,
+		AllowMutableExecutable: command.ExecRequest.AllowMutableExecutable,
+		Stdout:                 a.Stdout,
+		Stderr:                 a.Stderr,
+		Audit:                  reporter,
 	}, interrupts)
 	if err != nil {
 		a.stderrf("agent-secret: %v\n", err)

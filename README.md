@@ -346,6 +346,10 @@ Current `exec` flags:
   environment variables.
 - `--force-refresh`: for reusable approvals, refetch approved refs before
   delivery.
+- `--allow-mutable-executable`: permit a command whose executable file or
+  parent directory is writable by the current user. Without this explicit
+  opt-in, `exec` rejects project-local and temp executables that can be swapped
+  after approval.
 
 The command to run must appear after `--` as argv. `agent-secret exec` has no
 `--json` mode and does not parse shell strings.

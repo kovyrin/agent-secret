@@ -85,10 +85,11 @@ func TestRunInjectsEnvOnlyIntoChildAndRecordsMetadata(t *testing.T) {
 	var stdout bytes.Buffer
 	audit := &memoryAudit{}
 	result, err := Run(context.Background(), Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
-		Env:          helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
+		Env:                    helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
 		SecretAliases: []string{
 			"AGENT_SECRET_CANARY",
 		},
@@ -123,13 +124,14 @@ func TestRunPreservesMultilineSecretEnvValue(t *testing.T) {
 
 	var stdout bytes.Buffer
 	result, err := Run(context.Background(), Spec{
-		Path:          os.Args[0],
-		PathIdentity:  currentExecutableIdentity(t),
-		Args:          []string{"-test.run=TestExecHelperProcess", "--", "check-multiline-env"},
-		Env:           helperEnv("AGENT_SECRET_MULTILINE", syntheticMultilineText),
-		SecretAliases: []string{"AGENT_SECRET_MULTILINE"},
-		OverrideEnv:   true,
-		Stdout:        &stdout,
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-multiline-env"},
+		Env:                    helperEnv("AGENT_SECRET_MULTILINE", syntheticMultilineText),
+		SecretAliases:          []string{"AGENT_SECRET_MULTILINE"},
+		OverrideEnv:            true,
+		Stdout:                 &stdout,
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -147,12 +149,13 @@ func TestRunForwardsStdinToChild(t *testing.T) {
 
 	var stdout bytes.Buffer
 	result, err := Run(context.Background(), Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "echo-stdin"},
-		Env:          helperEnv(),
-		Stdin:        strings.NewReader("script-from-stdin\n"),
-		Stdout:       &stdout,
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "echo-stdin"},
+		Env:                    helperEnv(),
+		Stdin:                  strings.NewReader("script-from-stdin\n"),
+		Stdout:                 &stdout,
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -169,10 +172,11 @@ func TestRunPreservesExitCode(t *testing.T) {
 	t.Parallel()
 
 	result, err := Run(context.Background(), Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "exit-42"},
-		Env:          helperEnv(),
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "exit-42"},
+		Env:                    helperEnv(),
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -235,15 +239,41 @@ func TestRunRejectsExecutableReplacementBeforeSpawn(t *testing.T) {
 	}
 }
 
+func TestRunRejectsMutableExecutableWithoutOptIn(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "tool")
+	writeExecwrapExecutable(t, path, "echo should-not-run\n")
+	identity, err := fileidentity.Capture(path)
+	if err != nil {
+		t.Fatalf("Capture returned error: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	_, err = Run(context.Background(), Spec{
+		Path:         path,
+		PathIdentity: identity,
+		Env:          helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
+		Stdout:       &stdout,
+	}, nil)
+	if !errors.Is(err, ErrMutableExecutable) {
+		t.Fatalf("Run error = %v, want %v", err, ErrMutableExecutable)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("mutable executable appears to have run: stdout=%q", stdout.String())
+	}
+}
+
 func TestRunStopsBeforeSpawnWhenStartingAuditFails(t *testing.T) {
 	t.Parallel()
 
 	_, err := Run(context.Background(), Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
-		Env:          helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
-		Audit:        failingAudit{failType: "command_starting"},
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
+		Env:                    helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
+		Audit:                  failingAudit{failType: "command_starting"},
 	}, nil)
 	if err == nil {
 		t.Fatal("expected command_starting audit failure")
@@ -254,11 +284,12 @@ func TestRunTerminatesChildWhenStartedAuditFails(t *testing.T) {
 	t.Parallel()
 
 	_, err := Run(context.Background(), Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
-		Env:          helperEnv(),
-		Audit:        failingAudit{failType: "command_started"},
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
+		Env:                    helperEnv(),
+		Audit:                  failingAudit{failType: "command_started"},
 	}, nil)
 	if err == nil {
 		t.Fatal("expected command_started audit failure")
@@ -277,11 +308,12 @@ func TestRunForwardsInterruptToChild(t *testing.T) {
 	}()
 
 	result, err := Run(context.Background(), Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "wait-signal"},
-		Env:          helperEnv(),
-		Stdout:       &stdout,
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "wait-signal"},
+		Env:                    helperEnv(),
+		Stdout:                 &stdout,
 	}, interrupts)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -305,10 +337,11 @@ func TestRunTerminatesChildOnContextCancel(t *testing.T) {
 
 	started := time.Now()
 	result, err := Run(ctx, Spec{
-		Path:         os.Args[0],
-		PathIdentity: currentExecutableIdentity(t),
-		Args:         []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
-		Env:          helperEnv(),
+		Path:                   os.Args[0],
+		PathIdentity:           currentExecutableIdentity(t),
+		AllowMutableExecutable: true,
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
+		Env:                    helperEnv(),
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)

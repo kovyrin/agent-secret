@@ -7,6 +7,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case cwd
         case expiresAt
         case nonce
+        case allowMutableExecutable
         case overrideEnv
         case overriddenAliases
         case reason
@@ -37,6 +38,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var secrets: [RequestedSecret]
     /// Whether approved values will replace existing environment variables.
     public var overrideEnv: Bool
+    /// Whether the caller explicitly allowed a mutable executable path.
+    public var allowMutableExecutable: Bool
     /// Existing environment aliases that will be replaced.
     public var overriddenAliases: [String]
     /// Maximum command launches covered by a reusable approval.
@@ -53,6 +56,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         secrets: [RequestedSecret],
         resolvedExecutable: String? = nil,
         overrideEnv: Bool = false,
+        allowMutableExecutable: Bool = false,
         overriddenAliases: [String] = [],
         reusableUses: Int = Self.defaultReusableUses
     ) {
@@ -65,6 +69,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.expiresAt = expiresAt
         self.secrets = secrets
         self.overrideEnv = overrideEnv
+        self.allowMutableExecutable = allowMutableExecutable
         self.overriddenAliases = overriddenAliases
         self.reusableUses = reusableUses
     }
@@ -81,6 +86,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
         overrideEnv = try container.decodeIfPresent(Bool.self, forKey: .overrideEnv) ?? false
+        allowMutableExecutable = try container.decodeIfPresent(Bool.self, forKey: .allowMutableExecutable) ?? false
         overriddenAliases = try container.decodeIfPresent([String].self, forKey: .overriddenAliases) ?? []
         reusableUses = try container.decodeIfPresent(Int.self, forKey: .reusableUses) ?? Self.defaultReusableUses
     }

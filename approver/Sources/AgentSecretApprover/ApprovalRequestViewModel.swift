@@ -21,6 +21,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let secretRows: [String]
         let timeRemaining: String
         let overrideWarning: String?
+        let mutableExecutableWarning: String?
     }
 
     private static let highScopeSecretThreshold: Int = 6
@@ -79,6 +80,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let printsEnvironmentWarning: Bool
     /// Environment override warning when applicable.
     public let overrideWarning: String?
+    /// Mutable executable opt-in warning when applicable.
+    public let mutableExecutableWarning: String?
     /// Footer copy with correct singular/plural wording.
     public let footerMessage: String
     /// Full sanitized prompt body for AppKit alerts.
@@ -116,6 +119,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         allowReusableTitle = Self.reuseTitle(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
         printsEnvironmentWarning = Self.environmentWarning(for: request)
         overrideWarning = Self.overrideWarning(for: request)
+        mutableExecutableWarning = Self.mutableExecutableWarning(for: request)
         footerMessage = Self.footerMessage(secretCount: secretPresentation.count, expired: isExpired)
         renderedText = Self.renderedText(
             for: request,
@@ -129,7 +133,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
                 resolvedExecutable: resolvedExecutable,
                 secretRows: secretRows,
                 timeRemaining: timeRemaining,
-                overrideWarning: overrideWarning
+                overrideWarning: overrideWarning,
+                mutableExecutableWarning: mutableExecutableWarning
             )
         )
     }
@@ -202,6 +207,9 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         if let overrideWarning: String = viewModel.overrideWarning {
             lines.append(overrideWarning)
         }
+        if let mutableExecutableWarning: String = viewModel.mutableExecutableWarning {
+            lines.append(mutableExecutableWarning)
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -210,6 +218,13 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             return nil
         }
         return "Will replace existing variables: \(request.overriddenAliases.joined(separator: ", "))"
+    }
+
+    private static func mutableExecutableWarning(for request: ApprovalRequest) -> String? {
+        guard request.allowMutableExecutable else {
+            return nil
+        }
+        return "Mutable executable opt-in: command path may be replaceable before launch."
     }
 
     private static func commandArguments(_ command: [String]) -> [CommandArgumentViewModel] {

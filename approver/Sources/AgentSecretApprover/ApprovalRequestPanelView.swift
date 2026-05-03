@@ -167,6 +167,9 @@ import Foundation
                     if let overrideWarning: String = viewModel.overrideWarning {
                         ApprovalPanelDetailLine(label: "Overrides", value: overrideWarning)
                     }
+                    if let mutableExecutableWarning: String = viewModel.mutableExecutableWarning {
+                        ApprovalPanelDetailLine(label: "Executable", value: mutableExecutableWarning)
+                    }
                     ApprovalPanelDetailLine(label: "Reusable approval", value: reusableDetail)
                 }
                 .padding(.top, Metric.detailTopPadding)

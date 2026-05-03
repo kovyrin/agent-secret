@@ -84,6 +84,7 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 		{name: "delivery mode", mutate: func(r *request.ExecRequest) { r.DeliveryMode = request.DeliverySessionSocket }},
 		{name: "override", mutate: func(r *request.ExecRequest) { r.OverrideEnv = true }},
 		{name: "overridden alias", mutate: func(r *request.ExecRequest) { r.OverriddenAliases = []string{"TOKEN"} }},
+		{name: "mutable executable opt-in", mutate: func(r *request.ExecRequest) { r.AllowMutableExecutable = true }},
 		{name: "ttl", mutate: func(r *request.ExecRequest) { r.TTL = 5 * time.Minute }},
 	}
 
