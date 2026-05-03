@@ -108,34 +108,7 @@ import Foundation
         }
 
         private var requestContext: some View {
-            VStack(alignment: .leading, spacing: Metric.contextRowSpacing) {
-                ApprovalPanelContextRow(
-                    icon: "bubble.left",
-                    title: "Reason",
-                    value: viewModel.reason,
-                    valueLineLimit: nil
-                )
-                ApprovalPanelContextRow(
-                    icon: "terminal",
-                    title: "Command",
-                    value: viewModel.command,
-                    inspectAction: commandInspectionAction
-                )
-                ApprovalPanelContextRow(icon: "folder", title: "Project folder", value: viewModel.projectFolder)
-                ApprovalPanelContextRow(icon: "scope", title: "Scope", value: viewModel.scopeSummary)
-            }
-        }
-
-        private var commandInspectionAction: (() -> Void)? {
-            guard viewModel.commandNeedsInspector else {
-                return nil
-            }
-            return {
-                textInspection = ApprovalPanelTextInspection(
-                    title: "Command arguments",
-                    text: viewModel.commandInspectionText
-                )
-            }
+            ApprovalRequestContextSection(viewModel: viewModel, textInspection: $textInspection)
         }
 
         private var caution: some View {

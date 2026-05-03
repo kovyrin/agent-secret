@@ -24,6 +24,7 @@ import Foundation
                                 .buttonStyle(.plain)
                                 .font(.system(size: Metric.detailSubtitleFontSize, weight: .medium))
                                 .foregroundStyle(Color.green)
+                                .accessibilityLabel("View full \(title)")
                         }
                     }
                     Text(value)
