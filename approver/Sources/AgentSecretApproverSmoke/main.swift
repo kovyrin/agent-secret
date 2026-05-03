@@ -14,7 +14,7 @@ private let kController: ApprovalController = .init(
     presenter: StaticDecisionPresenter(decision: kOptions.decision),
     logger: kLogger
 )
-private let kDecision: ApprovalDecision = try kController.run()
+private let kDecision: ApprovalDecision = try await kController.run()
 
 try assert(kDecision.requestID == kRequest.requestID, "decision request ID mismatch")
 try assert(kDecision.nonce == kRequest.nonce, "decision nonce mismatch")

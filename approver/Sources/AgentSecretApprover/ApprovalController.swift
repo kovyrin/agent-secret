@@ -4,7 +4,7 @@ import Foundation
 public final class ApprovalController {
     private static let reusableDecisionUses: Int = 3
 
-    private let client: ApprovalDaemonClient
+    private let client: ApprovalDaemonClientWorker
     private let presenter: ApprovalPresenter
     private let logger: ApprovalLogger
 
@@ -14,7 +14,7 @@ public final class ApprovalController {
         presenter: ApprovalPresenter,
         logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions")
     ) {
-        self.client = client
+        self.client = ApprovalDaemonClientWorker(client: client)
         self.presenter = presenter
         self.logger = logger
     }
@@ -22,9 +22,9 @@ public final class ApprovalController {
     /// Executes one approval interaction and returns the submitted decision.
     @preconcurrency
     @MainActor
-    public func run() throws -> ApprovalDecision {
+    public func run() async throws -> ApprovalDecision {
         logger.record("approval_request_fetch_started", requestID: nil)
-        let request: ApprovalRequest = try client.fetchPendingRequest()
+        let request: ApprovalRequest = try await client.fetchPendingRequest()
         logger.record("approval_request_loaded", requestID: request.requestID)
 
         let decisionKind: ApprovalDecisionKind = presenter.decide(for: request)
@@ -36,7 +36,7 @@ public final class ApprovalController {
             reusableUses: reusableUses
         )
 
-        try client.submit(decision)
+        try await client.submit(decision)
         logger.record("approval_decision_submitted", requestID: request.requestID)
         return decision
     }
