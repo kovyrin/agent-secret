@@ -52,6 +52,28 @@ func NewParser(_ func() time.Time) Parser {
 	return Parser{}
 }
 
+type execFlags struct {
+	reason                 string
+	cwd                    string
+	ttl                    time.Duration
+	profileName            string
+	configPath             string
+	account                string
+	overrideEnv            bool
+	forceRefresh           bool
+	allowMutableExecutable bool
+	secrets                secretFlags
+	only                   onlyFlags
+	envFiles               envFileFlags
+}
+
+type execInputs struct {
+	reason  string
+	ttl     time.Duration
+	env     []string
+	secrets []request.SecretSpec
+}
+
 func (p Parser) Parse(args []string) (Command, error) {
 	if len(args) == 0 {
 		return Command{Kind: KindHelp, HelpText: TopHelp()}, ErrHelpRequested
@@ -278,25 +300,23 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		return Command{}, ErrShellStringCommand
 	}
 
-	var secrets secretFlags
-	var only onlyFlags
-	var envFiles envFileFlags
+	var execOpts execFlags
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	reason := fs.String("reason", "", "approval reason")
-	cwd := fs.String("cwd", "", "working directory")
-	ttl := fs.Duration("ttl", 0, "approval ttl")
-	profileName := fs.String("profile", "", "profile name")
-	configPath := fs.String("config", "", "profile config path")
-	account := fs.String("account", "", "1Password account")
-	overrideEnv := fs.Bool("override-env", false, "override existing env aliases")
-	forceRefresh := fs.Bool("force-refresh", false, "refresh reusable approval values")
-	allowMutableExecutable := fs.Bool("allow-mutable-executable", false, "allow mutable executable path")
+	fs.StringVar(&execOpts.reason, "reason", "", "approval reason")
+	fs.StringVar(&execOpts.cwd, "cwd", "", "working directory")
+	fs.DurationVar(&execOpts.ttl, "ttl", 0, "approval ttl")
+	fs.StringVar(&execOpts.profileName, "profile", "", "profile name")
+	fs.StringVar(&execOpts.configPath, "config", "", "profile config path")
+	fs.StringVar(&execOpts.account, "account", "", "1Password account")
+	fs.BoolVar(&execOpts.overrideEnv, "override-env", false, "override existing env aliases")
+	fs.BoolVar(&execOpts.forceRefresh, "force-refresh", false, "refresh reusable approval values")
+	fs.BoolVar(&execOpts.allowMutableExecutable, "allow-mutable-executable", false, "allow mutable executable path")
 	jsonOutput := fs.Bool("json", false, "unsupported")
 	reuse := fs.Bool("reuse", false, "unsupported")
-	fs.Var(&secrets, "secret", "secret mapping")
-	fs.Var(&only, "only", "profile alias filter")
-	fs.Var(&envFiles, "env-file", "dotenv env file")
+	fs.Var(&execOpts.secrets, "secret", "secret mapping")
+	fs.Var(&execOpts.only, "only", "profile alias filter")
+	fs.Var(&execOpts.envFiles, "env-file", "dotenv env file")
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
@@ -309,26 +329,51 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if fs.NArg() != 0 {
 		return Command{}, ErrShellStringCommand
 	}
-	effectiveReason := *reason
-	effectiveTTL := *ttl
-	envFileValues, err := loadEnvFiles(envFiles.paths)
+
+	inputs, err := resolveExecInputs(execOpts)
 	if err != nil {
 		return Command{}, err
+	}
+
+	req, err := request.NewExec(request.ExecOptions{
+		Reason:                 inputs.reason,
+		Command:                command,
+		CWD:                    execOpts.cwd,
+		Env:                    inputs.env,
+		Secrets:                inputs.secrets,
+		TTL:                    inputs.ttl,
+		OverrideEnv:            execOpts.overrideEnv,
+		ForceRefresh:           execOpts.forceRefresh,
+		AllowMutableExecutable: execOpts.allowMutableExecutable,
+	})
+	if err != nil {
+		return Command{}, fmt.Errorf("build exec request: %w", err)
+	}
+
+	return Command{Kind: KindExec, ExecRequest: req}, nil
+}
+
+func resolveExecInputs(flags execFlags) (execInputs, error) {
+	effectiveReason := flags.reason
+	effectiveTTL := flags.ttl
+	envFileValues, err := loadEnvFiles(flags.envFiles.paths)
+	if err != nil {
+		return execInputs{}, err
 	}
 	childEnv := mergeEnv(os.Environ(), envFileValues.Plain)
 	childEnv = removeEnvKeys(childEnv, envFileValues.SecretAliases)
-	hasExplicitSource := len(secrets.specs) > 0 || len(envFiles.paths) > 0
-	profile, loadedProfile, err := loadExecProfile(*profileName, *configPath, hasExplicitSource)
+	hasExplicitSource := len(flags.secrets.specs) > 0 || len(flags.envFiles.paths) > 0
+	profile, loadedProfile, err := loadExecProfile(flags.profileName, flags.configPath, hasExplicitSource)
 	if err != nil {
-		return Command{}, err
+		return execInputs{}, err
 	}
-	configAccount, err := loadExecConfigAccount(*profileName, *configPath, hasExplicitSource, loadedProfile)
+	configAccount, err := loadExecConfigAccount(flags.profileName, flags.configPath, hasExplicitSource, loadedProfile)
 	if err != nil {
-		return Command{}, err
+		return execInputs{}, err
 	}
-	onlyActive := len(only.aliases) > 0
+	onlyActive := len(flags.only.aliases) > 0
 	if onlyActive && !loadedProfile && len(envFileValues.Secrets) == 0 {
-		return Command{}, fmt.Errorf("%w: --only requires a profile, default_profile, or --env-file secret refs", ErrInvalidArguments)
+		return execInputs{}, fmt.Errorf("%w: --only requires a profile, default_profile, or --env-file secret refs", ErrInvalidArguments)
 	}
 	if loadedProfile && effectiveReason == "" {
 		effectiveReason = profile.Reason
@@ -336,17 +381,17 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if loadedProfile && effectiveTTL == 0 {
 		effectiveTTL = profile.TTL
 	}
-	remainingOnly := newOnlySet(only.aliases)
+	remainingOnly := newOnlySet(flags.only.aliases)
 	envFileSecrets := filterSecretsByOnly(envFileValues.Secrets, remainingOnly, onlyActive)
 	var profileSecrets []request.SecretSpec
 	if loadedProfile {
 		profileSecrets = filterSecretsByOnly(profile.Secrets, remainingOnly, onlyActive)
 	}
 	if onlyActive && len(remainingOnly) > 0 {
-		return Command{}, missingOnlyError(remainingOnly)
+		return execInputs{}, missingOnlyError(remainingOnly)
 	}
 
-	accountFallback := execAccountFallback(*account)
+	accountFallback := execAccountFallback(flags.account)
 	if !loadedProfile && strings.TrimSpace(configAccount) != "" {
 		accountFallback = configAccount
 	}
@@ -357,27 +402,17 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		if strings.TrimSpace(cliAccount) == "" {
 			cliAccount = accountFallback
 		}
-		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(secrets.specs), envFileSecrets...), cliAccount)...)
+		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(flags.secrets.specs), envFileSecrets...), cliAccount)...)
 	} else {
-		effectiveSecrets = append(applyDefaultAccount(slices.Clone(secrets.specs), accountFallback), applyDefaultAccount(envFileSecrets, accountFallback)...)
+		effectiveSecrets = append(applyDefaultAccount(slices.Clone(flags.secrets.specs), accountFallback), applyDefaultAccount(envFileSecrets, accountFallback)...)
 	}
 
-	req, err := request.NewExec(request.ExecOptions{
-		Reason:                 effectiveReason,
-		Command:                command,
-		CWD:                    *cwd,
-		Env:                    childEnv,
-		Secrets:                effectiveSecrets,
-		TTL:                    effectiveTTL,
-		OverrideEnv:            *overrideEnv,
-		ForceRefresh:           *forceRefresh,
-		AllowMutableExecutable: *allowMutableExecutable,
-	})
-	if err != nil {
-		return Command{}, fmt.Errorf("build exec request: %w", err)
-	}
-
-	return Command{Kind: KindExec, ExecRequest: req}, nil
+	return execInputs{
+		reason:  effectiveReason,
+		ttl:     effectiveTTL,
+		env:     childEnv,
+		secrets: effectiveSecrets,
+	}, nil
 }
 
 func loadExecProfile(profileName string, configPath string, hasExplicitSource bool) (profileconfig.Profile, bool, error) {
