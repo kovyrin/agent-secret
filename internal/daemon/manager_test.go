@@ -27,16 +27,23 @@ func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	socketPath := filepath.Join(dir, "d.sock")
+	output, err := os.Create(filepath.Join(dir, "daemon-helper.log")) //nolint:gosec // G304: manager helper log is inside a test-owned temp directory.
+	if err != nil {
+		t.Fatalf("create helper output log: %v", err)
+	}
+	defer func() { _ = output.Close() }()
 	manager := Manager{
 		SocketPath:     socketPath,
 		DaemonPath:     os.Args[0],
 		DaemonArgs:     []string{"-test.run=TestManagerStartsDaemonAndStopsItExplicitly", "--", "--socket", "{socket}"},
 		StartupTimeout: 2 * time.Second,
+		daemonStdout:   output,
+		daemonStderr:   output,
 	}
 	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_HELPER", "1")
 
 	if err := manager.EnsureRunning(context.Background()); err != nil {
-		t.Fatalf("EnsureRunning returned error: %v", err)
+		t.Fatalf("EnsureRunning returned error: %v\nhelper output:\n%s", err, readManagerHelperOutput(t, output.Name()))
 	}
 	status, err := manager.Status(context.Background())
 	if err != nil {
@@ -52,6 +59,18 @@ func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 		t.Fatalf("Stop returned error: %v", err)
 	}
 	waitForStatusFailure(t, manager)
+}
+
+func readManagerHelperOutput(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path) //nolint:gosec // G304: helper output path is created by this test.
+	if err != nil {
+		return fmt.Sprintf("read %s: %v", path, err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return "(empty)"
+	}
+	return string(data)
 }
 
 func runDaemonManagerHelper(t *testing.T) {

@@ -19,6 +19,8 @@ type Manager struct {
 	DaemonArgs      []string
 	StartupTimeout  time.Duration
 	ProtocolTimeout time.Duration
+	daemonStdout    io.Writer
+	daemonStderr    io.Writer
 }
 
 func NewManager(socketPath string) (Manager, error) {
@@ -75,8 +77,8 @@ func (m Manager) Start(ctx context.Context) error {
 	}
 	defer func() { _ = devNull.Close() }()
 	cmd.Stdin = devNull
-	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	cmd.Stdout = managerWriter(devNull, m.daemonStdout)
+	cmd.Stderr = managerWriter(devNull, m.daemonStderr)
 	configureDaemonProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start agent-secretd: %w", err)
@@ -95,6 +97,13 @@ func (m Manager) Start(ctx context.Context) error {
 		return fmt.Errorf("wait for agent-secretd readiness: %w", err)
 	}
 	return nil
+}
+
+func managerWriter(fallback io.Writer, configured io.Writer) io.Writer {
+	if configured != nil {
+		return configured
+	}
+	return fallback
 }
 
 func (m Manager) Status(ctx context.Context) (protocol.StatusPayload, error) {
