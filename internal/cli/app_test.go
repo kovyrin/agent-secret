@@ -3,17 +3,21 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -129,6 +133,41 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "env-ok") {
 		t.Fatalf("child appears to have run after denial: stdout=%q", stdout.String())
+	}
+}
+
+func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	client, events, cleanup := startPostStartStoppedAppDaemon(t)
+	defer cleanup()
+	var stdout lockedBuffer
+	var stderr lockedBuffer
+	app := NewApp(appTestManager(client), &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--reason", "Run helper",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
+		"--",
+		os.Args[0], "-test.run=TestAppExecAllowsChildAfterDaemonStoppedStartedAudit", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "env-ok" {
+		t.Fatalf("stdout = %q, want env-ok", stdout.String())
+	}
+	if !postStartStoppedDaemonSaw(events, daemon.TypeCommandStarted) {
+		t.Fatal("fake daemon did not receive command.started")
+	}
+	if strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("stderr leaked secret: %q", stderr.String())
 	}
 }
 
@@ -407,13 +446,45 @@ func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
 	}
 }
 
-func TestDaemonAuditReporterTreatsProtocolFailureAsFatal(t *testing.T) {
+func TestDaemonAuditReporterFatalStartedAuditClassification(t *testing.T) {
 	protocolErr := &daemon.ProtocolError{Code: "invalid_nonce", Message: "bad nonce"}
-	if !isProtocolFailure(protocolErr) {
-		t.Fatal("protocol error was not classified as protocol failure")
+	if !isFatalCommandStartedAuditFailure(protocolErr) {
+		t.Fatal("invalid nonce protocol error was not classified as fatal")
 	}
-	if isProtocolFailure(errors.New("network closed")) {
-		t.Fatal("plain error was classified as protocol failure")
+	stoppedErr := &daemon.ProtocolError{Code: "daemon_stopped", Message: "daemon stopped"}
+	if isFatalCommandStartedAuditFailure(stoppedErr) {
+		t.Fatal("daemon stopped protocol error was classified as fatal")
+	}
+	if !isFatalCommandStartedAuditFailure(daemon.ErrMalformedEnvelope) {
+		t.Fatal("local malformed response error was not classified as fatal")
+	}
+	if isFatalCommandStartedAuditFailure(errors.New("network closed")) {
+		t.Fatal("plain error was classified as fatal")
+	}
+}
+
+func TestDaemonAuditReporterWarnsOnDaemonStoppedAfterChildStart(t *testing.T) {
+	client, _, cleanup := startPostStartStoppedAppDaemon(t)
+	defer cleanup()
+
+	daemonClient, err := daemon.ConnectWithPeerValidator(context.Background(), client.SocketPath, nil)
+	if err != nil {
+		t.Fatalf("ConnectWithPeerValidator returned error: %v", err)
+	}
+	defer func() { _ = daemonClient.Close() }()
+
+	var stderr bytes.Buffer
+	reporter := daemonAuditReporter{
+		client:    daemonClient,
+		requestID: "req_1",
+		nonce:     "nonce_1",
+		stderr:    &stderr,
+	}
+	if err := reporter.Record(context.Background(), execwrap.AuditEvent{Type: "command_started", ChildPID: os.Getpid()}); err != nil {
+		t.Fatalf("Record returned error: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "command_started audit was not recorded") {
+		t.Fatalf("stderr = %q, want command_started warning", stderr.String())
 	}
 }
 
@@ -437,6 +508,23 @@ func runAppExecHelper() {
 
 type appTestClient struct {
 	SocketPath string
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func appTestManager(client appTestClient) daemon.Manager {
@@ -524,6 +612,137 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 		<-done
 		_ = os.RemoveAll(dir)
 	}
+}
+
+func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan string, func()) {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-post-start-stop-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	path := filepath.Join(dir, "d.sock")
+	listener, err := daemon.ListenUnix(path)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	errs := make(chan error, 1)
+	events := make(chan string, 8)
+	go func() {
+		defer close(done)
+		for {
+			conn, err := listener.AcceptUnix()
+			if err != nil {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					reportPostStartStoppedDaemonError(errs, err)
+					return
+				}
+			}
+			go func() {
+				if err := handlePostStartStoppedDaemonConn(conn, events); err != nil {
+					reportPostStartStoppedDaemonError(errs, err)
+				}
+			}()
+		}
+	}()
+
+	return appTestClient{SocketPath: path}, events, func() {
+		cancel()
+		_ = listener.Close()
+		<-done
+		_ = os.RemoveAll(dir)
+		select {
+		case err := <-errs:
+			t.Fatalf("post-start stopped daemon returned error: %v", err)
+		default:
+		}
+	}
+}
+
+func postStartStoppedDaemonSaw(events <-chan string, want string) bool {
+	for {
+		select {
+		case got := <-events:
+			if got == want {
+				return true
+			}
+		default:
+			return false
+		}
+	}
+}
+
+func reportPostStartStoppedDaemonError(errs chan<- error, err error) {
+	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return
+	}
+	select {
+	case errs <- err:
+	default:
+	}
+}
+
+func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- string) error {
+	defer func() { _ = conn.Close() }()
+
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+	for {
+		var env daemon.Envelope
+		if err := decoder.Decode(&env); err != nil {
+			return err
+		}
+		select {
+		case events <- env.Type:
+		default:
+		}
+		switch env.Type {
+		case daemon.TypeDaemonStatus:
+			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, daemon.StatusPayload{PID: os.Getpid()}); err != nil {
+				return err
+			}
+		case daemon.TypeRequestExec:
+			payload := daemon.ExecResponsePayload{
+				Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+				SecretAliases: []string{"TOKEN"},
+			}
+			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, payload); err != nil {
+				return err
+			}
+		case daemon.TypeCommandStarted, daemon.TypeCommandCompleted:
+			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, "daemon_stopped", daemon.ErrDaemonStopped); err != nil {
+				return err
+			}
+		default:
+			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, "bad_type", daemon.ErrProtocolType); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func writePostStartStoppedDaemonOK(encoder *json.Encoder, requestID string, nonce string, payload any) error {
+	env, err := daemon.NewEnvelope(daemon.TypeOK, requestID, nonce, payload)
+	if err != nil {
+		return err
+	}
+	return encoder.Encode(env)
+}
+
+func writePostStartStoppedDaemonError(encoder *json.Encoder, requestID string, nonce string, code string, err error) error {
+	payload := daemon.ErrorPayload{Code: code, Message: err.Error()}
+	env, marshalErr := daemon.NewEnvelope(daemon.TypeError, requestID, nonce, payload)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	return encoder.Encode(env)
 }
 
 func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
