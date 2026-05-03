@@ -20,6 +20,10 @@ type reusableGrantManager struct {
 	stopped func() bool
 }
 
+type reusableRefreshResolver func(policy.ReusableApproval) (map[secretIdentity]string, error)
+type reusableRefreshAudit func(policy.ReusableApproval) error
+type reusableGrantLiveness func(policy.ReusableApproval) error
+
 func newReusableGrantManager(
 	now func() time.Time,
 	store *policy.Store,
@@ -69,17 +73,6 @@ func (m *reusableGrantManager) reserve(
 			m.clearScope(approval.ID)
 		}
 		return policy.ReusableApproval{}, nil
-	}
-	return approval, nil
-}
-
-func (m *reusableGrantManager) addReserved(
-	req request.ExecRequest,
-	maxUses int,
-) (policy.ReusableApproval, error) {
-	approval, err := m.store.AddReusableWithReservedUse(req, maxUses, "", "")
-	if err != nil {
-		return policy.ReusableApproval{}, err
 	}
 	return approval, nil
 }
@@ -207,4 +200,105 @@ func (m *reusableGrantManager) cachedValues(
 		env[secret.Alias] = value
 	}
 	return env, nil
+}
+
+func (m *reusableGrantManager) tryGrant(
+	ctx context.Context,
+	req request.ExecRequest,
+	audit policy.ReuseAuditSink,
+	refresh reusableRefreshResolver,
+	recordRefresh reusableRefreshAudit,
+	ensureActive reusableGrantLiveness,
+) (ExecGrant, error) {
+	approval, err := m.reserve(ctx, req, audit)
+	if err != nil {
+		return ExecGrant{}, err
+	}
+	if approval.ID == "" {
+		return ExecGrant{}, nil
+	}
+	delivered := false
+	defer func() {
+		if !delivered {
+			m.releaseReservation(approval.ID)
+		}
+	}()
+	if err := ensureActive(approval); err != nil {
+		return ExecGrant{}, err
+	}
+
+	var values map[string]string
+	if req.ForceRefresh {
+		refValues, err := refresh(approval)
+		if err != nil {
+			return ExecGrant{}, err
+		}
+		values, err = m.refreshedValues(approval, req, refValues, recordRefresh, ensureActive)
+		if err != nil {
+			return ExecGrant{}, err
+		}
+	} else {
+		values, err = m.cachedValues(approval.ID, req.Secrets)
+		if err != nil {
+			return ExecGrant{}, err
+		}
+	}
+	if err := ensureActive(approval); err != nil {
+		return ExecGrant{}, err
+	}
+
+	delivered = true
+	return ExecGrant{
+		Env:                values,
+		SecretAliases:      aliases(req.Secrets),
+		ApprovalID:         approval.ID,
+		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
+		approvalExpiresAt:  approval.ExpiresAt,
+	}, nil
+}
+
+func (m *reusableGrantManager) refreshedValues(
+	approval policy.ReusableApproval,
+	req request.ExecRequest,
+	refValues map[secretIdentity]string,
+	recordRefresh reusableRefreshAudit,
+	ensureActive reusableGrantLiveness,
+) (map[string]string, error) {
+	if err := ensureActive(approval); err != nil {
+		return nil, err
+	}
+	values := fanoutValues(req.Secrets, refValues)
+	if err := m.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
+		m.rollbackApproval(approval.ID)
+		return nil, err
+	}
+	if err := recordRefresh(approval); err != nil {
+		m.rollbackApproval(approval.ID)
+		return nil, err
+	}
+	if err := ensureActive(approval); err != nil {
+		m.rollbackApproval(approval.ID)
+		return nil, err
+	}
+	return values, nil
+}
+
+func (m *reusableGrantManager) createGrant(
+	req request.ExecRequest,
+	decision ApprovalDecision,
+	refValues map[secretIdentity]string,
+) (string, time.Time, error) {
+	if !decision.Reusable {
+		return "", time.Time{}, nil
+	}
+	approval, err := m.store.AddReusableWithReservedUse(req, decision.ReusableUses, "", "")
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if err := m.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
+		m.rollbackApproval(approval.ID)
+		return "", time.Time{}, err
+	}
+	m.scheduleExpiry(approval.ID, approval.ExpiresAt)
+	return approval.ID, approval.ExpiresAt, nil
 }

@@ -452,45 +452,26 @@ func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event)
 }
 
 func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (ExecGrant, error) {
-	approval, err := b.reusable.reserve(ctx, req, b.audit)
-	if err != nil {
-		return ExecGrant{}, err
-	}
-	if approval.ID == "" {
-		return ExecGrant{}, nil
-	}
-	delivered := false
-	defer func() {
-		if !delivered {
-			b.reusable.releaseReservation(approval.ID)
-		}
-	}()
-	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
-		return ExecGrant{}, err
-	}
-
-	var values map[string]string
-	var valueErr error
-	if req.ForceRefresh {
-		values, valueErr = b.refreshedReusableValues(ctx, approval, req)
-	} else {
-		values, valueErr = b.reusable.cachedValues(approval.ID, req.Secrets)
-	}
-	if valueErr != nil {
-		return ExecGrant{}, valueErr
-	}
-	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
-		return ExecGrant{}, err
-	}
-
-	delivered = true
-	return ExecGrant{
-		Env:                values,
-		SecretAliases:      aliases(req.Secrets),
-		ApprovalID:         approval.ID,
-		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
-		approvalExpiresAt:  approval.ExpiresAt,
-	}, nil
+	return b.reusable.tryGrant(
+		ctx,
+		req,
+		b.audit,
+		func(policy.ReusableApproval) (map[secretIdentity]string, error) {
+			refValues, err := b.resolveUniqueRefs(ctx, "", req)
+			if err != nil {
+				return nil, b.requestError(ctx, req, err)
+			}
+			return refValues, nil
+		},
+		func(approval policy.ReusableApproval) error {
+			event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
+			event.ApprovalID = approval.ID
+			return b.recordRequiredAudit(ctx, event)
+		},
+		func(approval policy.ReusableApproval) error {
+			return b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt)
+		},
+	)
 }
 
 func (b *Broker) preflightAudit(ctx context.Context) error {
@@ -541,20 +522,9 @@ func (b *Broker) freshGrant(
 	}
 	values := fanoutValues(req.Secrets, refValues)
 
-	approvalID := ""
-	approvalExpiresAt := time.Time{}
-	if decision.Reusable {
-		approval, err := b.reusable.addReserved(req, decision.ReusableUses)
-		if err != nil {
-			return ExecGrant{}, err
-		}
-		approvalID = approval.ID
-		approvalExpiresAt = approval.ExpiresAt
-		if err := b.reusable.cacheResolvedValues(approvalID, approval.ExpiresAt, refValues); err != nil {
-			b.reusable.rollbackApproval(approvalID)
-			return ExecGrant{}, err
-		}
-		b.reusable.scheduleExpiry(approval.ID, approval.ExpiresAt)
+	approvalID, approvalExpiresAt, err := b.reusable.createGrant(req, decision, refValues)
+	if err != nil {
+		return ExecGrant{}, err
 	}
 
 	return ExecGrant{
@@ -643,36 +613,6 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 	}
 
 	return resolved, nil
-}
-
-func (b *Broker) refreshedReusableValues(
-	ctx context.Context,
-	approval policy.ReusableApproval,
-	req request.ExecRequest,
-) (map[string]string, error) {
-	refValues, err := b.resolveUniqueRefs(ctx, "", req)
-	if err != nil {
-		return nil, b.requestError(ctx, req, err)
-	}
-	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
-		return nil, err
-	}
-	values := fanoutValues(req.Secrets, refValues)
-	if err := b.reusable.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
-		b.reusable.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
-	event.ApprovalID = approval.ID
-	if err := b.recordRequiredAudit(ctx, event); err != nil {
-		b.reusable.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	if err := b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
-		b.reusable.rollbackApproval(approval.ID)
-		return nil, err
-	}
-	return values, nil
 }
 
 func (b *Broker) recordRequiredAudit(ctx context.Context, event audit.Event) error {
