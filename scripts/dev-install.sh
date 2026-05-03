@@ -151,10 +151,6 @@ install -d -m 0755 "$app_dir"
 rm -rf "$target_app"
 ditto "$source_app" "$target_app"
 
-echo "Removing old split-app development artifacts..."
-rm -rf "$app_dir/AgentSecretDaemon.app" "$app_dir/AgentSecretApprover.app"
-rm -f "$bin_dir/agent-secretd" "$bin_dir/agent-secret-approver"
-
 echo "Installing command symlink into $bin_dir..."
 install -d -m 0755 "$bin_dir"
 "$target_cli" install-cli --bin-dir "$bin_dir" --force >/dev/null

@@ -101,13 +101,13 @@ AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-public-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh
-cd approver && swift run agent-secret-approver-smoke
+cd approver && swift run agent-secret-app-smoke
 ```
 
 The approver smoke executable can also be run directly:
 
 ```bash
-swift run agent-secret-approver-smoke
+swift run agent-secret-app-smoke
 ```
 
 Live 1Password integration tests are intentionally opt-in and are not part of

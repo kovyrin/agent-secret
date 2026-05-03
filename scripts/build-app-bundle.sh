@@ -251,8 +251,8 @@ run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secr
 
 echo "Building Swift app executable..."
 cd "$project_root/approver"
-"$tool_swift" build -c release --product agent-secret-approver
-approver_binary="$project_root/approver/.build/release/agent-secret-approver"
+"$tool_swift" build -c release --product agent-secret-app
+approver_binary="$project_root/approver/.build/release/agent-secret-app"
 if [[ ! -x "$approver_binary" ]]; then
   echo "build-app-bundle: missing Swift executable $approver_binary" >&2
   exit 1

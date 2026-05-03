@@ -2,6 +2,7 @@
 
 import PackageDescription
 
+// swiftlint:disable:next prefixed_toplevel_constant
 let package = Package(
     name: "AgentSecretApprover",
     platforms: [
@@ -13,11 +14,11 @@ let package = Package(
             targets: ["AgentSecretApprover"]
         ),
         .executable(
-            name: "agent-secret-approver",
+            name: "agent-secret-app",
             targets: ["AgentSecretApproverApp"]
         ),
         .executable(
-            name: "agent-secret-approver-smoke",
+            name: "agent-secret-app-smoke",
             targets: ["AgentSecretApproverSmoke"]
         )
     ],

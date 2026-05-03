@@ -781,7 +781,7 @@ Status: Complete
   the SwiftPM executable target used by tests and smoke runs.
 - Verified with `go test ./...`, `go test -tags integration ./...`,
   `cd approver && swift test`, `cd approver && ./scripts/build-app.sh`,
-  `swift run agent-secret-approver-smoke`, lint, and non-interactive approver
+  `swift run agent-secret-app-smoke`, lint, and non-interactive approver
   fixture smoke. The AppKit foregrounding path is unchanged from the Epic 2
   manual foreground smoke.
 

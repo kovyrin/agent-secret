@@ -824,7 +824,7 @@ func TestProcessApproverLauncherExecutablePath(t *testing.T) {
 		t.Fatalf("app executable path = %q, want %q", got, want)
 	}
 
-	binaryPath := filepath.Join(t.TempDir(), "agent-secret-approver")
+	binaryPath := filepath.Join(t.TempDir(), "agent-secret-app")
 	got, err = (ProcessApproverLauncher{AppPath: binaryPath}).executablePath()
 	if err != nil {
 		t.Fatalf("binary executablePath returned error: %v", err)
@@ -839,12 +839,8 @@ func TestProcessApproverLauncherPrefersUnifiedAppExecutable(t *testing.T) {
 
 	appPath := filepath.Join(t.TempDir(), "Agent Secret.app")
 	unifiedExecutable := filepath.Join(appPath, "Contents", "MacOS", "Agent Secret")
-	legacyExecutable := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
 	if err := os.MkdirAll(filepath.Dir(unifiedExecutable), 0o750); err != nil {
 		t.Fatalf("create app macos dir: %v", err)
-	}
-	if err := os.WriteFile(legacyExecutable, []byte("test"), 0o755); err != nil { //nolint:gosec // G306: approver tests need runnable app executable fixtures.
-		t.Fatalf("write legacy executable: %v", err)
 	}
 	if err := os.WriteFile(unifiedExecutable, []byte("test"), 0o755); err != nil { //nolint:gosec // G306: approver tests need runnable app executable fixtures.
 		t.Fatalf("write unified executable: %v", err)
@@ -882,13 +878,6 @@ func TestApproverCandidatesForBundledExecutables(t *testing.T) {
 	}
 	if !slices.Contains(approverCandidatesForExecutable(daemonPath), want) {
 		t.Fatalf("daemon approver candidates missing top-level app executable")
-	}
-	legacy := filepath.Join(appPath, "Contents", "MacOS", "agent-secret-approver")
-	if slices.Contains(approverCandidatesForExecutable(cliPath), legacy) {
-		t.Fatalf("cli approver candidates include legacy executable %q", legacy)
-	}
-	if slices.Contains(approverExecutablesInApp(appPath), legacy) {
-		t.Fatalf("app executable candidates include legacy executable %q", legacy)
 	}
 }
 
@@ -1029,7 +1018,7 @@ func TestProcessApproverLauncherHealthCheck(t *testing.T) {
 	t.Parallel()
 
 	helper := filepath.Join(t.TempDir(), "approver-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'agent-secret-approver: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'Agent Secret: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}
 
@@ -1062,7 +1051,7 @@ func TestProcessApproverLauncherHealthCheckRejectsUnexpectedOutput(t *testing.T)
 func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
 	t.Parallel()
 
-	helper := filepath.Join(t.TempDir(), "agent-secret-approver")
+	helper := filepath.Join(t.TempDir(), "agent-secret-app")
 	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}

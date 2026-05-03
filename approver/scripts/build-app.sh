@@ -5,10 +5,11 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 approver_root="$(cd "$script_dir/.." && pwd)"
 project_root="$(cd "$approver_root/.." && pwd)"
 # shellcheck source=scripts/bundle-metadata.sh
+# shellcheck disable=SC1091
 source "$project_root/scripts/bundle-metadata.sh"
 dist_dir="$approver_root/dist"
 bundle="$dist_dir/$AGENT_SECRET_APP_NAME.app"
-binary_name="agent-secret-approver"
+binary_name="agent-secret-app"
 version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 

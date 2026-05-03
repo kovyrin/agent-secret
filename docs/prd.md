@@ -203,7 +203,7 @@ such as ssh-agent-like signing.
 agent / Codex
   -> agent-secret CLI
       -> agent-secretd local broker daemon
-          -> agent-secret-approver.app
+          -> Agent Secret.app
           -> 1Password official SDK
           -> in-memory approval/session/secret cache
           -> Unix domain socket API
@@ -278,7 +278,7 @@ Reusable approvals, sessions, use counters, cached secret values, approval
 nonces, and socket paths are memory-only. Stopping the daemon clears that state;
 the already-written audit log remains as history.
 
-### `agent-secret-approver.app`
+### `Agent Secret.app`
 
 - Present a native macOS approval UI.
 - Bring approval prompts to the foreground using public macOS APIs.

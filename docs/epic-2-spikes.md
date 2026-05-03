@@ -85,7 +85,7 @@ Local verification uses the active Xcode developer directory:
 
 ```bash
 cd approver && swift test
-swift run agent-secret-approver-smoke
+swift run agent-secret-app-smoke
 ```
 
 The smoke executable returns `approver-smoke-ok` and verifies that structured
@@ -95,7 +95,7 @@ encode secret refs or aliases in the response.
 Manual foreground smoke command:
 
 ```bash
-cd approver && swift run agent-secret-approver
+cd approver && swift run agent-secret-app
 ```
 
 Run it while another app is focused to confirm the approval window gets
@@ -161,7 +161,7 @@ go test ./...
 go test -tags integration ./...
 go test -run PeerCred -v ./...
 cd approver && swift test
-cd approver && swift run agent-secret-approver-smoke
+cd approver && swift run agent-secret-app-smoke
 ```
 
 The live 1Password test requires 1Password desktop app SDK integration to be

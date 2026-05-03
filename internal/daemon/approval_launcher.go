@@ -47,7 +47,7 @@ func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
 		}
 		return fmt.Errorf("%w: health check failed: %w", ErrApproverLaunchFailed, err)
 	}
-	if got := strings.TrimSpace(stdout.String()); got != "agent-secret-approver: ok" {
+	if got := strings.TrimSpace(stdout.String()); got != "Agent Secret: ok" {
 		return fmt.Errorf("%w: unexpected health check response %q", ErrApproverLaunchFailed, got)
 	}
 	return nil

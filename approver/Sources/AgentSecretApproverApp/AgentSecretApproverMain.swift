@@ -10,7 +10,7 @@ private enum AgentSecretApproverMain {
         do {
             let arguments: [String] = Array(CommandLine.arguments.dropFirst())
             if arguments == ["--health-check"] {
-                print("agent-secret-approver: ok")
+                print("Agent Secret: ok")
                 exit(0)
             }
             guard let socketPath: String = try socketPath(from: arguments) else {
@@ -24,7 +24,7 @@ private enum AgentSecretApproverMain {
             )
             _ = try await controller.run()
         } catch {
-            FileHandle.standardError.write(Data("agent-secret-approver: \(error)\n".utf8))
+            FileHandle.standardError.write(Data("Agent Secret: \(error)\n".utf8))
             exit(usageExitCode)
         }
     }
