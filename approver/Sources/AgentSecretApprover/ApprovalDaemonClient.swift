@@ -2,9 +2,9 @@ import Foundation
 
 /// Daemon connection used by the approver to fetch requests and submit decisions.
 public protocol ApprovalDaemonClient {
-    /// Returns the pending approval request for this approver invocation.
+    /// Opens the approval-pending protocol request without exposing secret values.
     func fetchPendingRequest() throws -> ApprovalRequest
 
-    /// Submits the operator decision back to the daemon.
+    /// Sends a decision that preserves the fetched request's daemon nonce and request ID.
     func submit(_ decision: ApprovalDecision) throws
 }

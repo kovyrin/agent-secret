@@ -6,7 +6,7 @@ public final class ApprovalController {
     private let presenter: ApprovalPresenter
     private let logger: ApprovalLogger
 
-    /// Creates a controller with daemon, presenter, and metadata logger dependencies.
+    /// Use for in-memory clients; socket clients should prefer the factory initializer.
     public convenience init(
         client: ApprovalDaemonClient,
         presenter: ApprovalPresenter,
@@ -26,7 +26,7 @@ public final class ApprovalController {
         self.logger = logger
     }
 
-    /// Executes one approval interaction and returns the submitted decision.
+    /// Runs on the main actor because presenters may open AppKit UI.
     @preconcurrency
     @MainActor
     public func run() async throws -> ApprovalDecision {
