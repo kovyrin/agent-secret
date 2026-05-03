@@ -451,22 +451,49 @@ func assembleExecSecrets(
 	sources execInputSources,
 	filtered filteredExecSecretSources,
 ) []request.SecretSpec {
+	accountFallback := execSecretAccountFallback(flags, sources)
+	if sources.loadedProfile {
+		return assembleProfileExecSecrets(flags, sources, filtered, accountFallback)
+	}
+	return assembleDirectExecSecrets(flags, filtered, accountFallback)
+}
+
+func execSecretAccountFallback(flags execFlags, sources execInputSources) string {
 	accountFallback := execAccountFallback(flags.account)
 	if !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
-		accountFallback = sources.configAccount
+		return sources.configAccount
 	}
-	var effectiveSecrets []request.SecretSpec
-	if sources.loadedProfile {
-		profileSecrets := applyDefaultAccount(filtered.profileSecrets, accountFallback)
-		cliAccount := sources.profile.Account
-		if strings.TrimSpace(cliAccount) == "" {
-			cliAccount = accountFallback
-		}
-		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(flags.secrets.specs), filtered.envFileSecrets...), cliAccount)...)
-	} else {
-		effectiveSecrets = append(applyDefaultAccount(slices.Clone(flags.secrets.specs), accountFallback), applyDefaultAccount(filtered.envFileSecrets, accountFallback)...)
+	return accountFallback
+}
+
+func assembleProfileExecSecrets(
+	flags execFlags,
+	sources execInputSources,
+	filtered filteredExecSecretSources,
+	accountFallback string,
+) []request.SecretSpec {
+	profileDefaults := applyDefaultAccount(filtered.profileSecrets, accountFallback)
+	explicitAccount := profileExplicitSecretAccount(sources, accountFallback)
+	explicitSecrets := append(slices.Clone(flags.secrets.specs), filtered.envFileSecrets...)
+	explicitSecrets = applyDefaultAccount(explicitSecrets, explicitAccount)
+	return append(slices.Clone(profileDefaults), explicitSecrets...)
+}
+
+func profileExplicitSecretAccount(sources execInputSources, accountFallback string) string {
+	if account := strings.TrimSpace(sources.profile.Account); account != "" {
+		return account
 	}
-	return effectiveSecrets
+	return accountFallback
+}
+
+func assembleDirectExecSecrets(
+	flags execFlags,
+	filtered filteredExecSecretSources,
+	accountFallback string,
+) []request.SecretSpec {
+	cliSecrets := applyDefaultAccount(slices.Clone(flags.secrets.specs), accountFallback)
+	envFileSecrets := applyDefaultAccount(filtered.envFileSecrets, accountFallback)
+	return append(cliSecrets, envFileSecrets...)
 }
 
 func loadExecProfile(profileName string, configPath string, hasExplicitSource bool) (profileconfig.Profile, bool, error) {
