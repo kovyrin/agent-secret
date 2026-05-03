@@ -231,6 +231,8 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				commandStarted = false
 				nextReadTimeout = s.readTimeout
 			}
+		case TypeOK, TypeError:
+			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadType, fmt.Errorf("%w: %s", ErrProtocolType, env.Type))
 		default:
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, ErrorCodeBadType, fmt.Errorf("%w: %s", ErrProtocolType, env.Type))
 		}
@@ -432,7 +434,7 @@ func daemonStopAuditEvent(peer peercred.Info, err error) audit.Event {
 		RequesterPath: peer.ExecutablePath,
 	}
 	if err != nil {
-		event.ErrorCode = codeForError(err)
+		event.ErrorCode = string(codeForError(err))
 	}
 	return event
 }
@@ -453,11 +455,11 @@ func writeOK(encoder *json.Encoder, requestID string, nonce string, payload any)
 	return encoder.Encode(env)
 }
 
-func writeError(conn *net.UnixConn, requestID string, nonce string, code string, err error) error {
+func writeError(conn *net.UnixConn, requestID string, nonce string, code ErrorCode, err error) error {
 	return writeErrorEncoder(json.NewEncoder(conn), requestID, nonce, code, err)
 }
 
-func writeErrorEncoder(encoder *json.Encoder, requestID string, nonce string, code string, err error) error {
+func writeErrorEncoder(encoder *json.Encoder, requestID string, nonce string, code ErrorCode, err error) error {
 	payload := ErrorPayload{Code: code, Message: err.Error()}
 	env, marshalErr := NewEnvelope(TypeError, requestID, nonce, payload)
 	if marshalErr != nil {
@@ -466,7 +468,7 @@ func writeErrorEncoder(encoder *json.Encoder, requestID string, nonce string, co
 	return encoder.Encode(env)
 }
 
-func codeForError(err error) string {
+func codeForError(err error) ErrorCode {
 	switch {
 	case errors.Is(err, ErrApprovalDenied):
 		return ErrorCodeApprovalDenied

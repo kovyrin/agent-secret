@@ -12,6 +12,6 @@ struct DaemonEnvelope<Payload: Codable>: Codable {
     let nonce: String?
     let payload: Payload?
     let requestID: String?
-    let type: String
+    let type: DaemonMessageType
     let version: Int
 }

@@ -24,8 +24,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private static let protocolVersion: Int = 1
-    private static let typeError: String = "error"
-    private static let typeOK: String = "ok"
+    private static let typeError: DaemonMessageType = "error"
+    private static let typeOK: DaemonMessageType = "ok"
 
     private let transport: LineTransport
     private let decoder: JSONDecoder
@@ -168,8 +168,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
 
     private func daemonError(from response: DaemonEnvelope<DaemonErrorPayload>) -> SocketDaemonClientError {
         let payload: DaemonErrorPayload? = response.payload
-        let code: String = DaemonErrorDisplay.sanitizedCode(payload?.code)
-        return .daemonError(code, DaemonErrorDisplay.message(for: code))
+        let code: DaemonErrorCode = DaemonErrorDisplay.sanitizedCode(payload?.code)
+        return .daemonError(code.rawValue, DaemonErrorDisplay.message(for: code))
     }
 
     private func send(_ envelope: DaemonEnvelope<some Encodable>) throws {

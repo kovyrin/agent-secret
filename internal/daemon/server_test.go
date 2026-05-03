@@ -970,7 +970,7 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode error payload for %s: %v", tt.env.Type, err)
 		}
-		if payload.Code != tt.wantCode {
+		if string(payload.Code) != tt.wantCode {
 			t.Fatalf("%s code = %q, want %q", tt.env.Type, payload.Code, tt.wantCode)
 		}
 	}
@@ -1233,7 +1233,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: errors.New("other"), want: "request_failed"},
 	}
 	for _, tt := range tests {
-		if got := codeForError(tt.err); got != tt.want {
+		if got := codeForError(tt.err); string(got) != tt.want {
 			t.Fatalf("codeForError(%v) = %q, want %q", tt.err, got, tt.want)
 		}
 	}

@@ -764,7 +764,7 @@ func (b *Broker) recordApprovalError(
 		return b.recordApprovalDenied(ctx, requestID, req)
 	case errors.Is(err, ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
-		event.ErrorCode = ErrorCodeRequestExpired
+		event.ErrorCode = string(ErrorCodeRequestExpired)
 		auditCtx, cancel := terminalAuditContext(ctx)
 		defer cancel()
 		return b.recordRequiredAudit(auditCtx, event)
@@ -775,7 +775,7 @@ func (b *Broker) recordApprovalError(
 
 func (b *Broker) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
 	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
-	event.ErrorCode = ErrorCodeApprovalDenied
+	event.ErrorCode = string(ErrorCodeApprovalDenied)
 	auditCtx, cancel := terminalAuditContext(ctx)
 	defer cancel()
 	return b.recordRequiredAudit(auditCtx, event)
@@ -811,24 +811,24 @@ func (b *Broker) recordSecretFetchFailureEvent(
 		Type:       audit.EventSecretFetchFailed,
 		RequestID:  requestID,
 		SecretRefs: refs,
-		ErrorCode:  secretFetchErrorCode(err),
+		ErrorCode:  string(secretFetchErrorCode(err)),
 	}
 	auditCtx, cancel := terminalAuditContext(ctx)
 	defer cancel()
 	return b.recordRequiredAudit(auditCtx, event)
 }
 
-func secretFetchErrorCode(err error) string {
+func secretFetchErrorCode(err error) ErrorCode {
 	if errors.Is(err, ErrDaemonStopped) {
 		return ErrorCodeDaemonStopped
 	}
 	if errors.Is(err, context.Canceled) {
-		return "context_canceled"
+		return ErrorCodeContextCanceled
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return "context_deadline_exceeded"
+		return ErrorCodeContextDeadlineExceeded
 	}
-	return "resolve_failed"
+	return ErrorCodeResolveFailed
 }
 
 func contextCause(ctx context.Context) error {

@@ -25,7 +25,7 @@ final class SocketDaemonClientTests: XCTestCase {
 
     private static let expectedProtocolVersion: Int = 1
     private static let requestID: String = "req_123"
-    private static let responseOK: String = "ok"
+    private static let responseOK: DaemonMessageType = "ok"
     private static let sampleExpiration: TimeInterval = 1_800_000_000
     private static let secretCanary: String = "synthetic-secret-value"
     private static let staleNonce: String = "nonce_stale"
@@ -57,7 +57,7 @@ final class SocketDaemonClientTests: XCTestCase {
 
     private static func approvalResponse(
         version: Int,
-        type: String,
+        type: DaemonMessageType,
         envelopeRequestID: String,
         envelopeNonce: String
     ) throws -> Data {
@@ -94,7 +94,7 @@ final class SocketDaemonClientTests: XCTestCase {
         try encode(
             DaemonEnvelope(
                 nonce: nil,
-                payload: DaemonErrorPayload(code: code, message: message),
+                payload: DaemonErrorPayload(code: DaemonErrorCode(rawValue: code), message: message),
                 requestID: nil,
                 type: "error",
                 version: expectedProtocolVersion

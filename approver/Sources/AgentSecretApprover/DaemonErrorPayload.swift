@@ -1,6 +1,6 @@
 import Foundation
 
 struct DaemonErrorPayload: Codable {
-    let code: String
+    let code: DaemonErrorCode
     let message: String
 }

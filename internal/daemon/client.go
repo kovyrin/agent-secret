@@ -15,12 +15,12 @@ import (
 )
 
 type ProtocolError struct {
-	Code    string
+	Code    ErrorCode
 	Message string
 }
 
 func (e *ProtocolError) Error() string {
-	return e.Code + ": " + e.Message
+	return string(e.Code) + ": " + e.Message
 }
 
 type Client struct {
@@ -134,15 +134,15 @@ func (c *Client) ReportCompleted(ctx context.Context, requestID string, nonce st
 	})
 }
 
-func roundTrip[T any](ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) (T, error) {
+func roundTrip[T any](ctx context.Context, c *Client, messageType MessageType, requestID string, nonce string, payload any) (T, error) {
 	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, false)
 }
 
-func roundTripPayload[T any](ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) (T, error) {
+func roundTripPayload[T any](ctx context.Context, c *Client, messageType MessageType, requestID string, nonce string, payload any) (T, error) {
 	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, true)
 }
 
-func roundTripAck(ctx context.Context, c *Client, messageType string, requestID string, nonce string, payload any) error {
+func roundTripAck(ctx context.Context, c *Client, messageType MessageType, requestID string, nonce string, payload any) error {
 	_, err := roundTripResponse[struct{}](ctx, c, messageType, requestID, nonce, payload, false)
 	return err
 }
@@ -150,7 +150,7 @@ func roundTripAck(ctx context.Context, c *Client, messageType string, requestID 
 func roundTripResponse[T any](
 	ctx context.Context,
 	c *Client,
-	messageType string,
+	messageType MessageType,
 	requestID string,
 	nonce string,
 	payload any,
@@ -219,7 +219,7 @@ func roundTripResponse[T any](
 	return out, nil
 }
 
-func validateStatusPayload(messageType string, payload StatusPayload) error {
+func validateStatusPayload(messageType MessageType, payload StatusPayload) error {
 	if payload.PID <= 0 {
 		return fmt.Errorf("%w: %s response has invalid pid", ErrMalformedEnvelope, messageType)
 	}
@@ -279,7 +279,7 @@ func envAliases(env map[string]string) []string {
 
 func (c *Client) contextWithDefaultDeadline(
 	ctx context.Context,
-	messageType string,
+	messageType MessageType,
 	payload any,
 ) (context.Context, context.CancelFunc) {
 	if _, ok := ctx.Deadline(); ok {
@@ -390,5 +390,5 @@ func contextErrorAfterIOError(ctx context.Context, err error) error {
 
 func IsProtocolError(err error, code string) bool {
 	var protocolErr *ProtocolError
-	return errors.As(err, &protocolErr) && protocolErr.Code == code
+	return errors.As(err, &protocolErr) && string(protocolErr.Code) == code
 }

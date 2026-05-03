@@ -28,7 +28,7 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
     private static func errorResponse(code: String, message: String) throws -> Data {
         let envelope = DaemonEnvelope(
             nonce: nil,
-            payload: DaemonErrorPayload(code: code, message: message),
+            payload: DaemonErrorPayload(code: DaemonErrorCode(rawValue: code), message: message),
             requestID: nil,
             type: "error",
             version: expectedProtocolVersion

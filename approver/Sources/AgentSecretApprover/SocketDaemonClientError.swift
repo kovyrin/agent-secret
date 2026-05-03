@@ -36,7 +36,7 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
             "connect failed: errno \(errnoValue)"
 
         case let .daemonError(code, _):
-            "daemon error \(DaemonErrorDisplay.sanitizedCode(code)): \(DaemonErrorDisplay.message(for: code))"
+            Self.daemonErrorDescription(code: code)
 
         case .disconnected:
             "daemon disconnected"
@@ -71,6 +71,12 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
         case .writeTimedOut:
             "write timed out sending daemon request"
         }
+    }
+
+    private static func daemonErrorDescription(code: String) -> String {
+        let errorCode = DaemonErrorCode(rawValue: code)
+        let displayCode = DaemonErrorDisplay.sanitizedCode(errorCode).rawValue
+        return "daemon error \(displayCode): \(DaemonErrorDisplay.message(for: errorCode))"
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {

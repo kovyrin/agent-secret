@@ -12,40 +12,47 @@ import (
 const ProtocolVersion = 1
 const DefaultMaxProtocolFrameBytes int64 = 1 << 20
 
-const (
-	TypeDaemonStatus     = "daemon.status"
-	TypeDaemonStop       = "daemon.stop"
-	TypeApprovalPending  = "approval.pending"
-	TypeApprovalDecision = "approval.decision"
-	TypeRequestExec      = "request.exec"
-	TypeCommandStarted   = "command.started"
-	TypeCommandCompleted = "command.completed"
-	TypeOK               = "ok"
-	TypeError            = "error"
-)
+type MessageType string
 
 const (
-	ErrorCodeApprovalDenied           = "approval_denied"
-	ErrorCodeApprovalUnavailable      = "approval_unavailable"
-	ErrorCodeApproverIdentityMismatch = "approver_identity_mismatch"
-	ErrorCodeApproverPeerMismatch     = "approver_peer_mismatch"
-	ErrorCodeAuditFailed              = "audit_failed"
-	ErrorCodeBadApprovalDecision      = "bad_approval_decision"
-	ErrorCodeBadCommandCompleted      = "bad_command_completed"
-	ErrorCodeBadCommandStarted        = "bad_command_started"
-	ErrorCodeBadEnvelope              = "bad_envelope"
-	ErrorCodeBadRequest               = "bad_request"
-	ErrorCodeBadType                  = "bad_type"
-	ErrorCodeDaemonStopped            = "daemon_stopped"
-	ErrorCodeFrameTooLarge            = "frame_too_large"
-	ErrorCodeInvalidNonce             = "invalid_nonce"
-	ErrorCodeNoPendingApproval        = "no_pending_approval"
-	ErrorCodePeerRejected             = "peer_rejected"
-	ErrorCodeRequestActive            = "request_active"
-	ErrorCodeRequestExpired           = "request_expired"
-	ErrorCodeRequestFailed            = "request_failed"
-	ErrorCodeStaleApproval            = "stale_approval"
-	ErrorCodeUntrustedClient          = "untrusted_client"
+	TypeDaemonStatus     MessageType = "daemon.status"
+	TypeDaemonStop       MessageType = "daemon.stop"
+	TypeApprovalPending  MessageType = "approval.pending"
+	TypeApprovalDecision MessageType = "approval.decision"
+	TypeRequestExec      MessageType = "request.exec"
+	TypeCommandStarted   MessageType = "command.started"
+	TypeCommandCompleted MessageType = "command.completed"
+	TypeOK               MessageType = "ok"
+	TypeError            MessageType = "error"
+)
+
+type ErrorCode string
+
+const (
+	ErrorCodeApprovalDenied           ErrorCode = "approval_denied"
+	ErrorCodeApprovalUnavailable      ErrorCode = "approval_unavailable"
+	ErrorCodeApproverIdentityMismatch ErrorCode = "approver_identity_mismatch"
+	ErrorCodeApproverPeerMismatch     ErrorCode = "approver_peer_mismatch"
+	ErrorCodeAuditFailed              ErrorCode = "audit_failed"
+	ErrorCodeBadApprovalDecision      ErrorCode = "bad_approval_decision"
+	ErrorCodeBadCommandCompleted      ErrorCode = "bad_command_completed"
+	ErrorCodeBadCommandStarted        ErrorCode = "bad_command_started"
+	ErrorCodeBadEnvelope              ErrorCode = "bad_envelope"
+	ErrorCodeBadRequest               ErrorCode = "bad_request"
+	ErrorCodeBadType                  ErrorCode = "bad_type"
+	ErrorCodeContextCanceled          ErrorCode = "context_canceled"
+	ErrorCodeContextDeadlineExceeded  ErrorCode = "context_deadline_exceeded"
+	ErrorCodeDaemonStopped            ErrorCode = "daemon_stopped"
+	ErrorCodeFrameTooLarge            ErrorCode = "frame_too_large"
+	ErrorCodeInvalidNonce             ErrorCode = "invalid_nonce"
+	ErrorCodeNoPendingApproval        ErrorCode = "no_pending_approval"
+	ErrorCodePeerRejected             ErrorCode = "peer_rejected"
+	ErrorCodeRequestActive            ErrorCode = "request_active"
+	ErrorCodeRequestExpired           ErrorCode = "request_expired"
+	ErrorCodeRequestFailed            ErrorCode = "request_failed"
+	ErrorCodeResolveFailed            ErrorCode = "resolve_failed"
+	ErrorCodeStaleApproval            ErrorCode = "stale_approval"
+	ErrorCodeUntrustedClient          ErrorCode = "untrusted_client"
 )
 
 var (
@@ -57,15 +64,15 @@ var (
 
 type Envelope struct {
 	Version   int             `json:"version"`
-	Type      string          `json:"type"`
+	Type      MessageType     `json:"type"`
 	RequestID string          `json:"request_id,omitempty"`
 	Nonce     string          `json:"nonce,omitempty"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
 }
 
 type ErrorPayload struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
 }
 
 type ExecResponsePayload struct {
@@ -86,7 +93,7 @@ type StatusPayload struct {
 	PID int `json:"pid"`
 }
 
-func NewEnvelope(messageType string, requestID string, nonce string, payload any) (Envelope, error) {
+func NewEnvelope(messageType MessageType, requestID string, nonce string, payload any) (Envelope, error) {
 	raw, err := marshalPayload(payload)
 	if err != nil {
 		return Envelope{}, err
