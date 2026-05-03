@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
@@ -41,7 +40,7 @@ func NewApp(manager daemon.Manager, stdout io.Writer, stderr io.Writer) App {
 		stderr = os.Stderr
 	}
 	return App{
-		Parser:                 NewParser(time.Now),
+		Parser:                 NewParser(),
 		Manager:                manager,
 		InstallCLI:             install.InstallCLI,
 		InstallSkill:           install.InstallSkill,

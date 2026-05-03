@@ -16,8 +16,7 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	dir := t.TempDir()
 	writeExecutable(t, dir, "terraform")
 	t.Setenv("PATH", dir)
-	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
-	parser := NewParser(func() time.Time { return now })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -71,8 +70,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", infraDir)
-	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
-	parser := NewParser(func() time.Time { return now })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -124,7 +122,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -176,7 +174,7 @@ NEXT=op://Example/Next/token
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
 	t.Setenv("TOKEN", "parent-token")
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -237,7 +235,7 @@ profiles:
 	writeConfigFile(t, envPath, "PLAIN=kept\n")
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	_, err := parser.Parse([]string{
 		"exec",
@@ -268,7 +266,7 @@ PLAIN=kept
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
 	t.Setenv("PRODUCTION_TOKEN", "parent-production")
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -320,7 +318,7 @@ PLAIN=kept
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -381,7 +379,7 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 				t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", tt.appAccount)
 			}
 
-			command, err := NewParser(fixedTestTime).Parse([]string{
+			command, err := NewParser().Parse([]string{
 				"exec", "--reason", "Account default",
 				"--secret", "TOKEN=op://Example/Item/token",
 				"--allow-mutable-executable", "--", "tool",
@@ -418,7 +416,7 @@ profiles:
 	writeConfigFile(t, envPath, "FILE_TOKEN=op://Example/File/token\n")
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -471,7 +469,7 @@ profiles:
 	writeConfigFile(t, envPath, "FILE_TOKEN=op://Example/File/token\n")
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -514,7 +512,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	_, err := parser.Parse([]string{
 		"exec",
@@ -544,7 +542,7 @@ func TestParseExecRejectsMutableExecutableWithoutOptIn(t *testing.T) {
 	dir := t.TempDir()
 	writeExecutable(t, dir, "tool")
 	t.Setenv("PATH", dir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	_, err := parser.Parse([]string{
 		"exec",
@@ -578,7 +576,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -624,7 +622,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -665,7 +663,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -707,7 +705,7 @@ profiles:
 `)
 	t.Chdir(root)
 	t.Setenv("PATH", binDir)
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	command, err := parser.Parse([]string{
 		"exec",
@@ -743,7 +741,7 @@ func TestParseExecRejectsUnsafeOrUnsupportedForms(t *testing.T) {
 
 	dir := t.TempDir()
 	writeExecutable(t, dir, "tool")
-	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+	parser := NewParser()
 
 	tests := []struct {
 		name string
@@ -811,7 +809,7 @@ func TestParseExecRejectsUnsafeOrUnsupportedForms(t *testing.T) {
 func TestParseDaemonAndDoctorCommands(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(time.Now)
+	parser := NewParser()
 	for _, tt := range []struct {
 		args []string
 		want Kind
@@ -836,7 +834,7 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 func TestParseInstallCLIOptions(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(time.Now)
+	parser := NewParser()
 	command, err := parser.Parse([]string{"install-cli", "--bin-dir", "/tmp/bin", "--force"})
 	if err != nil {
 		t.Fatalf("Parse install-cli returned error: %v", err)
@@ -855,7 +853,7 @@ func TestParseInstallCLIOptions(t *testing.T) {
 func TestParseSkillInstallOptions(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(time.Now)
+	parser := NewParser()
 	command, err := parser.Parse([]string{"skill-install", "--skills-dir", "/tmp/skills", "--force"})
 	if err != nil {
 		t.Fatalf("Parse skill-install returned error: %v", err)
@@ -874,7 +872,7 @@ func TestParseSkillInstallOptions(t *testing.T) {
 func TestHelpIsDetailedAndValueFree(t *testing.T) {
 	t.Parallel()
 
-	parser := NewParser(time.Now)
+	parser := NewParser()
 	tests := []struct {
 		name  string
 		args  []string
@@ -959,8 +957,4 @@ func lookupTestEnv(env []string, key string) string {
 		}
 	}
 	return ""
-}
-
-func fixedTestTime() time.Time {
-	return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 }

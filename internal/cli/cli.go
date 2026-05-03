@@ -48,7 +48,7 @@ type Command struct {
 
 type Parser struct{}
 
-func NewParser(_ func() time.Time) Parser {
+func NewParser() Parser {
 	return Parser{}
 }
 
