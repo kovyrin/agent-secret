@@ -279,13 +279,14 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return ""
 	}
-	err = writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
+	if err := s.broker.MarkPayloadDelivered(env.RequestID); err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ""
+	}
+	_ = writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
 		Env:           grant.Env,
 		SecretAliases: grant.SecretAliases,
 	})
-	if err == nil {
-		_ = s.broker.MarkPayloadDelivered(env.RequestID)
-	}
 	return env.RequestID
 }
 

@@ -68,15 +68,17 @@ type ExecGrant struct {
 	SecretAliases      []string
 	ApprovalID         string
 	reusableMutationID string
+	approvalExpiresAt  time.Time
 }
 
 type activeExec struct {
-	nonce            string
-	req              request.ExecRequest
-	approvalID       string
-	payloadDelivered bool
-	started          bool
-	childPID         *int
+	nonce             string
+	req               request.ExecRequest
+	approvalID        string
+	payloadDelivered  bool
+	started           bool
+	childPID          *int
+	approvalExpiresAt time.Time
 }
 
 type BrokerOptions struct {
@@ -160,6 +162,9 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 		b.rollbackReusableApproval(grant.reusableMutationID)
 		return ExecGrant{}, err
 	}
+	if err := b.reusableApprovalActive(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
+		return ExecGrant{}, err
+	}
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
 	if err := b.recordRequiredAudit(execCtx, event); err != nil {
@@ -170,12 +175,16 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 		b.rollbackReusableApproval(grant.reusableMutationID)
 		return ExecGrant{}, err
 	}
+	if err := b.reusableApprovalActive(grant.ApprovalID, grant.approvalExpiresAt); err != nil {
+		return ExecGrant{}, err
+	}
 
 	b.mu.Lock()
 	b.active[requestID] = &activeExec{
-		nonce:      nonce,
-		req:        req,
-		approvalID: grant.ApprovalID,
+		nonce:             nonce,
+		req:               req,
+		approvalID:        grant.ApprovalID,
+		approvalExpiresAt: grant.approvalExpiresAt,
 	}
 	b.mu.Unlock()
 
@@ -216,21 +225,44 @@ func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err 
 func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	b.mu.Lock()
 	active, ok := b.active[requestID]
-	if ok {
-		active.payloadDelivered = true
-	}
 	b.mu.Unlock()
 	if !ok {
 		return ErrUnknownRequest
 	}
 	if active.approvalID == "" {
+		b.mu.Lock()
+		if current := b.active[requestID]; current != nil {
+			current.payloadDelivered = true
+		}
+		b.mu.Unlock()
 		return nil
 	}
+	if err := b.reusableApprovalActive(active.approvalID, active.approvalExpiresAt); err != nil {
+		b.mu.Lock()
+		delete(b.active, requestID)
+		b.mu.Unlock()
+		return err
+	}
 	approval, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPayloadDelivered)
-	if err == nil && approval.Uses >= approval.MaxUses {
+	if err != nil {
+		b.clearReusableCacheScope(active.approvalID)
+		if errors.Is(err, policy.ErrExpired) {
+			b.mu.Lock()
+			delete(b.active, requestID)
+			b.mu.Unlock()
+			return ErrRequestExpired
+		}
+		return err
+	}
+	if approval.Uses >= approval.MaxUses {
 		b.clearReusableCacheScope(approval.ID)
 	}
-	return err
+	b.mu.Lock()
+	if current := b.active[requestID]; current != nil {
+		current.payloadDelivered = true
+	}
+	b.mu.Unlock()
+	return nil
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
@@ -336,12 +368,18 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 	var values map[string]string
 	var valueErr error
 	if req.ForceRefresh {
-		values, valueErr = b.refreshedReusableValues(ctx, approval.ID, req)
+		values, valueErr = b.refreshedReusableValues(ctx, approval, req)
 	} else {
+		if err := b.reusableApprovalActive(approval.ID, approval.ExpiresAt); err != nil {
+			return ExecGrant{}, err
+		}
 		values, valueErr = b.cachedValues(approval.ID, req.Secrets)
 	}
 	if valueErr != nil {
 		return ExecGrant{}, valueErr
+	}
+	if err := b.reusableApprovalActive(approval.ID, approval.ExpiresAt); err != nil {
+		return ExecGrant{}, err
 	}
 
 	return ExecGrant{
@@ -349,6 +387,7 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 		SecretAliases:      aliases(req.Secrets),
 		ApprovalID:         approval.ID,
 		reusableMutationID: reusableMutationID(req.ForceRefresh, approval.ID),
+		approvalExpiresAt:  approval.ExpiresAt,
 	}, nil
 }
 
@@ -407,13 +446,15 @@ func (b *Broker) freshGrant(
 	values := fanoutValues(req.Secrets, refValues)
 
 	approvalID := ""
+	approvalExpiresAt := time.Time{}
 	if decision.Reusable {
 		approval, err := b.store.AddReusable(req, "", "")
 		if err != nil {
 			return ExecGrant{}, err
 		}
 		approvalID = approval.ID
-		if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
+		approvalExpiresAt = approval.ExpiresAt
+		if err := b.cacheResolvedValues(approvalID, approval.ExpiresAt, refValues); err != nil {
 			b.rollbackReusableApproval(approvalID)
 			return ExecGrant{}, err
 		}
@@ -425,6 +466,7 @@ func (b *Broker) freshGrant(
 		SecretAliases:      aliases(req.Secrets),
 		ApprovalID:         approvalID,
 		reusableMutationID: approvalID,
+		approvalExpiresAt:  approvalExpiresAt,
 	}, nil
 }
 
@@ -441,6 +483,17 @@ func (b *Broker) rollbackReusableApproval(approvalID string) {
 	}
 	b.store.RemoveReusable(approvalID)
 	b.clearReusableCacheScope(approvalID)
+}
+
+func (b *Broker) reusableApprovalActive(approvalID string, expiresAt time.Time) error {
+	if approvalID == "" || expiresAt.IsZero() {
+		return nil
+	}
+	if b.now().Before(expiresAt) {
+		return nil
+	}
+	b.rollbackReusableApproval(approvalID)
+	return ErrRequestExpired
 }
 
 func (b *Broker) scheduleReusableExpiry(approvalID string, expiresAt time.Time) {
@@ -543,7 +596,7 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 
 func (b *Broker) refreshedReusableValues(
 	ctx context.Context,
-	approvalID string,
+	approval policy.ReusableApproval,
 	req request.ExecRequest,
 ) (map[string]string, error) {
 	refValues, err := b.resolveUniqueRefs(ctx, "", req)
@@ -553,19 +606,25 @@ func (b *Broker) refreshedReusableValues(
 	if err := b.requestActive(ctx, req); err != nil {
 		return nil, err
 	}
+	if err := b.reusableApprovalActive(approval.ID, approval.ExpiresAt); err != nil {
+		return nil, err
+	}
 	values := fanoutValues(req.Secrets, refValues)
-	if err := b.cacheResolvedValues(approvalID, refValues); err != nil {
-		b.rollbackReusableApproval(approvalID)
+	if err := b.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
+		b.rollbackReusableApproval(approval.ID)
 		return nil, err
 	}
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
-	event.ApprovalID = approvalID
+	event.ApprovalID = approval.ID
 	if err := b.recordRequiredAudit(ctx, event); err != nil {
-		b.rollbackReusableApproval(approvalID)
+		b.rollbackReusableApproval(approval.ID)
 		return nil, err
 	}
 	if err := b.requestActive(ctx, req); err != nil {
-		b.rollbackReusableApproval(approvalID)
+		b.rollbackReusableApproval(approval.ID)
+		return nil, err
+	}
+	if err := b.reusableApprovalActive(approval.ID, approval.ExpiresAt); err != nil {
 		return nil, err
 	}
 	return values, nil
@@ -654,11 +713,21 @@ func auditRefsForIdentity(secrets []request.Secret, identity secretIdentity) []a
 	return refs
 }
 
-func (b *Broker) cacheResolvedValues(approvalID string, refValues map[secretIdentity]string) error {
+func (b *Broker) cacheResolvedValues(
+	approvalID string,
+	expiresAt time.Time,
+	refValues map[secretIdentity]string,
+) error {
 	for identity, value := range refValues {
+		if err := b.reusableApprovalActive(approvalID, expiresAt); err != nil {
+			return err
+		}
 		if err := b.cache.Put(approvalID, identity.ref, identity.account, value); err != nil {
 			return fmt.Errorf("cache approved secret in locked memory: %w", err)
 		}
+	}
+	if err := b.reusableApprovalActive(approvalID, expiresAt); err != nil {
+		return err
 	}
 	return nil
 }
