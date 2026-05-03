@@ -124,8 +124,14 @@ tool_ditto="/usr/bin/ditto"
 tool_shasum="/usr/bin/shasum"
 tool_codesign="/usr/bin/codesign"
 tool_xcrun="/usr/bin/xcrun"
+tool_mktemp="/usr/bin/mktemp"
+tool_rm="/bin/rm"
+tool_mkdir="/bin/mkdir"
+tool_ln="/bin/ln"
+tool_uname="/usr/bin/uname"
+tool_chmod="/bin/chmod"
 
-case "$(uname -m)" in
+case "$("$tool_uname" -m)" in
   arm64)
     arch="arm64"
     ;;
@@ -133,7 +139,7 @@ case "$(uname -m)" in
     arch="x86_64"
     ;;
   *)
-    echo "build-release: unsupported architecture: $(uname -m)" >&2
+    echo "build-release: unsupported architecture: $("$tool_uname" -m)" >&2
     exit 1
     ;;
 esac
@@ -141,6 +147,12 @@ esac
 require_tool hdiutil "$tool_hdiutil"
 require_tool ditto "$tool_ditto"
 require_tool shasum "$tool_shasum"
+require_tool mktemp "$tool_mktemp"
+require_tool rm "$tool_rm"
+require_tool mkdir "$tool_mkdir"
+require_tool ln "$tool_ln"
+require_tool uname "$tool_uname"
+require_tool chmod "$tool_chmod"
 if [[ "$codesign_identity" != "-" ]]; then
   require_tool codesign "$tool_codesign"
 fi
@@ -148,9 +160,9 @@ if [[ "$notarize" == "1" ]]; then
   require_tool xcrun "$tool_xcrun"
 fi
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release.XXXXXX")"
+tmp_dir="$("$tool_mktemp" -d "${TMPDIR:-/tmp}/agent-secret-release.XXXXXX")"
 cleanup() {
-  rm -rf "$tmp_dir"
+  "$tool_rm" -rf "$tmp_dir"
 }
 trap cleanup EXIT
 
@@ -174,7 +186,7 @@ prepare_notary_key() {
 
   local key_path="$tmp_dir/AuthKey_${notary_key_id}.p8"
   printf '%s\n' "$notary_key" >"$key_path"
-  chmod 0600 "$key_path"
+  "$tool_chmod" 0600 "$key_path"
   echo "$key_path"
 }
 
@@ -215,14 +227,14 @@ if [[ "$notarize" == "1" ]]; then
 fi
 
 echo "Preparing DMG contents..."
-rm -rf "$dmg_root"
-mkdir -p "$dmg_root"
+"$tool_rm" -rf "$dmg_root"
+"$tool_mkdir" -p "$dmg_root"
 "$tool_ditto" "$build_dir/Agent Secret.app" "$dmg_root/Agent Secret.app"
-ln -s /Applications "$dmg_root/Applications"
+"$tool_ln" -s /Applications "$dmg_root/Applications"
 
 echo "Creating $dmg_path..."
-mkdir -p "$output_dir"
-rm -f "$dmg_path"
+"$tool_mkdir" -p "$output_dir"
+"$tool_rm" -f "$dmg_path"
 "$tool_hdiutil" create \
   -volname "Agent Secret $version" \
   -srcfolder "$dmg_root" \

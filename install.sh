@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
 
 die() {
   echo "agent-secret install: $*" >&2

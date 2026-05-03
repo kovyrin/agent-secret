@@ -37,6 +37,8 @@ require_tool() {
 tool_base64="/usr/bin/base64"
 tool_security="/usr/bin/security"
 tool_uuidgen="/usr/bin/uuidgen"
+tool_mktemp="/usr/bin/mktemp"
+tool_rm="/bin/rm"
 
 trim_keychain_path() {
   local path="$1"
@@ -65,6 +67,8 @@ append_keychain_to_search_list() {
 require_tool base64 "$tool_base64"
 require_tool security "$tool_security"
 require_tool uuidgen "$tool_uuidgen"
+require_tool mktemp "$tool_mktemp"
+require_tool rm "$tool_rm"
 
 cert_base64="${AGENT_SECRET_CODESIGN_CERT_P12_BASE64:-}"
 cert_path="${AGENT_SECRET_CODESIGN_CERT_P12_PATH:-}"
@@ -90,9 +94,9 @@ if [[ "$keychain_password" == "" ]]; then
   keychain_password="$("$tool_uuidgen")"
 fi
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-codesign.XXXXXX")"
+tmp_dir="$("$tool_mktemp" -d "${TMPDIR:-/tmp}/agent-secret-codesign.XXXXXX")"
 cleanup() {
-  rm -rf "$tmp_dir"
+  "$tool_rm" -rf "$tmp_dir"
 }
 trap cleanup EXIT
 
@@ -106,7 +110,7 @@ if [[ ! -f "$cert_path" ]]; then
   exit 1
 fi
 
-rm -f "$keychain_path"
+"$tool_rm" -f "$keychain_path"
 "$tool_security" create-keychain -p "$keychain_password" "$keychain_path"
 "$tool_security" set-keychain-settings -lut 21600 "$keychain_path"
 "$tool_security" unlock-keychain -p "$keychain_password" "$keychain_path"

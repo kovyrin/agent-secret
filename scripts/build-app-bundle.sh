@@ -67,15 +67,6 @@ done
 
 version="$(agent_secret_normalize_short_version "$version")"
 
-require_command() {
-  local name="$1"
-
-  if ! command -v "$name" >/dev/null 2>&1; then
-    echo "build-app-bundle: required command not found: $name" >&2
-    exit 1
-  fi
-}
-
 require_tool() {
   local name="$1"
   local path="$2"
@@ -86,18 +77,31 @@ require_tool() {
   fi
 }
 
+tool_go="${GOROOT:-}/bin/go"
+tool_swift="/usr/bin/swift"
+tool_mktemp="/usr/bin/mktemp"
+tool_rm="/bin/rm"
+tool_mkdir="/bin/mkdir"
+tool_install="/usr/bin/install"
+tool_cp="/bin/cp"
+tool_sips="/usr/bin/sips"
+tool_iconutil="/usr/bin/iconutil"
 tool_codesign="/usr/bin/codesign"
 
-require_command go
-require_command swift
-require_command install
-require_command iconutil
-require_command sips
+require_tool go "$tool_go"
+require_tool swift "$tool_swift"
+require_tool mktemp "$tool_mktemp"
+require_tool rm "$tool_rm"
+require_tool mkdir "$tool_mkdir"
+require_tool install "$tool_install"
+require_tool cp "$tool_cp"
+require_tool sips "$tool_sips"
+require_tool iconutil "$tool_iconutil"
 require_tool codesign "$tool_codesign"
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-bundle.XXXXXX")"
+tmp_dir="$("$tool_mktemp" -d "${TMPDIR:-/tmp}/agent-secret-bundle.XXXXXX")"
 cleanup() {
-  rm -rf "$tmp_dir"
+  "$tool_rm" -rf "$tmp_dir"
 }
 trap cleanup EXIT
 
@@ -112,8 +116,8 @@ make_icon() {
   local iconset_dir="$2"
   local out="$3"
 
-  rm -rf "$iconset_dir"
-  mkdir -p "$iconset_dir"
+  "$tool_rm" -rf "$iconset_dir"
+  "$tool_mkdir" -p "$iconset_dir"
 
   local icon_specs=(
     "16:icon_16x16.png"
@@ -131,9 +135,9 @@ make_icon() {
   for spec in "${icon_specs[@]}"; do
     local size="${spec%%:*}"
     local name="${spec#*:}"
-    sips -z "$size" "$size" "$icon_source" --out "$iconset_dir/$name" >/dev/null
+    "$tool_sips" -z "$size" "$size" "$icon_source" --out "$iconset_dir/$name" >/dev/null
   done
-  iconutil -c icns "$iconset_dir" -o "$out"
+  "$tool_iconutil" -c icns "$iconset_dir" -o "$out"
 }
 
 sign_path() {
@@ -166,10 +170,10 @@ build_daemon_app() {
   local binary_path="$1"
   local bundle="$2"
 
-  rm -rf "$bundle"
-  mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-  install -m 0755 "$binary_path" "$bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
-  cp "$tmp_dir/AppIcon.icns" "$bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
+  "$tool_rm" -rf "$bundle"
+  "$tool_mkdir" -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+  "$tool_install" -m 0755 "$binary_path" "$bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
+  "$tool_cp" "$tmp_dir/AppIcon.icns" "$bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
 
   cat >"$bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -220,12 +224,12 @@ if [[ "$codesign_identity" != "-" ]]; then
   }
   go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultDeveloperIDTeamID=$approver_team_id")
 fi
-go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
-go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
+"$tool_go" build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
+"$tool_go" build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
 
 echo "Building Swift app executable..."
 cd "$project_root/approver"
-swift build -c release --product agent-secret-approver
+"$tool_swift" build -c release --product agent-secret-approver
 approver_binary="$project_root/approver/.build/release/agent-secret-approver"
 if [[ ! -x "$approver_binary" ]]; then
   echo "build-app-bundle: missing Swift executable $approver_binary" >&2
@@ -233,28 +237,28 @@ if [[ ! -x "$approver_binary" ]]; then
 fi
 
 echo "Creating app icon..."
-swift "$project_root/scripts/make-daemon-icon.swift" "$icon_png"
+"$tool_swift" "$project_root/scripts/make-daemon-icon.swift" "$icon_png"
 make_icon "$icon_png" "$iconset" "$tmp_dir/AppIcon.icns"
 
 echo "Creating daemon helper app..."
 build_daemon_app "$tmp_dir/agent-secretd" "$daemon_bundle"
 
 echo "Creating Agent Secret.app..."
-rm -rf "$app_bundle"
-mkdir -p \
+"$tool_rm" -rf "$app_bundle"
+"$tool_mkdir" -p \
   "$app_bundle/Contents/MacOS" \
   "$app_bundle/Contents/Resources/bin" \
   "$app_bundle/Contents/Resources/skills" \
   "$app_bundle/Contents/Library/Helpers"
-install -m 0755 "$approver_binary" "$app_bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
-install -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
+"$tool_install" -m 0755 "$approver_binary" "$app_bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
+"$tool_install" -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
 if [[ ! -f "$skill_source/SKILL.md" ]]; then
   echo "build-app-bundle: missing bundled skill at $skill_source" >&2
   exit 1
 fi
-cp -R "$skill_source" "$app_bundle/Contents/Resources/skills/agent-secret"
-cp "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
-cp -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+"$tool_cp" -R "$skill_source" "$app_bundle/Contents/Resources/skills/agent-secret"
+"$tool_cp" "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
+"$tool_cp" -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 
 cat >"$app_bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
