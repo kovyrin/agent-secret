@@ -81,6 +81,7 @@ type ExpectedApprover struct {
 	ExpectedTeamID    string
 	VerifySignature   bool
 	signatureVerifier codeSignatureVerifier
+	exited            <-chan error
 }
 
 type SocketApprover struct {
@@ -99,6 +100,7 @@ type approvalJob struct {
 	doneOnce      sync.Once
 	expected      ExpectedApprover
 	expectedReady bool
+	expectedUsed  bool
 	result        chan approvalResult
 }
 
@@ -180,6 +182,9 @@ func (a *SocketApprover) FetchPending(ctx context.Context, peer peercred.Info) (
 	}
 	if err := validateApproverPeer(job.expected, peer); err != nil {
 		return ApprovalRequestPayload{}, err
+	}
+	if !a.markExpectedUsed(job) {
+		return ApprovalRequestPayload{}, ErrNoPendingApproval
 	}
 	return job.payload, nil
 }
@@ -272,8 +277,11 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 	}
 	executable = identity.ExecutablePath
 
-	//nolint:gosec // G204: executable was canonicalized and validated by the approver identity policy above.
-	cmd := exec.CommandContext(ctx, executable, "--socket", socketPath)
+	if err := ctx.Err(); err != nil {
+		return ExpectedApprover{}, err
+	}
+	//nolint:gosec,noctx // G204: executable was canonicalized and validated above; CommandContext would kill a successfully launched approver when the approval job completes.
+	cmd := exec.Command(executable, "--socket", socketPath)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		return ExpectedApprover{}, fmt.Errorf("%w: open /dev/null: %w", ErrApproverLaunchFailed, err)
@@ -285,6 +293,13 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 	if err := cmd.Start(); err != nil {
 		return ExpectedApprover{}, fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)
 	}
+	select {
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return ExpectedApprover{}, ctx.Err()
+	default:
+	}
 	expected := ExpectedApprover{
 		PID:               cmd.Process.Pid,
 		ExecutablePath:    executable,
@@ -292,9 +307,12 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 		VerifySignature:   identity.VerifySignature,
 		signatureVerifier: codesignSignatureVerifier{},
 	}
-	if err := cmd.Process.Release(); err != nil {
-		return ExpectedApprover{}, fmt.Errorf("%w: release process: %w", ErrApproverLaunchFailed, err)
-	}
+	exited := make(chan error, 1)
+	expected.exited = exited
+	go func() {
+		exited <- cmd.Wait()
+		close(exited)
+	}()
 	return expected, nil
 }
 
@@ -360,8 +378,7 @@ func (a *SocketApprover) promoteNext() {
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 		return
 	}
-	launchCtx, cancelLaunch := job.launchContext()
-	defer cancelLaunch()
+	launchCtx := job.launchContext()
 	expected, err := a.launcher.Launch(launchCtx, a.socketPath, job.payload)
 	if err != nil {
 		if job.canceled() {
@@ -379,6 +396,9 @@ func (a *SocketApprover) promoteNext() {
 		a.cond.Broadcast()
 	}
 	a.mu.Unlock()
+	if expected.exited != nil {
+		go a.monitorExpectedApprover(job, expected.exited)
+	}
 }
 
 func (a *SocketApprover) complete(job *approvalJob, result approvalResult) {
@@ -435,20 +455,44 @@ func (j *approvalJob) canceled() bool {
 	}
 }
 
-func (j *approvalJob) launchContext() (context.Context, context.CancelFunc) {
+func (j *approvalJob) launchContext() context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
-	stop := make(chan struct{})
 	go func() {
-		select {
-		case <-j.done:
-			cancel()
-		case <-stop:
-		}
-	}()
-	return ctx, func() {
-		close(stop)
+		<-j.done
 		cancel()
+	}()
+	return ctx
+}
+
+func (a *SocketApprover) markExpectedUsed(job *approvalJob) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.active != job {
+		return false
 	}
+	job.expectedUsed = true
+	return true
+}
+
+func (a *SocketApprover) monitorExpectedApprover(job *approvalJob, exited <-chan error) {
+	select {
+	case err := <-exited:
+		if !a.expectedApproverExitShouldFail(job) {
+			return
+		}
+		message := "approver exited before fetching pending approval"
+		if err != nil {
+			message = fmt.Sprintf("%s: %v", message, err)
+		}
+		a.complete(job, approvalResult{err: fmt.Errorf("%w: %s", ErrApproverLaunchFailed, message)})
+	case <-job.done:
+	}
+}
+
+func (a *SocketApprover) expectedApproverExitShouldFail(job *approvalJob) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.active == job && job.expectedReady && !job.expectedUsed
 }
 
 func (a *SocketApprover) activeWhenExpectedReady(ctx context.Context) (*approvalJob, error) {

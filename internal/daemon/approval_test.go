@@ -29,6 +29,16 @@ type blockingLauncher struct {
 	started chan struct{}
 }
 
+type exitingLauncher struct {
+	expected ExpectedApprover
+	exited   chan error
+}
+
+type contextObservingLauncher struct {
+	expected ExpectedApprover
+	canceled chan struct{}
+}
+
 type allowApproverIdentityPolicy struct{}
 
 func (allowApproverIdentityPolicy) ValidateApproverExecutable(path string) (ApproverIdentity, error) {
@@ -73,6 +83,20 @@ func (l *blockingLauncher) Launch(ctx context.Context, _ string, _ ApprovalReque
 	close(l.started)
 	<-ctx.Done()
 	return ExpectedApprover{}, ctx.Err()
+}
+
+func (l *exitingLauncher) Launch(_ context.Context, _ string, _ ApprovalRequestPayload) (ExpectedApprover, error) {
+	expected := l.expected
+	expected.exited = l.exited
+	return expected, nil
+}
+
+func (l *contextObservingLauncher) Launch(ctx context.Context, _ string, _ ApprovalRequestPayload) (ExpectedApprover, error) {
+	go func() {
+		<-ctx.Done()
+		close(l.canceled)
+	}()
+	return l.expected, nil
 }
 
 func TestApprovalFixturesDecodeInGo(t *testing.T) {
@@ -346,6 +370,124 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("ApproveExec error = %v, want expired", err)
 	}
+}
+
+func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	exited := make(chan error, 1)
+	launcher := &exitingLauncher{
+		expected: ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe},
+		exited:   exited,
+	}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	waitForPending(t, approver)
+
+	exited <- errors.New("exit status 64")
+	close(exited)
+
+	if err := receiveApprovalError(t, errCh, "ApproveExec did not observe early approver exit"); !errors.Is(err, ErrApproverLaunchFailed) {
+		t.Fatalf("ApproveExec error = %v, want launch failure", err)
+	}
+	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); !errors.Is(err, ErrNoPendingApproval) {
+		t.Fatalf("FetchPending after early exit = %v, want no pending approval", err)
+	}
+}
+
+func TestSocketApproverIgnoresExpectedApproverExitAfterFetch(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	exited := make(chan error, 1)
+	launcher := &exitingLauncher{
+		expected: ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe},
+		exited:   exited,
+	}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	resultCh := make(chan ApprovalDecision, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		decision, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- decision
+	}()
+	waitForPending(t, approver)
+
+	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
+		t.Fatalf("FetchPending returned error: %v", err)
+	}
+	exited <- errors.New("exit status 64")
+	close(exited)
+
+	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  "approve_once",
+	})
+	if err != nil {
+		t.Fatalf("SubmitDecision returned error: %v", err)
+	}
+	select {
+	case decision := <-resultCh:
+		if !decision.Approved {
+			t.Fatalf("unexpected approval result: %+v", decision)
+		}
+	case err := <-errCh:
+		t.Fatalf("ApproveExec returned error after fetch: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for approval result")
+	}
+}
+
+func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	launcher := &contextObservingLauncher{
+		expected: ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe},
+		canceled: make(chan struct{}),
+	}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	waitForPending(t, approver)
+
+	select {
+	case <-launcher.canceled:
+		t.Fatal("launch context was canceled before approval completed")
+	default:
+	}
+
+	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
+		t.Fatalf("FetchPending returned error: %v", err)
+	}
+	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  "approve_once",
+	})
+	if err != nil {
+		t.Fatalf("SubmitDecision returned error: %v", err)
+	}
+	if err := receiveApprovalError(t, errCh, "ApproveExec did not complete"); err != nil {
+		t.Fatalf("ApproveExec returned error: %v", err)
+	}
+	receiveApprovalSignal(t, launcher.canceled, "launch context was not canceled after approval completed")
 }
 
 func TestSocketApproverFetchPendingHonorsContextWhileApproverLaunchIsBlocked(t *testing.T) {
@@ -646,6 +788,38 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	}
 	if expected.ExecutablePath != helper {
 		t.Fatalf("expected executable path = %q, want %q", expected.ExecutablePath, helper)
+	}
+}
+
+func TestProcessApproverLauncherExposesEarlyProcessExit(t *testing.T) {
+	t.Parallel()
+
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 42\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
+		t.Fatalf("write helper: %v", err)
+	}
+
+	expected, err := (ProcessApproverLauncher{
+		AppPath:        helper,
+		IdentityPolicy: allowApproverIdentityPolicy{},
+	}).Launch(
+		context.Background(),
+		"/tmp/agent-secret-test.sock",
+		ApprovalRequestPayload{},
+	)
+	if err != nil {
+		t.Fatalf("Launch returned error: %v", err)
+	}
+	if expected.exited == nil {
+		t.Fatal("expected process exit monitor channel")
+	}
+	select {
+	case err := <-expected.exited:
+		if err == nil {
+			t.Fatal("expected non-zero helper exit error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for helper process exit")
 	}
 }
 
