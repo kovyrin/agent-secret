@@ -77,6 +77,7 @@ run = "scripts/check-go-coverage.sh"
 description = "Run non-secret smoke tests"
 run = """
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
 cd approver && swift run agent-secret-approver-smoke

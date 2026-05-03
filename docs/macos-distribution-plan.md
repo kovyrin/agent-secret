@@ -170,7 +170,9 @@ AGENT_SECRET_REMOVE_AUDIT_LOGS=1 uninstall.sh
 ```
 
 For isolated tests, `AGENT_SECRET_SUPPORT_DIR` and `AGENT_SECRET_AUDIT_DIR`
-override the state/log directories.
+may point at temporary `agent-secret` directories only when
+`AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1` is also set. The script refuses
+empty, relative, broad, symlinked, and non-`agent-secret` directory targets.
 
 Audit logs are durable by design and should require an explicit separate
 removal command:
