@@ -140,7 +140,7 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 		active:     make(map[string]*activeExec),
 		stop:       make(chan struct{}),
 	}
-	broker.reusable = newReusableGrantManager(now, store, cache, broker.stopped)
+	broker.reusable = newReusableGrantManager(now, store, cache, broker.stopped, broker.audit, broker)
 	return broker, nil
 }
 
@@ -192,7 +192,7 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 		return ExecGrant{}, err
 	}
 
-	grant, err := b.reusableGrant(execCtx, req)
+	grant, err := b.reusable.issueGrant(execCtx, req)
 	if err != nil {
 		return ExecGrant{}, b.requestError(execCtx, req, err)
 	}
@@ -452,27 +452,32 @@ func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event)
 	_ = b.audit.Record(ctx, event)
 }
 
-func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (ExecGrant, error) {
-	return b.reusable.tryGrant(
-		ctx,
-		req,
-		b.audit,
-		func(policy.ReusableApproval) (map[secretIdentity]string, error) {
-			refValues, err := b.resolveUniqueRefs(ctx, "", req)
-			if err != nil {
-				return nil, b.requestError(ctx, req, err)
-			}
-			return refValues, nil
-		},
-		func(approval policy.ReusableApproval) error {
-			event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
-			event.ApprovalID = approval.ID
-			return b.recordRequiredAudit(ctx, event)
-		},
-		func(approval policy.ReusableApproval) error {
-			return b.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt)
-		},
-	)
+func (b *Broker) resolveReusableRefresh(
+	ctx context.Context,
+	req request.ExecRequest,
+) (map[secretIdentity]string, error) {
+	refValues, err := b.resolveUniqueRefs(ctx, "", req)
+	if err != nil {
+		return nil, b.requestError(ctx, req, err)
+	}
+	return refValues, nil
+}
+
+func (b *Broker) recordReusableRefresh(
+	ctx context.Context,
+	req request.ExecRequest,
+	approval policy.ReusableApproval,
+) error {
+	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
+	event.ApprovalID = approval.ID
+	return b.recordRequiredAudit(ctx, event)
+}
+
+func (b *Broker) ensureReusableRequestActive(
+	ctx context.Context,
+	req request.ExecRequest,
+) error {
+	return b.ensureRequestActive(ctx, req)
 }
 
 func (b *Broker) preflightAudit(ctx context.Context) error {

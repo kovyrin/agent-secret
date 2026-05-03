@@ -18,17 +18,23 @@ type reusableGrantManager struct {
 	cache   SecretCache
 	expiry  map[string]*time.Timer
 	stopped func() bool
+	audit   policy.ReuseAuditSink
+	deps    reusableGrantDependencies
 }
 
-type reusableRefreshResolver func(policy.ReusableApproval) (map[secretIdentity]string, error)
-type reusableRefreshAudit func(policy.ReusableApproval) error
-type reusableGrantLiveness func(policy.ReusableApproval) error
+type reusableGrantDependencies interface {
+	resolveReusableRefresh(ctx context.Context, req request.ExecRequest) (map[secretIdentity]string, error)
+	recordReusableRefresh(ctx context.Context, req request.ExecRequest, approval policy.ReusableApproval) error
+	ensureReusableRequestActive(ctx context.Context, req request.ExecRequest) error
+}
 
 func newReusableGrantManager(
 	now func() time.Time,
 	store *policy.Store,
 	cache SecretCache,
 	stopped func() bool,
+	audit policy.ReuseAuditSink,
+	deps reusableGrantDependencies,
 ) *reusableGrantManager {
 	if stopped == nil {
 		stopped = func() bool { return false }
@@ -39,6 +45,8 @@ func newReusableGrantManager(
 		cache:   cache,
 		expiry:  make(map[string]*time.Timer),
 		stopped: stopped,
+		audit:   audit,
+		deps:    deps,
 	}
 }
 
@@ -138,6 +146,17 @@ func (m *reusableGrantManager) ensureApprovalActive(approvalID string, expiresAt
 	return ErrRequestExpired
 }
 
+func (m *reusableGrantManager) ensureGrantActive(
+	ctx context.Context,
+	req request.ExecRequest,
+	approval policy.ReusableApproval,
+) error {
+	if err := m.deps.ensureReusableRequestActive(ctx, req); err != nil {
+		return err
+	}
+	return m.ensureApprovalActive(approval.ID, approval.ExpiresAt)
+}
+
 func (m *reusableGrantManager) scheduleExpiry(approvalID string, expiresAt time.Time) {
 	ttl := expiresAt.Sub(m.now())
 	if ttl <= 0 {
@@ -202,15 +221,11 @@ func (m *reusableGrantManager) cachedValues(
 	return env, nil
 }
 
-func (m *reusableGrantManager) tryGrant(
+func (m *reusableGrantManager) issueGrant(
 	ctx context.Context,
 	req request.ExecRequest,
-	audit policy.ReuseAuditSink,
-	refresh reusableRefreshResolver,
-	recordRefresh reusableRefreshAudit,
-	ensureActive reusableGrantLiveness,
 ) (ExecGrant, error) {
-	approval, err := m.reserve(ctx, req, audit)
+	approval, err := m.reserve(ctx, req, m.audit)
 	if err != nil {
 		return ExecGrant{}, err
 	}
@@ -223,17 +238,17 @@ func (m *reusableGrantManager) tryGrant(
 			m.releaseReservation(approval.ID)
 		}
 	}()
-	if err := ensureActive(approval); err != nil {
+	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
 		return ExecGrant{}, err
 	}
 
 	var values map[string]string
 	if req.ForceRefresh {
-		refValues, err := refresh(approval)
+		refValues, err := m.deps.resolveReusableRefresh(ctx, req)
 		if err != nil {
 			return ExecGrant{}, err
 		}
-		values, err = m.refreshedValues(approval, req, refValues, recordRefresh, ensureActive)
+		values, err = m.refreshedValues(ctx, approval, req, refValues)
 		if err != nil {
 			return ExecGrant{}, err
 		}
@@ -243,7 +258,7 @@ func (m *reusableGrantManager) tryGrant(
 			return ExecGrant{}, err
 		}
 	}
-	if err := ensureActive(approval); err != nil {
+	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
 		return ExecGrant{}, err
 	}
 
@@ -258,13 +273,12 @@ func (m *reusableGrantManager) tryGrant(
 }
 
 func (m *reusableGrantManager) refreshedValues(
+	ctx context.Context,
 	approval policy.ReusableApproval,
 	req request.ExecRequest,
 	refValues map[secretIdentity]string,
-	recordRefresh reusableRefreshAudit,
-	ensureActive reusableGrantLiveness,
 ) (map[string]string, error) {
-	if err := ensureActive(approval); err != nil {
+	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
 		return nil, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
@@ -272,11 +286,11 @@ func (m *reusableGrantManager) refreshedValues(
 		m.rollbackApproval(approval.ID)
 		return nil, err
 	}
-	if err := recordRefresh(approval); err != nil {
+	if err := m.deps.recordReusableRefresh(ctx, req, approval); err != nil {
 		m.rollbackApproval(approval.ID)
 		return nil, err
 	}
-	if err := ensureActive(approval); err != nil {
+	if err := m.ensureGrantActive(ctx, req, approval); err != nil {
 		m.rollbackApproval(approval.ID)
 		return nil, err
 	}
