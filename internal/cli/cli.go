@@ -12,6 +12,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/envfile"
 	"github.com/kovyrin/agent-secret/internal/install"
+	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -346,16 +347,17 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		return Command{}, missingOnlyError(remainingOnly)
 	}
 
+	accountFallback := execAccountFallback(*account)
 	var effectiveSecrets []request.SecretSpec
 	if loadedProfile {
-		profileSecrets = applyDefaultAccount(profileSecrets, *account)
+		profileSecrets = applyDefaultAccount(profileSecrets, accountFallback)
 		cliAccount := profile.Account
 		if strings.TrimSpace(cliAccount) == "" {
-			cliAccount = *account
+			cliAccount = accountFallback
 		}
 		effectiveSecrets = append(slices.Clone(profileSecrets), applyDefaultAccount(append(slices.Clone(secrets.specs), envFileSecrets...), cliAccount)...)
 	} else {
-		effectiveSecrets = append(applyDefaultAccount(slices.Clone(secrets.specs), *account), applyDefaultAccount(envFileSecrets, *account)...)
+		effectiveSecrets = append(applyDefaultAccount(slices.Clone(secrets.specs), accountFallback), applyDefaultAccount(envFileSecrets, accountFallback)...)
 	}
 
 	req, err := request.NewExec(request.ExecOptions{
@@ -414,6 +416,19 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 		updated = append(updated, secret)
 	}
 	return updated
+}
+
+func execAccountFallback(cliAccount string) string {
+	if account := strings.TrimSpace(cliAccount); account != "" {
+		return account
+	}
+	if account := strings.TrimSpace(os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")); account != "" {
+		return account
+	}
+	if account := strings.TrimSpace(os.Getenv("OP_ACCOUNT")); account != "" {
+		return account
+	}
+	return opresolver.DefaultDesktopAccount
 }
 
 func newOnlySet(aliases []string) map[string]struct{} {

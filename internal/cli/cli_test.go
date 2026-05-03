@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -387,6 +388,96 @@ func TestParseExecAccountAppliesToExplicitAndEnvFileSecrets(t *testing.T) {
 	}
 }
 
+func TestParseExecAccountAppliesAgentSecretEnvironmentDefault(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("OP_ACCOUNT", " Personal ")
+	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", " Work ")
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Environment account",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Account != "Work" {
+		t.Fatalf("secrets = %+v, want AGENT_SECRET_1PASSWORD_ACCOUNT default", req.Secrets)
+	}
+}
+
+func TestParseExecAccountFallsBackToOPAccountEnvironment(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("OP_ACCOUNT", " Personal ")
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "OP account",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Account != "Personal" {
+		t.Fatalf("secrets = %+v, want OP_ACCOUNT default", req.Secrets)
+	}
+}
+
+func TestParseExecAccountRecordsBuiltInDefault(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Default account",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Account != opresolver.DefaultDesktopAccount {
+		t.Fatalf("secrets = %+v, want built-in default account", req.Secrets)
+	}
+}
+
 func TestParseExecAccountPrecedenceInCombinedSources(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -711,8 +802,8 @@ profiles:
 	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
 		t.Fatalf("default profile leaked into explicit secret request: %+v", req.Secrets)
 	}
-	if req.Secrets[0].Account != "" {
-		t.Fatalf("default account leaked into explicit secret request: %+v", req.Secrets)
+	if req.Secrets[0].Account != opresolver.DefaultDesktopAccount {
+		t.Fatalf("secret account = %q, want built-in default", req.Secrets[0].Account)
 	}
 }
 

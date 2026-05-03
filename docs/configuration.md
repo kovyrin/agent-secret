@@ -151,7 +151,9 @@ Agent Secret chooses the account for each secret independently:
 
 The account is part of the secret identity used for resolution, reusable
 approval matching, and in-memory caching. The same `op://` reference in two
-different accounts is treated as two different secrets.
+different accounts is treated as two different secrets. Environment and built-in
+defaults are bound into each exec request so the approval UI, audit event, reuse
+key, and resolver use the same account scope.
 
 ## Exec Command Options
 
