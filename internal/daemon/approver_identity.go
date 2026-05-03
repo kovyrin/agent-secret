@@ -28,6 +28,21 @@ type BundleApproverIdentityPolicy struct {
 	VerifySignature    bool
 }
 
+type codeSignatureVerifier interface {
+	VerifyPath(path string) (string, error)
+	VerifyProcess(pid int) (string, error)
+}
+
+type codesignSignatureVerifier struct{}
+
+func (codesignSignatureVerifier) VerifyPath(path string) (string, error) {
+	return verifyCodeSignature(path)
+}
+
+func (codesignSignatureVerifier) VerifyProcess(pid int) (string, error) {
+	return verifyProcessCodeSignature(pid)
+}
+
 func DefaultApproverIdentityPolicy() BundleApproverIdentityPolicy {
 	return BundleApproverIdentityPolicy{
 		ExpectedBundleID:   DefaultApproverBundleID,
@@ -160,16 +175,27 @@ func plistString(path string, key string) (string, error) {
 }
 
 func verifyCodeSignature(bundlePath string) (string, error) {
+	return verifyCodeSignatureTarget(bundlePath, "code signature for "+bundlePath)
+}
+
+func verifyProcessCodeSignature(pid int) (string, error) {
+	if pid <= 0 {
+		return "", fmt.Errorf("%w: invalid process id %d", ErrApproverIdentity, pid)
+	}
+	return verifyCodeSignatureTarget(fmt.Sprintf("+%d", pid), fmt.Sprintf("code signature for process %d", pid))
+}
+
+func verifyCodeSignatureTarget(target string, description string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	//nolint:gosec // G204: codesign path is fixed and bundlePath is canonicalized before signature verification.
-	if err := exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", bundlePath).Run(); err != nil {
-		return "", fmt.Errorf("%w: verify code signature for %s: %w", ErrApproverIdentity, bundlePath, err)
+	//nolint:gosec // G204: codesign path is fixed; targets are canonicalized paths or codesign +PID selectors.
+	if err := exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", target).Run(); err != nil {
+		return "", fmt.Errorf("%w: verify %s: %w", ErrApproverIdentity, description, err)
 	}
-	//nolint:gosec // G204: codesign path is fixed and bundlePath is canonicalized before signature inspection.
-	output, err := exec.CommandContext(ctx, "/usr/bin/codesign", "-dv", "--verbose=4", bundlePath).CombinedOutput()
+	//nolint:gosec // G204: codesign path is fixed; targets are canonicalized paths or codesign +PID selectors.
+	output, err := exec.CommandContext(ctx, "/usr/bin/codesign", "-dv", "--verbose=4", target).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("%w: inspect code signature for %s: %w", ErrApproverIdentity, bundlePath, err)
+		return "", fmt.Errorf("%w: inspect %s: %w", ErrApproverIdentity, description, err)
 	}
 	for line := range strings.SplitSeq(string(output), "\n") {
 		teamID, ok := strings.CutPrefix(strings.TrimSpace(line), "TeamIdentifier=")

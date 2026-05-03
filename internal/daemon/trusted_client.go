@@ -22,9 +22,11 @@ type TrustedExecutableValidator struct {
 }
 
 type trustedExecutableSet struct {
-	entries        []trustedExecutable
-	expectedTeamID string
-	err            error
+	entries           []trustedExecutable
+	expectedTeamID    string
+	err               error
+	signatureVerifier codeSignatureVerifier
+	verifySignature   bool
 }
 
 type trustedExecutable struct {
@@ -44,6 +46,22 @@ func newTrustedExecutableValidator(paths []string, expectedTeamID string) Truste
 }
 
 func newTrustedExecutableSet(paths []string, expectedTeamID string, err error) trustedExecutableSet {
+	return newTrustedExecutableSetWithVerifier(
+		paths,
+		expectedTeamID,
+		err,
+		codesignSignatureVerifier{},
+		runtime.GOOS == "darwin",
+	)
+}
+
+func newTrustedExecutableSetWithVerifier(
+	paths []string,
+	expectedTeamID string,
+	err error,
+	verifier codeSignatureVerifier,
+	verifySignature bool,
+) trustedExecutableSet {
 	seen := make(map[string]struct{}, len(paths))
 	entries := make([]trustedExecutable, 0, len(paths))
 	for _, path := range paths {
@@ -70,9 +88,11 @@ func newTrustedExecutableSet(paths []string, expectedTeamID string, err error) t
 		entries = append(entries, entry)
 	}
 	return trustedExecutableSet{
-		entries:        entries,
-		expectedTeamID: strings.TrimSpace(expectedTeamID),
-		err:            err,
+		entries:           entries,
+		expectedTeamID:    strings.TrimSpace(expectedTeamID),
+		err:               err,
+		signatureVerifier: verifier,
+		verifySignature:   verifySignature,
 	}
 }
 
@@ -172,7 +192,7 @@ func (v trustedExecutableSet) validatePeer(info peercred.Info) error {
 		if entry.path != got {
 			continue
 		}
-		if err := entry.validate(got, v.expectedTeamID, v.err); err != nil {
+		if err := entry.validatePeer(info, got, v.expectedTeamID, v.signatureVerifier, v.verifySignature, v.err); err != nil {
 			return err
 		}
 		return nil
@@ -180,15 +200,22 @@ func (v trustedExecutableSet) validatePeer(info peercred.Info) error {
 	return fmt.Errorf("%w: executable %q is not trusted", v.err, got)
 }
 
-func (e trustedExecutable) validate(path string, expectedTeamID string, errKind error) error {
+func (e trustedExecutable) validatePeer(
+	info peercred.Info,
+	path string,
+	expectedTeamID string,
+	verifier codeSignatureVerifier,
+	verifySignature bool,
+	errKind error,
+) error {
 	if errKind == nil {
 		errKind = ErrUntrustedClient
 	}
-	info, err := os.Stat(path)
+	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("%w: stat trusted executable %q: %w", errKind, path, err)
 	}
-	if !os.SameFile(info, e.fileInfo) {
+	if !os.SameFile(fileInfo, e.fileInfo) {
 		return fmt.Errorf("%w: executable %q changed since trust snapshot", errKind, path)
 	}
 	if e.bundlePath != "" {
@@ -197,14 +224,38 @@ func (e trustedExecutable) validate(path string, expectedTeamID string, errKind 
 			return fmt.Errorf("%w: executable %q is outside expected app bundle %q", errKind, path, e.bundlePath)
 		}
 	}
-	if expectedTeamID != "" && runtime.GOOS == "darwin" {
-		teamID, err := verifyCodeSignature(path)
-		if err != nil {
-			return fmt.Errorf("%w: verify code signature: %w", errKind, err)
-		}
-		if teamID != expectedTeamID {
-			return fmt.Errorf("%w: team id %q != %q", errKind, teamID, expectedTeamID)
-		}
+	if expectedTeamID != "" && verifySignature {
+		return validatePeerSignature(info, path, expectedTeamID, verifier, errKind)
+	}
+	return nil
+}
+
+func validatePeerSignature(
+	info peercred.Info,
+	path string,
+	expectedTeamID string,
+	verifier codeSignatureVerifier,
+	errKind error,
+) error {
+	if verifier == nil {
+		verifier = codesignSignatureVerifier{}
+	}
+	if info.PID <= 0 {
+		return fmt.Errorf("%w: peer pid is unavailable for signature validation", errKind)
+	}
+	teamID, err := verifier.VerifyPath(path)
+	if err != nil {
+		return fmt.Errorf("%w: verify trusted executable signature: %w", errKind, err)
+	}
+	if teamID != expectedTeamID {
+		return fmt.Errorf("%w: trusted executable team id %q != %q", errKind, teamID, expectedTeamID)
+	}
+	teamID, err = verifier.VerifyProcess(info.PID)
+	if err != nil {
+		return fmt.Errorf("%w: verify peer process signature: %w", errKind, err)
+	}
+	if teamID != expectedTeamID {
+		return fmt.Errorf("%w: peer process team id %q != %q", errKind, teamID, expectedTeamID)
 	}
 	return nil
 }

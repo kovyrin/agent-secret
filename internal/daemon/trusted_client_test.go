@@ -11,6 +11,40 @@ import (
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
+type recordingSignatureVerifier struct {
+	pathTeamID    string
+	processTeamID string
+	pathErr       error
+	processErr    error
+	paths         []string
+	pids          []int
+}
+
+func (v *recordingSignatureVerifier) VerifyPath(path string) (string, error) {
+	v.paths = append(v.paths, path)
+	if v.pathErr != nil {
+		return "", v.pathErr
+	}
+	return v.pathTeamID, nil
+}
+
+func (v *recordingSignatureVerifier) VerifyProcess(pid int) (string, error) {
+	v.pids = append(v.pids, pid)
+	if v.processErr != nil {
+		return "", v.processErr
+	}
+	return v.processTeamID, nil
+}
+
+func newTestTrustedExecutableValidator(
+	paths []string,
+	verifier codeSignatureVerifier,
+) TrustedExecutableValidator {
+	return TrustedExecutableValidator{
+		set: newTrustedExecutableSetWithVerifier(paths, "TEAMID", ErrUntrustedClient, verifier, true),
+	}
+}
+
 func TestTrustedExecutableValidatorMatchesComparableExecutablePath(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +93,93 @@ func TestTrustedExecutableValidatorRejectsExecutableReplacedAfterStartup(t *test
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient after replacement, got %v", err)
+	}
+}
+
+func TestTrustedExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+
+	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
+		t.Fatalf("ValidateExecPeer returned error: %v", err)
+	}
+	wantPath := comparablePath(trusted)
+	if !slices.Equal(verifier.paths, []string{wantPath}) {
+		t.Fatalf("verified paths = %v, want [%s]", verifier.paths, wantPath)
+	}
+	if !slices.Equal(verifier.pids, []int{4321}) {
+		t.Fatalf("verified pids = %v, want [4321]", verifier.pids)
+	}
+}
+
+func TestTrustedExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "OTHERTEAM",
+	}
+	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient, got %v", err)
+	}
+	wantPath := comparablePath(trusted)
+	if !slices.Equal(verifier.paths, []string{wantPath}) {
+		t.Fatalf("verified paths = %v, want [%s]", verifier.paths, wantPath)
+	}
+	if !slices.Equal(verifier.pids, []int{4321}) {
+		t.Fatalf("verified pids = %v, want [4321]", verifier.pids)
+	}
+}
+
+func TestTrustedExecutableValidatorRejectsMissingPIDForSignatureValidation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient, got %v", err)
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called for missing pid: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
+func TestTrustedExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	verifier := &recordingSignatureVerifier{
+		pathTeamID: "TEAMID",
+		processErr: errors.New("codesign refused pid"),
+	}
+	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "verify peer process signature") {
+		t.Fatalf("error = %q, want peer process signature context", err.Error())
 	}
 }
 
