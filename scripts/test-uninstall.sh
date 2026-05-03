@@ -237,6 +237,58 @@ safe_custom_paths_remove_only_known_files() {
   done
 }
 
+untrusted_existing_cli_is_not_used_for_daemon_stop() {
+  local run_dir="$tmp_dir/untrusted-existing-cli"
+  local home="$run_dir/home"
+  local app_dir="$run_dir/apps"
+  local bin_dir="$run_dir/bin"
+  local skills_dir="$run_dir/skills"
+  local support="$run_dir/support/agent-secret"
+  local path_bin="$run_dir/path"
+  local log="$run_dir/stop.log"
+
+  mkdir -p "$home" "$app_dir" "$bin_dir" "$skills_dir" "$support" "$path_bin"
+  : >"$log"
+
+  cat >"$bin_dir/agent-secret" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-bin-dir-agent-secret' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+exit 0
+SCRIPT
+  chmod 755 "$bin_dir/agent-secret"
+
+  cat >"$path_bin/agent-secret" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-path-agent-secret' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+exit 0
+SCRIPT
+  chmod 755 "$path_bin/agent-secret"
+
+  run_uninstall \
+    untrusted-existing-cli \
+    HOME="$home" \
+    PATH="$path_bin:$PATH" \
+    AGENT_SECRET_NO_STOP_DAEMON=0 \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_APP_DIR="$app_dir" \
+    AGENT_SECRET_BIN_DIR="$bin_dir" \
+    AGENT_SECRET_SKILLS_DIR="$skills_dir" \
+    AGENT_SECRET_SUPPORT_DIR="$support" \
+    AGENT_SECRET_UNINSTALL_TEST_LOG="$log"
+
+  if grep -E '^fake-(bin-dir|path)-agent-secret daemon stop$' "$log" >/dev/null; then
+    fail "uninstaller executed an untrusted existing agent-secret during daemon stop"
+  fi
+}
+
 custom_guard_rejects_override
 custom_destination_guard_rejects_override
 dangerous_paths_are_rejected_even_with_guard
@@ -244,5 +296,6 @@ dangerous_destination_paths_are_rejected_even_with_guard
 symlinked_parent_dirs_are_rejected
 symlinked_dirs_are_rejected
 safe_custom_paths_remove_only_known_files
+untrusted_existing_cli_is_not_used_for_daemon_stop
 
 echo "test-uninstall: ok"
