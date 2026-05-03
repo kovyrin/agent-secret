@@ -60,8 +60,8 @@ release target. Do not publish a release whose changelog section is empty.
    git push origin "v$version"
    ```
 
-   The tag-triggered workflow rejects `v*` tags whose target commit is not
-   reachable from `origin/main` before validating signing secrets or building
+   The tag-triggered workflow rejects `v*` tags whose target commit is not the
+   current `origin/main` commit before validating signing secrets or building
    release artifacts.
 
 7. Watch the tag-triggered CI run until `Draft Release Artifacts` passes.
