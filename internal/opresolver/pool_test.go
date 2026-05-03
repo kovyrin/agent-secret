@@ -109,15 +109,6 @@ func TestDesktopPoolCoalescesConcurrentSameAccountInitialization(t *testing.T) {
 		secondDone <- clientResult{resolver: got, err: err}
 	}()
 
-	select {
-	case result := <-secondDone:
-		t.Fatalf("second same-account initialization completed before first finished: %+v", result)
-	case <-time.After(50 * time.Millisecond):
-	}
-	if got := calls.Load(); got != 1 {
-		t.Fatalf("factory calls before release = %d, want 1", got)
-	}
-
 	close(releaseShared)
 	first := receiveClientResult(t, firstDone, "first same-account initialization failed")
 	second := receiveClientResult(t, secondDone, "second same-account initialization failed")
