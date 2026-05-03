@@ -203,6 +203,17 @@ func (r *blockingResolver) Resolve(ctx context.Context, _ string, _ string) (str
 	return "", ctx.Err()
 }
 
+type contextIgnoringResolver struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r *contextIgnoringResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+	close(r.started)
+	<-r.release
+	return "", ctx.Err()
+}
+
 type advancingResolver struct {
 	value   string
 	advance func()
@@ -692,6 +703,71 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	}
 	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
 		t.Fatalf("request should not become active after fetch deadline expiry, got %v", err)
+	}
+}
+
+func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Now()
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.TTL = 50 * time.Millisecond
+	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+	resolver := &contextIgnoringResolver{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	defer close(resolver.release)
+	aud := &contextCheckingAudit{}
+	broker, err := NewBroker(BrokerOptions{
+		Now:      time.Now,
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("NewBroker returned error: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+		errCh <- err
+	}()
+	receiveBrokerSignal(t, resolver.started, "secret resolution did not start before request deadline")
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrRequestExpired) {
+			t.Fatalf("HandleExec error = %v, want request expired", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleExec did not return after request deadline when resolver ignored cancellation")
+	}
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSecretFetchFailed,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	failure := events[len(events)-1]
+	if failure.ErrorCode != "context_deadline_exceeded" {
+		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
+	}
+	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "TOKEN" || failure.SecretRefs[0].Ref != ref {
+		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
+	}
+	if containsAuditEvent(events, audit.EventCommandStarting) {
+		t.Fatal("command_starting was audited after hung resolver crossed request deadline")
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("request should not become active after hung resolver deadline, got %v", err)
 	}
 }
 
