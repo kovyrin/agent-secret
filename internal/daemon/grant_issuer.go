@@ -394,7 +394,7 @@ func (g *grantIssuer) recordApprovalError(
 		return g.recordApprovalDenied(ctx, requestID, req)
 	case errors.Is(err, ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
-		event.ErrorCode = protocol.ErrorCodeRequestExpired
+		event.ErrorCode = auditErrorCode(protocol.ErrorCodeRequestExpired)
 		auditCtx, cancel := terminalAuditContext(ctx)
 		defer cancel()
 		return g.recordRequiredAudit(auditCtx, event)
@@ -405,7 +405,7 @@ func (g *grantIssuer) recordApprovalError(
 
 func (g *grantIssuer) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
 	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
-	event.ErrorCode = protocol.ErrorCodeApprovalDenied
+	event.ErrorCode = auditErrorCode(protocol.ErrorCodeApprovalDenied)
 	auditCtx, cancel := terminalAuditContext(ctx)
 	defer cancel()
 	return g.recordRequiredAudit(auditCtx, event)
@@ -441,7 +441,7 @@ func (g *grantIssuer) recordSecretFetchFailureEvent(
 		Type:       audit.EventSecretFetchFailed,
 		RequestID:  requestID,
 		SecretRefs: refs,
-		ErrorCode:  secretFetchErrorCode(err),
+		ErrorCode:  auditErrorCode(secretFetchErrorCode(err)),
 	}
 	auditCtx, cancel := terminalAuditContext(ctx)
 	defer cancel()

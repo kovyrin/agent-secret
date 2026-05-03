@@ -1466,7 +1466,7 @@ func assertRequesterAudit(t *testing.T, event audit.Event, peer peercred.Info, w
 	if event.RequesterPath != peer.ExecutablePath {
 		t.Fatalf("requester path = %q, want %q", event.RequesterPath, peer.ExecutablePath)
 	}
-	if event.ErrorCode != wantErrorCode {
+	if event.ErrorCode != auditErrorCode(wantErrorCode) {
 		t.Fatalf("stop error code = %q, want %q", event.ErrorCode, wantErrorCode)
 	}
 }

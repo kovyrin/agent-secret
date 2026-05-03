@@ -403,6 +403,10 @@ func secretFetchErrorCode(err error) protocol.ErrorCode {
 	return protocol.ErrorCodeResolveFailed
 }
 
+func auditErrorCode(code protocol.ErrorCode) audit.ErrorCode {
+	return audit.ErrorCode(code)
+}
+
 func contextCause(ctx context.Context) error {
 	if cause := context.Cause(ctx); cause != nil {
 		return cause

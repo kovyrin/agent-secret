@@ -470,7 +470,7 @@ func assertDeadlineApprovalFailureAudited(t *testing.T, tc deadlineApprovalFailu
 	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
-	if events[1].ErrorCode != tc.errorCode {
+	if events[1].ErrorCode != auditErrorCode(tc.errorCode) {
 		t.Fatalf("%s error code = %q", tc.name, events[1].ErrorCode)
 	}
 }
@@ -507,7 +507,7 @@ func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
 	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
-	if events[1].ErrorCode != tc.errorCode {
+	if events[1].ErrorCode != auditErrorCode(tc.errorCode) {
 		t.Fatalf("approval %s error code = %q", tc.name, events[1].ErrorCode)
 	}
 	assertAuditEventsValueFree(t, events)
@@ -603,7 +603,7 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
 	failure := events[len(events)-1]
-	if failure.ErrorCode != protocol.ErrorCodeResolveFailed {
+	if failure.ErrorCode != auditErrorCode(protocol.ErrorCodeResolveFailed) {
 		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
 	}
 	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failingRef {
@@ -697,7 +697,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
-	if events[len(events)-1].ErrorCode != protocol.ErrorCodeContextDeadlineExceeded {
+	if events[len(events)-1].ErrorCode != auditErrorCode(protocol.ErrorCodeContextDeadlineExceeded) {
 		t.Fatalf("fetch failure error code = %q", events[len(events)-1].ErrorCode)
 	}
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
@@ -759,7 +759,7 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 		t.Fatalf("audit events = %v, want %v", got, want)
 	}
 	failure := events[len(events)-1]
-	if failure.ErrorCode != protocol.ErrorCodeContextDeadlineExceeded {
+	if failure.ErrorCode != auditErrorCode(protocol.ErrorCodeContextDeadlineExceeded) {
 		t.Fatalf("fetch failure error code = %q", failure.ErrorCode)
 	}
 	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "TOKEN" || failure.SecretRefs[0].Ref != ref {
