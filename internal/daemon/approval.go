@@ -95,6 +95,8 @@ type SocketApprover struct {
 
 type approvalJob struct {
 	payload       ApprovalRequestPayload
+	done          chan struct{}
+	doneOnce      sync.Once
 	expected      ExpectedApprover
 	expectedReady bool
 	result        chan approvalResult
@@ -132,6 +134,7 @@ func (a *SocketApprover) ApproveExec(
 ) (ApprovalDecision, error) {
 	job := &approvalJob{
 		payload: approvalPayload(requestID, nonce, req),
+		done:    make(chan struct{}),
 		result:  make(chan approvalResult, 1),
 	}
 
@@ -163,13 +166,11 @@ func (a *SocketApprover) ApproveExec(
 	}
 }
 
-func (a *SocketApprover) FetchPending(_ context.Context, peer peercred.Info) (ApprovalRequestPayload, error) {
-	a.mu.Lock()
-	for a.active != nil && !a.active.expectedReady {
-		a.cond.Wait()
+func (a *SocketApprover) FetchPending(ctx context.Context, peer peercred.Info) (ApprovalRequestPayload, error) {
+	job, err := a.activeWhenExpectedReady(ctx)
+	if err != nil {
+		return ApprovalRequestPayload{}, err
 	}
-	job := a.active
-	a.mu.Unlock()
 	if job == nil {
 		return ApprovalRequestPayload{}, ErrNoPendingApproval
 	}
@@ -184,16 +185,14 @@ func (a *SocketApprover) FetchPending(_ context.Context, peer peercred.Info) (Ap
 }
 
 func (a *SocketApprover) SubmitDecision(
-	_ context.Context,
+	ctx context.Context,
 	peer peercred.Info,
 	decision ApprovalDecisionPayload,
 ) error {
-	a.mu.Lock()
-	for a.active != nil && !a.active.expectedReady {
-		a.cond.Wait()
+	job, err := a.activeWhenExpectedReady(ctx)
+	if err != nil {
+		return err
 	}
-	job := a.active
-	a.mu.Unlock()
 	if job == nil {
 		return ErrNoPendingApproval
 	}
@@ -361,8 +360,14 @@ func (a *SocketApprover) promoteNext() {
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 		return
 	}
-	expected, err := a.launcher.Launch(context.Background(), a.socketPath, job.payload)
+	launchCtx, cancelLaunch := job.launchContext()
+	defer cancelLaunch()
+	expected, err := a.launcher.Launch(launchCtx, a.socketPath, job.payload)
 	if err != nil {
+		if job.canceled() {
+			a.cancel(job, context.Canceled)
+			return
+		}
 		a.complete(job, approvalResult{err: fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)})
 		return
 	}
@@ -377,6 +382,7 @@ func (a *SocketApprover) promoteNext() {
 }
 
 func (a *SocketApprover) complete(job *approvalJob, result approvalResult) {
+	job.cancel()
 	a.mu.Lock()
 	if a.active == job {
 		a.active = nil
@@ -392,6 +398,7 @@ func (a *SocketApprover) complete(job *approvalJob, result approvalResult) {
 }
 
 func (a *SocketApprover) cancel(job *approvalJob, err error) {
+	job.cancel()
 	a.mu.Lock()
 	for i, queued := range a.queue {
 		if queued == job {
@@ -411,6 +418,62 @@ func (a *SocketApprover) cancel(job *approvalJob, err error) {
 	default:
 	}
 	go a.promoteNext()
+}
+
+func (j *approvalJob) cancel() {
+	j.doneOnce.Do(func() {
+		close(j.done)
+	})
+}
+
+func (j *approvalJob) canceled() bool {
+	select {
+	case <-j.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (j *approvalJob) launchContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case <-j.done:
+			cancel()
+		case <-stop:
+		}
+	}()
+	return ctx, func() {
+		close(stop)
+		cancel()
+	}
+}
+
+func (a *SocketApprover) activeWhenExpectedReady(ctx context.Context) (*approvalJob, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() {
+		a.mu.Lock()
+		a.cond.Broadcast()
+		a.mu.Unlock()
+	})
+	defer stop()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for a.active != nil && !a.active.expectedReady {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		a.cond.Wait()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return a.active, nil
 }
 
 func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
