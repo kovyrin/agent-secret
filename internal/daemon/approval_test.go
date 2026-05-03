@@ -34,6 +34,12 @@ type exitingLauncher struct {
 	exited   chan error
 }
 
+type sequenceLauncher struct {
+	mu       sync.Mutex
+	launched []ApprovalRequestPayload
+	expected []ExpectedApprover
+}
+
 type contextObservingLauncher struct {
 	expected ExpectedApprover
 	canceled chan struct{}
@@ -89,6 +95,17 @@ func (l *exitingLauncher) Launch(_ context.Context, _ string, _ ApprovalRequestP
 	expected := l.expected
 	expected.exited = l.exited
 	return expected, nil
+}
+
+func (l *sequenceLauncher) Launch(_ context.Context, _ string, payload ApprovalRequestPayload) (ExpectedApprover, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.launched = append(l.launched, payload)
+	index := len(l.launched) - 1
+	if index >= len(l.expected) {
+		index = len(l.expected) - 1
+	}
+	return l.expected[index], nil
 }
 
 func (l *contextObservingLauncher) Launch(ctx context.Context, _ string, _ ApprovalRequestPayload) (ExpectedApprover, error) {
@@ -474,7 +491,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
 	}
 }
 
-func TestSocketApproverIgnoresExpectedApproverExitAfterFetch(t *testing.T) {
+func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 	t.Parallel()
 
 	exe := currentExecutable(t)
@@ -503,23 +520,92 @@ func TestSocketApproverIgnoresExpectedApproverExitAfterFetch(t *testing.T) {
 	exited <- errors.New("exit status 64")
 	close(exited)
 
+	if err := receiveApprovalError(t, errCh, "ApproveExec did not observe post-fetch approver exit"); !errors.Is(err, ErrApproverLaunchFailed) {
+		t.Fatalf("ApproveExec error = %v, want launch failure", err)
+	}
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
 		Decision:  "approve_once",
 	})
-	if err != nil {
-		t.Fatalf("SubmitDecision returned error: %v", err)
+	if !errors.Is(err, ErrNoPendingApproval) {
+		t.Fatalf("SubmitDecision after approver exit = %v, want no pending approval", err)
 	}
 	select {
 	case decision := <-resultCh:
-		if !decision.Approved {
-			t.Fatalf("unexpected approval result: %+v", decision)
+		t.Fatalf("ApproveExec returned decision after approver exit: %+v", decision)
+	default:
+	}
+}
+
+func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	firstExited := make(chan error, 1)
+	launcher := &sequenceLauncher{
+		expected: []ExpectedApprover{
+			{PID: os.Getpid(), ExecutablePath: exe, exited: firstExited},
+			{PID: os.Getpid(), ExecutablePath: exe},
+		},
+	}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	firstReq := approvalTestRequest(t, time.Now().Add(time.Minute))
+	secondReq := approvalTestRequest(t, time.Now().Add(time.Minute))
+	firstErr := make(chan error, 1)
+	secondResult := make(chan ApprovalDecision, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", firstReq)
+		firstErr <- err
+	}()
+	waitForPending(t, approver)
+	go func() {
+		decision, err := approver.ApproveExec(context.Background(), "req_2", "nonce_2", secondReq)
+		if err != nil {
+			secondErr <- err
+			return
 		}
-	case err := <-errCh:
-		t.Fatalf("ApproveExec returned error after fetch: %v", err)
+		secondResult <- decision
+	}()
+
+	payload, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
+	if err != nil {
+		t.Fatalf("FetchPending first request returned error: %v", err)
+	}
+	if payload.RequestID != "req_1" {
+		t.Fatalf("first payload request ID = %q, want req_1", payload.RequestID)
+	}
+	firstExited <- errors.New("exit status 64")
+	close(firstExited)
+	if err := receiveApprovalError(t, firstErr, "first ApproveExec did not observe approver exit"); !errors.Is(err, ErrApproverLaunchFailed) {
+		t.Fatalf("first ApproveExec error = %v, want launch failure", err)
+	}
+
+	waitForPending(t, approver)
+	payload, err = approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
+	if err != nil {
+		t.Fatalf("FetchPending second request returned error: %v", err)
+	}
+	if payload.RequestID != "req_2" {
+		t.Fatalf("second payload request ID = %q, want req_2", payload.RequestID)
+	}
+	if err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+		RequestID: "req_2",
+		Nonce:     "nonce_2",
+		Decision:  "approve_once",
+	}); err != nil {
+		t.Fatalf("SubmitDecision second request returned error: %v", err)
+	}
+	select {
+	case decision := <-secondResult:
+		if !decision.Approved {
+			t.Fatalf("unexpected second approval result: %+v", decision)
+		}
+	case err := <-secondErr:
+		t.Fatalf("second ApproveExec returned error: %v", err)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for approval result")
+		t.Fatal("timed out waiting for second approval result")
 	}
 }
 

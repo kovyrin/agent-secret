@@ -507,10 +507,10 @@ func (a *SocketApprover) markExpectedUsed(job *approvalJob) bool {
 func (a *SocketApprover) monitorExpectedApprover(job *approvalJob, exited <-chan error) {
 	select {
 	case err := <-exited:
-		if !a.expectedApproverExitShouldFail(job) {
+		message, shouldFail := a.expectedApproverExitFailure(job)
+		if !shouldFail {
 			return
 		}
-		message := "approver exited before fetching pending approval"
 		if err != nil {
 			message = fmt.Sprintf("%s: %v", message, err)
 		}
@@ -519,10 +519,16 @@ func (a *SocketApprover) monitorExpectedApprover(job *approvalJob, exited <-chan
 	}
 }
 
-func (a *SocketApprover) expectedApproverExitShouldFail(job *approvalJob) bool {
+func (a *SocketApprover) expectedApproverExitFailure(job *approvalJob) (string, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.active == job && job.expectedReady && !job.expectedUsed
+	if a.active != job || !job.expectedReady {
+		return "", false
+	}
+	if job.expectedUsed {
+		return "approver exited before submitting an approval decision", true
+	}
+	return "approver exited before fetching pending approval", true
 }
 
 func (a *SocketApprover) activeWhenExpectedReady(ctx context.Context) (*approvalJob, error) {
