@@ -28,7 +28,7 @@ import Foundation
                 }
                 secretSection
                 requestContext
-                if viewModel.printsEnvironmentWarning, !viewModel.highScopeWarning {
+                if !viewModel.cautionMessages.isEmpty {
                     caution
                 }
                 details
@@ -135,7 +135,7 @@ import Foundation
                     .accessibilityHidden(true)
                 Text("Caution: ")
                     .fontWeight(.semibold) +
-                    Text("This command can print environment variables.\nOnly approve if you expected this.")
+                    Text(viewModel.cautionMessages.joined(separator: "\n"))
             }
             .font(.system(size: Metric.bodyFontSize))
             .foregroundStyle(Palette.cautionText)

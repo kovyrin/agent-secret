@@ -21,7 +21,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let secretRows: [String]
         let timeRemaining: String
         let overrideWarning: String?
-        let mutableExecutableWarning: String?
+        let cautionMessages: [String]
     }
 
     private static let highScopeSecretThreshold: Int = 6
@@ -82,6 +82,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let overrideWarning: String?
     /// Mutable executable opt-in warning when applicable.
     public let mutableExecutableWarning: String?
+    /// Caution messages visible in the default SwiftUI approval surface.
+    public let cautionMessages: [String]
     /// Footer copy with correct singular/plural wording.
     public let footerMessage: String
     /// Full sanitized prompt body for AppKit alerts.
@@ -117,9 +119,11 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let remainingText: String = compactTimeRemaining
         scopeSummary = Self.scopeSummary(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
         allowReusableTitle = Self.reuseTitle(uses: reusableUseLimit, remaining: remainingText, expired: isExpired)
-        printsEnvironmentWarning = Self.environmentWarning(for: request)
-        overrideWarning = Self.overrideWarning(for: request)
-        mutableExecutableWarning = Self.mutableExecutableWarning(for: request)
+        let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
+        printsEnvironmentWarning = warnings.printsEnvironment
+        overrideWarning = warnings.override
+        mutableExecutableWarning = warnings.mutableExecutable
+        cautionMessages = warnings.cautionMessages
         footerMessage = Self.footerMessage(secretCount: secretPresentation.count, expired: isExpired)
         renderedText = Self.renderedText(
             for: request,
@@ -134,7 +138,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
                 secretRows: secretRows,
                 timeRemaining: timeRemaining,
                 overrideWarning: overrideWarning,
-                mutableExecutableWarning: mutableExecutableWarning
+                cautionMessages: cautionMessages
             )
         )
     }
@@ -207,24 +211,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         if let overrideWarning: String = viewModel.overrideWarning {
             lines.append(overrideWarning)
         }
-        if let mutableExecutableWarning: String = viewModel.mutableExecutableWarning {
-            lines.append(mutableExecutableWarning)
-        }
+        lines.append(contentsOf: viewModel.cautionMessages)
         return lines.joined(separator: "\n")
-    }
-
-    private static func overrideWarning(for request: ApprovalRequest) -> String? {
-        guard request.overrideEnv, !request.overriddenAliases.isEmpty else {
-            return nil
-        }
-        return "Will replace existing variables: \(request.overriddenAliases.joined(separator: ", "))"
-    }
-
-    private static func mutableExecutableWarning(for request: ApprovalRequest) -> String? {
-        guard request.allowMutableExecutable else {
-            return nil
-        }
-        return "Mutable executable opt-in: command path may be replaceable before launch."
     }
 
     private static func commandArguments(_ command: [String]) -> [CommandArgumentViewModel] {
@@ -283,15 +271,5 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
 
     private static func visibleRemainingSeconds(_ interval: TimeInterval) -> Int {
         max(0, Int(interval.rounded(.up)))
-    }
-
-    private static func environmentPrinter(command: [String], resolvedExecutable: String?) -> Bool {
-        let executableName: String = URL(fileURLWithPath: resolvedExecutable ?? command.first ?? "")
-            .lastPathComponent
-        return executableName == "env" || executableName == "printenv"
-    }
-
-    private static func environmentWarning(for request: ApprovalRequest) -> Bool {
-        environmentPrinter(command: request.command, resolvedExecutable: request.resolvedExecutable)
     }
 }

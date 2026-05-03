@@ -172,6 +172,9 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertTrue(viewModel.renderedText.contains("Time remaining: 2 minutes"))
         XCTAssertTrue(viewModel.renderedText.contains("Will replace existing variables: EXAMPLE_TOKEN"))
         XCTAssertTrue(viewModel.renderedText.contains("Mutable executable opt-in"))
+        XCTAssertTrue(viewModel.cautionMessages.contains { message in
+            message.contains("Mutable executable opt-in")
+        })
         XCTAssertEqual(viewModel.executable, "terraform")
         XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following secret?")
         XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
@@ -202,6 +205,20 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(viewModel.requestedSecrets.first?.symbolName, "person")
         XCTAssertTrue(viewModel.footerMessage.contains("The secrets are injected"))
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
+    }
+
+    func testMutableExecutableWarningIsVisibleOutsideCollapsedDetails() {
+        var request: ApprovalRequest = Self.multiSecretRequest
+        request.allowMutableExecutable = true
+        let viewModel = ApprovalRequestViewModel(
+            request: request,
+            now: Date(timeIntervalSince1970: Self.viewModelNow)
+        )
+
+        XCTAssertTrue(viewModel.highScopeWarning)
+        XCTAssertTrue(viewModel.printsEnvironmentWarning)
+        XCTAssertEqual(viewModel.cautionMessages.count, 1)
+        XCTAssertTrue(viewModel.cautionMessages[0].contains("Mutable executable opt-in"))
     }
 
     deinit {
