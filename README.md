@@ -196,11 +196,28 @@ Human install flow:
    agent-secret doctor
    ```
 
-Unattended install and upgrade use the same script:
+Unattended install and upgrade use the same script. Pin the bootstrap script to
+the same immutable release tag as `AGENT_SECRET_VERSION`:
 
 ```bash
-curl -fsSL \
-  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+version="v0.3.1"
+base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
+curl -fsSL "$base_url/${version}/install.sh" |
+  AGENT_SECRET_VERSION="$version" sh
+```
+
+For a latest-release install, resolve the release tag first and fetch
+`install.sh` from that tag, not from `main`:
+
+```bash
+version="$(
+  curl -fsSL https://api.github.com/repos/kovyrin/agent-secret/releases/latest |
+    awk -F'"' '/"tag_name":/ { print $4; exit }'
+)"
+test -n "$version"
+base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
+curl -fsSL "$base_url/${version}/install.sh" |
+  AGENT_SECRET_VERSION="$version" sh
 ```
 
 Useful installer environment variables:
