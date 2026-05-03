@@ -616,7 +616,7 @@ func parseInstallCLI(args []string) (Command, error) {
 	fs := flag.NewFlagSet("install-cli", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	binDir := fs.String("bin-dir", "", "command symlink directory")
-	force := fs.Bool("force", false, "replace an existing non-symlink command path")
+	force := fs.Bool("force", false, "replace an existing command path that is not already the target")
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
@@ -639,7 +639,7 @@ func parseSkillInstall(args []string) (Command, error) {
 	fs := flag.NewFlagSet("skill-install", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	skillsDir := fs.String("skills-dir", "", "agent skills directory")
-	force := fs.Bool("force", false, "replace an existing non-symlink skill path")
+	force := fs.Bool("force", false, "replace an existing skill path that is not already the target")
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
@@ -691,12 +691,13 @@ The command creates:
 
 When run from a development or test build, it links to the executable that is
 currently running. If the command is already a symlink to that executable, it is
-left in place. Existing regular files are not replaced unless --force is passed.
+left in place. Any other existing path, including a symlink to a different
+target, is not replaced unless --force is passed.
 
 Flags:
 
   --bin-dir DIR  Directory that should contain the agent-secret command. Defaults to ~/.local/bin.
-  --force        Replace an existing non-symlink file at DIR/agent-secret.
+  --force        Replace an existing path at DIR/agent-secret unless it is already the target.
 `)
 }
 
@@ -716,11 +717,14 @@ The skill covers general Agent Secret usage, project profiles, env-file usage,
 safe verification, and migration from direct 1Password CLI access. When run
 from a development or test build, it links to the bundled skill next to the
 currently running agent-secret executable.
+If the skill is already a symlink to that target, it is left in place. Any other
+existing path, including a symlink to a different target, is not replaced unless
+--force is passed.
 
 Flags:
 
   --skills-dir DIR  Directory that should contain the agent-secret skill. Defaults to ~/.agents/skills.
-  --force           Replace an existing non-symlink path at DIR/agent-secret.
+  --force           Replace an existing path at DIR/agent-secret unless it is already the target.
 `)
 }
 

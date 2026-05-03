@@ -447,8 +447,9 @@ agent-secret skill-install
 ```
 
 `agent-secret install-cli` installs or repairs the `agent-secret` symlink for
-the current user. It refuses to replace an unrelated regular file unless
-`--force` is passed.
+the current user. It refuses to replace any existing path that is not already
+the target symlink, including a symlink to another target, unless `--force` is
+passed.
 
 `agent-secret skill-install` installs or repairs the bundled coding-agent skill
 for the current user:

@@ -251,7 +251,8 @@ agent-secret install-cli --force
 ```
 
 `install-cli` creates or repairs the user-level `agent-secret` command symlink.
-It refuses to replace an unrelated regular file unless `--force` is passed.
+It refuses to replace any existing path that is not already the target symlink,
+including a symlink to another target, unless `--force` is passed.
 
 Skill installation:
 
