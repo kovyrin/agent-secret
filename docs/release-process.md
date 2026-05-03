@@ -6,9 +6,10 @@ DMG artifacts. The changelog is the source of truth for release notes.
 ## Roles
 
 - `CHANGELOG.md` accumulates notable changes while development happens.
-- The release workflow builds and uploads the macOS DMG and `checksums.txt`.
-- The maintainer copies the matching changelog section into the GitHub release
-  notes before publishing.
+- The release workflow verifies the matching changelog section, builds the
+  macOS DMG and `checksums.txt`, and uses that changelog section as draft
+  GitHub Release notes.
+- The maintainer verifies the draft notes and artifacts before publishing.
 
 ## Version Sections
 
@@ -27,6 +28,9 @@ that heading to the release date:
 
 After publishing, create the next pending section when there is a concrete next
 release target. Do not publish a release whose changelog section is empty.
+The tag-triggered workflow runs `scripts/extract-release-notes.sh` to enforce
+this before publishing draft artifacts. Local smoke coverage for this contract
+lives in `AGENT_SECRET_IN_MISE=1 scripts/test-release-notes.sh`.
 
 ## Release Checklist
 
@@ -65,7 +69,9 @@ release target. Do not publish a release whose changelog section is empty.
    release artifacts.
 
 7. Watch the tag-triggered CI run until `Draft Release Artifacts` passes.
-   The job should create or update a draft GitHub Release with:
+   The job rejects tags whose changelog section is missing, still marked
+   `Pending`, or empty. It should create or update a draft GitHub Release with
+   notes from the dated changelog section and these assets:
 
    ```text
    Agent-Secret-vX.Y.Z-macos-arm64.dmg
@@ -112,32 +118,22 @@ release target. Do not publish a release whose changelog section is empty.
    hdiutil detach "$mount_dir"
    ```
 
-10. Extract release notes from the matching changelog section:
+10. Confirm the draft release notes match the dated changelog section for the
+    tag:
 
     ```bash
     version="0.0.1"
-    awk -v version="$version" '
-      $0 ~ "^## \\[" version "\\]" { emit = 1; next }
-      emit && /^## \\[/ { exit }
-      emit { print }
-    ' CHANGELOG.md > /tmp/agent-secret-release-notes.md
+    gh release view "v$version" --json body --jq .body
     ```
 
-11. Replace the draft release notes with the changelog-derived notes:
-
-    ```bash
-    gh release edit "v$version" \
-      --notes-file /tmp/agent-secret-release-notes.md
-    ```
-
-12. Publish the draft release only after CI and local artifact verification
+11. Publish the draft release only after CI and local artifact verification
     pass:
 
     ```bash
     gh release edit "v$version" --draft=false
     ```
 
-13. Confirm the published release page shows the expected notes and assets.
+12. Confirm the published release page shows the expected notes and assets.
 
 ## Signing Preconditions
 
