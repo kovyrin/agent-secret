@@ -7,7 +7,7 @@ import Foundation
     import SwiftUI
 #endif
 
-/// Native macOS approval presenter.
+/// AppKit-backed presenter that surfaces prompts on the main actor and fails closed outside AppKit.
 public final class AppKitApprovalPresenter: ApprovalPresenter {
     #if canImport(AppKit)
         private static let panelHeight: CGFloat = 660
@@ -85,7 +85,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         }
     #endif
 
-    /// Presents the request and returns the operator decision.
+    /// Keeps UI work on the main actor; non-AppKit builds return timeout instead of approving.
     @preconcurrency
     @MainActor
     public func decide(for request: ApprovalRequest) -> ApprovalDecisionKind {

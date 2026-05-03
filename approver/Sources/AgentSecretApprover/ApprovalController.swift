@@ -1,6 +1,6 @@
 import Foundation
 
-/// Runs the approval fetch, presentation, and submission flow.
+/// Coordinates value-free logging around daemon I/O while blocking socket work stays off the main actor.
 public final class ApprovalController {
     private let client: ApprovalDaemonClientWorker
     private let presenter: ApprovalPresenter

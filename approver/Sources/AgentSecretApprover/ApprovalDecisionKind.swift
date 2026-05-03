@@ -1,6 +1,6 @@
 import Foundation
 
-/// Operator decision returned by the native approver.
+/// Wire values accepted by the daemon approval protocol; approve cases require an unexpired request.
 public enum ApprovalDecisionKind: String, Codable, Equatable, Sendable {
     case approveOnce = "approve_once"
     case approveReusable = "approve_reusable"

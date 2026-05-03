@@ -1,8 +1,8 @@
 import Foundation
 
-/// Daemon connection used by the approver to fetch requests and submit decisions.
+/// Value-free daemon boundary for the native approver; only request metadata and decisions cross it.
 public protocol ApprovalDaemonClient {
-    /// Opens the approval-pending protocol request without exposing secret values.
+    /// Reads pending request metadata without transferring secret values into the UI process.
     func fetchPendingRequest() throws -> ApprovalRequest
 
     /// Sends a decision that preserves the fetched request's daemon nonce and request ID.
