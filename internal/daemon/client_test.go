@@ -57,8 +57,7 @@ func TestConnectRejectsUntrustedDaemonBeforeExecPayload(t *testing.T) {
 		defer func() { _ = client.Close() }()
 		payload, requestErr := client.RequestExec(
 			context.Background(),
-			"req_1",
-			"nonce_1",
+			testCorrelation("req_1", "nonce_1"),
 			testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}}),
 		)
 		if requestErr == nil {
@@ -153,7 +152,7 @@ func serveFakeExecPayload(conn *net.UnixConn) {
 	if err := decoder.Decode(&env); err != nil {
 		return
 	}
-	resp, err := protocol.NewEnvelope(protocol.TypeOK, env.RequestID, env.Nonce, protocol.ExecResponsePayload{
+	resp, err := protocol.NewEnvelope(protocol.TypeOK, env.Correlation(), protocol.ExecResponsePayload{
 		Env:           map[string]string{"TOKEN": "attacker-controlled"},
 		SecretAliases: []string{"TOKEN"},
 	})

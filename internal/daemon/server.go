@@ -144,7 +144,7 @@ func (s *Server) stopWithAudit(ctx context.Context, event audit.Event) {
 func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	defer func() { _ = conn.Close() }()
 	if err := s.validator.Validate(conn); err != nil {
-		_ = writeError(conn, "", "", protocol.ErrorCodePeerRejected, err)
+		_ = writeError(conn, protocol.Correlation{}, protocol.ErrorCodePeerRejected, err)
 		return
 	}
 
@@ -160,18 +160,18 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				s.broker.ClientDisconnected(ctx, activeRequestID)
 			}
 			if errors.Is(err, protocol.ErrProtocolFrameSize) {
-				_ = writeErrorEncoder(encoder, "", "", protocol.ErrorCodeFrameTooLarge, err)
+				_ = writeErrorEncoder(encoder, protocol.Correlation{}, protocol.ErrorCodeFrameTooLarge, err)
 			} else if errors.Is(err, protocol.ErrMalformedEnvelope) {
-				_ = writeErrorEncoder(encoder, "", "", protocol.ErrorCodeBadEnvelope, err)
+				_ = writeErrorEncoder(encoder, protocol.Correlation{}, protocol.ErrorCodeBadEnvelope, err)
 			}
 			return
 		}
 		if err := protocol.ValidateEnvelope(env); err != nil {
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadEnvelope, err)
+			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadEnvelope, err)
 			continue
 		}
 		if s.stopped() && env.Type != protocol.TypeDaemonStatus {
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrDaemonStopped), ErrDaemonStopped)
 			return
 		}
 
@@ -183,7 +183,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 		switch env.Type {
 		case protocol.TypeDaemonStatus:
-			_ = writeOK(encoder, env.RequestID, env.Nonce, protocol.StatusPayload{PID: os.Getpid()})
+			_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
 		case protocol.TypeDaemonStop:
 			if s.handleDaemonStop(ctx, conn, encoder, env) {
 				return
@@ -194,27 +194,27 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 		case protocol.TypeApprovalDecision:
 			if s.approvals == nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
+				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
 				continue
 			}
 			payload, err := protocol.DecodePayload[ApprovalDecisionPayload](env)
 			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadApprovalDecision, err)
+				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadApprovalDecision, err)
 				continue
 			}
 			peer, err := s.peerInfo(conn)
 			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodePeerRejected, err)
+				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
 				continue
 			}
 			if err := s.approvals.SubmitDecision(ctx, peer, payload); err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+				_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 				continue
 			}
-			_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+			_ = writeOK(encoder, env.Correlation(), nil)
 		case protocol.TypeRequestExec:
 			if activeRequestID != "" {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+				_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
 				continue
 			}
 			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
@@ -240,7 +240,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				nextReadTimeout = s.readTimeout
 			}
 		default:
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
+			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
 		}
 	}
 }
@@ -253,7 +253,7 @@ func (s *Server) lifecycleRequestMatchesConnection(
 	if activeRequestID != "" && env.RequestID == activeRequestID {
 		return true
 	}
-	_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrInvalidNonce), ErrInvalidNonce)
+	_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrInvalidNonce), ErrInvalidNonce)
 	return false
 }
 
@@ -264,20 +264,21 @@ func (s *Server) handleApprovalPending(
 	env protocol.Envelope,
 ) (ApprovalRequestPayload, bool) {
 	if s.approvals == nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
 		return ApprovalRequestPayload{}, false
 	}
 	peer, err := s.peerInfo(conn)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodePeerRejected, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
 		return ApprovalRequestPayload{}, false
 	}
 	payload, err := s.approvals.FetchPending(ctx, peer)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ApprovalRequestPayload{}, false
 	}
-	if err := writeOK(encoder, payload.RequestID, payload.Nonce, payload); err != nil {
+	correlation := protocol.Correlation{RequestID: payload.RequestID, Nonce: payload.Nonce}
+	if err := writeOK(encoder, correlation, payload); err != nil {
 		return ApprovalRequestPayload{}, false
 	}
 	return payload, true
@@ -291,16 +292,16 @@ func (s *Server) handleDaemonStop(
 ) bool {
 	peer, err := s.peerInfo(conn)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodePeerRejected, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
 		return false
 	}
 	if err := s.execValidator.ValidateExecPeer(peer); err != nil {
 		s.broker.recordDaemonStopAttempt(ctx, daemonStopAuditEvent(peer, err))
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
 	s.stopWithAudit(ctx, daemonStopAuditEvent(peer, nil))
-	_ = writeOK(encoder, env.RequestID, env.Nonce, protocol.StatusPayload{PID: os.Getpid()})
+	_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
 	return true
 }
 
@@ -311,27 +312,27 @@ func (s *Server) handleRequestExec(
 	env protocol.Envelope,
 ) string {
 	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
 	req, err := protocol.DecodePayload[request.ExecRequest](env)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadRequest, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
 	req = req.WithReceiptTime(s.broker.now())
 	if err := req.ValidateForDaemon(); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadRequest, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
-	delivery, err := s.broker.handleExecDelivery(ctx, env.RequestID, env.Nonce, req)
+	delivery, err := s.broker.handleExecDelivery(ctx, env.Correlation(), req)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
 	if err := delivery.deliver(func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
 		if s.stopped() {
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrDaemonStopped), ErrDaemonStopped)
 			return ErrDaemonStopped
 		}
 		if s.beforeExecResponseWrite != nil {
@@ -339,11 +340,11 @@ func (s *Server) handleRequestExec(
 		}
 		clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, expiresAt)
 		if err != nil {
-			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 			return err
 		}
 		defer clearWriteDeadline()
-		return writeOK(encoder, env.RequestID, env.Nonce, payload)
+		return writeOK(encoder, env.Correlation(), payload)
 	}); err != nil {
 		return ""
 	}
@@ -371,19 +372,19 @@ func (s *Server) handleCommandStarted(
 	env protocol.Envelope,
 ) bool {
 	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
 	payload, err := protocol.DecodePayload[protocol.CommandStartedPayload](env)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadCommandStarted, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadCommandStarted, err)
 		return false
 	}
-	if err := s.broker.ReportStarted(ctx, env.RequestID, env.Nonce, payload.ChildPID); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+	if err := s.broker.ReportStarted(ctx, env.Correlation(), payload.ChildPID); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
-	_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+	_ = writeOK(encoder, env.Correlation(), nil)
 	return true
 }
 
@@ -394,19 +395,19 @@ func (s *Server) handleCommandCompleted(
 	env protocol.Envelope,
 ) bool {
 	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
 	payload, err := protocol.DecodePayload[protocol.CommandCompletedPayload](env)
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadCommandCompleted, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadCommandCompleted, err)
 		return false
 	}
-	if err := s.broker.ReportCompleted(ctx, env.RequestID, env.Nonce, payload.ExitCode, payload.Signal); err != nil {
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+	if err := s.broker.ReportCompleted(ctx, env.Correlation(), payload.ExitCode, payload.Signal); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
-	_ = writeOK(encoder, env.RequestID, env.Nonce, nil)
+	_ = writeOK(encoder, env.Correlation(), nil)
 	return true
 }
 
@@ -458,21 +459,21 @@ func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
 	return s.execValidator.ValidateExecPeer(peer)
 }
 
-func writeOK(encoder *json.Encoder, requestID string, nonce string, payload any) error {
-	env, err := protocol.NewEnvelope(protocol.TypeOK, requestID, nonce, payload)
+func writeOK(encoder *json.Encoder, correlation protocol.Correlation, payload any) error {
+	env, err := protocol.NewEnvelope(protocol.TypeOK, correlation, payload)
 	if err != nil {
 		return err
 	}
 	return encoder.Encode(env)
 }
 
-func writeError(conn *net.UnixConn, requestID string, nonce string, code protocol.ErrorCode, err error) error {
-	return writeErrorEncoder(json.NewEncoder(conn), requestID, nonce, code, err)
+func writeError(conn *net.UnixConn, correlation protocol.Correlation, code protocol.ErrorCode, err error) error {
+	return writeErrorEncoder(json.NewEncoder(conn), correlation, code, err)
 }
 
-func writeErrorEncoder(encoder *json.Encoder, requestID string, nonce string, code protocol.ErrorCode, err error) error {
+func writeErrorEncoder(encoder *json.Encoder, correlation protocol.Correlation, code protocol.ErrorCode, err error) error {
 	payload := protocol.ErrorPayload{Code: code, Message: err.Error()}
-	env, marshalErr := protocol.NewEnvelope(protocol.TypeError, requestID, nonce, payload)
+	env, marshalErr := protocol.NewEnvelope(protocol.TypeError, correlation, payload)
 	if marshalErr != nil {
 		return marshalErr
 	}

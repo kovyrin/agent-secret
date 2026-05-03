@@ -12,7 +12,7 @@ import (
 func TestHelpersRejectMalformedPayloads(t *testing.T) {
 	t.Parallel()
 
-	if _, err := NewEnvelope(TypeOK, "req_1", "nonce_1", make(chan int)); err == nil {
+	if _, err := NewEnvelope(TypeOK, Correlation{RequestID: "req_1", Nonce: "nonce_1"}, make(chan int)); err == nil {
 		t.Fatal("expected unmarshalable payload error")
 	}
 

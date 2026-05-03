@@ -148,7 +148,7 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 func TestApprovalPayloadEncodesCurrentProtocolFields(t *testing.T) {
 	t.Parallel()
 
-	payload := approvalPayload("req_123", "nonce_456", request.ExecRequest{
+	payload := approvalPayload(testCorrelation("req_123", "nonce_456"), request.ExecRequest{
 		Reason:    "Run tests",
 		Command:   []string{"/usr/bin/true"},
 		CWD:       "/tmp/project",
@@ -184,7 +184,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	resultCh := make(chan ApprovalDecision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		if err != nil {
 			errCh <- err
 			return
@@ -237,7 +237,7 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 	resultCh := make(chan ApprovalDecision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		if err != nil {
 			errCh <- err
 			return
@@ -298,7 +298,7 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid()+1, exe), ErrApproverPeerMismatch)
@@ -346,7 +346,7 @@ func TestSocketApproverRejectsFetchFromWrongApproverProcessSignature(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(ctx, "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(ctx, testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 
@@ -383,7 +383,7 @@ func TestSocketApproverRejectsDecisionFromWrongApproverProcessSignature(t *testi
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(ctx, "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(ctx, testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 
@@ -420,12 +420,12 @@ func TestSocketApproverFIFOAndQueuedExpiry(t *testing.T) {
 	firstErr := make(chan error, 1)
 	secondErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", first)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), first)
 		firstErr <- err
 	}()
 	payload := fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_2", "nonce_2", expiredSecond)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_2", "nonce_2"), expiredSecond)
 		secondErr <- err
 	}()
 
@@ -458,7 +458,7 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	req := approvalTestRequest(t, time.Now().Add(20*time.Millisecond))
 
-	_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+	_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("ApproveExec error = %v, want expired", err)
 	}
@@ -477,7 +477,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid()+1, exe), ErrApproverPeerMismatch)
@@ -507,7 +507,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 	resultCh := make(chan ApprovalDecision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		if err != nil {
 			errCh <- err
 			return
@@ -555,12 +555,12 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 	secondResult := make(chan ApprovalDecision, 1)
 	secondErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", firstReq)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), firstReq)
 		firstErr <- err
 	}()
 	payload := fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), "req_2", "nonce_2", secondReq)
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_2", "nonce_2"), secondReq)
 		if err != nil {
 			secondErr <- err
 			return
@@ -612,7 +612,7 @@ func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid()+1, exe), ErrApproverPeerMismatch)
@@ -649,7 +649,7 @@ func TestSocketApproverFetchPendingHonorsContextWhileApproverLaunchIsBlocked(t *
 	defer cancelApprove()
 	approveErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(approveCtx, "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(approveCtx, testCorrelation("req_1", "nonce_1"), req)
 		approveErr <- err
 	}()
 	receiveApprovalSignal(t, launcher.started, "approver launch did not start")
@@ -682,7 +682,7 @@ func TestSocketApproverSubmitDecisionHonorsContextWhileApproverLaunchIsBlocked(t
 	defer cancelApprove()
 	approveErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(approveCtx, "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(approveCtx, testCorrelation("req_1", "nonce_1"), req)
 		approveErr <- err
 	}()
 	receiveApprovalSignal(t, launcher.started, "approver launch did not start")
@@ -731,7 +731,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
@@ -794,7 +794,7 @@ func submitExpiredDecisionForTest(t *testing.T, decision ApprovalDecisionKind) e
 	req := approvalTestRequest(t, now.Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
+		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))

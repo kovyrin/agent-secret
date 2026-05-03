@@ -70,6 +70,15 @@ type Envelope struct {
 	Payload   json.RawMessage `json:"payload,omitempty"`
 }
 
+type Correlation struct {
+	RequestID string
+	Nonce     string
+}
+
+func (e Envelope) Correlation() Correlation {
+	return Correlation{RequestID: e.RequestID, Nonce: e.Nonce}
+}
+
 type ErrorPayload struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
@@ -93,7 +102,7 @@ type StatusPayload struct {
 	PID int `json:"pid"`
 }
 
-func NewEnvelope(messageType MessageType, requestID string, nonce string, payload any) (Envelope, error) {
+func NewEnvelope(messageType MessageType, correlation Correlation, payload any) (Envelope, error) {
 	raw, err := marshalPayload(payload)
 	if err != nil {
 		return Envelope{}, err
@@ -101,8 +110,8 @@ func NewEnvelope(messageType MessageType, requestID string, nonce string, payloa
 	return Envelope{
 		Version:   ProtocolVersion,
 		Type:      messageType,
-		RequestID: requestID,
-		Nonce:     nonce,
+		RequestID: correlation.RequestID,
+		Nonce:     correlation.Nonce,
 		Payload:   raw,
 	}, nil
 }

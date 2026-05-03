@@ -29,7 +29,7 @@ var (
 )
 
 type Approver interface {
-	ApproveExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ApprovalDecision, error)
+	ApproveExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (ApprovalDecision, error)
 }
 
 type ApprovalDecision struct {
@@ -138,17 +138,16 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 
 func (b *Broker) handleExecDelivery(
 	ctx context.Context,
-	requestID string,
-	nonce string,
+	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (execDelivery, error) {
-	grant, err := b.handleExec(ctx, requestID, nonce, req)
+	grant, err := b.handleExec(ctx, correlation, req)
 	if err != nil {
 		return execDelivery{}, err
 	}
 	return execDelivery{
 		broker:    b,
-		requestID: requestID,
+		requestID: correlation.RequestID,
 		payload: protocol.ExecResponsePayload{
 			Env:           grant.Env,
 			SecretAliases: grant.SecretAliases,
@@ -165,8 +164,8 @@ func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time
 	return d.broker.markPayloadDelivered(d.requestID)
 }
 
-func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ExecGrant, error) {
-	if requestID == "" || nonce == "" {
+func (b *Broker) handleExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (ExecGrant, error) {
+	if correlation.RequestID == "" || correlation.Nonce == "" {
 		return ExecGrant{}, ErrInvalidNonce
 	}
 	if b.stopped() {
@@ -180,14 +179,14 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()
-	grant, err := b.grants.issue(execCtx, requestID, nonce, req)
+	grant, err := b.grants.issue(execCtx, correlation, req)
 	if err != nil {
 		return ExecGrant{}, err
 	}
 
 	b.mu.Lock()
-	b.active[requestID] = &activeExec{
-		nonce:    nonce,
+	b.active[correlation.RequestID] = &activeExec{
+		nonce:    correlation.Nonce,
 		req:      req,
 		delivery: grant.delivery,
 	}
@@ -276,13 +275,13 @@ func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 	active.delivery.markPrePayloadFailure()
 }
 
-func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
-	active, err := b.activeRequest(requestID, nonce)
+func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
+	active, err := b.activeRequest(correlation)
 	if err != nil {
 		return err
 	}
 
-	event := audit.FromExecRequest(audit.EventCommandStarted, requestID, active.req)
+	event := audit.FromExecRequest(audit.EventCommandStarted, correlation.RequestID, active.req)
 	pid := childPID
 	event.ChildPID = &pid
 	if err := b.grants.recordRequiredAudit(ctx, event); err != nil {
@@ -290,7 +289,7 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 	}
 
 	b.mu.Lock()
-	if current := b.active[requestID]; current != nil {
+	if current := b.active[correlation.RequestID]; current != nil {
 		current.started = true
 		current.childPID = &pid
 	}
@@ -298,13 +297,13 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 	return nil
 }
 
-func (b *Broker) ReportCompleted(ctx context.Context, requestID string, nonce string, exitCode int, signal string) error {
-	active, err := b.activeRequest(requestID, nonce)
+func (b *Broker) ReportCompleted(ctx context.Context, correlation protocol.Correlation, exitCode int, signal string) error {
+	active, err := b.activeRequest(correlation)
 	if err != nil {
 		return err
 	}
 
-	event := audit.FromExecRequest(audit.EventCommandCompleted, requestID, active.req)
+	event := audit.FromExecRequest(audit.EventCommandCompleted, correlation.RequestID, active.req)
 	event.ExitCode = new(exitCode)
 	event.Signal = signal
 	if err := b.grants.recordRequiredAudit(ctx, event); err != nil {
@@ -312,7 +311,7 @@ func (b *Broker) ReportCompleted(ctx context.Context, requestID string, nonce st
 	}
 
 	b.mu.Lock()
-	delete(b.active, requestID)
+	delete(b.active, correlation.RequestID)
 	b.mu.Unlock()
 	return nil
 }
@@ -441,18 +440,18 @@ func pendingIdentities(ordered []secretIdentity, pending map[secretIdentity]stru
 	return identities
 }
 
-func (b *Broker) activeRequest(requestID string, nonce string) (*activeExec, error) {
+func (b *Broker) activeRequest(correlation protocol.Correlation) (*activeExec, error) {
 	if b.stopped() {
 		return nil, ErrDaemonStopped
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	active, ok := b.active[requestID]
+	active, ok := b.active[correlation.RequestID]
 	if !ok {
 		return nil, ErrUnknownRequest
 	}
-	if active.nonce != nonce {
+	if active.nonce != correlation.Nonce {
 		return nil, ErrInvalidNonce
 	}
 	return active, nil

@@ -109,7 +109,8 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		a.stderrf("agent-secret: generate request nonce: %v\n", err)
 		return 1
 	}
-	payload, err := client.RequestExec(ctx, requestID, nonce, command.ExecRequest)
+	correlation := protocol.Correlation{RequestID: requestID, Nonce: nonce}
+	payload, err := client.RequestExec(ctx, correlation, command.ExecRequest)
 	if err != nil {
 		a.stderrf("agent-secret: request rejected: %v\n", err)
 		return 1
@@ -120,10 +121,9 @@ func (a App) runExec(ctx context.Context, command Command) int {
 	defer signal.Stop(interrupts)
 
 	reporter := daemonAuditReporter{
-		client:    client,
-		requestID: requestID,
-		nonce:     nonce,
-		stderr:    a.Stderr,
+		client:      client,
+		correlation: correlation,
+		stderr:      a.Stderr,
 	}
 	result, err := execwrap.Run(ctx, execwrap.Spec{
 		Path:                   command.ExecRequest.ResolvedExecutable,
@@ -304,10 +304,9 @@ func (a App) stderrf(format string, args ...any) {
 }
 
 type daemonAuditReporter struct {
-	client    *daemon.Client
-	requestID string
-	nonce     string
-	stderr    io.Writer
+	client      *daemon.Client
+	correlation protocol.Correlation
+	stderr      io.Writer
 }
 
 func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEvent) error {
@@ -316,7 +315,7 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 	case audit.EventCommandStarting:
 		return nil
 	case audit.EventCommandStarted:
-		if err := r.client.ReportStarted(ctx, r.requestID, r.nonce, event.ChildPID); err != nil {
+		if err := r.client.ReportStarted(ctx, r.correlation, event.ChildPID); err != nil {
 			if isFatalCommandStartedAuditFailure(err) {
 				return err
 			}
@@ -327,7 +326,7 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 			)
 		}
 	case audit.EventCommandCompleted:
-		if err := r.client.ReportCompleted(ctx, r.requestID, r.nonce, event.ExitCode, event.Signal); err != nil {
+		if err := r.client.ReportCompleted(ctx, r.correlation, event.ExitCode, event.Signal); err != nil {
 			_, _ = fmt.Fprintf(r.stderr, "agent-secret: warning: daemon completion audit was not recorded: %v\n", err)
 		}
 	default:

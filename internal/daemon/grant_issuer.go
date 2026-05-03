@@ -104,8 +104,7 @@ func (d grantDelivery) expiresAt() time.Time {
 
 func (g *grantIssuer) issue(
 	ctx context.Context,
-	requestID string,
-	nonce string,
+	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (ExecGrant, error) {
 	if err := g.ensureRequestActive(ctx, req); err != nil {
@@ -117,7 +116,7 @@ func (g *grantIssuer) issue(
 		return ExecGrant{}, g.requestError(ctx, req, err)
 	}
 	if grant.Env == nil {
-		grant, err = g.freshGrant(ctx, requestID, nonce, req)
+		grant, err = g.freshGrant(ctx, correlation, req)
 		if err != nil {
 			return ExecGrant{}, g.requestError(ctx, req, err)
 		}
@@ -128,7 +127,7 @@ func (g *grantIssuer) issue(
 	}
 	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.delivery.expiresAt())
 
-	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
+	event := audit.FromExecRequest(audit.EventCommandStarting, correlation.RequestID, req)
 	if err := g.recordRequiredAudit(ctx, event); err != nil {
 		grant.delivery.rollback()
 		return ExecGrant{}, err
@@ -297,22 +296,21 @@ func (g *grantIssuer) preflightAudit(ctx context.Context) error {
 
 func (g *grantIssuer) freshGrant(
 	ctx context.Context,
-	requestID string,
-	nonce string,
+	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (ExecGrant, error) {
-	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, requestID, req)); err != nil {
+	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
 		return ExecGrant{}, err
 	}
-	decision, err := g.approver.ApproveExec(ctx, requestID, nonce, req)
+	decision, err := g.approver.ApproveExec(ctx, correlation, req)
 	if err != nil {
-		if auditErr := g.recordApprovalError(ctx, requestID, req, err); auditErr != nil {
+		if auditErr := g.recordApprovalError(ctx, correlation.RequestID, req, err); auditErr != nil {
 			return ExecGrant{}, auditErr
 		}
 		return ExecGrant{}, err
 	}
 	if !decision.Approved {
-		if err := g.recordApprovalDenied(ctx, requestID, req); err != nil {
+		if err := g.recordApprovalDenied(ctx, correlation.RequestID, req); err != nil {
 			return ExecGrant{}, err
 		}
 		return ExecGrant{}, ErrApprovalDenied
@@ -320,14 +318,14 @@ func (g *grantIssuer) freshGrant(
 	if err := g.ensureRequestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
-	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, requestID, req)); err != nil {
+	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, correlation.RequestID, req)); err != nil {
 		return ExecGrant{}, err
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
 		return ExecGrant{}, err
 	}
 
-	refValues, err := g.resolveUniqueRefs(ctx, requestID, req)
+	refValues, err := g.resolveUniqueRefs(ctx, correlation.RequestID, req)
 	if err != nil {
 		return ExecGrant{}, g.requestError(ctx, req, err)
 	}

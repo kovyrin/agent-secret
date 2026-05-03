@@ -478,10 +478,12 @@ func TestDaemonAuditReporterWarnsOnDaemonStoppedAfterChildStart(t *testing.T) {
 
 	var stderr bytes.Buffer
 	reporter := daemonAuditReporter{
-		client:    daemonClient,
-		requestID: "req_1",
-		nonce:     "nonce_1",
-		stderr:    &stderr,
+		client: daemonClient,
+		correlation: protocol.Correlation{
+			RequestID: "req_1",
+			Nonce:     "nonce_1",
+		},
+		stderr: &stderr,
 	}
 	if err := reporter.Record(context.Background(), execwrap.AuditEvent{
 		Type:     audit.EventCommandStarted,
@@ -543,8 +545,7 @@ type appApprover struct {
 
 func (a *appApprover) ApproveExec(
 	_ context.Context,
-	_ string,
-	_ string,
+	_ protocol.Correlation,
 	_ request.ExecRequest,
 ) (daemon.ApprovalDecision, error) {
 	return a.decision, nil
@@ -749,7 +750,7 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 }
 
 func writePostStartStoppedDaemonOK(encoder *json.Encoder, requestID string, nonce string, payload any) error {
-	env, err := protocol.NewEnvelope(protocol.TypeOK, requestID, nonce, payload)
+	env, err := protocol.NewEnvelope(protocol.TypeOK, protocol.Correlation{RequestID: requestID, Nonce: nonce}, payload)
 	if err != nil {
 		return err
 	}
@@ -758,7 +759,7 @@ func writePostStartStoppedDaemonOK(encoder *json.Encoder, requestID string, nonc
 
 func writePostStartStoppedDaemonError(encoder *json.Encoder, requestID string, nonce string, code protocol.ErrorCode, err error) error {
 	payload := protocol.ErrorPayload{Code: code, Message: err.Error()}
-	env, marshalErr := protocol.NewEnvelope(protocol.TypeError, requestID, nonce, payload)
+	env, marshalErr := protocol.NewEnvelope(protocol.TypeError, protocol.Correlation{RequestID: requestID, Nonce: nonce}, payload)
 	if marshalErr != nil {
 		return marshalErr
 	}

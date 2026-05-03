@@ -135,12 +135,11 @@ func NewSocketApprover(socketPath string, launcher ApproverLauncher, now func() 
 
 func (a *SocketApprover) ApproveExec(
 	ctx context.Context,
-	requestID string,
-	nonce string,
+	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (ApprovalDecision, error) {
 	job := &approvalJob{
-		payload: approvalPayload(requestID, nonce, req),
+		payload: approvalPayload(correlation, req),
 		done:    make(chan struct{}),
 		result:  make(chan approvalResult, 1),
 	}
@@ -260,7 +259,7 @@ func validateReusableDecisionUses(decision ApprovalDecisionPayload, expected int
 	return nil
 }
 
-func approvalPayload(requestID string, nonce string, req request.ExecRequest) ApprovalRequestPayload {
+func approvalPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
 	secrets := make([]ApprovalRequestedSecret, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
 		secrets = append(secrets, ApprovalRequestedSecret{
@@ -274,8 +273,8 @@ func approvalPayload(requestID string, nonce string, req request.ExecRequest) Ap
 		overriddenAliases = []string{}
 	}
 	return ApprovalRequestPayload{
-		RequestID:              requestID,
-		Nonce:                  nonce,
+		RequestID:              correlation.RequestID,
+		Nonce:                  correlation.Nonce,
 		Reason:                 req.Reason,
 		Command:                slices.Clone(req.Command),
 		CWD:                    req.CWD,

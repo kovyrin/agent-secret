@@ -60,17 +60,17 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	defer cleanup()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
-	payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
+	payload, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
 	if payload.Env["TOKEN"] != "value" {
 		t.Fatalf("payload env = %+v", payload.Env)
 	}
-	if err := client.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 4321); err != nil {
 		t.Fatalf("ReportStarted returned error: %v", err)
 	}
-	if err := client.ReportCompleted(context.Background(), "req_1", "nonce_1", 0, ""); err != nil {
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_1", "nonce_1"), 0, ""); err != nil {
 		t.Fatalf("ReportCompleted returned error: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestServerStampsExecRequestTimeWithDaemonClock(t *testing.T) {
 	req.TTL = 10 * time.Minute
 	req.ReceivedAt = time.Time{}
 	req.ExpiresAt = time.Time{}
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
 
@@ -151,18 +151,18 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	client := NewClient(conn)
 	defer func() { _ = client.Close() }()
 
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref, Account: "Work"},
 	})); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
-	if err := client.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 4321); err != nil {
 		t.Fatalf("ReportStarted returned error: %v", err)
 	}
 
 	time.Sleep(60 * time.Millisecond)
 
-	if err := client.ReportCompleted(context.Background(), "req_1", "nonce_1", 0, ""); err != nil {
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_1", "nonce_1"), 0, ""); err != nil {
 		t.Fatalf("ReportCompleted returned error after protocol read timeout: %v", err)
 	}
 	got := auditEventTypes(aud.Events())
@@ -198,20 +198,20 @@ func TestServerRejectsLifecycleReportsFromDifferentConnection(t *testing.T) {
 	defer func() { _ = other.Close() }()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
-	if _, err := owner.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
+	if _, err := owner.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
-	if err := other.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); !IsProtocolError(err, protocol.ErrorCodeInvalidNonce) {
+	if err := other.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 4321); !IsProtocolError(err, protocol.ErrorCodeInvalidNonce) {
 		t.Fatalf("cross-connection ReportStarted error = %v, want invalid_nonce", err)
 	}
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarted) {
 		t.Fatal("cross-connection ReportStarted produced command_started audit event")
 	}
 
-	if err := owner.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+	if err := owner.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 4321); err != nil {
 		t.Fatalf("owner ReportStarted returned error: %v", err)
 	}
-	if err := owner.ReportCompleted(context.Background(), "req_1", "nonce_1", 0, ""); err != nil {
+	if err := owner.ReportCompleted(context.Background(), testCorrelation("req_1", "nonce_1"), 0, ""); err != nil {
 		t.Fatalf("owner ReportCompleted returned error: %v", err)
 	}
 }
@@ -233,10 +233,10 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 	}
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
-	err = client.ReportStarted(context.Background(), "req_1", "wrong", 1234)
+	err = client.ReportStarted(context.Background(), testCorrelation("req_1", "wrong"), 1234)
 	if !IsProtocolError(err, protocol.ErrorCodeInvalidNonce) {
 		t.Fatalf("expected invalid nonce protocol error, got %v", err)
 	}
@@ -404,7 +404,7 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	})
 	defer cleanup()
 
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref, Account: "Work"},
 	})); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
@@ -474,7 +474,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	}
 	secondClient := NewClient(secondConn)
 	defer func() { _ = secondClient.Close() }()
-	payload, err := secondClient.RequestExec(context.Background(), "req_2", "nonce_2", req)
+	payload, err := secondClient.RequestExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
 	if err != nil {
 		t.Fatalf("second RequestExec returned error: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	defer func() { _ = client.Close() }()
 	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeRequestExpired) {
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !IsProtocolError(err, protocol.ErrorCodeRequestExpired) {
 		t.Fatalf("RequestExec error = %v, want request_expired", err)
 	}
 	waitForInactiveRequest(t, broker, "req_1")
@@ -550,7 +550,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 		t.Fatal("expired reusable approval cache scope remained after failed payload delivery")
 	}
 
-	payload, err := client.RequestExec(context.Background(), "req_2", "nonce_2", req)
+	payload, err := client.RequestExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
 	if err != nil {
 		t.Fatalf("second RequestExec returned error: %v", err)
 	}
@@ -633,12 +633,12 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 	})
 	defer cleanup()
 
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref, Account: "Work"},
 	})); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
-	if err := client.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 4321); err != nil {
 		t.Fatalf("ReportStarted returned error: %v", err)
 	}
 	_ = client.Close()
@@ -754,7 +754,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 		t.Fatalf("Status returned error: %v", err)
 	}
 	server.Stop(context.Background())
-	_, err = client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+	_, err = client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref},
 	}))
 	if !IsProtocolError(err, protocol.ErrorCodeDaemonStopped) {
@@ -827,7 +827,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	execDone := make(chan protocol.ExecResponsePayload, 1)
 	execErr := make(chan error, 1)
 	go func() {
-		payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", approvalTestRequest(t, time.Now().Add(time.Minute)))
+		payload, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), approvalTestRequest(t, time.Now().Add(time.Minute)))
 		if err != nil {
 			execErr <- err
 			return
@@ -902,7 +902,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	execDone := make(chan protocol.ExecResponsePayload, 1)
 	execErr := make(chan error, 1)
 	go func() {
-		payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", approvalTestRequest(t, time.Now().Add(time.Minute)))
+		payload, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), approvalTestRequest(t, time.Now().Add(time.Minute)))
 		if err != nil {
 			execErr <- err
 			return
@@ -1092,7 +1092,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	req.Reason = "  fabricated metadata  "
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1116,7 +1116,7 @@ func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
 	defer cleanup()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !IsProtocolError(err, protocol.ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1154,7 +1154,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	client := NewClient(conn)
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
 		t.Fatalf("expected untrusted_client protocol error, got %v", err)
 	}
 	if approver.calls != 0 {
@@ -1195,7 +1195,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 	defer func() { _ = conn.Close() }()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
-	env, err := protocol.NewEnvelope(protocol.TypeRequestExec, "req_attacker", "nonce_attacker", req)
+	env, err := protocol.NewEnvelope(protocol.TypeRequestExec, testCorrelation("req_attacker", "nonce_attacker"), req)
 	if err != nil {
 		t.Fatalf("marshal exec request: %v", err)
 	}
@@ -1488,7 +1488,7 @@ func writeRawExecRequest(
 ) {
 	t.Helper()
 
-	env, err := protocol.NewEnvelope(protocol.TypeRequestExec, requestID, nonce, req)
+	env, err := protocol.NewEnvelope(protocol.TypeRequestExec, testCorrelation(requestID, nonce), req)
 	if err != nil {
 		t.Fatalf("create exec envelope: %v", err)
 	}

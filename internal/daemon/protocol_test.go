@@ -37,7 +37,7 @@ func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := roundTrip[protocol.StatusPayload](ctx, client, protocol.TypeDaemonStatus, "", "", nil); !errors.Is(err, context.Canceled) {
+	if _, err := roundTrip[protocol.StatusPayload](ctx, client, protocol.TypeDaemonStatus, protocol.Correlation{}, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled round trip, got %v", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestClientRequestExecDefaultDeadlineAllowsApprovalWaitUntilRequestExpiry(t 
 	client.DefaultTimeout = 25 * time.Millisecond
 
 	req := testExecRequestAt(t, time.Now(), []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	got, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
+	got, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
 		t.Fatalf("RequestExec returned error before request expiry: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
 	})
 	defer cleanup()
 
-	_, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
+	_, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, protocol.ErrMalformedEnvelope) {
 		t.Fatalf("expected malformed empty OK response error, got %v", err)
 	}
@@ -219,7 +219,7 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				})
 			},
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.RequestExec(ctx, "req_1", "nonce_1", execReq)
+				_, err := client.RequestExec(ctx, testCorrelation("req_1", "nonce_1"), execReq)
 				return err
 			},
 			wantErrMsg: "secret aliases do not match",
@@ -235,7 +235,7 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				})
 			},
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.RequestExec(ctx, "req_1", "nonce_1", execReq)
+				_, err := client.RequestExec(ctx, testCorrelation("req_1", "nonce_1"), execReq)
 				return err
 			},
 			wantErrMsg: "env aliases do not match",
@@ -250,7 +250,7 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				})
 			},
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.RequestExec(ctx, "req_1", "nonce_1", execReq)
+				_, err := client.RequestExec(ctx, testCorrelation("req_1", "nonce_1"), execReq)
 				return err
 			},
 			wantErrMsg: "missing env",
@@ -313,8 +313,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.RequestExec(
 					ctx,
-					"req_1",
-					"nonce_1",
+					testCorrelation("req_1", "nonce_1"),
 					execReq,
 				)
 				return err
@@ -325,7 +324,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 			frame:   errorResponseFrame(t, "req_1", "nonce_stale"),
 			wantErr: ErrInvalidNonce,
 			call: func(ctx context.Context, client *Client) error {
-				return client.ReportStarted(ctx, "req_1", "nonce_1", 1234)
+				return client.ReportStarted(ctx, testCorrelation("req_1", "nonce_1"), 1234)
 			},
 		},
 		{
@@ -334,7 +333,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 			wantErr:    protocol.ErrMalformedEnvelope,
 			wantErrMsg: "response request id mismatch",
 			call: func(ctx context.Context, client *Client) error {
-				return client.ReportCompleted(ctx, "req_1", "nonce_1", 0, "")
+				return client.ReportCompleted(ctx, testCorrelation("req_1", "nonce_1"), 0, "")
 			},
 		},
 	}
@@ -374,7 +373,7 @@ func TestClientAllowsUncorrelatedStatusErrorResponse(t *testing.T) {
 func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
 	t.Helper()
 
-	env, err := protocol.NewEnvelope(protocol.TypeError, requestID, nonce, protocol.ErrorPayload{
+	env, err := protocol.NewEnvelope(protocol.TypeError, testCorrelation(requestID, nonce), protocol.ErrorPayload{
 		Code:    "bad_request",
 		Message: "bad request",
 	})
@@ -407,7 +406,7 @@ func emptyOKResponseFrame(t *testing.T, request protocol.Envelope) []byte {
 func okResponseFrame(t *testing.T, request protocol.Envelope, payload any) []byte {
 	t.Helper()
 
-	env, err := protocol.NewEnvelope(protocol.TypeOK, request.RequestID, request.Nonce, payload)
+	env, err := protocol.NewEnvelope(protocol.TypeOK, request.Correlation(), payload)
 	if err != nil {
 		t.Fatalf("NewEnvelope returned error: %v", err)
 	}
@@ -421,7 +420,7 @@ func okResponseFrame(t *testing.T, request protocol.Envelope, payload any) []byt
 func execResponseFrame(t *testing.T, request protocol.Envelope, payload protocol.ExecResponsePayload) []byte {
 	t.Helper()
 
-	env, err := protocol.NewEnvelope(protocol.TypeOK, request.RequestID, request.Nonce, payload)
+	env, err := protocol.NewEnvelope(protocol.TypeOK, request.Correlation(), payload)
 	if err != nil {
 		t.Fatalf("NewEnvelope returned error: %v", err)
 	}

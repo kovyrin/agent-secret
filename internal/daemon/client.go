@@ -77,7 +77,7 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Status(ctx context.Context) (protocol.StatusPayload, error) {
-	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStatus, "", "", nil)
+	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStatus, protocol.Correlation{}, nil)
 	if err != nil {
 		return protocol.StatusPayload{}, err
 	}
@@ -88,7 +88,7 @@ func (c *Client) Status(ctx context.Context) (protocol.StatusPayload, error) {
 }
 
 func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
-	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStop, "", "", nil)
+	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStop, protocol.Correlation{}, nil)
 	if err != nil {
 		return protocol.StatusPayload{}, err
 	}
@@ -99,7 +99,7 @@ func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
 }
 
 func (c *Client) FetchPendingApproval(ctx context.Context) (ApprovalRequestPayload, error) {
-	payload, err := roundTripPayload[ApprovalRequestPayload](ctx, c, protocol.TypeApprovalPending, "", "", nil)
+	payload, err := roundTripPayload[ApprovalRequestPayload](ctx, c, protocol.TypeApprovalPending, protocol.Correlation{}, nil)
 	if err != nil {
 		return ApprovalRequestPayload{}, err
 	}
@@ -110,11 +110,16 @@ func (c *Client) FetchPendingApproval(ctx context.Context) (ApprovalRequestPaylo
 }
 
 func (c *Client) SubmitApprovalDecision(ctx context.Context, decision ApprovalDecisionPayload) error {
-	return roundTripAck(ctx, c, protocol.TypeApprovalDecision, decision.RequestID, decision.Nonce, decision)
+	correlation := protocol.Correlation{RequestID: decision.RequestID, Nonce: decision.Nonce}
+	return roundTripAck(ctx, c, protocol.TypeApprovalDecision, correlation, decision)
 }
 
-func (c *Client) RequestExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (protocol.ExecResponsePayload, error) {
-	payload, err := roundTripPayload[protocol.ExecResponsePayload](ctx, c, protocol.TypeRequestExec, requestID, nonce, req)
+func (c *Client) RequestExec(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.ExecRequest,
+) (protocol.ExecResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.ExecResponsePayload](ctx, c, protocol.TypeRequestExec, correlation, req)
 	if err != nil {
 		return protocol.ExecResponsePayload{}, err
 	}
@@ -124,27 +129,50 @@ func (c *Client) RequestExec(ctx context.Context, requestID string, nonce string
 	return payload, nil
 }
 
-func (c *Client) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
-	return roundTripAck(ctx, c, protocol.TypeCommandStarted, requestID, nonce, protocol.CommandStartedPayload{ChildPID: childPID})
+func (c *Client) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
+	return roundTripAck(ctx, c, protocol.TypeCommandStarted, correlation, protocol.CommandStartedPayload{ChildPID: childPID})
 }
 
-func (c *Client) ReportCompleted(ctx context.Context, requestID string, nonce string, exitCode int, signal string) error {
-	return roundTripAck(ctx, c, protocol.TypeCommandCompleted, requestID, nonce, protocol.CommandCompletedPayload{
+func (c *Client) ReportCompleted(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	exitCode int,
+	signal string,
+) error {
+	return roundTripAck(ctx, c, protocol.TypeCommandCompleted, correlation, protocol.CommandCompletedPayload{
 		ExitCode: exitCode,
 		Signal:   signal,
 	})
 }
 
-func roundTrip[T any](ctx context.Context, c *Client, messageType protocol.MessageType, requestID string, nonce string, payload any) (T, error) {
-	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, false)
+func roundTrip[T any](
+	ctx context.Context,
+	c *Client,
+	messageType protocol.MessageType,
+	correlation protocol.Correlation,
+	payload any,
+) (T, error) {
+	return roundTripResponse[T](ctx, c, messageType, correlation, payload, false)
 }
 
-func roundTripPayload[T any](ctx context.Context, c *Client, messageType protocol.MessageType, requestID string, nonce string, payload any) (T, error) {
-	return roundTripResponse[T](ctx, c, messageType, requestID, nonce, payload, true)
+func roundTripPayload[T any](
+	ctx context.Context,
+	c *Client,
+	messageType protocol.MessageType,
+	correlation protocol.Correlation,
+	payload any,
+) (T, error) {
+	return roundTripResponse[T](ctx, c, messageType, correlation, payload, true)
 }
 
-func roundTripAck(ctx context.Context, c *Client, messageType protocol.MessageType, requestID string, nonce string, payload any) error {
-	_, err := roundTripResponse[struct{}](ctx, c, messageType, requestID, nonce, payload, false)
+func roundTripAck(
+	ctx context.Context,
+	c *Client,
+	messageType protocol.MessageType,
+	correlation protocol.Correlation,
+	payload any,
+) error {
+	_, err := roundTripResponse[struct{}](ctx, c, messageType, correlation, payload, false)
 	return err
 }
 
@@ -152,8 +180,7 @@ func roundTripResponse[T any](
 	ctx context.Context,
 	c *Client,
 	messageType protocol.MessageType,
-	requestID string,
-	nonce string,
+	correlation protocol.Correlation,
 	payload any,
 	requirePayload bool,
 ) (T, error) {
@@ -163,7 +190,7 @@ func roundTripResponse[T any](
 	if err := ctx.Err(); err != nil {
 		return zero, fmt.Errorf("daemon request canceled: %w", err)
 	}
-	env, err := protocol.NewEnvelope(messageType, requestID, nonce, payload)
+	env, err := protocol.NewEnvelope(messageType, correlation, payload)
 	if err != nil {
 		return zero, err
 	}
@@ -194,7 +221,7 @@ func roundTripResponse[T any](
 	if err := protocol.ValidateEnvelope(resp); err != nil {
 		return zero, fmt.Errorf("validate daemon response %s: %w", messageType, err)
 	}
-	if err := validateResponseCorrelation(resp, requestID, nonce); err != nil {
+	if err := validateResponseCorrelation(resp, correlation); err != nil {
 		return zero, err
 	}
 	if resp.Type == protocol.TypeError {
@@ -308,11 +335,11 @@ func (c *Client) defaultTimeout() time.Duration {
 	return DefaultClientProtocolTimeout
 }
 
-func validateResponseCorrelation(resp protocol.Envelope, requestID string, nonce string) error {
-	if requestID != "" && resp.RequestID != requestID {
+func validateResponseCorrelation(resp protocol.Envelope, correlation protocol.Correlation) error {
+	if correlation.RequestID != "" && resp.RequestID != correlation.RequestID {
 		return fmt.Errorf("%w: response request id mismatch", protocol.ErrMalformedEnvelope)
 	}
-	if nonce != "" && resp.Nonce != nonce {
+	if correlation.Nonce != "" && resp.Nonce != correlation.Nonce {
 		return ErrInvalidNonce
 	}
 	return nil
