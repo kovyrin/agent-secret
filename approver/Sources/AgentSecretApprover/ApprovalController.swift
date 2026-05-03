@@ -7,12 +7,21 @@ public final class ApprovalController {
     private let logger: ApprovalLogger
 
     /// Creates a controller with daemon, presenter, and metadata logger dependencies.
-    public init(
+    public convenience init(
         client: ApprovalDaemonClient,
         presenter: ApprovalPresenter,
         logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions")
     ) {
-        self.client = ApprovalDaemonClientWorker(client: client)
+        self.init(clientFactory: { client }, presenter: presenter, logger: logger)
+    }
+
+    /// Creates a controller that builds the daemon client on the background worker queue.
+    public init(
+        clientFactory: @escaping () throws -> ApprovalDaemonClient,
+        presenter: ApprovalPresenter,
+        logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions")
+    ) {
+        client = ApprovalDaemonClientWorker(clientFactory: clientFactory)
         self.presenter = presenter
         self.logger = logger
     }

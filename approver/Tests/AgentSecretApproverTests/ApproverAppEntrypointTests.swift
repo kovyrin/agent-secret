@@ -11,6 +11,9 @@ final class ApproverAppEntrypointTests: XCTestCase {
     private static let smokeEntrypointPath: String = "Sources/AgentSecretApproverSmoke/main.swift"
     private static let healthCheckFlag: String = "--health-check"
     private static let mainActorIsolationEscapeHatch: String = "assumeIsolated"
+    private static let eagerSocketClientConstruction: String =
+        "let client: ApprovalDaemonClient = try SocketDaemonClient(socketPath: socketPath)"
+    private static let daemonClientFactoryLabel: String = "clientFactory:"
 
     private static func packageRootURL() -> URL? {
         var url = URL(fileURLWithPath: #filePath)
@@ -54,6 +57,13 @@ final class ApproverAppEntrypointTests: XCTestCase {
         XCTAssertFalse(source.contains(Self.mainActorIsolationEscapeHatch))
         XCTAssertTrue(source.contains("@MainActor"))
         XCTAssertTrue(source.contains("static func main()"))
+    }
+
+    func testShippedApproverDefersSocketClientConstructionOffMainActor() throws {
+        let source: String = try Self.sourceText(at: Self.appEntrypointPath)
+
+        XCTAssertFalse(source.contains(Self.eagerSocketClientConstruction))
+        XCTAssertTrue(source.contains(Self.daemonClientFactoryLabel))
     }
 
     func testSmokeEntrypointOwnsMockOnlySurface() throws {
