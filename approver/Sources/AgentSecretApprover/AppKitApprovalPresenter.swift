@@ -44,9 +44,13 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
 
         @MainActor
         private static func decideOnMain(for request: ApprovalRequest) -> ApprovalDecisionKind {
+            if let preflightDecision: ApprovalDecisionKind = preflightDecision(for: request) {
+                return preflightDecision
+            }
+
             let app = NSApplication.shared
             Self.activate(app)
-            var decision: ApprovalDecisionKind = .deny
+            let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
             let window = NSPanel(
                 contentRect: NSRect(
                     x: Self.panelOrigin,
@@ -64,15 +68,22 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.isMovableByWindowBackground = true
             window.contentView = NSHostingView(
                 rootView: ApprovalRequestPanelView(request: request) { selectedDecision in
-                    decision = selectedDecision
-                    app.stopModal()
+                    coordinator.complete(with: selectedDecision)
                 }
             )
 
             Self.bringForward(window)
             _ = app.runModal(for: window)
             window.close()
-            return decision
+            return coordinator.decision
+        }
+
+        @MainActor
+        static func preflightDecision(
+            for request: ApprovalRequest,
+            now: Date = Date()
+        ) -> ApprovalDecisionKind? {
+            ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: now)
         }
     #endif
 
