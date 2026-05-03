@@ -92,15 +92,15 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     /// Builds a prompt view model without including raw secret values.
     public init(request: ApprovalRequest, now: Date = Date()) {
         title = "Secret Access Request"
-        reason = request.reason
-        executable = Self.executableName(request.resolvedExecutable ?? request.command.first)
+        reason = Self.sanitizedDisplayText(request.reason)
+        executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable ?? request.command.first))
         commandArguments = Self.commandArguments(request.command)
         command = Self.commandDisplay(commandArguments)
         commandNeedsInspector = Self.commandNeedsInspector(command, arguments: commandArguments)
         commandInspectionText = Self.commandInspectionText(commandArguments)
-        cwd = request.cwd
-        projectFolder = Self.displayPath(request.cwd)
-        resolvedExecutable = request.resolvedExecutable
+        cwd = Self.sanitizedDisplayText(request.cwd)
+        projectFolder = Self.sanitizedDisplayText(Self.displayPath(request.cwd))
+        resolvedExecutable = request.resolvedExecutable.map(Self.sanitizedDisplayText)
         let secretPresentation: SecretPresentation = Self.secretPresentation(for: request.secrets)
         requestedSecrets = secretPresentation.rows
         secretRows = secretPresentation.rowText
@@ -254,6 +254,10 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             return "~" + path.dropFirst(home.count)
         }
         return path
+    }
+
+    static func sanitizedDisplayText(_ value: String) -> String {
+        ApprovalDisplayTextSanitizer.sanitize(value)
     }
 
     private static func formatRemaining(_ interval: TimeInterval) -> String {
