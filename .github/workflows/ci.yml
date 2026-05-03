@@ -89,6 +89,9 @@ jobs:
       - name: Verify release tag ancestry
         run: scripts/check-release-ancestry.sh "$GITHUB_REF_NAME"
 
+      - name: Verify changelog release notes
+        run: scripts/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
+
       - name: Install mise
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
         with:
@@ -181,9 +184,13 @@ jobs:
             dist/release-artifacts/release-x86_64/checksums.txt \
             >dist/checksums.txt
 
+      - name: Extract changelog release notes
+        run: scripts/extract-release-notes.sh "$GITHUB_REF_NAME" dist/release-notes.md
+
       - name: Create or update draft release
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          AGENT_SECRET_RELEASE_NOTES_FILE: dist/release-notes.md
         run: |
           scripts/publish-draft-release.sh "$GITHUB_REF_NAME" \
             "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \

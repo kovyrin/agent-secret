@@ -86,13 +86,16 @@ chmod +x "$stub_dir/gh"
 artifact_arm="$tmp_dir/Agent-Secret-v1.0.0-macos-arm64.dmg"
 artifact_intel="$tmp_dir/Agent-Secret-v1.0.0-macos-x86_64.dmg"
 checksums="$tmp_dir/checksums.txt"
+notes_file="$tmp_dir/release-notes.md"
 touch "$artifact_arm" "$artifact_intel" "$checksums"
+printf 'Release notes from changelog.\n' >"$notes_file"
 
 run_publish() {
   local state="$1"
 
   GH_STUB_LOG="$tmp_dir/gh.log" \
     GH_STUB_RELEASE_STATE="$state" \
+    AGENT_SECRET_RELEASE_NOTES_FILE="$notes_file" \
     GITHUB_SHA=abc123 \
     PATH="$stub_dir:$PATH" \
     "$publish_script" v1.0.0 "$artifact_arm" "$artifact_intel" "$checksums"
@@ -101,7 +104,7 @@ run_publish() {
 : >"$tmp_dir/gh.log"
 run_publish missing
 expect_log "release view v1.0.0"
-expect_log "release create v1.0.0 $artifact_arm $artifact_intel $checksums --draft --verify-tag --title v1.0.0 --notes macOS arm64 and x86_64 artifacts built from abc123."
+expect_log "release create v1.0.0 $artifact_arm $artifact_intel $checksums --draft --verify-tag --title v1.0.0 --notes-file $notes_file"
 
 : >"$tmp_dir/gh.log"
 run_publish draft
@@ -113,8 +116,20 @@ if grep -F -- "release upload" "$tmp_dir/gh.log" >/dev/null; then
   fail "published release path attempted upload: $(cat "$tmp_dir/gh.log")"
 fi
 
+expect_failure "release notes file is required for tag releases" env \
+  GH_STUB_LOG="$tmp_dir/gh.log" \
+  GH_STUB_RELEASE_STATE=missing \
+  PATH="$stub_dir:$PATH" \
+  "$publish_script" v1.0.0 "$artifact_arm" "$artifact_intel" "$checksums"
+
 if ! grep -F -- "scripts/publish-draft-release.sh" "$workflow" >/dev/null; then
   fail "workflow does not use scripts/publish-draft-release.sh"
+fi
+if ! grep -F -- "scripts/extract-release-notes.sh" "$workflow" >/dev/null; then
+  fail "workflow does not extract changelog-backed release notes"
+fi
+if ! grep -F -- "AGENT_SECRET_RELEASE_NOTES_FILE" "$workflow" >/dev/null; then
+  fail "workflow does not pass release notes file to publisher"
 fi
 if grep -F -- "--clobber" "$workflow" >/dev/null; then
   fail "workflow contains inline --clobber instead of the draft-state guard script"
