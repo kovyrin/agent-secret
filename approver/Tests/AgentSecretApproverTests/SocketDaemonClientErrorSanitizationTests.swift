@@ -143,9 +143,20 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
             transport: MemoryLineTransport(reads: [response])
         )
 
-        assertDisplayedError(
-            from: { _ = try client.fetchPendingRequest() },
-            equals: "invalid daemon response: malformed daemon response payload"
-        )
+        XCTAssertThrowsError(try client.fetchPendingRequest()) { error in
+            guard case let .malformedResponse(message, underlying) = error as? SocketDaemonClientError else {
+                XCTFail("error = \(error), want malformedResponse")
+                return
+            }
+            XCTAssertEqual(message, "malformed daemon response payload")
+            XCTAssertTrue(underlying is DecodingError)
+
+            let displayed = String(describing: error)
+            XCTAssertEqual(displayed, "invalid daemon response: malformed daemon response payload")
+            XCTAssertFalse(displayed.contains("op://"))
+            XCTAssertFalse(displayed.contains("SECRET_ALIAS_CANARY"))
+            XCTAssertFalse(displayed.contains("prod-account-123"))
+            XCTAssertFalse(displayed.contains(Self.secretCanary))
+        }
     }
 }

@@ -115,7 +115,10 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         do {
             return try decoder.decode(DaemonHeader.self, from: data)
         } catch {
-            throw SocketDaemonClientError.invalidResponse("malformed daemon response header")
+            throw SocketDaemonClientError.malformedResponse(
+                "malformed daemon response header",
+                underlying: error
+            )
         }
     }
 
@@ -127,7 +130,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         do {
             return try decoder.decode(type, from: data)
         } catch {
-            throw SocketDaemonClientError.invalidResponse(invalidMessage)
+            throw SocketDaemonClientError.malformedResponse(invalidMessage, underlying: error)
         }
     }
 

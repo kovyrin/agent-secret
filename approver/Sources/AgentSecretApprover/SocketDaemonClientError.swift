@@ -12,6 +12,8 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
     case frameTooLarge(Int)
     /// The daemon returned an unexpected response shape.
     case invalidResponse(String)
+    /// The daemon returned a response that could not be decoded.
+    case malformedResponse(String, underlying: Error)
     /// The socket path does not fit in a Unix socket address.
     case pathTooLong(String)
     /// The socket read syscall failed.
@@ -45,6 +47,9 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
         case let .invalidResponse(message):
             "invalid daemon response: \(message)"
 
+        case let .malformedResponse(message, _):
+            "invalid daemon response: \(message)"
+
         case let .pathTooLong(path):
             "socket path is too long: \(path)"
 
@@ -66,5 +71,9 @@ public enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
         case .writeTimedOut:
             "write timed out sending daemon request"
         }
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.description == rhs.description
     }
 }
