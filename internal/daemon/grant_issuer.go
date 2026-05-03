@@ -114,6 +114,21 @@ func (g *grantIssuer) ensureGrantStillActive(
 	return g.reusable.ensureApprovalActive(approvalID, approvalExpiresAt)
 }
 
+func (g *grantIssuer) finishPayloadDelivered(approvalID string, approvalExpiresAt time.Time) error {
+	if err := g.reusable.ensureApprovalActive(approvalID, approvalExpiresAt); err != nil {
+		return err
+	}
+	return g.reusable.finishPayloadDelivered(approvalID)
+}
+
+func (g *grantIssuer) finishPrePayloadFailure(approvalID string) {
+	g.reusable.finishPrePayloadFailure(approvalID)
+}
+
+func (g *grantIssuer) clearReusableGrants() {
+	g.reusable.clear()
+}
+
 func (g *grantIssuer) requestError(ctx context.Context, req request.ExecRequest, err error) error {
 	if err == nil {
 		return nil

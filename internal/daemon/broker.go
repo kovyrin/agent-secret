@@ -251,11 +251,7 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 		b.markActivePayloadDelivered(requestID)
 		return nil
 	}
-	if err := b.grants.reusable.ensureApprovalActive(active.approvalID, active.approvalExpiresAt); err != nil {
-		b.removeActiveExec(requestID)
-		return err
-	}
-	if err := b.grants.reusable.finishPayloadDelivered(active.approvalID); err != nil {
+	if err := b.grants.finishPayloadDelivered(active.approvalID, active.approvalExpiresAt); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}
@@ -299,7 +295,7 @@ func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 		return
 	}
 
-	b.grants.reusable.finishPrePayloadFailure(active.approvalID)
+	b.grants.finishPrePayloadFailure(active.approvalID)
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
@@ -373,7 +369,7 @@ func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
 	b.mu.Lock()
 	b.active = make(map[string]*activeExec)
 	b.mu.Unlock()
-	b.grants.reusable.clear()
+	b.grants.clearReusableGrants()
 }
 
 func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event) {
