@@ -190,12 +190,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 		}
 		resultCh <- decision
 	}()
-	waitForPending(t, approver)
-
-	payload, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
-	if err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
+	payload := fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	if payload.RequestID != "req_1" || payload.Nonce != "nonce_1" {
 		t.Fatalf("unexpected payload identifiers: %+v", payload)
 	}
@@ -206,7 +201,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 		t.Fatalf("payload reusable uses = %d, want request count 2", payload.ReusableUses)
 	}
 	uses := payload.ReusableUses
-	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
+	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID:    "req_1",
 		Nonce:        "nonce_1",
 		Decision:     ApprovalDecisionApproveReusable,
@@ -248,13 +243,9 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 		}
 		resultCh <- decision
 	}()
-	waitForPending(t, approver)
-
-	payload, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
-	if err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
+	payload := fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	mismatchedUses := payload.ReusableUses + 1
+	var err error
 	for _, decision := range []ApprovalDecisionPayload{
 		{
 			RequestID: "req_1",
@@ -309,14 +300,8 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
-
-	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid()+1, exe)); !errors.Is(err, ErrApproverPeerMismatch) {
-		t.Fatalf("expected peer mismatch, got %v", err)
-	}
-	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
+	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid()+1, exe), ErrApproverPeerMismatch)
+	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "wrong",
@@ -363,12 +348,8 @@ func TestSocketApproverRejectsFetchFromWrongApproverProcessSignature(t *testing.
 		_, err := approver.ApproveExec(ctx, "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
 
-	_, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
-	if !errors.Is(err, ErrApproverPeerMismatch) {
-		t.Fatalf("expected approver peer mismatch, got %v", err)
-	}
+	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe), ErrApproverPeerMismatch)
 	if !slices.Equal(verifier.pids, []int{os.Getpid()}) {
 		t.Fatalf("verified pids = %v, want [%d]", verifier.pids, os.Getpid())
 	}
@@ -404,11 +385,8 @@ func TestSocketApproverRejectsDecisionFromWrongApproverProcessSignature(t *testi
 		_, err := approver.ApproveExec(ctx, "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
 
-	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
+	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	verifier.processTeamID = "OTHERTEAM"
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
@@ -444,16 +422,12 @@ func TestSocketApproverFIFOAndQueuedExpiry(t *testing.T) {
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", first)
 		firstErr <- err
 	}()
-	waitForPending(t, approver)
+	payload := fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	go func() {
 		_, err := approver.ApproveExec(context.Background(), "req_2", "nonce_2", expiredSecond)
 		secondErr <- err
 	}()
 
-	payload, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
-	if err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
 	if payload.RequestID != "req_1" {
 		t.Fatalf("FIFO displayed request %q first", payload.RequestID)
 	}
@@ -505,7 +479,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
+	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid()+1, exe), ErrApproverPeerMismatch)
 
 	exited <- errors.New("exit status 64")
 	close(exited)
@@ -539,11 +513,8 @@ func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 		}
 		resultCh <- decision
 	}()
-	waitForPending(t, approver)
 
-	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
+	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	exited <- errors.New("exit status 64")
 	close(exited)
 
@@ -586,7 +557,7 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", firstReq)
 		firstErr <- err
 	}()
-	waitForPending(t, approver)
+	payload := fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	go func() {
 		decision, err := approver.ApproveExec(context.Background(), "req_2", "nonce_2", secondReq)
 		if err != nil {
@@ -596,10 +567,6 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 		secondResult <- decision
 	}()
 
-	payload, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
-	if err != nil {
-		t.Fatalf("FetchPending first request returned error: %v", err)
-	}
 	if payload.RequestID != "req_1" {
 		t.Fatalf("first payload request ID = %q, want req_1", payload.RequestID)
 	}
@@ -609,11 +576,7 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 		t.Fatalf("first ApproveExec error = %v, want launch failure", err)
 	}
 
-	waitForPending(t, approver)
-	payload, err = approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe))
-	if err != nil {
-		t.Fatalf("FetchPending second request returned error: %v", err)
-	}
+	payload = fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	if payload.RequestID != "req_2" {
 		t.Fatalf("second payload request ID = %q, want req_2", payload.RequestID)
 	}
@@ -651,7 +614,7 @@ func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
+	fetchPendingErrorForTest(t, approver, peerInfoForTest(t, os.Getpid()+1, exe), ErrApproverPeerMismatch)
 
 	select {
 	case <-launcher.canceled:
@@ -659,9 +622,7 @@ func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
 	default:
 	}
 
-	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); err != nil {
-		t.Fatalf("FetchPending returned error: %v", err)
-	}
+	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
@@ -772,7 +733,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
+	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID: "req_1",
@@ -835,7 +796,7 @@ func submitExpiredDecisionForTest(t *testing.T, decision ApprovalDecisionKind) e
 		_, err := approver.ApproveExec(context.Background(), "req_1", "nonce_1", req)
 		errCh <- err
 	}()
-	waitForPending(t, approver)
+	fetchPendingForTest(t, approver, peerInfoForTest(t, os.Getpid(), exe))
 
 	setNow(req.ExpiresAt)
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
@@ -1388,19 +1349,48 @@ func readBundleMetadata(t *testing.T) map[string]string {
 	return metadata
 }
 
-func waitForPending(t *testing.T, approver *SocketApprover) {
+func fetchPendingForTest(t *testing.T, approver *SocketApprover, peer peercred.Info) ApprovalRequestPayload {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		approver.mu.Lock()
-		ready := approver.active != nil && approver.active.expectedReady
-		approver.mu.Unlock()
-		if ready {
-			return
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		payload, err := approver.FetchPending(ctx, peer)
+		cancel()
+		if err == nil {
+			return payload
+		}
+		if !pendingFetchRetryable(err) {
+			t.Fatalf("FetchPending returned error: %v", err)
 		}
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("timed out waiting for pending approval")
+	return ApprovalRequestPayload{}
+}
+
+func fetchPendingErrorForTest(t *testing.T, approver *SocketApprover, peer peercred.Info, want error) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		_, err := approver.FetchPending(ctx, peer)
+		cancel()
+		if errors.Is(err, want) {
+			return
+		}
+		if err == nil {
+			t.Fatalf("FetchPending returned nil, want %v", want)
+		}
+		if !pendingFetchRetryable(err) {
+			t.Fatalf("FetchPending returned error = %v, want %v", err, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for FetchPending error %v", want)
+}
+
+func pendingFetchRetryable(err error) bool {
+	return errors.Is(err, ErrNoPendingApproval) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func receiveApprovalSignal(t *testing.T, ch <-chan struct{}, message string) {
