@@ -9,10 +9,6 @@ final class ApprovalControllerTests: XCTestCase {
         func record(_ event: String, requestID: String?) {
             events.append("\(event):\(requestID ?? "none")")
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 
     private static let canarySecretValue: String = "synthetic-secret-value"
@@ -270,9 +266,5 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertFalse(inspection.contains(Self.canarySecretValue))
         XCTAssertFalse(inspection.contains(request.requestID))
         XCTAssertFalse(inspection.contains(request.nonce))
-    }
-
-    deinit {
-        /* Required by SwiftLint. */
     }
 }

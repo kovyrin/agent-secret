@@ -109,8 +109,4 @@ final class ApprovalCommandRenderingTests: XCTestCase {
         XCTAssertEqual(viewModel.command, "'terraform' 'plan'")
         XCTAssertTrue(viewModel.renderedText.contains("Resolved binary: /opt/homebrew/bin/terraform"))
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

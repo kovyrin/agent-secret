@@ -26,10 +26,6 @@ import XCTest
                 calls.append(ProcessRunnerCall(executableURL: executableURL, arguments: arguments, timeout: timeout))
                 return try results.removeFirst().get()
             }
-
-            deinit {
-                /* Required by SwiftLint. */
-            }
         }
 
         private static let largeOutputByteCount = 200_000
@@ -133,10 +129,6 @@ import XCTest
                 )
             }
             XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
-        }
-
-        deinit {
-            /* Required by SwiftLint. */
         }
     }
 #endif

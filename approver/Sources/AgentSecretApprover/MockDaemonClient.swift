@@ -29,8 +29,4 @@ public final class MockDaemonClient: ApprovalDaemonClient {
         defer { lock.unlock() }
         lastSubmittedDecision = decision
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

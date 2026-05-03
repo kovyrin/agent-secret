@@ -54,8 +54,4 @@ final class ApprovalDaemonClientWorker: @unchecked Sendable {
             }
         }
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

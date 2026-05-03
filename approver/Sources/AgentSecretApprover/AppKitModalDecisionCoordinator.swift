@@ -25,9 +25,5 @@ import Foundation
                 inModes: Self.modalStopRunLoopModes
             )
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 #endif

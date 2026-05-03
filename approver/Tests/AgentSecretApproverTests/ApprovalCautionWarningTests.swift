@@ -85,8 +85,4 @@ final class ApprovalCautionWarningTests: XCTestCase {
         XCTAssertEqual(viewModel.cautionMessages.count, 1)
         XCTAssertTrue(viewModel.cautionMessages[0].contains("Mutable executable opt-in"))
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

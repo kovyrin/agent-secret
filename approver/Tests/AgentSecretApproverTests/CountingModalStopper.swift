@@ -9,9 +9,5 @@ import Foundation
         func stopModal() {
             stopCount += 1
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 #endif

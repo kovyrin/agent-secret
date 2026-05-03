@@ -13,8 +13,4 @@ public final class StaticDecisionPresenter: ApprovalPresenter {
     public func decide(for _: ApprovalRequest) -> ApprovalDecisionKind {
         decision
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

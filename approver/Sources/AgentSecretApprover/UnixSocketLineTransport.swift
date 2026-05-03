@@ -206,8 +206,6 @@ final class UnixSocketLineTransport: LineTransport {
     deinit {
         #if canImport(Darwin)
             close(socketFileDescriptor)
-        #else
-            /* Required by SwiftLint. */
         #endif
     }
 }

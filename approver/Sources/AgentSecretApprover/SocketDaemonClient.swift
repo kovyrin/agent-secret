@@ -173,8 +173,4 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         let data: Data = try encoder.encode(envelope)
         try transport.writeLine(data)
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

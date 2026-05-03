@@ -149,9 +149,5 @@ import XCTest
                 try pair.transport.writeLine(Data("abcde".utf8))
             }
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 #endif

@@ -105,8 +105,4 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         XCTAssertEqual(secret.accountLabel, "Account: Work")
         XCTAssertEqual(secret.ref, "op://Shared/Deploy/token")
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

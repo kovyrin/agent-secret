@@ -7,8 +7,4 @@ final class RecordingLogger: ApprovalLogger {
     func record(_ event: String, requestID: String?) {
         events.append("\(event):\(requestID ?? "none")")
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

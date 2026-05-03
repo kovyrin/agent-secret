@@ -54,9 +54,5 @@ import XCTest
 
             XCTAssertEqual(stopper.stopCount, 1)
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 #endif

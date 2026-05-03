@@ -15,10 +15,8 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         private static let panelWidth: CGFloat = 832
     #endif
 
-    /// Creates an AppKit-backed presenter.
-    public init() {
-        /* No dependencies to initialize. */
-    }
+    // swiftlint:disable:next no_empty_block
+    public init() {}
 
     #if canImport(AppKit)
         @MainActor
@@ -96,9 +94,5 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         #else
             .timeout
         #endif
-    }
-
-    deinit {
-        /* Required by SwiftLint. */
     }
 }

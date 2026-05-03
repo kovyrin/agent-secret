@@ -29,8 +29,4 @@ final class ApprovalRequestDecodeTests: XCTestCase {
             )
         }
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

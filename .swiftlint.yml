@@ -21,6 +21,8 @@ disabled_rules:
   - explicit_type_interface
   # This project intentionally uses XCTest without adding Nimble as a test-only dependency.
   - prefer_nimble
+  # Empty deinitializers add boilerplate; real resource-cleanup deinits stay explicit.
+  - required_deinit
   # Conflicts with `explicit_enum_raw_value` for String-backed CodingKeys.
   - redundant_string_enum_value
   # Conflicts with `explicit_type_interface` for stored properties with obvious initializers.

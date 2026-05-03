@@ -47,8 +47,4 @@ public final class ApprovalController {
         logger.record("approval_decision_submitted", requestID: request.requestID)
         return decision
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

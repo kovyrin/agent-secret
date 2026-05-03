@@ -35,8 +35,4 @@ final class ApprovalAccountScopeTests: XCTestCase {
         )
         XCTAssertTrue(viewModel.renderedText.contains("WORK_TOKEN [Account: Work] -> op://Shared/Deploy/token"))
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

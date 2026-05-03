@@ -38,8 +38,4 @@ final class ApprovalPromptExpirationTests: XCTestCase {
 
         XCTAssertEqual(expiration.guardDecision(.timeout, at: expiresAt.addingTimeInterval(1)), .timeout)
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

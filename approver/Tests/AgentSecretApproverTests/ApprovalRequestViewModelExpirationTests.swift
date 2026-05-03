@@ -59,8 +59,4 @@ final class ApprovalRequestViewModelExpirationTests: XCTestCase {
         XCTAssertTrue(expiredViewModel.footerMessage.contains("expired before approval"))
         XCTAssertTrue(expiredViewModel.renderedText.contains("Time remaining: expired"))
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

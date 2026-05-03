@@ -69,8 +69,4 @@ final class ApprovalReusableUsesTests: XCTestCase {
         XCTAssertEqual(decision.reusableUses, viewModel.reusableUses)
         XCTAssertEqual(client.submittedDecision, decision)
     }
-
-    deinit {
-        /* Required by SwiftLint. */
-    }
 }

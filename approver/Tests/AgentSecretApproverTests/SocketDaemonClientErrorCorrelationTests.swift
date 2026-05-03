@@ -20,10 +20,6 @@ final class SocketDaemonClientErrorCorrelationTests: XCTestCase {
         func writeLine(_: Data) {
             /* This test transport only needs to satisfy request writes. */
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 
     private static let expectedProtocolVersion: Int = 1
@@ -125,9 +121,5 @@ final class SocketDaemonClientErrorCorrelationTests: XCTestCase {
                 .daemonError("stale_approval", "stale approval response")
             )
         }
-    }
-
-    deinit {
-        /* Required by SwiftLint. */
     }
 }

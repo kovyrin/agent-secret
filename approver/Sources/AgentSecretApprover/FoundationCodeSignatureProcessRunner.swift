@@ -19,10 +19,6 @@ import Foundation
                 defer { lock.unlock() }
                 return String(data: data, encoding: .utf8) ?? ""
             }
-
-            deinit {
-                /* Required by SwiftLint. */
-            }
         }
 
         private static let minimumTimeout: TimeInterval = 0.001

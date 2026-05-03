@@ -21,10 +21,6 @@ final class SocketDaemonClientTests: XCTestCase {
         func writeLine(_ data: Data) {
             writtenStrings.append(String(data: data, encoding: .utf8) ?? "")
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 
     private static let expectedProtocolVersion: Int = 1
@@ -268,9 +264,5 @@ final class SocketDaemonClientTests: XCTestCase {
                 .daemonError("stale_approval", "stale approval response")
             )
         }
-    }
-
-    deinit {
-        /* Required by SwiftLint. */
     }
 }

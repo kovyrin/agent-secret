@@ -81,9 +81,5 @@ import XCTest
             XCTAssertEqual(approvalSpecs.map(\.isEnabled), [false, false])
             XCTAssertTrue(approvalSpecs.allSatisfy { spec in spec.subtitle == "Request expired" })
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 #endif

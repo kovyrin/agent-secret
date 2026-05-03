@@ -21,10 +21,6 @@ import XCTest
                 processPIDs.append(pid)
                 return try processTeamIDResult.get()
             }
-
-            deinit {
-                /* Required by SwiftLint. */
-            }
         }
 
         private static func makeAppBundleExecutable(testCase: XCTestCase) throws -> String {
@@ -89,10 +85,6 @@ import XCTest
             XCTAssertNoThrow(try validator.validateDaemonPeer(info))
             XCTAssertTrue(checker.staticPaths.isEmpty)
             XCTAssertTrue(checker.processPIDs.isEmpty)
-        }
-
-        deinit {
-            /* Required by SwiftLint. */
         }
     }
 #endif

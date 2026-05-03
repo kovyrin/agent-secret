@@ -20,10 +20,6 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
         func writeLine(_: Data) {
             /* Test responses do not inspect outbound requests. */
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 
     private static let expectedProtocolVersion: Int = 1
@@ -151,9 +147,5 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
             from: { _ = try client.fetchPendingRequest() },
             equals: "invalid daemon response: malformed daemon response payload"
         )
-    }
-
-    deinit {
-        /* Required by SwiftLint. */
     }
 }

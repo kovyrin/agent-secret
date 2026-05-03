@@ -8,9 +8,5 @@ import Foundation
         func stopModal() {
             NSApplication.shared.stopModal()
         }
-
-        deinit {
-            /* Required by SwiftLint. */
-        }
     }
 #endif

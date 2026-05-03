@@ -19,10 +19,6 @@ import XCTest
                 processPIDs.append(pid)
                 return try processTeamIDResult.get()
             }
-
-            deinit {
-                /* Required by SwiftLint. */
-            }
         }
 
         private final class UnixSocketServer: @unchecked Sendable {
@@ -261,10 +257,6 @@ import XCTest
             XCTAssertThrowsError(try transport.readLine()) { error in
                 XCTAssertEqual(error as? SocketDaemonClientError, .disconnected)
             }
-        }
-
-        deinit {
-            /* Required by SwiftLint. */
         }
     }
 #endif
