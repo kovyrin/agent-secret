@@ -208,6 +208,7 @@ run_installer() {
     AGENT_SECRET_APP_DIR="$run_dir/apps" \
     AGENT_SECRET_BIN_DIR="$run_dir/bin-dir" \
     AGENT_SECRET_SKILLS_DIR="$run_dir/skills" \
+    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 \
     AGENT_SECRET_NO_STOP_DAEMON=1 \
     AGENT_SECRET_INSTALL_TEST_LOG="$log" \
     "$@" \
@@ -288,6 +289,30 @@ test_trust_root_overrides_require_dev_mode() {
   fi
 }
 
+test_destination_overrides_require_guard() {
+  if run_installer destination-guard AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=0; then
+    fail "installer accepted custom destination overrides without guard"
+  fi
+  if grep -F "ditto " "$tmp_dir/destination-guard/tools.log" >/dev/null; then
+    fail "installer copied an app before rejecting unguarded custom destinations"
+  fi
+}
+
+test_destination_validation_rejects_bad_paths() {
+  local target="$tmp_dir/symlink-target"
+  local link="$tmp_dir/symlink-app-dir"
+
+  mkdir -p "$target"
+  ln -s "$target" "$link"
+
+  if run_installer relative-app-dir AGENT_SECRET_APP_DIR=relative-apps; then
+    fail "installer accepted a relative app destination"
+  fi
+  if run_installer symlink-app-dir AGENT_SECRET_APP_DIR="$link"; then
+    fail "installer accepted a symlinked app destination"
+  fi
+}
+
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
   run_installer unsigned-allowed \
     AGENT_SECRET_INSTALL_DEV_MODE=1 \
@@ -310,6 +335,8 @@ test_wrong_team_id_stops_install
 test_wrong_app_bundle_id_stops_install
 test_wrong_daemon_bundle_id_stops_install
 test_trust_root_overrides_require_dev_mode
+test_destination_overrides_require_guard
+test_destination_validation_rejects_bad_paths
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 
 echo "test-install: ok"

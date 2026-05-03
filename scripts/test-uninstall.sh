@@ -68,6 +68,23 @@ custom_guard_rejects_override() {
   fi
 }
 
+custom_destination_guard_rejects_override() {
+  local run_dir="$tmp_dir/custom-destination-guard"
+  local app_dir="$run_dir/apps"
+  local app="$app_dir/Agent Secret.app"
+  mkdir -p "$app"
+  printf 'keep\n' >"$app/keep.txt"
+
+  expect_failure \
+    custom-destination-guard \
+    "app path override requires AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1" \
+    AGENT_SECRET_APP_DIR="$app_dir"
+
+  if [ ! -f "$app/keep.txt" ]; then
+    fail "custom app override removed data without guard"
+  fi
+}
+
 dangerous_paths_are_rejected_even_with_guard() {
   local run_dir="$tmp_dir/dangerous"
   local home="$run_dir/home"
@@ -93,6 +110,26 @@ dangerous_paths_are_rejected_even_with_guard() {
   if [ ! -f "$home/keep.txt" ]; then
     fail "dangerous home path was modified"
   fi
+}
+
+dangerous_destination_paths_are_rejected_even_with_guard() {
+  local run_dir="$tmp_dir/dangerous-destinations"
+  local target="$run_dir/target"
+  local link="$run_dir/skills-link"
+  mkdir -p "$target"
+  make_symlink "$target" "$link"
+
+  expect_failure \
+    dangerous-destination-relative \
+    "bin path must be absolute" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_BIN_DIR=relative-bin
+
+  expect_failure \
+    dangerous-destination-symlink \
+    "skills path must not be a symlink" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_SKILLS_DIR="$link"
 }
 
 symlinked_dirs_are_rejected() {
@@ -157,7 +194,9 @@ safe_custom_paths_remove_only_known_files() {
 }
 
 custom_guard_rejects_override
+custom_destination_guard_rejects_override
 dangerous_paths_are_rejected_even_with_guard
+dangerous_destination_paths_are_rejected_even_with_guard
 symlinked_dirs_are_rejected
 safe_custom_paths_remove_only_known_files
 
