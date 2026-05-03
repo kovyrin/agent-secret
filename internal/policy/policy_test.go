@@ -164,6 +164,57 @@ func TestReusableApprovalDoesNotConsumeUseBeforePayload(t *testing.T) {
 	}
 }
 
+func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	req := testRequest(t, now)
+	req.ReusableUses = 1
+	approval, err := store.AddReusableWithReservedUse(req, 1, "appr_1", "nonce_1")
+	if err != nil {
+		t.Fatalf("AddReusableWithReservedUse returned error: %v", err)
+	}
+	if approval.ReservedUses != 1 {
+		t.Fatalf("reserved uses = %d, want 1", approval.ReservedUses)
+	}
+
+	blocked, err := store.ReserveReusable(context.Background(), req, nil)
+	if !errors.Is(err, ErrUseExhausted) {
+		t.Fatalf("expected reservation to exhaust available delivery slots, got %v", err)
+	}
+	if blocked.ID != approval.ID {
+		t.Fatalf("blocked approval id = %q, want %q", blocked.ID, approval.ID)
+	}
+
+	afterFailure, err := store.FinishReusableAttempt(approval.ID, DeliveryPrePayloadFailure)
+	if err != nil {
+		t.Fatalf("FinishReusableAttempt after pre-payload failure returned error: %v", err)
+	}
+	if afterFailure.Uses != 0 || afterFailure.ReservedUses != 0 {
+		t.Fatalf("after pre-payload failure = uses:%d reserved:%d, want uses:0 reserved:0", afterFailure.Uses, afterFailure.ReservedUses)
+	}
+
+	retry, err := store.ReserveReusable(context.Background(), req, nil)
+	if err != nil {
+		t.Fatalf("ReserveReusable after release returned error: %v", err)
+	}
+	if retry.ReservedUses != 1 {
+		t.Fatalf("retry reserved uses = %d, want 1", retry.ReservedUses)
+	}
+
+	afterDelivery, err := store.FinishReusableAttempt(approval.ID, DeliveryPayloadDelivered)
+	if err != nil {
+		t.Fatalf("FinishReusableAttempt after payload returned error: %v", err)
+	}
+	if afterDelivery.Uses != 1 || afterDelivery.ReservedUses != 0 {
+		t.Fatalf("after payload delivery = uses:%d reserved:%d, want uses:1 reserved:0", afterDelivery.Uses, afterDelivery.ReservedUses)
+	}
+	if _, err := store.FindReusable(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("expected delivered one-use approval to be removed, got %v", err)
+	}
+}
+
 func TestReusableApprovalConsumesUseForAllPostPayloadOutcomes(t *testing.T) {
 	t.Parallel()
 

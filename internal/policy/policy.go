@@ -47,12 +47,13 @@ type Store struct {
 }
 
 type ReusableApproval struct {
-	ID        string
-	Nonce     string
-	Key       ReuseKey
-	ExpiresAt time.Time
-	MaxUses   int
-	Uses      int
+	ID           string
+	Nonce        string
+	Key          ReuseKey
+	ExpiresAt    time.Time
+	MaxUses      int
+	Uses         int
+	ReservedUses int
 }
 
 type ReuseKey struct {
@@ -129,12 +130,34 @@ func (s *Store) AddReusableWithLimit(
 	id string,
 	nonce string,
 ) (ReusableApproval, error) {
+	return s.addReusableWithLimit(req, maxUses, id, nonce, 0)
+}
+
+func (s *Store) AddReusableWithReservedUse(
+	req request.ExecRequest,
+	maxUses int,
+	id string,
+	nonce string,
+) (ReusableApproval, error) {
+	return s.addReusableWithLimit(req, maxUses, id, nonce, 1)
+}
+
+func (s *Store) addReusableWithLimit(
+	req request.ExecRequest,
+	maxUses int,
+	id string,
+	nonce string,
+	reservedUses int,
+) (ReusableApproval, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	maxUses = request.ReusableUsesOrDefault(maxUses)
 	if maxUses < 1 || maxUses > request.MaxReusableUses {
 		return ReusableApproval{}, fmt.Errorf("%w: must be between 1 and %d", request.ErrInvalidReusableUses, request.MaxReusableUses)
+	}
+	if reservedUses < 0 || reservedUses > maxUses {
+		return ReusableApproval{}, fmt.Errorf("%w: reserved uses must be between 0 and %d", ErrUseExhausted, maxUses)
 	}
 	req.ReusableUses = maxUses
 
@@ -154,11 +177,12 @@ func (s *Store) AddReusableWithLimit(
 	}
 
 	approval := &ReusableApproval{
-		ID:        id,
-		Nonce:     nonce,
-		Key:       NewReuseKey(req),
-		ExpiresAt: req.ExpiresAt,
-		MaxUses:   maxUses,
+		ID:           id,
+		Nonce:        nonce,
+		Key:          NewReuseKey(req),
+		ExpiresAt:    req.ExpiresAt,
+		MaxUses:      maxUses,
+		ReservedUses: reservedUses,
 	}
 	s.approvals[id] = approval
 
@@ -169,20 +193,62 @@ func (s *Store) FindReusable(ctx context.Context, req request.ExecRequest, sink 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	approval, err := s.findReusableLocked(ctx, req, sink)
+	if err != nil {
+		if approval != nil {
+			return *approval, err
+		}
+		return ReusableApproval{}, err
+	}
+	return *approval, nil
+}
+
+func (s *Store) ReserveReusable(ctx context.Context, req request.ExecRequest, sink ReuseAuditSink) (ReusableApproval, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	approval, err := s.findReusableLocked(ctx, req, sink)
+	if err != nil {
+		if approval != nil {
+			return *approval, err
+		}
+		return ReusableApproval{}, err
+	}
+	approval.ReservedUses++
+	return *approval, nil
+}
+
+func (s *Store) findReusableLocked(
+	ctx context.Context,
+	req request.ExecRequest,
+	sink ReuseAuditSink,
+) (*ReusableApproval, error) {
 	key := NewReuseKey(req)
 	now := s.now()
+	var expired *ReusableApproval
+	var exhausted *ReusableApproval
 	for id, approval := range s.approvals {
 		if !approval.Key.Equal(key) {
 			continue
 		}
 		if !now.Before(approval.ExpiresAt) {
+			snapshot := *approval
 			delete(s.approvals, id)
-			return *approval, ErrExpired
+			if expired == nil {
+				expired = &snapshot
+			}
+			continue
 		}
-		remainingUses := approval.MaxUses - approval.Uses
+		remainingUses := approval.MaxUses - approval.Uses - approval.ReservedUses
 		if remainingUses <= 0 {
-			delete(s.approvals, id)
-			return *approval, ErrUseExhausted
+			snapshot := *approval
+			if approval.Uses >= approval.MaxUses && approval.ReservedUses == 0 {
+				delete(s.approvals, id)
+			}
+			if exhausted == nil {
+				exhausted = &snapshot
+			}
+			continue
 		}
 
 		event := ReuseAuditEvent{
@@ -192,14 +258,20 @@ func (s *Store) FindReusable(ctx context.Context, req request.ExecRequest, sink 
 		}
 		if sink != nil {
 			if err := sink.ApprovalReused(ctx, event); err != nil {
-				return ReusableApproval{}, fmt.Errorf("%w: %w", ErrAuditFailed, err)
+				return nil, fmt.Errorf("%w: %w", ErrAuditFailed, err)
 			}
 		}
 
-		return *approval, nil
+		return approval, nil
 	}
 
-	return ReusableApproval{}, ErrMismatch
+	if expired != nil {
+		return expired, ErrExpired
+	}
+	if exhausted != nil {
+		return exhausted, ErrUseExhausted
+	}
+	return nil, ErrMismatch
 }
 
 func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (ReusableApproval, error) {
@@ -215,9 +287,14 @@ func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (Reusabl
 		return *approval, ErrExpired
 	}
 	if consumesUse(result) {
+		if approval.ReservedUses > 0 {
+			approval.ReservedUses--
+		}
 		approval.Uses++
+	} else if result == DeliveryPrePayloadFailure && approval.ReservedUses > 0 {
+		approval.ReservedUses--
 	}
-	if approval.Uses >= approval.MaxUses {
+	if approval.Uses >= approval.MaxUses && approval.ReservedUses == 0 {
 		delete(s.approvals, id)
 	}
 
