@@ -501,6 +501,72 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	assertRequesterAudit(t, events[0], peer, "")
 }
 
+func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-test-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	path := filepath.Join(dir, "d.sock")
+	listener, err := ListenUnix(path)
+	if err != nil {
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+	server, err := NewServer(ServerOptions{
+		Broker:        broker,
+		Validator:     allowPeerValidator{},
+		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx, listener) }()
+	defer func() {
+		cancel()
+		_ = listener.Close()
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, net.ErrClosed) {
+				t.Fatalf("server returned error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("server did not stop")
+		}
+	}()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	client := NewClient(conn)
+	defer func() { _ = client.Close() }()
+
+	if _, err := client.Status(context.Background()); err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+	server.Stop(context.Background())
+	_, err = client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: ref},
+	}))
+	if !IsProtocolError(err, "daemon_stopped") {
+		t.Fatalf("RequestExec after stop error = %v, want daemon_stopped", err)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver called after daemon stop: %v", calls)
+	}
+}
+
 func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	t.Parallel()
 
@@ -1036,6 +1102,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrApproverIdentity, want: "approver_identity_mismatch"},
 		{err: ErrNoPendingApproval, want: "no_pending_approval"},
 		{err: ErrRequestAlreadyActive, want: "request_active"},
+		{err: ErrDaemonStopped, want: "daemon_stopped"},
 		{err: ErrRequestExpired, want: "request_expired"},
 		{err: ErrStaleApproval, want: "stale_approval"},
 		{err: ErrUntrustedClient, want: "untrusted_client"},

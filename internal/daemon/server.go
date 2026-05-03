@@ -167,6 +167,10 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "bad_envelope", err)
 			continue
 		}
+		if s.stopped() && env.Type != TypeDaemonStatus {
+			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
+			return
+		}
 
 		nextReadTimeout = s.readTimeout
 		if commandStarted {
@@ -177,35 +181,11 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		case TypeDaemonStatus:
 			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
 		case TypeDaemonStop:
-			peer, err := s.peerInfo(conn)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
-				continue
+			if s.handleDaemonStop(ctx, conn, encoder, env) {
+				return
 			}
-			if err := s.execValidator.ValidateExecPeer(peer); err != nil {
-				s.broker.recordDaemonStopAttempt(ctx, daemonStopAuditEvent(peer, err))
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-				continue
-			}
-			_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
-			s.stopWithAudit(ctx, daemonStopAuditEvent(peer, nil))
-			return
 		case TypeApprovalPending:
-			if s.approvals == nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "approval_unavailable", ErrApprovalUnavailable)
-				continue
-			}
-			peer, err := s.peerInfo(conn)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
-				continue
-			}
-			payload, err := s.approvals.FetchPending(ctx, peer)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-				continue
-			}
-			if err := writeOK(encoder, payload.RequestID, payload.Nonce, payload); err == nil {
+			if payload, ok := s.handleApprovalPending(ctx, conn, encoder, env); ok {
 				nextReadTimeout = s.approvalDecisionReadTimeout(payload.ExpiresAt)
 			}
 		case TypeApprovalDecision:
@@ -255,6 +235,53 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	}
 }
 
+func (s *Server) handleApprovalPending(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env Envelope,
+) (ApprovalRequestPayload, bool) {
+	if s.approvals == nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "approval_unavailable", ErrApprovalUnavailable)
+		return ApprovalRequestPayload{}, false
+	}
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
+		return ApprovalRequestPayload{}, false
+	}
+	payload, err := s.approvals.FetchPending(ctx, peer)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ApprovalRequestPayload{}, false
+	}
+	if err := writeOK(encoder, payload.RequestID, payload.Nonce, payload); err != nil {
+		return ApprovalRequestPayload{}, false
+	}
+	return payload, true
+}
+
+func (s *Server) handleDaemonStop(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env Envelope,
+) bool {
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, "peer_rejected", err)
+		return false
+	}
+	if err := s.execValidator.ValidateExecPeer(peer); err != nil {
+		s.broker.recordDaemonStopAttempt(ctx, daemonStopAuditEvent(peer, err))
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return false
+	}
+	s.stopWithAudit(ctx, daemonStopAuditEvent(peer, nil))
+	_ = writeOK(encoder, env.RequestID, env.Nonce, StatusPayload{PID: os.Getpid()})
+	return true
+}
+
 func (s *Server) handleRequestExec(
 	ctx context.Context,
 	conn *net.UnixConn,
@@ -281,6 +308,10 @@ func (s *Server) handleRequestExec(
 	}
 	if err := s.broker.MarkPayloadDelivered(env.RequestID); err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+		return ""
+	}
+	if s.stopped() {
+		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
 		return ""
 	}
 	_ = writeOK(encoder, env.RequestID, env.Nonce, ExecResponsePayload{
@@ -427,6 +458,8 @@ func codeForError(err error) string {
 		return "no_pending_approval"
 	case errors.Is(err, ErrRequestAlreadyActive):
 		return "request_active"
+	case errors.Is(err, ErrDaemonStopped):
+		return "daemon_stopped"
 	case errors.Is(err, ErrRequestExpired):
 		return "request_expired"
 	case errors.Is(err, ErrStaleApproval):
@@ -435,5 +468,14 @@ func codeForError(err error) string {
 		return "untrusted_client"
 	default:
 		return "request_failed"
+	}
+}
+
+func (s *Server) stopped() bool {
+	select {
+	case <-s.stop:
+		return true
+	default:
+		return false
 	}
 }
