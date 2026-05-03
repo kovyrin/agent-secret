@@ -12,7 +12,6 @@ final class UnixSocketLineTransport: LineTransport {
         private static let pathTerminatorByte: UInt8 = 0
         private static let readChunkBytes: Int = 0x1000
         private static let singleAddressCapacity: Int = 1
-        private static let timevalMicrosecondsPerSecond: Int = 1_000_000
 
         private let maxFrameBytes: Int
         private let socketFileDescriptor: Int32
@@ -37,7 +36,7 @@ final class UnixSocketLineTransport: LineTransport {
         ) throws {
             try Self.validate(maxFrameBytes: maxFrameBytes)
             do {
-                try Self.configureTimeouts(
+                try Self.configureSocket(
                     for: descriptor,
                     ioTimeout: ioTimeout
                 )
@@ -91,7 +90,7 @@ final class UnixSocketLineTransport: LineTransport {
                 throw SocketDaemonClientError.connectFailed(errnoValue)
             }
             do {
-                try Self.configureTimeouts(
+                try Self.configureSocket(
                     for: descriptor,
                     ioTimeout: ioTimeout
                 )
@@ -119,62 +118,6 @@ final class UnixSocketLineTransport: LineTransport {
             guard maxFrameBytes > 0 else {
                 throw SocketDaemonClientError.invalidResponse("invalid maximum frame size")
             }
-        }
-
-        private static func configureTimeouts(
-            for descriptor: Int32,
-            ioTimeout: TimeInterval
-        ) throws {
-            try configureTimeout(
-                for: descriptor,
-                option: SO_RCVTIMEO,
-                timeout: ioTimeout,
-                error: SocketDaemonClientError.readFailed
-            )
-            try configureTimeout(
-                for: descriptor,
-                option: SO_SNDTIMEO,
-                timeout: ioTimeout,
-                error: SocketDaemonClientError.writeFailed
-            )
-        }
-
-        private static func configureTimeout(
-            for descriptor: Int32,
-            option: Int32,
-            timeout: TimeInterval,
-            error: (Int32) -> SocketDaemonClientError
-        ) throws {
-            var value = socketTimeval(from: timeout)
-            let status: Int32 = withUnsafePointer(to: &value) { pointer in
-                pointer.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<timeval>.size) { rawPointer in
-                    setsockopt(
-                        descriptor,
-                        SOL_SOCKET,
-                        option,
-                        rawPointer,
-                        socklen_t(MemoryLayout<timeval>.size)
-                    )
-                }
-            }
-            guard status == 0 else {
-                throw error(errno)
-            }
-        }
-
-        private static func socketTimeval(from timeout: TimeInterval) -> timeval {
-            let totalMicroseconds = max(
-                1,
-                Int(timeout * TimeInterval(Self.timevalMicrosecondsPerSecond))
-            )
-            return Darwin.timeval(
-                tv_sec: totalMicroseconds / Self.timevalMicrosecondsPerSecond,
-                tv_usec: Int32(totalMicroseconds % Self.timevalMicrosecondsPerSecond)
-            )
-        }
-
-        private static func isTimeout(_ errnoValue: Int32) -> Bool {
-            errnoValue == EAGAIN || errnoValue == EWOULDBLOCK
         }
 
     #endif
