@@ -86,7 +86,7 @@ require_text "AGENT_SECRET_VERSION=\"\$version\" sh"
 
 require_release_process_text "## Toolchain Pin Maintenance"
 require_release_process_text "## Installer Bootstrap Documentation"
-require_release_process_text "reachable from \`origin/main\`"
+require_release_process_text "current \`origin/main\` commit"
 require_release_process_text "refuses to replace assets on a published release"
 require_release_process_text "Do not pipe"
 require_release_process_text "\`main/install.sh\` or \`main/uninstall.sh\`"

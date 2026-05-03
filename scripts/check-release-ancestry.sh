@@ -46,8 +46,11 @@ fi
 main_commit="$(git rev-parse --verify -q "${main_ref}^{commit}")" ||
   fail "could not resolve $remote/$main_branch"
 
-if ! git merge-base --is-ancestor "$release_commit" "$main_commit"; then
+if [[ "$release_commit" != "$main_commit" ]]; then
+  if git merge-base --is-ancestor "$release_commit" "$main_commit"; then
+    fail "tag $tag_name targets stale commit $release_commit, expected current $remote/$main_branch commit $main_commit"
+  fi
   fail "tag $tag_name targets commit $release_commit, which is not reachable from $remote/$main_branch"
 fi
 
-echo "release ancestry: tag $tag_name targets commit $release_commit reachable from $remote/$main_branch"
+echo "release ancestry: tag $tag_name targets current $remote/$main_branch commit $main_commit"

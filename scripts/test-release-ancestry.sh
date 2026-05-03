@@ -58,6 +58,8 @@ git -C "$repo" tag -a v1.0.1 -m "v1.0.1"
   "$check_script" refs/tags/v1.0.1 >/dev/null
 )
 
+expect_failure "tag v1.0.0 targets stale commit" bash -c "cd '$repo' && '$check_script' v1.0.0"
+
 git -C "$repo" switch -c unreviewed >/dev/null
 printf 'unreviewed\n' >>"$repo/file.txt"
 git -C "$repo" commit -am "unreviewed" >/dev/null
