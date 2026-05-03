@@ -12,7 +12,7 @@ struct ApprovalPromptExpiration: Equatable {
     }
 
     func guardDecision(_ decision: ApprovalDecisionKind, at now: Date) -> ApprovalDecisionKind {
-        if decision.requiresUnexpiredRequest, isExpired(at: now) {
+        if isExpired(at: now) {
             return .timeout
         }
         return decision
