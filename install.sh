@@ -1,9 +1,66 @@
 #!/bin/sh
 set -eu
 
-repo="${AGENT_SECRET_REPO:-kovyrin/agent-secret}"
-github_url="${AGENT_SECRET_GITHUB_URL:-https://github.com}"
-github_api="${AGENT_SECRET_GITHUB_API:-https://api.github.com}"
+die() {
+  echo "agent-secret install: $*" >&2
+  exit 1
+}
+
+env_is_set() {
+  eval "[ \"\${$1+x}\" = x ]"
+}
+
+require_dev_mode_for_env() {
+  name="$1"
+  if [ "$install_dev_mode" != "1" ] && env_is_set "$name"; then
+    die "$name requires AGENT_SECRET_INSTALL_DEV_MODE=1"
+  fi
+}
+
+production_repo="kovyrin/agent-secret"
+production_github_url="https://github.com"
+production_github_api="https://api.github.com"
+production_expected_team_id="B6L7QLWTZW"
+production_expected_app_bundle_id="com.kovyrin.agent-secret"
+production_expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
+
+install_dev_mode="${AGENT_SECRET_INSTALL_DEV_MODE:-0}"
+case "$install_dev_mode" in
+  0 | 1) ;;
+  *)
+    die "AGENT_SECRET_INSTALL_DEV_MODE must be 0 or 1"
+    ;;
+esac
+
+repo="$production_repo"
+github_url="$production_github_url"
+github_api="$production_github_api"
+allow_unsigned_install=0
+require_notarization=1
+expected_team_id="$production_expected_team_id"
+expected_app_bundle_id="$production_expected_app_bundle_id"
+expected_daemon_bundle_id="$production_expected_daemon_bundle_id"
+
+if [ "$install_dev_mode" != "1" ]; then
+  require_dev_mode_for_env AGENT_SECRET_REPO
+  require_dev_mode_for_env AGENT_SECRET_GITHUB_URL
+  require_dev_mode_for_env AGENT_SECRET_GITHUB_API
+  require_dev_mode_for_env AGENT_SECRET_ALLOW_UNSIGNED_INSTALL
+  require_dev_mode_for_env AGENT_SECRET_REQUIRE_NOTARIZATION
+  require_dev_mode_for_env AGENT_SECRET_EXPECTED_TEAM_ID
+  require_dev_mode_for_env AGENT_SECRET_EXPECTED_APP_BUNDLE_ID
+  require_dev_mode_for_env AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID
+else
+  repo="${AGENT_SECRET_REPO:-$production_repo}"
+  github_url="${AGENT_SECRET_GITHUB_URL:-$production_github_url}"
+  github_api="${AGENT_SECRET_GITHUB_API:-$production_github_api}"
+  allow_unsigned_install="${AGENT_SECRET_ALLOW_UNSIGNED_INSTALL:-0}"
+  require_notarization="${AGENT_SECRET_REQUIRE_NOTARIZATION:-1}"
+  expected_team_id="${AGENT_SECRET_EXPECTED_TEAM_ID:-$production_expected_team_id}"
+  expected_app_bundle_id="${AGENT_SECRET_EXPECTED_APP_BUNDLE_ID:-$production_expected_app_bundle_id}"
+  expected_daemon_bundle_id="${AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID:-$production_expected_daemon_bundle_id}"
+fi
+
 app_dir="${AGENT_SECRET_APP_DIR:-/Applications}"
 bin_dir="${AGENT_SECRET_BIN_DIR:-$HOME/.local/bin}"
 skills_dir="${AGENT_SECRET_SKILLS_DIR:-$HOME/.agents/skills}"
@@ -11,11 +68,12 @@ version="${AGENT_SECRET_VERSION:-}"
 local_dmg="${AGENT_SECRET_DMG:-}"
 local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
-allow_unsigned_install="${AGENT_SECRET_ALLOW_UNSIGNED_INSTALL:-0}"
-require_notarization="${AGENT_SECRET_REQUIRE_NOTARIZATION:-1}"
-expected_team_id="${AGENT_SECRET_EXPECTED_TEAM_ID:-B6L7QLWTZW}"
-expected_app_bundle_id="${AGENT_SECRET_EXPECTED_APP_BUNDLE_ID:-com.kovyrin.agent-secret}"
-expected_daemon_bundle_id="${AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID:-com.kovyrin.agent-secret.daemon}"
+
+if [ "$install_dev_mode" = "1" ]; then
+  echo "agent-secret install: development installer mode enabled" >&2
+  [ -n "$local_dmg" ] || die "AGENT_SECRET_INSTALL_DEV_MODE=1 requires AGENT_SECRET_DMG"
+  [ -n "$local_checksums" ] || die "AGENT_SECRET_INSTALL_DEV_MODE=1 requires AGENT_SECRET_CHECKSUMS_FILE"
+fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-install.XXXXXX")"
 mount_dir="$tmp_dir/mount"
@@ -28,11 +86,6 @@ cleanup() {
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT HUP INT TERM
-
-die() {
-  echo "agent-secret install: $*" >&2
-  exit 1
-}
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then

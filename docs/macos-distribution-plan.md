@@ -110,12 +110,14 @@ AGENT_SECRET_BIN_DIR="$HOME/.local/bin" install.sh
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" install.sh
 ```
 
-For local smoke tests, `AGENT_SECRET_DMG` and
-`AGENT_SECRET_CHECKSUMS_FILE` can point at a locally built artifact. Unsigned
-local artifacts must also set `AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`; signed
-but unstapled local artifacts can set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
-Maintainer release installs expect Team ID `B6L7QLWTZW` and bundle identifiers
-`com.kovyrin.agent-secret` and `com.kovyrin.agent-secret.daemon`.
+For local smoke tests, set `AGENT_SECRET_INSTALL_DEV_MODE=1` and point
+`AGENT_SECRET_DMG` plus `AGENT_SECRET_CHECKSUMS_FILE` at locally built
+artifacts. Unsigned local artifacts must also set
+`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`; signed but unstapled local artifacts
+can set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`. Production installs pin the
+GitHub host, repository, Team ID `B6L7QLWTZW`, and bundle identifiers
+`com.kovyrin.agent-secret` and `com.kovyrin.agent-secret.daemon`; overriding
+those release trust roots requires development mode and local artifacts.
 
 ### Upgrade
 
