@@ -13,6 +13,7 @@ allow_custom_uninstall_paths="${AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS:-0}"
 expected_team_id="B6L7QLWTZW"
 expected_app_bundle_id="com.kovyrin.agent-secret"
 expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
+codesign_path="/usr/bin/codesign"
 default_support_dir="$HOME/Library/Application Support/agent-secret"
 default_audit_dir="$HOME/Library/Logs/agent-secret"
 
@@ -44,7 +45,7 @@ bundle_identifier_matches() {
 codesign_team_id() {
   path="$1"
 
-  details="$(codesign -dv --verbose=4 "$path" 2>&1)" || return 1
+  details="$("$codesign_path" -dv --verbose=4 "$path" 2>&1)" || return 1
   printf '%s\n' "$details" |
     awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }'
 }
@@ -61,12 +62,12 @@ existing_app_is_trusted_for_stop() {
   cli="$target_app/Contents/Resources/bin/agent-secret"
 
   [ -x "$cli" ] || return 1
-  command -v /usr/libexec/PlistBuddy >/dev/null 2>&1 || return 1
-  command -v codesign >/dev/null 2>&1 || return 1
+  [ -x /usr/libexec/PlistBuddy ] || return 1
+  [ -x "$codesign_path" ] || return 1
   bundle_identifier_matches "$target_app" "$expected_app_bundle_id" || return 1
   [ -d "$daemon_app" ] || return 1
   bundle_identifier_matches "$daemon_app" "$expected_daemon_bundle_id" || return 1
-  codesign --verify --deep --strict "$target_app" >/dev/null 2>&1 || return 1
+  "$codesign_path" --verify --deep --strict "$target_app" >/dev/null 2>&1 || return 1
   team_id_matches "$target_app" || return 1
   team_id_matches "$daemon_app" || return 1
   team_id_matches "$cli" || return 1
