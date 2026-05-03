@@ -103,6 +103,64 @@ func TestOpenDefaultRejectsPermissiveExistingAuditFile(t *testing.T) {
 	}
 }
 
+func TestOpenDefaultRejectsSymlinkAuditLog(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := expectedPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir audit dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "target.jsonl")
+	if err := os.WriteFile(target, []byte("target\n"), 0o600); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatalf("symlink audit log: %v", err)
+	}
+
+	_, err := OpenDefault(time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+	//nolint:gosec // G304: test reads a symlink target created under t.TempDir.
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read symlink target: %v", err)
+	}
+	if string(data) != "target\n" {
+		t.Fatalf("symlink target was modified: %q", data)
+	}
+}
+
+func TestOpenDefaultRejectsSymlinkAuditDirectoryWithoutChmodTarget(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := expectedPath(home)
+	parent := filepath.Dir(filepath.Dir(path))
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		t.Fatalf("mkdir audit parent: %v", err)
+	}
+	target := t.TempDir()
+	if err := os.Chmod(target, 0o755); err != nil { //nolint:gosec // G302: this test intentionally creates a permissive symlink target to prove it is not chmodded.
+		t.Fatalf("chmod symlink target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Dir(path)); err != nil {
+		t.Fatalf("symlink audit dir: %v", err)
+	}
+
+	_, err := OpenDefault(time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat symlink target: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("symlink target mode = %s, want unchanged 0755", got)
+	}
+}
+
 func TestDefaultPathIgnoresEnvironmentOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -272,6 +330,71 @@ func TestOpenPathRejectsDirectoryAtAuditPath(t *testing.T) {
 	}
 
 	_, err := openPath(path, time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+}
+
+func TestOpenPathRejectsPermissiveExistingAuditDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "agent-secret")
+	if err := os.Mkdir(dir, 0o755); err != nil { //nolint:gosec // G301: this test intentionally creates a permissive audit directory.
+		t.Fatalf("mkdir audit dir: %v", err)
+	}
+
+	_, err := openPath(filepath.Join(dir, "audit.jsonl"), time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+}
+
+func TestOpenPathRejectsFileAtAuditDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "agent-secret")
+	if err := os.WriteFile(dir, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write audit dir placeholder: %v", err)
+	}
+
+	_, err := openPath(filepath.Join(dir, "audit.jsonl"), time.Now)
+	if !errors.Is(err, ErrInsecureAuditLog) {
+		t.Fatalf("expected insecure audit log error, got %v", err)
+	}
+}
+
+func TestOpenAuditLogRejectsSymlinkWithoutPrecheck(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.jsonl")
+	if err := os.WriteFile(target, []byte("target\n"), 0o600); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	path := filepath.Join(dir, "audit.jsonl")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatalf("symlink audit log: %v", err)
+	}
+
+	file, err := openAuditLog(path)
+	if err == nil {
+		_ = file.Close()
+		t.Fatal("openAuditLog accepted symlink path")
+	}
+	//nolint:gosec // G304: test reads a symlink target created under t.TempDir.
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read symlink target: %v", err)
+	}
+	if string(data) != "target\n" {
+		t.Fatalf("symlink target was modified: %q", data)
+	}
+}
+
+func TestRejectInsecureOpenFileRejectsDirectoryHandle(t *testing.T) {
+	dir := t.TempDir()
+	//nolint:gosec // G304: test opens a directory created by t.TempDir.
+	file, err := os.Open(dir)
+	if err != nil {
+		t.Fatalf("open dir: %v", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	err = rejectInsecureOpenFile(file, dir)
 	if !errors.Is(err, ErrInsecureAuditLog) {
 		t.Fatalf("expected insecure audit log error, got %v", err)
 	}
