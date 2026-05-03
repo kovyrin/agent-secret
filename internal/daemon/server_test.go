@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -363,6 +364,74 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("disconnect audit was not recorded: %+v", aud.Events())
+}
+
+func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
+	req.ReusableUses = 1
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 1}}
+	aud := &callbackAudit{}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    aud,
+	})
+
+	var connMu sync.Mutex
+	var firstConn *net.UnixConn
+	var closeOnce sync.Once
+	aud.onRecord = func(event audit.Event) {
+		if event.Type != audit.EventCommandStarting || event.RequestID != "req_1" {
+			return
+		}
+		closeOnce.Do(func() {
+			connMu.Lock()
+			conn := firstConn
+			connMu.Unlock()
+			if conn != nil {
+				_ = conn.Close()
+			}
+		})
+	}
+
+	path, stop := startRawServerWithBroker(t, broker, nil, allowPeerValidator{})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	connMu.Lock()
+	firstConn = conn
+	connMu.Unlock()
+	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
+	waitForAuditEvent(t, &aud.memoryAudit, audit.EventCommandStarting, "req_1")
+	waitForInactiveRequest(t, broker, "req_1")
+
+	secondConn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("second Dial returned error: %v", err)
+	}
+	secondClient := NewClient(secondConn)
+	defer func() { _ = secondClient.Close() }()
+	payload, err := secondClient.RequestExec(context.Background(), "req_2", "nonce_2", req)
+	if err != nil {
+		t.Fatalf("second RequestExec returned error: %v", err)
+	}
+	if payload.Env["TOKEN"] != "value" {
+		t.Fatalf("second payload env = %+v", payload.Env)
+	}
+	if approver.calls != 1 {
+		t.Fatalf("failed first response consumed reusable approval; approver calls = %d, want 1", approver.calls)
+	}
+	for _, event := range aud.Events() {
+		if event.Type == audit.EventExecClientDisconnectedAfterPayload && event.RequestID == "req_1" {
+			t.Fatalf("failed response write produced post-payload disconnect audit: %+v", event)
+		}
+	}
 }
 
 func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) {
@@ -1302,6 +1371,22 @@ func waitForAuditEvent(
 	}
 	t.Fatalf("audit event %s for request %s was not recorded: %+v", eventType, requestID, aud.Events())
 	return audit.Event{}
+}
+
+func waitForInactiveRequest(t *testing.T, broker *Broker, requestID string) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		broker.mu.Lock()
+		_, active := broker.active[requestID]
+		broker.mu.Unlock()
+		if !active {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("request %s remained active after response write failure", requestID)
 }
 
 func writeExecutableAt(t *testing.T, dir string, name string) string {

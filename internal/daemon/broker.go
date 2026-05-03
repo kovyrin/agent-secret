@@ -311,6 +311,24 @@ func (b *Broker) MarkPayloadDelivered(requestID string) error {
 	return nil
 }
 
+func (b *Broker) MarkPayloadDeliveryFailed(requestID string) {
+	b.mu.Lock()
+	active, ok := b.active[requestID]
+	if ok {
+		delete(b.active, requestID)
+	}
+	b.mu.Unlock()
+	if !ok || active.payloadDelivered || active.approvalID == "" {
+		return
+	}
+
+	if _, err := b.store.FinishReusableAttempt(active.approvalID, policy.DeliveryPrePayloadFailure); err != nil {
+		if errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted) {
+			b.clearReusableCacheScope(active.approvalID)
+		}
+	}
+}
+
 func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
 	active, err := b.activeRequest(requestID, nonce)
 	if err != nil {
