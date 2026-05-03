@@ -1106,7 +1106,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	}
 
 	now = req.ExpiresAt.Add(-time.Millisecond)
-	broker.resolver = &advancingResolver{
+	broker.grants.resolver = &advancingResolver{
 		value: "second",
 		advance: func() {
 			now = req.ExpiresAt.Add(time.Second)
@@ -1122,7 +1122,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
 		t.Fatal("expired reusable approval cache scope remained after force refresh")
 	}
-	if _, err := broker.reusable.store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, err := broker.grants.reusable.store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("expired reusable approval remained in store: %v", err)
 	}
 }

@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -57,16 +56,13 @@ type SecretCache interface {
 }
 
 type Broker struct {
-	mu         sync.Mutex
-	now        func() time.Time
-	reusable   *reusableGrantManager
-	approver   Approver
-	resolver   Resolver
-	audit      AuditSink
-	fetchLimit int
-	active     map[string]*activeExec
-	stopOnce   sync.Once
-	stop       chan struct{}
+	mu       sync.Mutex
+	now      func() time.Time
+	grants   *grantIssuer
+	audit    AuditSink
+	active   map[string]*activeExec
+	stopOnce sync.Once
+	stop     chan struct{}
 }
 
 type ExecGrant struct {
@@ -132,15 +128,21 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 		fetchLimit = 4
 	}
 	broker := &Broker{
-		now:        now,
-		approver:   opts.Approver,
-		resolver:   opts.Resolver,
-		audit:      opts.Audit,
-		fetchLimit: fetchLimit,
-		active:     make(map[string]*activeExec),
-		stop:       make(chan struct{}),
+		now:    now,
+		audit:  opts.Audit,
+		active: make(map[string]*activeExec),
+		stop:   make(chan struct{}),
 	}
-	broker.reusable = newReusableGrantManager(now, store, cache, broker.stopped, broker.audit, broker)
+	broker.grants = newGrantIssuer(
+		now,
+		store,
+		cache,
+		opts.Approver,
+		opts.Resolver,
+		broker.audit,
+		fetchLimit,
+		broker.stopped,
+	)
 	return broker, nil
 }
 
@@ -180,7 +182,7 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 	if b.stopped() {
 		return ExecGrant{}, ErrDaemonStopped
 	}
-	if err := b.preflightAudit(ctx); err != nil {
+	if err := b.grants.preflightAudit(ctx); err != nil {
 		return ExecGrant{}, err
 	}
 	if req.Expired(b.now()) {
@@ -188,33 +190,8 @@ func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string,
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()
-	if err := b.ensureRequestActive(execCtx, req); err != nil {
-		return ExecGrant{}, err
-	}
-
-	grant, err := b.reusable.issueGrant(execCtx, req)
+	grant, err := b.grants.issue(execCtx, requestID, nonce, req)
 	if err != nil {
-		return ExecGrant{}, b.requestError(execCtx, req, err)
-	}
-	if grant.Env == nil {
-		grant, err = b.freshGrant(execCtx, requestID, nonce, req)
-		if err != nil {
-			return ExecGrant{}, b.requestError(execCtx, req, err)
-		}
-	}
-	if err := b.ensureGrantStillActive(execCtx, req, grant.ApprovalID, grant.approvalExpiresAt); err != nil {
-		b.reusable.rollbackGrant(grant)
-		return ExecGrant{}, err
-	}
-	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.approvalExpiresAt)
-
-	event := audit.FromExecRequest(audit.EventCommandStarting, requestID, req)
-	if err := b.recordRequiredAudit(execCtx, event); err != nil {
-		b.reusable.rollbackGrant(grant)
-		return ExecGrant{}, err
-	}
-	if err := b.ensureGrantStillActive(execCtx, req, grant.ApprovalID, grant.approvalExpiresAt); err != nil {
-		b.reusable.rollbackGrant(grant)
 		return ExecGrant{}, err
 	}
 
@@ -258,52 +235,6 @@ func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (c
 	}
 }
 
-func (b *Broker) ensureRequestActive(ctx context.Context, req request.ExecRequest) error {
-	if err := ctx.Err(); err != nil {
-		if errors.Is(context.Cause(ctx), ErrDaemonStopped) {
-			return ErrDaemonStopped
-		}
-		if errors.Is(err, context.DeadlineExceeded) && req.Expired(b.now()) {
-			return ErrRequestExpired
-		}
-		return err
-	}
-	if b.stopped() {
-		return ErrDaemonStopped
-	}
-	if req.Expired(b.now()) {
-		return ErrRequestExpired
-	}
-	return nil
-}
-
-func (b *Broker) ensureGrantStillActive(
-	ctx context.Context,
-	req request.ExecRequest,
-	approvalID string,
-	approvalExpiresAt time.Time,
-) error {
-	if err := b.ensureRequestActive(ctx, req); err != nil {
-		return err
-	}
-	return b.reusable.ensureApprovalActive(approvalID, approvalExpiresAt)
-}
-
-func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, ErrApprovalDenied) || errors.Is(err, ErrRequestExpired) {
-		return err
-	}
-	if activeErr := b.ensureRequestActive(ctx, req); activeErr != nil {
-		if errors.Is(activeErr, ErrDaemonStopped) || errors.Is(activeErr, ErrRequestExpired) {
-			return activeErr
-		}
-	}
-	return err
-}
-
 func (b *Broker) markPayloadDelivered(requestID string) error {
 	if b.stopped() {
 		return ErrDaemonStopped
@@ -320,11 +251,11 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 		b.markActivePayloadDelivered(requestID)
 		return nil
 	}
-	if err := b.reusable.ensureApprovalActive(active.approvalID, active.approvalExpiresAt); err != nil {
+	if err := b.grants.reusable.ensureApprovalActive(active.approvalID, active.approvalExpiresAt); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}
-	if err := b.reusable.finishPayloadDelivered(active.approvalID); err != nil {
+	if err := b.grants.reusable.finishPayloadDelivered(active.approvalID); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}
@@ -368,7 +299,7 @@ func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 		return
 	}
 
-	b.reusable.finishPrePayloadFailure(active.approvalID)
+	b.grants.reusable.finishPrePayloadFailure(active.approvalID)
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce string, childPID int) error {
@@ -380,7 +311,7 @@ func (b *Broker) ReportStarted(ctx context.Context, requestID string, nonce stri
 	event := audit.FromExecRequest(audit.EventCommandStarted, requestID, active.req)
 	pid := childPID
 	event.ChildPID = &pid
-	if err := b.recordRequiredAudit(ctx, event); err != nil {
+	if err := b.grants.recordRequiredAudit(ctx, event); err != nil {
 		return err
 	}
 
@@ -402,7 +333,7 @@ func (b *Broker) ReportCompleted(ctx context.Context, requestID string, nonce st
 	event := audit.FromExecRequest(audit.EventCommandCompleted, requestID, active.req)
 	event.ExitCode = new(exitCode)
 	event.Signal = signal
-	if err := b.recordRequiredAudit(ctx, event); err != nil {
+	if err := b.grants.recordRequiredAudit(ctx, event); err != nil {
 		return err
 	}
 
@@ -442,7 +373,7 @@ func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
 	b.mu.Lock()
 	b.active = make(map[string]*activeExec)
 	b.mu.Unlock()
-	b.reusable.clear()
+	b.grants.reusable.clear()
 }
 
 func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event) {
@@ -452,96 +383,6 @@ func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event)
 	_ = b.audit.Record(ctx, event)
 }
 
-func (b *Broker) resolveReusableRefresh(
-	ctx context.Context,
-	req request.ExecRequest,
-) (map[secretIdentity]string, error) {
-	refValues, err := b.resolveUniqueRefs(ctx, "", req)
-	if err != nil {
-		return nil, b.requestError(ctx, req, err)
-	}
-	return refValues, nil
-}
-
-func (b *Broker) recordReusableRefresh(
-	ctx context.Context,
-	req request.ExecRequest,
-	approval policy.ReusableApproval,
-) error {
-	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
-	event.ApprovalID = approval.ID
-	return b.recordRequiredAudit(ctx, event)
-}
-
-func (b *Broker) ensureReusableRequestActive(
-	ctx context.Context,
-	req request.ExecRequest,
-) error {
-	return b.ensureRequestActive(ctx, req)
-}
-
-func (b *Broker) preflightAudit(ctx context.Context) error {
-	if err := b.audit.Preflight(ctx); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
-}
-
-func (b *Broker) freshGrant(
-	ctx context.Context,
-	requestID string,
-	nonce string,
-	req request.ExecRequest,
-) (ExecGrant, error) {
-	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, requestID, req)); err != nil {
-		return ExecGrant{}, err
-	}
-	decision, err := b.approver.ApproveExec(ctx, requestID, nonce, req)
-	if err != nil {
-		if auditErr := b.recordApprovalError(ctx, requestID, req, err); auditErr != nil {
-			return ExecGrant{}, auditErr
-		}
-		return ExecGrant{}, err
-	}
-	if !decision.Approved {
-		if err := b.recordApprovalDenied(ctx, requestID, req); err != nil {
-			return ExecGrant{}, err
-		}
-		return ExecGrant{}, ErrApprovalDenied
-	}
-	if err := b.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
-	}
-	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, requestID, req)); err != nil {
-		return ExecGrant{}, err
-	}
-	if err := b.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
-	}
-
-	refValues, err := b.resolveUniqueRefs(ctx, requestID, req)
-	if err != nil {
-		return ExecGrant{}, b.requestError(ctx, req, err)
-	}
-	if err := b.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
-	}
-	values := fanoutValues(req.Secrets, refValues)
-
-	approvalID, approvalExpiresAt, err := b.reusable.createGrant(req, decision, refValues)
-	if err != nil {
-		return ExecGrant{}, err
-	}
-
-	return ExecGrant{
-		Env:                values,
-		SecretAliases:      aliases(req.Secrets),
-		ApprovalID:         approvalID,
-		reusableMutationID: approvalID,
-		approvalExpiresAt:  approvalExpiresAt,
-	}, nil
-}
-
 func reusableMutationID(mutated bool, approvalID string) string {
 	if !mutated {
 		return ""
@@ -549,152 +390,8 @@ func reusableMutationID(mutated bool, approvalID string) string {
 	return approvalID
 }
 
-func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req request.ExecRequest) (map[secretIdentity]string, error) {
-	secrets := req.Secrets
-	identities := uniqueSecretIdentities(secrets)
-	type result struct {
-		identity secretIdentity
-		value    string
-		err      error
-	}
-
-	if err := b.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventSecretFetchStarted, requestID, req)); err != nil {
-		return nil, err
-	}
-
-	fetchCtx, cancelFetches := context.WithCancel(ctx)
-	defer cancelFetches()
-
-	sem := make(chan struct{}, b.fetchLimit)
-	results := make(chan result, len(identities))
-	for _, identity := range identities {
-		go func(identity secretIdentity) {
-			select {
-			case sem <- struct{}{}:
-			case <-fetchCtx.Done():
-				return
-			}
-			defer func() { <-sem }()
-
-			value, err := b.resolver.Resolve(fetchCtx, identity.ref, identity.account)
-			select {
-			case results <- result{identity: identity, value: value, err: err}:
-			case <-fetchCtx.Done():
-			}
-		}(identity)
-	}
-
-	resolved := make(map[secretIdentity]string, len(identities))
-	pending := make(map[secretIdentity]struct{}, len(identities))
-	for _, identity := range identities {
-		pending[identity] = struct{}{}
-	}
-	for remaining := len(identities); remaining > 0; remaining-- {
-		var got result
-		select {
-		case got = <-results:
-			delete(pending, got.identity)
-		case <-fetchCtx.Done():
-			err := contextCause(fetchCtx)
-			if auditErr := b.recordSecretFetchFailedForIdentities(
-				ctx,
-				requestID,
-				secrets,
-				pendingIdentities(identities, pending),
-				err,
-			); auditErr != nil {
-				return nil, auditErr
-			}
-			return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, err)
-		}
-
-		if got.err != nil {
-			cancelFetches()
-			if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
-				return nil, err
-			}
-			return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, got.err)
-		}
-		resolved[got.identity] = got.value
-	}
-
-	return resolved, nil
-}
-
-func (b *Broker) recordRequiredAudit(ctx context.Context, event audit.Event) error {
-	if err := b.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
-}
-
 func terminalAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-}
-
-func (b *Broker) recordApprovalError(
-	ctx context.Context,
-	requestID string,
-	req request.ExecRequest,
-	err error,
-) error {
-	switch {
-	case errors.Is(err, ErrApprovalDenied):
-		return b.recordApprovalDenied(ctx, requestID, req)
-	case errors.Is(err, ErrRequestExpired):
-		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
-		event.ErrorCode = protocol.ErrorCodeRequestExpired
-		auditCtx, cancel := terminalAuditContext(ctx)
-		defer cancel()
-		return b.recordRequiredAudit(auditCtx, event)
-	default:
-		return nil
-	}
-}
-
-func (b *Broker) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
-	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
-	event.ErrorCode = protocol.ErrorCodeApprovalDenied
-	auditCtx, cancel := terminalAuditContext(ctx)
-	defer cancel()
-	return b.recordRequiredAudit(auditCtx, event)
-}
-
-func (b *Broker) recordSecretFetchFailed(
-	ctx context.Context,
-	requestID string,
-	secrets []request.Secret,
-	identity secretIdentity,
-	err error,
-) error {
-	return b.recordSecretFetchFailureEvent(ctx, requestID, auditRefsForIdentity(secrets, identity), err)
-}
-
-func (b *Broker) recordSecretFetchFailedForIdentities(
-	ctx context.Context,
-	requestID string,
-	secrets []request.Secret,
-	identities []secretIdentity,
-	err error,
-) error {
-	return b.recordSecretFetchFailureEvent(ctx, requestID, auditRefsForIdentities(secrets, identities), err)
-}
-
-func (b *Broker) recordSecretFetchFailureEvent(
-	ctx context.Context,
-	requestID string,
-	refs []audit.SecretRef,
-	err error,
-) error {
-	event := audit.Event{
-		Type:       audit.EventSecretFetchFailed,
-		RequestID:  requestID,
-		SecretRefs: refs,
-		ErrorCode:  secretFetchErrorCode(err),
-	}
-	auditCtx, cancel := terminalAuditContext(ctx)
-	defer cancel()
-	return b.recordRequiredAudit(auditCtx, event)
 }
 
 func secretFetchErrorCode(err error) protocol.ErrorCode {
