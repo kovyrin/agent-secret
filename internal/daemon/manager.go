@@ -88,7 +88,7 @@ func (m Manager) Start(ctx context.Context) error {
 }
 
 func (m Manager) Status(ctx context.Context) (StatusPayload, error) {
-	client, err := Connect(ctx, m.SocketPath)
+	client, err := m.Connect(ctx)
 	if err != nil {
 		return StatusPayload{}, err
 	}
@@ -97,7 +97,7 @@ func (m Manager) Status(ctx context.Context) (StatusPayload, error) {
 }
 
 func (m Manager) Stop(ctx context.Context) error {
-	client, err := Connect(ctx, m.SocketPath)
+	client, err := m.Connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,19 @@ func (m Manager) Stop(ctx context.Context) error {
 }
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
-	return Connect(ctx, m.SocketPath)
+	return ConnectWithPeerValidator(ctx, m.SocketPath, NewTrustedDaemonValidator(m.trustedDaemonPaths()))
+}
+
+func (m Manager) trustedDaemonPaths() []string {
+	daemonPath := m.DaemonPath
+	if daemonPath == "" {
+		var err error
+		daemonPath, err = defaultDaemonPath()
+		if err != nil {
+			return nil
+		}
+	}
+	return trustedDaemonPathsForPath(daemonPath)
 }
 
 func (m Manager) stopped(ctx context.Context) bool {

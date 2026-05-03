@@ -8,6 +8,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -27,11 +28,30 @@ type Client struct {
 }
 
 func Connect(ctx context.Context, path string) (*Client, error) {
+	return ConnectWithPeerValidator(ctx, path, NewTrustedDaemonValidator(DefaultTrustedDaemonPaths()))
+}
+
+func ConnectWithPeerValidator(ctx context.Context, path string, validator DaemonPeerValidator) (*Client, error) {
 	conn, err := Dial(ctx, path)
 	if err != nil {
 		return nil, err
 	}
+	if err := validateDaemonPeer(conn, validator); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
 	return NewClient(conn), nil
+}
+
+func validateDaemonPeer(conn *net.UnixConn, validator DaemonPeerValidator) error {
+	if validator == nil {
+		return nil
+	}
+	info, err := peercred.Inspect(conn)
+	if err != nil {
+		return fmt.Errorf("%w: inspect daemon peer: %w", ErrUntrustedDaemon, err)
+	}
+	return validator.ValidateDaemonPeer(info)
 }
 
 func NewClient(conn *net.UnixConn) *Client {

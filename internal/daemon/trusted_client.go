@@ -18,8 +18,13 @@ type ExecPeerValidator interface {
 }
 
 type TrustedExecutableValidator struct {
+	set trustedExecutableSet
+}
+
+type trustedExecutableSet struct {
 	entries        []trustedExecutable
 	expectedTeamID string
+	err            error
 }
 
 type trustedExecutable struct {
@@ -33,6 +38,12 @@ func NewTrustedExecutableValidator(paths []string) TrustedExecutableValidator {
 }
 
 func newTrustedExecutableValidator(paths []string, expectedTeamID string) TrustedExecutableValidator {
+	return TrustedExecutableValidator{
+		set: newTrustedExecutableSet(paths, expectedTeamID, ErrUntrustedClient),
+	}
+}
+
+func newTrustedExecutableSet(paths []string, expectedTeamID string, err error) trustedExecutableSet {
 	seen := make(map[string]struct{}, len(paths))
 	entries := make([]trustedExecutable, 0, len(paths))
 	for _, path := range paths {
@@ -58,9 +69,10 @@ func newTrustedExecutableValidator(paths []string, expectedTeamID string) Truste
 		}
 		entries = append(entries, entry)
 	}
-	return TrustedExecutableValidator{
+	return trustedExecutableSet{
 		entries:        entries,
 		expectedTeamID: strings.TrimSpace(expectedTeamID),
+		err:            err,
 	}
 }
 
@@ -142,46 +154,56 @@ func containingAppBundlePath(path string) (string, bool) {
 }
 
 func (v TrustedExecutableValidator) ValidateExecPeer(info peercred.Info) error {
+	return v.set.validatePeer(info)
+}
+
+func (v trustedExecutableSet) validatePeer(info peercred.Info) error {
+	if v.err == nil {
+		v.err = ErrUntrustedClient
+	}
 	if info.ExecutablePath == "" {
-		return fmt.Errorf("%w: peer executable path is unavailable", ErrUntrustedClient)
+		return fmt.Errorf("%w: peer executable path is unavailable", v.err)
 	}
 	if len(v.entries) == 0 {
-		return fmt.Errorf("%w: no trusted client executables configured", ErrUntrustedClient)
+		return fmt.Errorf("%w: no trusted executables configured", v.err)
 	}
 	got := comparablePath(info.ExecutablePath)
 	for _, entry := range v.entries {
 		if entry.path != got {
 			continue
 		}
-		if err := entry.validate(got, v.expectedTeamID); err != nil {
+		if err := entry.validate(got, v.expectedTeamID, v.err); err != nil {
 			return err
 		}
 		return nil
 	}
-	return fmt.Errorf("%w: executable %q is not trusted", ErrUntrustedClient, got)
+	return fmt.Errorf("%w: executable %q is not trusted", v.err, got)
 }
 
-func (e trustedExecutable) validate(path string, expectedTeamID string) error {
+func (e trustedExecutable) validate(path string, expectedTeamID string, errKind error) error {
+	if errKind == nil {
+		errKind = ErrUntrustedClient
+	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("%w: stat trusted executable %q: %w", ErrUntrustedClient, path, err)
+		return fmt.Errorf("%w: stat trusted executable %q: %w", errKind, path, err)
 	}
 	if !os.SameFile(info, e.fileInfo) {
-		return fmt.Errorf("%w: executable %q changed since daemon startup", ErrUntrustedClient, path)
+		return fmt.Errorf("%w: executable %q changed since trust snapshot", errKind, path)
 	}
 	if e.bundlePath != "" {
 		currentBundlePath, ok := trustedClientBundlePath(path)
 		if !ok || currentBundlePath != e.bundlePath {
-			return fmt.Errorf("%w: executable %q is outside expected app bundle %q", ErrUntrustedClient, path, e.bundlePath)
+			return fmt.Errorf("%w: executable %q is outside expected app bundle %q", errKind, path, e.bundlePath)
 		}
 	}
 	if expectedTeamID != "" && runtime.GOOS == "darwin" {
 		teamID, err := verifyCodeSignature(path)
 		if err != nil {
-			return fmt.Errorf("%w: verify code signature: %w", ErrUntrustedClient, err)
+			return fmt.Errorf("%w: verify code signature: %w", errKind, err)
 		}
 		if teamID != expectedTeamID {
-			return fmt.Errorf("%w: team id %q != %q", ErrUntrustedClient, teamID, expectedTeamID)
+			return fmt.Errorf("%w: team id %q != %q", errKind, teamID, expectedTeamID)
 		}
 	}
 	return nil
