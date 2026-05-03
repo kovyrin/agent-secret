@@ -40,6 +40,44 @@ require_custom_install_path_guard() {
   die "$label path override requires AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1: $path"
 }
 
+require_tool() {
+  name="$1"
+  path="$2"
+  if [ ! -x "$path" ]; then
+    die "required command not found or not executable: $name ($path)"
+  fi
+}
+
+configure_tool_paths() {
+  tool_curl="/usr/bin/curl"
+  tool_hdiutil="/usr/bin/hdiutil"
+  tool_shasum="/usr/bin/shasum"
+  tool_ditto="/usr/bin/ditto"
+  tool_codesign="/usr/bin/codesign"
+  tool_spctl="/usr/sbin/spctl"
+  tool_xcrun="/usr/bin/xcrun"
+  tool_plistbuddy="/usr/libexec/PlistBuddy"
+
+  if [ -z "$install_tool_dir" ]; then
+    return
+  fi
+
+  case "$install_tool_dir" in
+    /*) ;;
+    *)
+      die "AGENT_SECRET_INSTALL_TOOL_DIR must be absolute: $install_tool_dir"
+      ;;
+  esac
+
+  tool_curl="$install_tool_dir/curl"
+  tool_hdiutil="$install_tool_dir/hdiutil"
+  tool_shasum="$install_tool_dir/shasum"
+  tool_ditto="$install_tool_dir/ditto"
+  tool_codesign="$install_tool_dir/codesign"
+  tool_spctl="$install_tool_dir/spctl"
+  tool_xcrun="$install_tool_dir/xcrun"
+}
+
 is_system_root_alias() {
   case "$1" in
     /etc | /tmp | /var)
@@ -153,6 +191,7 @@ if [ "$install_dev_mode" != "1" ]; then
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_TEAM_ID
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_APP_BUNDLE_ID
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID
+  require_dev_mode_for_env AGENT_SECRET_INSTALL_TOOL_DIR
 else
   repo="${AGENT_SECRET_REPO:-$production_repo}"
   github_url="${AGENT_SECRET_GITHUB_URL:-$production_github_url}"
@@ -172,6 +211,8 @@ local_dmg="${AGENT_SECRET_DMG:-}"
 local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
 allow_custom_install_paths="${AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS:-0}"
+install_tool_dir="${AGENT_SECRET_INSTALL_TOOL_DIR:-}"
+configure_tool_paths
 
 case "$allow_custom_install_paths" in
   0 | 1) ;;
@@ -194,17 +235,11 @@ mounted=0
 
 cleanup() {
   if [ "$mounted" -eq 1 ]; then
-    hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+    "$tool_hdiutil" detach "$mount_dir" >/dev/null 2>&1 || true
   fi
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT HUP INT TERM
-
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    die "required command not found: $1"
-  fi
-}
 
 detect_arch() {
   case "$(uname -m)" in
@@ -221,7 +256,7 @@ detect_arch() {
 }
 
 latest_version() {
-  json="$(curl -fsSL "$github_api/repos/$repo/releases/latest")" || die "could not fetch latest GitHub release"
+  json="$("$tool_curl" -fsSL "$github_api/repos/$repo/releases/latest")" || die "could not fetch latest GitHub release"
   tag="$(printf '%s\n' "$json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
   if [ -z "$tag" ]; then
     die "could not find tag_name in latest release response"
@@ -234,7 +269,7 @@ download_release_file() {
   destination="$2"
   url="$github_url/$repo/releases/download/$version/$file_name"
   echo "Downloading $url"
-  curl -fL --progress-bar "$url" -o "$destination"
+  "$tool_curl" -fL --progress-bar "$url" -o "$destination"
 }
 
 verify_checksum() {
@@ -244,7 +279,7 @@ verify_checksum() {
 
   expected="$(awk -v file="$file_name" '$2 == file { print $1; found = 1; exit } END { if (!found) exit 1 }' "$checksums")" ||
     die "checksums file does not contain $file_name"
-  actual="$(shasum -a 256 "$file_path" | awk '{ print $1 }')"
+  actual="$("$tool_shasum" -a 256 "$file_path" | awk '{ print $1 }')"
   if [ "$actual" != "$expected" ]; then
     die "checksum mismatch for $file_name"
   fi
@@ -258,24 +293,24 @@ verify_dmg_identity() {
     return
   fi
 
-  require_command codesign
-  require_command spctl
-  require_command xcrun
+  require_tool codesign "$tool_codesign"
+  require_tool spctl "$tool_spctl"
+  require_tool xcrun "$tool_xcrun"
 
-  codesign --verify --strict --verbose=2 "$dmg" ||
+  "$tool_codesign" --verify --strict --verbose=2 "$dmg" ||
     die "DMG code signature verification failed"
   verify_team_id "$dmg" "DMG"
-  spctl --assess --type open --context context:primary-signature --verbose "$dmg" ||
+  "$tool_spctl" --assess --type open --context context:primary-signature --verbose "$dmg" ||
     die "DMG Gatekeeper assessment failed"
   if [ "$require_notarization" = "1" ]; then
-    xcrun stapler validate "$dmg" ||
+    "$tool_xcrun" stapler validate "$dmg" ||
       die "DMG notarization ticket validation failed"
   fi
 }
 
 codesign_team_id() {
   path="$1"
-  details="$(codesign -dv --verbose=4 "$path" 2>&1)" ||
+  details="$("$tool_codesign" -dv --verbose=4 "$path" 2>&1)" ||
     die "could not read code signature details for $path"
   printf '%s\n' "$details" |
     awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }' ||
@@ -294,7 +329,7 @@ verify_team_id() {
 plist_value() {
   plist="$1"
   key="$2"
-  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null ||
+  "$tool_plistbuddy" -c "Print :$key" "$plist" 2>/dev/null ||
     die "could not read $key from $plist"
 }
 
@@ -316,7 +351,7 @@ verify_app_identity() {
   daemon_app="$app/Contents/Library/Helpers/AgentSecretDaemon.app"
   cli="$app/Contents/Resources/bin/agent-secret"
 
-  require_command /usr/libexec/PlistBuddy
+  require_tool PlistBuddy "$tool_plistbuddy"
   verify_bundle_identifier "$app" "$expected_app_bundle_id" "Agent Secret.app"
   [ -d "$daemon_app" ] || die "Agent Secret.app is missing the daemon helper app"
   verify_bundle_identifier "$daemon_app" "$expected_daemon_bundle_id" "AgentSecretDaemon.app"
@@ -326,15 +361,15 @@ verify_app_identity() {
     return
   fi
 
-  codesign --verify --deep --strict --verbose=2 "$app" ||
+  "$tool_codesign" --verify --deep --strict --verbose=2 "$app" ||
     die "app code signature verification failed"
   verify_team_id "$app" "Agent Secret.app"
   verify_team_id "$daemon_app" "AgentSecretDaemon.app"
   verify_team_id "$cli" "bundled agent-secret CLI"
-  spctl --assess --type execute --verbose "$app" ||
+  "$tool_spctl" --assess --type execute --verbose "$app" ||
     die "app Gatekeeper assessment failed"
   if [ "$require_notarization" = "1" ]; then
-    xcrun stapler validate "$app" ||
+    "$tool_xcrun" stapler validate "$app" ||
       die "app notarization ticket validation failed"
   fi
 }
@@ -357,10 +392,10 @@ stop_existing_daemon() {
   fi
 }
 
-require_command curl
-require_command hdiutil
-require_command shasum
-require_command ditto
+require_tool curl "$tool_curl"
+require_tool hdiutil "$tool_hdiutil"
+require_tool shasum "$tool_shasum"
+require_tool ditto "$tool_ditto"
 
 arch="$(detect_arch)"
 if [ -z "$version" ] && [ -z "$local_dmg" ]; then
@@ -390,7 +425,7 @@ verify_checksum "$checksums_path" "$artifact_name" "$dmg_path"
 verify_dmg_identity "$dmg_path"
 
 mkdir -p "$mount_dir"
-hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount_dir" "$dmg_path"
+"$tool_hdiutil" attach -quiet -nobrowse -readonly -mountpoint "$mount_dir" "$dmg_path"
 mounted=1
 
 source_app="$mount_dir/Agent Secret.app"
@@ -405,7 +440,7 @@ stop_existing_daemon
 echo "Installing Agent Secret.app into $app_dir"
 mkdir -p "$app_dir"
 rm -rf "$tmp_app"
-ditto "$source_app" "$tmp_app"
+"$tool_ditto" "$source_app" "$tmp_app"
 rm -rf "$target_app"
 mv "$tmp_app" "$target_app"
 

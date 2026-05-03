@@ -79,6 +79,26 @@ printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
 exit "${AGENT_SECRET_INSTALL_TEST_XCRUN_STATUS:-0}"
 SCRIPT
 
+  cat >"$fake_bin/curl" <<'SCRIPT'
+#!/bin/sh
+printf 'curl' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+exec /usr/bin/curl "$@"
+SCRIPT
+
+  cat >"$fake_bin/shasum" <<'SCRIPT'
+#!/bin/sh
+printf 'shasum' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+exec /usr/bin/shasum "$@"
+SCRIPT
+
   cat >"$fake_bin/agent-secret" <<'SCRIPT'
 #!/bin/sh
 printf 'fake-path-agent-secret' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
@@ -185,6 +205,7 @@ exit 64
 SCRIPT
 
   chmod 755 "$fake_bin/codesign" "$fake_bin/spctl" "$fake_bin/xcrun" \
+    "$fake_bin/curl" "$fake_bin/shasum" \
     "$fake_bin/agent-secret" \
     "$fake_bin/ditto" "$fake_bin/hdiutil"
 }
@@ -199,7 +220,9 @@ make_fixture() {
   shasum -a 256 "$artifact" | awk '{ print $1 "  Agent-Secret-test-macos-arm64.dmg" }' >"$checksums"
 }
 
-run_installer() {
+run_installer_with_tool_mode() {
+  local tool_mode="$1"
+  shift
   local name="$1"
   shift
   local run_dir="$tmp_dir/$name"
@@ -223,18 +246,33 @@ SCRIPT
   chmod 755 "$run_dir/bin-dir/agent-secret"
   : >"$log"
 
-  env \
-    PATH="$fake_bin:$PATH" \
-    AGENT_SECRET_DMG="$artifact" \
-    AGENT_SECRET_CHECKSUMS_FILE="$checksums" \
-    AGENT_SECRET_APP_DIR="$run_dir/apps" \
-    AGENT_SECRET_BIN_DIR="$run_dir/bin-dir" \
-    AGENT_SECRET_SKILLS_DIR="$run_dir/skills" \
-    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 \
-    AGENT_SECRET_NO_STOP_DAEMON=1 \
-    AGENT_SECRET_INSTALL_TEST_LOG="$log" \
-    "$@" \
-    "$project_root/install.sh"
+  local env_args=(
+    PATH="$fake_bin:$PATH"
+    AGENT_SECRET_DMG="$artifact"
+    AGENT_SECRET_CHECKSUMS_FILE="$checksums"
+    AGENT_SECRET_APP_DIR="$run_dir/apps"
+    AGENT_SECRET_BIN_DIR="$run_dir/bin-dir"
+    AGENT_SECRET_SKILLS_DIR="$run_dir/skills"
+    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1
+    AGENT_SECRET_NO_STOP_DAEMON=1
+    AGENT_SECRET_INSTALL_TEST_LOG="$log"
+  )
+  if [ "$tool_mode" = "dev" ]; then
+    env_args+=(
+      AGENT_SECRET_INSTALL_DEV_MODE=1
+      AGENT_SECRET_INSTALL_TOOL_DIR="$fake_bin"
+    )
+  fi
+
+  env "${env_args[@]}" "$@" "$project_root/install.sh"
+}
+
+run_installer() {
+  run_installer_with_tool_mode dev "$@"
+}
+
+run_installer_production() {
+  run_installer_with_tool_mode production "$@"
 }
 
 assert_log_contains() {
@@ -296,18 +334,34 @@ test_wrong_daemon_bundle_id_stops_install() {
 }
 
 test_trust_root_overrides_require_dev_mode() {
-  if run_installer expected-team-override AGENT_SECRET_EXPECTED_TEAM_ID=BADTEAM123; then
+  if run_installer_production expected-team-override AGENT_SECRET_EXPECTED_TEAM_ID=BADTEAM123; then
     fail "installer accepted expected Team ID override without dev mode"
   fi
-  if run_installer expected-app-bundle-override \
+  if run_installer_production expected-app-bundle-override \
     AGENT_SECRET_EXPECTED_APP_BUNDLE_ID=com.example.not-agent-secret; then
     fail "installer accepted expected app bundle override without dev mode"
   fi
-  if run_installer github-url-override AGENT_SECRET_GITHUB_URL=https://example.invalid; then
+  if run_installer_production github-url-override AGENT_SECRET_GITHUB_URL=https://example.invalid; then
     fail "installer accepted GitHub URL override without dev mode"
   fi
-  if run_installer unsigned-without-dev-mode AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1; then
+  if run_installer_production unsigned-without-dev-mode AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1; then
     fail "installer accepted unsigned override without dev mode"
+  fi
+  if run_installer_production tool-dir-override AGENT_SECRET_INSTALL_TOOL_DIR="$tmp_dir/tool-dir"; then
+    fail "installer accepted tool directory override without dev mode"
+  fi
+}
+
+test_production_mode_ignores_fake_path_tools() {
+  if run_installer_production production-ignores-path; then
+    fail "production installer unexpectedly accepted the synthetic unsigned DMG"
+  fi
+
+  log="$tmp_dir/production-ignores-path/tools.log"
+  if [ -s "$log" ]; then
+    echo "---- tool log ----" >&2
+    cat "$log" >&2
+    fail "production installer executed fake PATH tools"
   fi
 }
 
@@ -391,6 +445,7 @@ test_wrong_team_id_stops_install
 test_wrong_app_bundle_id_stops_install
 test_wrong_daemon_bundle_id_stops_install
 test_trust_root_overrides_require_dev_mode
+test_production_mode_ignores_fake_path_tools
 test_destination_overrides_require_guard
 test_destination_validation_rejects_bad_paths
 test_destination_validation_rejects_symlinked_parent_dirs
