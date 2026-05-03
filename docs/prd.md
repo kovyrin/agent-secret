@@ -312,7 +312,7 @@ approval request metadata and submits the decision over that socket. Approval IP
 must not use stdin/stdout, argv/env payloads, or temp files.
 
 Only the approver process launched or activated for the request may submit
-`approval.response`. The daemon must verify the socket peer PID and executable
+`approval.decision`. The daemon must verify the socket peer PID and executable
 identity for the approver response and fail closed if it cannot verify that the
 response came from that approver process.
 
@@ -780,9 +780,10 @@ spends one use.
 
 Each approval response must include the request ID and nonce. The daemon must
 reject stale, duplicated, or mismatched responses.
-Approval requests and responses travel over the single per-user daemon socket.
+Approval metadata and decisions travel over the single per-user daemon socket.
 The approver receives metadata only; it never receives secret values.
-The daemon accepts `approval.response` only from the approver process launched or
+The approver fetches metadata with `approval.pending`, and the daemon accepts
+`approval.decision` only from the approver process launched or
 activated for that request, verified by socket peer PID and executable identity.
 Matching request ID and nonce are required but not sufficient by themselves.
 
@@ -913,7 +914,7 @@ MVP requirements:
 - the approver connects to the same daemon socket to receive approval metadata
   and submit decisions; approval IPC must not use stdin/stdout, argv/env, or temp
   files
-- `approval.response` is accepted only from the approver process launched or
+- `approval.decision` is accepted only from the approver process launched or
   activated for that request, verified by socket peer PID and executable identity
 - stale socket cleanup on startup
 - request envelopes with protocol version and message type
@@ -927,8 +928,8 @@ Deferred session socket requirements:
 MVP endpoint types:
 
 - `request.exec`
-- `approval.request`
-- `approval.response`
+- `approval.pending`
+- `approval.decision`
 
 Deferred session endpoint types:
 

@@ -88,7 +88,8 @@ Source: [Product Requirements](prd.md)
   launches or activates the app; the app connects back, fetches pending approval
   metadata, and submits its decision. Approval IPC does not use stdin/stdout,
   argv/env payloads, or temp files.
-- The daemon accepts `approval.response` only from the approver process launched
+- The approver fetches pending metadata with `approval.pending`, and the daemon
+  accepts `approval.decision` only from the approver process launched
   or activated for that request, verified by socket peer PID and executable
   identity. Request ID and nonce are required but not sufficient by themselves.
 - The daemon stays alive until manually stopped or user logout. Normal use is
