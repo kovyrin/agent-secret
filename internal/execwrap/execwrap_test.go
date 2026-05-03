@@ -55,6 +55,52 @@ func (f failingAudit) Record(_ context.Context, event AuditEvent) error {
 	return nil
 }
 
+type signalTestOutput struct {
+	mu              sync.Mutex
+	buffer          bytes.Buffer
+	ready           chan struct{}
+	firstSignal     chan struct{}
+	readyOnce       sync.Once
+	firstSignalOnce sync.Once
+}
+
+func newSignalTestOutput() *signalTestOutput {
+	return &signalTestOutput{
+		ready:       make(chan struct{}),
+		firstSignal: make(chan struct{}),
+	}
+}
+
+func (o *signalTestOutput) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	n, err := o.buffer.Write(p)
+	output := o.buffer.String()
+	o.mu.Unlock()
+
+	if strings.Contains(output, "ready") {
+		o.readyOnce.Do(func() { close(o.ready) })
+	}
+	if strings.Contains(output, "signal-1") {
+		o.firstSignalOnce.Do(func() { close(o.firstSignal) })
+	}
+	return n, err
+}
+
+func (o *signalTestOutput) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buffer.String()
+}
+
+func waitForSignalOutput(output *signalTestOutput, marker <-chan struct{}) (string, bool) {
+	select {
+	case <-marker:
+		return "", true
+	case <-time.After(2 * time.Second):
+		return output.String(), false
+	}
+}
+
 func TestMergeEnvRejectsConflictsByDefault(t *testing.T) {
 	t.Parallel()
 
@@ -346,10 +392,13 @@ func TestRunForwardsInterruptToChild(t *testing.T) {
 	t.Parallel()
 
 	interrupts := make(chan os.Signal, 1)
-	var stdout bytes.Buffer
+	stdout := newSignalTestOutput()
+	readyErr := make(chan string, 1)
 
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		if output, ok := waitForSignalOutput(stdout, stdout.ready); !ok {
+			readyErr <- output
+		}
 		interrupts <- syscall.SIGINT
 	}()
 
@@ -359,10 +408,15 @@ func TestRunForwardsInterruptToChild(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "wait-signal"},
 		Env:                    helperEnv(),
-		Stdout:                 &stdout,
+		Stdout:                 stdout,
 	}, interrupts)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
+	}
+	select {
+	case output := <-readyErr:
+		t.Fatalf("child did not signal readiness before interrupt; stdout=%q", output)
+	default:
 	}
 	if result.ExitCode != 130 {
 		t.Fatalf("exit code = %d, want 130; stdout=%q", result.ExitCode, stdout.String())
@@ -376,12 +430,21 @@ func TestRunForwardsRepeatedInterruptsToChild(t *testing.T) {
 	t.Parallel()
 
 	interrupts := make(chan os.Signal, 2)
-	var stdout bytes.Buffer
+	stdout := newSignalTestOutput()
+	readyErr := make(chan string, 1)
 
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		if output, ok := waitForSignalOutput(stdout, stdout.ready); !ok {
+			readyErr <- output
+			interrupts <- syscall.SIGINT
+			return
+		}
 		interrupts <- syscall.SIGINT
-		time.Sleep(100 * time.Millisecond)
+		if output, ok := waitForSignalOutput(stdout, stdout.firstSignal); !ok {
+			readyErr <- output
+			interrupts <- syscall.SIGINT
+			return
+		}
 		interrupts <- syscall.SIGINT
 	}()
 
@@ -391,10 +454,15 @@ func TestRunForwardsRepeatedInterruptsToChild(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "wait-two-signals"},
 		Env:                    helperEnv(),
-		Stdout:                 &stdout,
+		Stdout:                 stdout,
 	}, interrupts)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
+	}
+	select {
+	case output := <-readyErr:
+		t.Fatalf("child did not signal expected readiness before interrupt; stdout=%q", output)
+	default:
 	}
 	if result.ExitCode != 130 {
 		t.Fatalf("exit code = %d, want 130; stdout=%q", result.ExitCode, stdout.String())
