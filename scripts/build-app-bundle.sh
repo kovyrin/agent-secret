@@ -77,7 +77,20 @@ require_tool() {
   fi
 }
 
-tool_go="${GOROOT:-}/bin/go"
+resolve_path_tool() {
+  local name="$1"
+  local path=""
+
+  path="$(command -v "$name" || true)"
+  if [[ "$path" != /* ]]; then
+    echo "build-app-bundle: required command not found on trusted toolchain PATH: $name" >&2
+    exit 1
+  fi
+  require_tool "$name" "$path"
+  printf '%s\n' "$path"
+}
+
+tool_go="$(resolve_path_tool go)"
 tool_swift="/usr/bin/swift"
 tool_mktemp="/usr/bin/mktemp"
 tool_rm="/bin/rm"
@@ -88,7 +101,6 @@ tool_sips="/usr/bin/sips"
 tool_iconutil="/usr/bin/iconutil"
 tool_codesign="/usr/bin/codesign"
 
-require_tool go "$tool_go"
 require_tool swift "$tool_swift"
 require_tool mktemp "$tool_mktemp"
 require_tool rm "$tool_rm"
@@ -98,6 +110,21 @@ require_tool cp "$tool_cp"
 require_tool sips "$tool_sips"
 require_tool iconutil "$tool_iconutil"
 require_tool codesign "$tool_codesign"
+
+run_go() (
+  unset GOROOT
+  "$tool_go" "$@"
+)
+
+selected_goroot="$(run_go env GOROOT)" || {
+  echo "build-app-bundle: could not query selected Go toolchain GOROOT" >&2
+  exit 1
+}
+if [[ "${GOROOT:-}" != "" && "$GOROOT" != "$selected_goroot" ]]; then
+  echo "build-app-bundle: inherited GOROOT does not match selected Go toolchain" >&2
+  echo "build-app-bundle: run from the trusted mise context without overriding GOROOT" >&2
+  exit 1
+fi
 
 tmp_dir="$("$tool_mktemp" -d "${TMPDIR:-/tmp}/agent-secret-bundle.XXXXXX")"
 cleanup() {
@@ -224,8 +251,8 @@ if [[ "$codesign_identity" != "-" ]]; then
   }
 fi
 go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultDeveloperIDTeamID=$approver_team_id")
-"$tool_go" build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
-"$tool_go" build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
+run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
+run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
 
 echo "Building Swift app executable..."
 cd "$project_root/approver"
