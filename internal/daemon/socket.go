@@ -58,12 +58,18 @@ func ValidateSocketDirectory(path string) error {
 }
 
 func prepareDefaultSocketDirectory(dir string) error {
+	if err := rejectSocketDirectoryAncestry(dir); err != nil {
+		return err
+	}
 	if err := rejectSocketDirectorySymlinkOrOwner(dir); err != nil {
 		return err
 	}
 	//nolint:gosec // G703: dir is the managed default socket directory under Application Support.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
+	}
+	if err := rejectSocketDirectoryAncestry(dir); err != nil {
+		return err
 	}
 	if err := rejectSocketDirectorySymlinkOrOwner(dir); err != nil {
 		return err
@@ -76,6 +82,9 @@ func prepareDefaultSocketDirectory(dir string) error {
 }
 
 func prepareCustomSocketDirectory(dir string) error {
+	if err := rejectSocketDirectoryAncestry(dir); err != nil {
+		return err
+	}
 	//nolint:gosec // G703: custom mkdir creates missing private parents but existing parents are validated, not chmodded.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
@@ -84,6 +93,9 @@ func prepareCustomSocketDirectory(dir string) error {
 }
 
 func rejectInsecureSocketDirectory(dir string) error {
+	if err := rejectSocketDirectoryAncestry(dir); err != nil {
+		return err
+	}
 	info, err := socketDirectoryInfo(dir)
 	if err != nil {
 		return err
@@ -119,6 +131,48 @@ func socketDirectoryInfo(dir string) (os.FileInfo, error) {
 		return nil, fmt.Errorf("%w: %s is owned by uid %d", ErrInsecureSocketDirectory, dir, stat.Uid)
 	}
 	return info, nil
+}
+
+func rejectSocketDirectoryAncestry(dir string) error {
+	cleanDir := filepath.Clean(dir)
+	for current := cleanDir; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("stat socket directory ancestor: %w", err)
+		}
+		if err == nil {
+			if err := rejectSocketDirectoryAncestorInfo(cleanDir, current, info); err != nil {
+				return err
+			}
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return nil
+		}
+	}
+}
+
+func rejectSocketDirectoryAncestorInfo(cleanDir, current string, info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		if isAllowedSocketRootAlias(current) {
+			return nil
+		}
+		return fmt.Errorf("%w: %s contains symlink ancestor %s", ErrInsecureSocketDirectory, cleanDir, current)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s contains non-directory ancestor %s", ErrInsecureSocketDirectory, cleanDir, current)
+	}
+	return nil
+}
+
+func isAllowedSocketRootAlias(path string) bool {
+	switch path {
+	case "/etc", "/tmp", "/var":
+		return true
+	default:
+		return false
+	}
 }
 
 func Dial(ctx context.Context, path string) (*net.UnixConn, error) {

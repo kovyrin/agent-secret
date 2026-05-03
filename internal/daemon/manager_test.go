@@ -167,6 +167,32 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 	}
 }
 
+func TestManagerRejectsSymlinkedCustomSocketAncestorBeforeMkdirAll(t *testing.T) {
+	t.Parallel()
+
+	target := shortTempDir(t, "agent-secret-manager-target-")
+	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: manager socket target is private in this test.
+		t.Fatalf("chmod target: %v", err)
+	}
+	link := filepath.Join(shortTempDir(t, "agent-secret-manager-parent-"), "socket-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink socket ancestor: %v", err)
+	}
+	manager := Manager{
+		SocketPath:     filepath.Join(link, "nested", "agent-secretd.sock"),
+		DaemonPath:     filepath.Join(t.TempDir(), "missing-agent-secretd"),
+		StartupTimeout: time.Millisecond,
+	}
+
+	err := manager.Start(context.Background())
+	if !errors.Is(err, ErrInsecureSocketDirectory) {
+		t.Fatalf("expected insecure socket directory error, got %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(target, "nested")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("manager followed symlinked socket ancestor: %v", err)
+	}
+}
+
 func TestManagerStartRejectsUntrustedLiveSocket(t *testing.T) {
 	t.Parallel()
 
