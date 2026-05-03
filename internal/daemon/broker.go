@@ -645,11 +645,8 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 
 	sem := make(chan struct{}, b.fetchLimit)
 	results := make(chan result, len(identities))
-	var wg sync.WaitGroup
 	for _, identity := range identities {
-		wg.Add(1)
 		go func(identity secretIdentity) {
-			defer wg.Done()
 			select {
 			case sem <- struct{}{}:
 			case <-fetchCtx.Done():
@@ -658,38 +655,45 @@ func (b *Broker) resolveUniqueRefs(ctx context.Context, requestID string, req re
 			defer func() { <-sem }()
 
 			value, err := b.resolver.Resolve(fetchCtx, identity.ref, identity.account)
-			results <- result{identity: identity, value: value, err: err}
+			select {
+			case results <- result{identity: identity, value: value, err: err}:
+			case <-fetchCtx.Done():
+			}
 		}(identity)
 	}
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
 
 	resolved := make(map[secretIdentity]string, len(identities))
-	var firstErr error
-	for got := range results {
-		if got.err != nil {
-			if firstErr == nil {
-				cancelFetches()
-				if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
-					firstErr = err
-				} else {
-					firstErr = fmt.Errorf("resolve approved ref: %w", got.err)
-				}
+	pending := make(map[secretIdentity]struct{}, len(identities))
+	for _, identity := range identities {
+		pending[identity] = struct{}{}
+	}
+	for remaining := len(identities); remaining > 0; remaining-- {
+		var got result
+		select {
+		case got = <-results:
+			delete(pending, got.identity)
+		case <-fetchCtx.Done():
+			err := contextCause(fetchCtx)
+			if auditErr := b.recordSecretFetchFailedForIdentities(
+				ctx,
+				requestID,
+				secrets,
+				pendingIdentities(identities, pending),
+				err,
+			); auditErr != nil {
+				return nil, auditErr
 			}
-			continue
+			return nil, fmt.Errorf("resolve approved ref: %w", err)
 		}
-		if firstErr == nil {
-			resolved[got.identity] = got.value
-		}
-	}
 
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	if err := fetchCtx.Err(); err != nil {
-		return nil, fmt.Errorf("resolve approved ref: %w", err)
+		if got.err != nil {
+			cancelFetches()
+			if err := b.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
+				return nil, err
+			}
+			return nil, fmt.Errorf("resolve approved ref: %w", got.err)
+		}
+		resolved[got.identity] = got.value
 	}
 
 	return resolved, nil
@@ -777,10 +781,29 @@ func (b *Broker) recordSecretFetchFailed(
 	identity secretIdentity,
 	err error,
 ) error {
+	return b.recordSecretFetchFailureEvent(ctx, requestID, auditRefsForIdentity(secrets, identity), err)
+}
+
+func (b *Broker) recordSecretFetchFailedForIdentities(
+	ctx context.Context,
+	requestID string,
+	secrets []request.Secret,
+	identities []secretIdentity,
+	err error,
+) error {
+	return b.recordSecretFetchFailureEvent(ctx, requestID, auditRefsForIdentities(secrets, identities), err)
+}
+
+func (b *Broker) recordSecretFetchFailureEvent(
+	ctx context.Context,
+	requestID string,
+	refs []audit.SecretRef,
+	err error,
+) error {
 	event := audit.Event{
 		Type:       audit.EventSecretFetchFailed,
 		RequestID:  requestID,
-		SecretRefs: auditRefsForIdentity(secrets, identity),
+		SecretRefs: refs,
 		ErrorCode:  secretFetchErrorCode(err),
 	}
 	auditCtx, cancel := terminalAuditContext(ctx)
@@ -801,6 +824,13 @@ func secretFetchErrorCode(err error) string {
 	return "resolve_failed"
 }
 
+func contextCause(ctx context.Context) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return ctx.Err()
+}
+
 func auditRefsForIdentity(secrets []request.Secret, identity secretIdentity) []audit.SecretRef {
 	refs := []audit.SecretRef{}
 	for _, secret := range secrets {
@@ -817,6 +847,44 @@ func auditRefsForIdentity(secrets []request.Secret, identity secretIdentity) []a
 		return []audit.SecretRef{{Ref: identity.ref, Account: identity.account}}
 	}
 	return refs
+}
+
+func auditRefsForIdentities(secrets []request.Secret, identities []secretIdentity) []audit.SecretRef {
+	refs := []audit.SecretRef{}
+	seen := make(map[secretIdentity]struct{}, len(identities))
+	for _, identity := range identities {
+		seen[identity] = struct{}{}
+	}
+	matched := make(map[secretIdentity]struct{}, len(identities))
+	for _, secret := range secrets {
+		identity := secretIdentity{ref: secret.Ref.Raw, account: secret.Account}
+		if _, ok := seen[identity]; !ok {
+			continue
+		}
+		matched[identity] = struct{}{}
+		refs = append(refs, audit.SecretRef{
+			Alias:   secret.Alias,
+			Ref:     secret.Ref.Raw,
+			Account: secret.Account,
+		})
+	}
+	for _, identity := range identities {
+		if _, ok := matched[identity]; ok {
+			continue
+		}
+		refs = append(refs, audit.SecretRef{Ref: identity.ref, Account: identity.account})
+	}
+	return refs
+}
+
+func pendingIdentities(ordered []secretIdentity, pending map[secretIdentity]struct{}) []secretIdentity {
+	identities := make([]secretIdentity, 0, len(pending))
+	for _, identity := range ordered {
+		if _, ok := pending[identity]; ok {
+			identities = append(identities, identity)
+		}
+	}
+	return identities
 }
 
 func (b *Broker) cacheResolvedValues(
