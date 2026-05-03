@@ -76,12 +76,24 @@ require_command() {
   fi
 }
 
+require_tool() {
+  local name="$1"
+  local path="$2"
+
+  if [[ ! -x "$path" ]]; then
+    echo "build-app-bundle: required command not found or not executable: $name ($path)" >&2
+    exit 1
+  fi
+}
+
+tool_codesign="/usr/bin/codesign"
+
 require_command go
 require_command swift
 require_command install
 require_command iconutil
 require_command sips
-require_command codesign
+require_tool codesign "$tool_codesign"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-bundle.XXXXXX")"
 cleanup() {
@@ -136,7 +148,7 @@ sign_path() {
   fi
 
   args+=("$path")
-  codesign "${args[@]}" >/dev/null
+  "$tool_codesign" "${args[@]}" >/dev/null
 }
 
 codesign_team_id() {
