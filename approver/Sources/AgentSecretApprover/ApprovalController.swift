@@ -2,8 +2,6 @@ import Foundation
 
 /// Runs the approval fetch, presentation, and submission flow.
 public final class ApprovalController {
-    private static let reusableDecisionUses: Int = 3
-
     private let client: ApprovalDaemonClientWorker
     private let presenter: ApprovalPresenter
     private let logger: ApprovalLogger
@@ -28,7 +26,7 @@ public final class ApprovalController {
         logger.record("approval_request_loaded", requestID: request.requestID)
 
         let decisionKind: ApprovalDecisionKind = presenter.decide(for: request)
-        let reusableUses: Int? = decisionKind == .approveReusable ? Self.reusableDecisionUses : nil
+        let reusableUses: Int? = decisionKind == .approveReusable ? request.reusableUses : nil
         let decision = ApprovalDecision(
             requestID: request.requestID,
             nonce: request.nonce,

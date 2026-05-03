@@ -2,7 +2,6 @@ import AgentSecretApprover
 import Foundation
 
 private let kArguments: [String] = Array(CommandLine.arguments.dropFirst())
-private let kReusableUseLimit: Int = 3
 private let kSampleExpiration: TimeInterval = 1_800_000_000
 private let kOptions = try options(from: kArguments)
 
@@ -20,7 +19,7 @@ try assert(kDecision.requestID == kRequest.requestID, "decision request ID misma
 try assert(kDecision.nonce == kRequest.nonce, "decision nonce mismatch")
 try assert(kDecision.decision == kOptions.decision, "decision kind mismatch")
 if kOptions.decision == .approveReusable {
-    try assert(kDecision.reusableUses == kReusableUseLimit, "reusable use limit mismatch")
+    try assert(kDecision.reusableUses == kRequest.reusableUses, "reusable use limit mismatch")
 } else {
     try assert(kDecision.reusableUses == nil, "non-reusable decision carried use limit")
 }

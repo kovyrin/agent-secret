@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -219,6 +220,9 @@ func (a *SocketApprover) SubmitDecision(
 			a.complete(job, approvalResult{err: ErrRequestExpired})
 			return nil
 		}
+		if err := validateReusableDecisionUses(decision, job.payload.ReusableUses); err != nil {
+			return err
+		}
 		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true, Reusable: true}})
 	case "deny":
 		a.complete(job, approvalResult{err: ErrApprovalDenied})
@@ -226,6 +230,24 @@ func (a *SocketApprover) SubmitDecision(
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 	default:
 		return fmt.Errorf("%w: invalid approval decision %q", ErrMalformedEnvelope, decision.Decision)
+	}
+	return nil
+}
+
+func validateReusableDecisionUses(decision ApprovalDecisionPayload, expected int) error {
+	if expected <= 0 {
+		return fmt.Errorf("%w: invalid pending reusable use count %d", ErrMalformedEnvelope, expected)
+	}
+	if decision.ReusableUses == nil {
+		return fmt.Errorf("%w: missing reusable use count", ErrMalformedEnvelope)
+	}
+	if *decision.ReusableUses != expected {
+		return fmt.Errorf(
+			"%w: reusable use count %d does not match pending request count %d",
+			ErrMalformedEnvelope,
+			*decision.ReusableUses,
+			expected,
+		)
 	}
 	return nil
 }
@@ -364,7 +386,7 @@ func approvalPayload(requestID string, nonce string, req request.ExecRequest) Ap
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      slices.Clone(req.OverriddenAliases),
 		AllowMutableExecutable: req.AllowMutableExecutable,
-		ReusableUses:           3,
+		ReusableUses:           policy.DefaultReusableUses,
 	}
 }
 
