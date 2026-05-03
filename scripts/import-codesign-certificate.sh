@@ -24,14 +24,19 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-require_command() {
+require_tool() {
   local name="$1"
+  local path="$2"
 
-  if ! command -v "$name" >/dev/null 2>&1; then
-    echo "import-codesign-certificate: required command not found: $name" >&2
+  if [[ ! -x "$path" ]]; then
+    echo "import-codesign-certificate: required command not found or not executable: $name ($path)" >&2
     exit 1
   fi
 }
+
+tool_base64="/usr/bin/base64"
+tool_security="/usr/bin/security"
+tool_uuidgen="/usr/bin/uuidgen"
 
 trim_keychain_path() {
   local path="$1"
@@ -52,14 +57,14 @@ append_keychain_to_search_list() {
     if [[ "$keychain" != "" && "$keychain" != "$keychain_path" ]]; then
       existing_keychains+=("$keychain")
     fi
-  done < <(security list-keychains -d user)
+  done < <("$tool_security" list-keychains -d user)
 
-  security list-keychains -d user -s "$keychain_path" "${existing_keychains[@]}"
+  "$tool_security" list-keychains -d user -s "$keychain_path" "${existing_keychains[@]}"
 }
 
-require_command base64
-require_command security
-require_command uuidgen
+require_tool base64 "$tool_base64"
+require_tool security "$tool_security"
+require_tool uuidgen "$tool_uuidgen"
 
 cert_base64="${AGENT_SECRET_CODESIGN_CERT_P12_BASE64:-}"
 cert_path="${AGENT_SECRET_CODESIGN_CERT_P12_PATH:-}"
@@ -82,7 +87,7 @@ if [[ "$keychain_path" == "" ]]; then
 fi
 
 if [[ "$keychain_password" == "" ]]; then
-  keychain_password="$(uuidgen)"
+  keychain_password="$("$tool_uuidgen")"
 fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-codesign.XXXXXX")"
@@ -93,7 +98,7 @@ trap cleanup EXIT
 
 if [[ "$cert_base64" != "" ]]; then
   cert_path="$tmp_dir/developer-id.p12"
-  printf '%s' "$cert_base64" | base64 --decode >"$cert_path"
+  printf '%s' "$cert_base64" | "$tool_base64" --decode >"$cert_path"
 fi
 
 if [[ ! -f "$cert_path" ]]; then
@@ -102,15 +107,15 @@ if [[ ! -f "$cert_path" ]]; then
 fi
 
 rm -f "$keychain_path"
-security create-keychain -p "$keychain_password" "$keychain_path"
-security set-keychain-settings -lut 21600 "$keychain_path"
-security unlock-keychain -p "$keychain_password" "$keychain_path"
-security import "$cert_path" \
+"$tool_security" create-keychain -p "$keychain_password" "$keychain_path"
+"$tool_security" set-keychain-settings -lut 21600 "$keychain_path"
+"$tool_security" unlock-keychain -p "$keychain_password" "$keychain_path"
+"$tool_security" import "$cert_path" \
   -k "$keychain_path" \
   -P "$cert_password" \
   -T /usr/bin/codesign \
   -T /usr/bin/productsign >/dev/null
-security set-key-partition-list \
+"$tool_security" set-key-partition-list \
   -S apple-tool:,apple:,codesign: \
   -s \
   -k "$keychain_password" \
@@ -118,4 +123,4 @@ security set-key-partition-list \
 append_keychain_to_search_list "$keychain_path"
 
 echo "Imported Developer ID identities:"
-security find-identity -v -p codesigning "$keychain_path"
+"$tool_security" find-identity -v -p codesigning "$keychain_path"

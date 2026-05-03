@@ -109,14 +109,21 @@ if [[ "$require_production_signing" == "1" ]]; then
   require_production_release_signing
 fi
 
-require_command() {
+require_tool() {
   local name="$1"
+  local path="$2"
 
-  if ! command -v "$name" >/dev/null 2>&1; then
-    echo "build-release: required command not found: $name" >&2
+  if [[ ! -x "$path" ]]; then
+    echo "build-release: required command not found or not executable: $name ($path)" >&2
     exit 1
   fi
 }
+
+tool_hdiutil="/usr/bin/hdiutil"
+tool_ditto="/usr/bin/ditto"
+tool_shasum="/usr/bin/shasum"
+tool_codesign="/usr/bin/codesign"
+tool_xcrun="/usr/bin/xcrun"
 
 case "$(uname -m)" in
   arm64)
@@ -131,14 +138,14 @@ case "$(uname -m)" in
     ;;
 esac
 
-require_command hdiutil
-require_command ditto
-require_command shasum
+require_tool hdiutil "$tool_hdiutil"
+require_tool ditto "$tool_ditto"
+require_tool shasum "$tool_shasum"
 if [[ "$codesign_identity" != "-" ]]; then
-  require_command codesign
+  require_tool codesign "$tool_codesign"
 fi
 if [[ "$notarize" == "1" ]]; then
-  require_command xcrun
+  require_tool xcrun "$tool_xcrun"
 fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release.XXXXXX")"
@@ -178,7 +185,7 @@ submit_for_notarization() {
     notary_key_path="$(prepare_notary_key)"
   fi
 
-  xcrun notarytool submit "$path" \
+  "$tool_xcrun" notarytool submit "$path" \
     --key "$notary_key_path" \
     --key-id "$notary_key_id" \
     --issuer "$notary_issuer_id" \
@@ -198,25 +205,25 @@ if [[ "$notarize" == "1" ]]; then
   app_zip="$tmp_dir/AgentSecretApp.zip"
   (
     cd "$build_dir"
-    ditto -c -k --keepParent "Agent Secret.app" "$app_zip"
+    "$tool_ditto" -c -k --keepParent "Agent Secret.app" "$app_zip"
   )
   submit_for_notarization "$app_zip"
 
   echo "Stapling notarization ticket to app bundle..."
-  xcrun stapler staple "$build_dir/Agent Secret.app"
-  xcrun stapler validate "$build_dir/Agent Secret.app"
+  "$tool_xcrun" stapler staple "$build_dir/Agent Secret.app"
+  "$tool_xcrun" stapler validate "$build_dir/Agent Secret.app"
 fi
 
 echo "Preparing DMG contents..."
 rm -rf "$dmg_root"
 mkdir -p "$dmg_root"
-ditto "$build_dir/Agent Secret.app" "$dmg_root/Agent Secret.app"
+"$tool_ditto" "$build_dir/Agent Secret.app" "$dmg_root/Agent Secret.app"
 ln -s /Applications "$dmg_root/Applications"
 
 echo "Creating $dmg_path..."
 mkdir -p "$output_dir"
 rm -f "$dmg_path"
-hdiutil create \
+"$tool_hdiutil" create \
   -volname "Agent Secret $version" \
   -srcfolder "$dmg_root" \
   -format UDZO \
@@ -224,11 +231,11 @@ hdiutil create \
   "$dmg_path" >/dev/null
 
 echo "Verifying DMG..."
-hdiutil verify "$dmg_path" >/dev/null
+"$tool_hdiutil" verify "$dmg_path" >/dev/null
 
 if [[ "$codesign_identity" != "-" ]]; then
   echo "Signing DMG with $codesign_identity..."
-  codesign --force --sign "$codesign_identity" --timestamp "$dmg_path" >/dev/null
+  "$tool_codesign" --force --sign "$codesign_identity" --timestamp "$dmg_path" >/dev/null
 fi
 
 if [[ "$notarize" == "1" ]]; then
@@ -236,14 +243,14 @@ if [[ "$notarize" == "1" ]]; then
   submit_for_notarization "$dmg_path"
 
   echo "Stapling notarization ticket..."
-  xcrun stapler staple "$dmg_path"
-  xcrun stapler validate "$dmg_path"
+  "$tool_xcrun" stapler staple "$dmg_path"
+  "$tool_xcrun" stapler validate "$dmg_path"
 fi
 
 echo "Writing checksums..."
 (
   cd "$output_dir"
-  shasum -a 256 "$artifact_name" >"$checksums_path"
+  "$tool_shasum" -a 256 "$artifact_name" >"$checksums_path"
 )
 
 echo "$dmg_path"
