@@ -215,6 +215,7 @@ func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
 	}
+	req.Secrets[0].Account = "Work"
 	if err := req.ValidateForDaemon(); err != nil {
 		t.Fatalf("ValidateForDaemon returned error: %v", err)
 	}
@@ -229,6 +230,7 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
 	}
+	req.Secrets[0].Account = "Work"
 
 	tests := []struct {
 		name   string
@@ -247,6 +249,9 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 			r.MaxReads = 1
 		}, want: ErrInvalidDeliveryMode},
 		{name: "tampered ref metadata", mutate: func(r *ExecRequest) { r.Secrets[0].Ref.Field = "other" }, want: ErrInvalidReference},
+		{name: "empty account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = "" }, want: ErrInvalidReference},
+		{name: "blank account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = " \t " }, want: ErrInvalidReference},
+		{name: "unnormalized account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = " Work " }, want: ErrInvalidReference},
 		{name: "duplicate alias", mutate: func(r *ExecRequest) {
 			r.Secrets = append(r.Secrets, r.Secrets[0])
 		}, want: ErrInvalidAlias},

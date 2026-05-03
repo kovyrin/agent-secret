@@ -43,12 +43,12 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	aud := &memoryAudit{}
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
 	defer cleanup()
 
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	payload, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req)
 	if err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
@@ -88,12 +88,12 @@ func TestServerRebasesExecRequestTimeToDaemonClock(t *testing.T) {
 	}
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: approver,
-		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
 	defer cleanup()
 
-	req := testExecRequestAt(t, daemonNow.Add(24*time.Hour), []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req := testExecRequestAt(t, daemonNow.Add(24*time.Hour), []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.TTL = 10 * time.Minute
 	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
@@ -120,7 +120,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
 	path, stop := startRawServerWithOptions(t, ServerOptions{
@@ -139,7 +139,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	defer func() { _ = client.Close() }()
 
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
-		{Alias: "TOKEN", Ref: ref},
+		{Alias: "TOKEN", Ref: ref, Account: "Work"},
 	})); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey("op://Example/Item/token", "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
 	defer cleanup()
@@ -174,7 +174,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 		t.Fatal("unexpectedly connected to unrelated test socket path")
 	}
 
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
@@ -341,13 +341,13 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	aud := &memoryAudit{}
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
 	defer cleanup()
 
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
-		{Alias: "TOKEN", Ref: ref},
+		{Alias: "TOKEN", Ref: ref, Account: "Work"},
 	})); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
 	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
-	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
 	path, stop := startRawTestServer(t, BrokerOptions{
 		Approver: approver,
 		Resolver: resolver,
@@ -385,7 +385,7 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	}
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 
 	writeRawExecRequest(t, encoder, "req_1", "nonce_1", req)
 	first := readRawEnvelope(t, decoder)
@@ -431,13 +431,13 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 	aud := &memoryAudit{}
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{ref: canarySecretValue}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): canarySecretValue}},
 		Audit:    aud,
 	})
 	defer cleanup()
 
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
-		{Alias: "TOKEN", Ref: ref},
+		{Alias: "TOKEN", Ref: ref, Account: "Work"},
 	})); err != nil {
 		t.Fatalf("RequestExec returned error: %v", err)
 	}
@@ -772,8 +772,32 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	})
 	defer cleanup()
 
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	req.Reason = "  fabricated metadata  "
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
+		t.Fatalf("expected bad_request protocol error, got %v", err)
+	}
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+}
+
+func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
+	t.Parallel()
+
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
+	client, cleanup := startTestServer(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
 		t.Fatalf("expected bad_request protocol error, got %v", err)
 	}
@@ -797,7 +821,7 @@ func TestServerRejectsSessionSocketDeliveryBeforeApproval(t *testing.T) {
 	})
 	defer cleanup()
 
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	req.DeliveryMode = request.DeliverySessionSocket
 	req.MaxReads = 1
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "bad_request") {
@@ -837,7 +861,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 	client := NewClient(conn)
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); !IsProtocolError(err, "untrusted_client") {
 		t.Fatalf("expected untrusted_client protocol error, got %v", err)
 	}
@@ -878,7 +902,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 	}
 	defer func() { _ = conn.Close() }()
 
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
 	payload, err := marshalPayload(req)
 	if err != nil {
 		t.Fatalf("marshal exec request: %v", err)
