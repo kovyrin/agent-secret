@@ -1,6 +1,6 @@
 import Foundation
 
-/// Decision payload submitted from the approver back to the daemon.
+/// Encodes only daemon decision metadata; reusable use limits are validated before submission.
 public struct ApprovalDecision: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case requestID

@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-/// Approval logger backed by Apple Unified Logging.
+/// Writes value-free approval diagnostics through Apple Unified Logging.
 public struct UnifiedApprovalLogger: ApprovalLogger {
     public let subsystem: String
     public let category: String

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Presents an approval request and returns the operator decision.
+/// Main-actor decision boundary for presenters that may open native UI.
 @preconcurrency
 @MainActor
 public protocol ApprovalPresenter {

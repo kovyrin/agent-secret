@@ -1,6 +1,6 @@
 import Foundation
 
-/// Requested secrets grouped by their backing vault or account-qualified vault.
+/// Keeps account-qualified vault grouping separate when vault names overlap.
 public struct SecretVaultGroupViewModel: Equatable, Sendable {
     public let vaultName: String
     public let secrets: [RequestedSecretRowViewModel]

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Deterministic presenter used by tests and smoke runs.
 public final class StaticDecisionPresenter: ApprovalPresenter {
     private let decision: ApprovalDecisionKind
 

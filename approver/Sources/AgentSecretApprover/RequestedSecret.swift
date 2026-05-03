@@ -1,6 +1,6 @@
 import Foundation
 
-/// One approved environment alias and its backing 1Password reference.
+/// Stores references only; raw secret values must not enter approver UI models.
 public struct RequestedSecret: Codable, Equatable, Sendable {
     public var alias: String
     public var ref: String
