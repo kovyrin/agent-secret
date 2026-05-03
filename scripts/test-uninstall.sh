@@ -69,6 +69,73 @@ SCRIPT
   chmod 755 "$app/Contents/Resources/bin/agent-secret"
 }
 
+make_teamless_signed_app() {
+  local app="$1"
+  local daemon_app="$app/Contents/Library/Helpers/AgentSecretDaemon.app"
+  local app_executable="$app/Contents/MacOS/Agent Secret"
+  local daemon_executable="$daemon_app/Contents/MacOS/AgentSecretDaemon"
+  local cli="$app/Contents/Resources/bin/agent-secret"
+
+  mkdir -p \
+    "$app/Contents/MacOS" \
+    "$app/Contents/Resources/bin" \
+    "$daemon_app/Contents/MacOS"
+
+  cat >"$app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.kovyrin.agent-secret</string>
+  <key>CFBundleExecutable</key>
+  <string>Agent Secret</string>
+</dict>
+</plist>
+PLIST
+
+  cat >"$daemon_app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.kovyrin.agent-secret.daemon</string>
+  <key>CFBundleExecutable</key>
+  <string>AgentSecretDaemon</string>
+</dict>
+</plist>
+PLIST
+
+  cat >"$app_executable" <<'SCRIPT'
+#!/bin/sh
+exit 0
+SCRIPT
+
+  cat >"$daemon_executable" <<'SCRIPT'
+#!/bin/sh
+exit 0
+SCRIPT
+
+  cat >"$cli" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-bundled-agent-secret' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+exit 0
+SCRIPT
+
+  chmod 755 "$app_executable" "$daemon_executable" "$cli"
+  /usr/bin/codesign --force --sign - "$cli" >/dev/null 2>&1 ||
+    fail "could not ad-hoc sign bundled test CLI"
+  /usr/bin/codesign --force --sign - "$daemon_app" >/dev/null 2>&1 ||
+    fail "could not ad-hoc sign daemon test app"
+  /usr/bin/codesign --force --sign - "$app" >/dev/null 2>&1 ||
+    fail "could not ad-hoc sign test app"
+}
+
 custom_guard_rejects_override() {
   local run_dir="$tmp_dir/custom-guard"
   local support="$run_dir/important/agent-secret"
@@ -473,6 +540,59 @@ SCRIPT
   fi
 }
 
+fake_path_awk_is_not_used_for_trust_checks() {
+  local run_dir="$tmp_dir/fake-path-awk"
+  local home="$run_dir/home"
+  local app_dir="$run_dir/apps"
+  local app="$app_dir/Agent Secret.app"
+  local bin_dir="$run_dir/bin"
+  local skills_dir="$run_dir/skills"
+  local support="$run_dir/support/agent-secret"
+  local path_bin="$run_dir/path"
+  local log="$run_dir/uninstall.log"
+
+  mkdir -p "$home" "$bin_dir" "$skills_dir" "$support" "$path_bin"
+  : >"$log"
+  make_teamless_signed_app "$app"
+
+  cat >"$path_bin/awk" <<'SCRIPT'
+#!/bin/sh
+printf 'fake-path-awk' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_UNINSTALL_TEST_LOG"
+while IFS= read -r _line; do
+  :
+done
+printf 'B6L7QLWTZW\n'
+exit 0
+SCRIPT
+  chmod 755 "$path_bin/awk"
+
+  run_uninstall \
+    fake-path-awk \
+    HOME="$home" \
+    PATH="$path_bin:$PATH" \
+    AGENT_SECRET_NO_STOP_DAEMON=0 \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_APP_DIR="$app_dir" \
+    AGENT_SECRET_BIN_DIR="$bin_dir" \
+    AGENT_SECRET_SKILLS_DIR="$skills_dir" \
+    AGENT_SECRET_SUPPORT_DIR="$support" \
+    AGENT_SECRET_UNINSTALL_TEST_LOG="$log"
+
+  if grep -F "fake-path-awk" "$log" >/dev/null; then
+    fail "uninstaller used awk from PATH for trust checks"
+  fi
+  if grep -F "fake-bundled-agent-secret daemon stop" "$log" >/dev/null; then
+    fail "uninstaller trusted fake app and executed bundled agent-secret"
+  fi
+  if [ ! -d "$app" ]; then
+    fail "uninstaller removed app after refusing PATH-provided awk trust"
+  fi
+}
+
 custom_guard_rejects_override
 custom_destination_guard_rejects_override
 dangerous_paths_are_rejected_even_with_guard
@@ -484,5 +604,6 @@ untrusted_app_is_left_in_place_by_default
 force_removes_untrusted_app_explicitly
 untrusted_existing_cli_is_not_used_for_daemon_stop
 fake_path_codesign_is_not_used_for_trust_checks
+fake_path_awk_is_not_used_for_trust_checks
 
 echo "test-uninstall: ok"
