@@ -42,6 +42,7 @@ type Resolver interface {
 
 type AuditSink interface {
 	policy.ReuseAuditSink
+	Preflight(ctx context.Context) error
 	Record(ctx context.Context, event audit.Event) error
 }
 
@@ -479,13 +480,7 @@ func (b *Broker) reusableGrant(ctx context.Context, req request.ExecRequest) (Ex
 }
 
 func (b *Broker) preflightAudit(ctx context.Context) error {
-	preflighter, ok := b.audit.(interface {
-		Preflight(ctx context.Context) error
-	})
-	if !ok {
-		return nil
-	}
-	if err := preflighter.Preflight(ctx); err != nil {
+	if err := b.audit.Preflight(ctx); err != nil {
 		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
 	}
 	return nil
