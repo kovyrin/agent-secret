@@ -16,10 +16,12 @@ import (
 )
 
 const (
-	MaxReasonLength = 240
-	DefaultExecTTL  = 2 * time.Minute
-	MinExecTTL      = 10 * time.Second
-	MaxExecTTL      = 10 * time.Minute
+	MaxReasonLength     = 240
+	DefaultExecTTL      = 2 * time.Minute
+	MinExecTTL          = 10 * time.Second
+	MaxExecTTL          = 10 * time.Minute
+	DefaultReusableUses = 3
+	MaxReusableUses     = 20
 )
 
 var (
@@ -30,6 +32,7 @@ var (
 	ErrMutableExecutable   = errors.New("mutable executable requires explicit opt-in")
 	ErrInvalidReason       = errors.New("invalid reason")
 	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
+	ErrInvalidReusableUses = errors.New("invalid reusable use count")
 	ErrInvalidRequest      = errors.New("invalid exec request")
 	ErrInvalidTTL          = errors.New("invalid ttl")
 )
@@ -73,6 +76,7 @@ type ExecOptions struct {
 	ReceivedAt             time.Time
 	DeliveryMode           DeliveryMode
 	MaxReads               int
+	ReusableUses           int
 	OverrideEnv            bool
 	ForceRefresh           bool
 	AllowMutableExecutable bool
@@ -92,6 +96,7 @@ type ExecRequest struct {
 	ExpiresAt              time.Time
 	DeliveryMode           DeliveryMode
 	MaxReads               int
+	ReusableUses           int
 	OverrideEnv            bool
 	OverriddenAliases      []string
 	ForceRefresh           bool
@@ -120,6 +125,9 @@ func (r ExecRequest) ValidateForDaemon() error {
 		return fmt.Errorf("%w: daemon does not implement %q delivery", ErrInvalidDeliveryMode, r.DeliveryMode)
 	}
 	if err := validateDelivery(r.DeliveryMode, r.MaxReads); err != nil {
+		return err
+	}
+	if err := validateReusableUses(r.ReusableUses); err != nil {
 		return err
 	}
 	if r.TTL < MinExecTTL || r.TTL > MaxExecTTL {
@@ -166,6 +174,10 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		mode = DeliveryEnvExec
 	}
 	if err := validateDelivery(mode, opts.MaxReads); err != nil {
+		return ExecRequest{}, err
+	}
+	reusableUses := ReusableUsesOrDefault(opts.ReusableUses)
+	if err := validateReusableUses(reusableUses); err != nil {
 		return ExecRequest{}, err
 	}
 
@@ -231,6 +243,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		ExpiresAt:              receivedAt.Add(ttl),
 		DeliveryMode:           mode,
 		MaxReads:               opts.MaxReads,
+		ReusableUses:           reusableUses,
 		OverrideEnv:            opts.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,
 		ForceRefresh:           opts.ForceRefresh,
@@ -246,6 +259,13 @@ func EnvironmentFingerprint(env []string) string {
 		sum.Write([]byte{0})
 	}
 	return "env-v1:" + hex.EncodeToString(sum.Sum(nil))
+}
+
+func ReusableUsesOrDefault(uses int) int {
+	if uses == 0 {
+		return DefaultReusableUses
+	}
+	return uses
 }
 
 func ParseSecretRef(ref string) (SecretRef, error) {
@@ -300,6 +320,14 @@ func validateDelivery(mode DeliveryMode, maxReads int) error {
 		}
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidDeliveryMode, mode)
+	}
+	return nil
+}
+
+func validateReusableUses(uses int) error {
+	uses = ReusableUsesOrDefault(uses)
+	if uses < 1 || uses > MaxReusableUses {
+		return fmt.Errorf("%w: must be between 1 and %d", ErrInvalidReusableUses, MaxReusableUses)
 	}
 	return nil
 }

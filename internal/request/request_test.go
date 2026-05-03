@@ -48,6 +48,9 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	if req.DeliveryMode != DeliveryEnvExec {
 		t.Fatalf("delivery mode = %s", req.DeliveryMode)
 	}
+	if req.ReusableUses != DefaultReusableUses {
+		t.Fatalf("reusable uses = %d, want default %d", req.ReusableUses, DefaultReusableUses)
+	}
 	if req.ResolvedExecutable != bin {
 		t.Fatalf("resolved executable = %q, want %q", req.ResolvedExecutable, bin)
 	}
@@ -105,6 +108,8 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 		{name: "session max reads zero", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 			o.DeliveryMode = DeliverySessionSocket
 		}), want: ErrInvalidMaxReads},
+		{name: "reusable uses too low", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = -1 }), want: ErrInvalidReusableUses},
+		{name: "reusable uses too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = MaxReusableUses + 1 }), want: ErrInvalidReusableUses},
 		{name: "env conflict without override", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 			o.Env = append(o.Env, "TOKEN=already")
 		}), want: ErrInvalidAlias},

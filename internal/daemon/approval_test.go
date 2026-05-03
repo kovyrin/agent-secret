@@ -15,7 +15,6 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -135,6 +134,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	launcher := &recordingLauncher{expected: ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	req.ReusableUses = 2
 
 	resultCh := make(chan ApprovalDecision, 1)
 	errCh := make(chan error, 1)
@@ -158,10 +158,10 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	if payload.Secrets[0].Account != "Work" {
 		t.Fatalf("payload secret account = %q, want Work", payload.Secrets[0].Account)
 	}
-	if payload.ReusableUses != policy.DefaultReusableUses {
-		t.Fatalf("payload reusable uses = %d, want policy default %d", payload.ReusableUses, policy.DefaultReusableUses)
+	if payload.ReusableUses != 2 {
+		t.Fatalf("payload reusable uses = %d, want request count 2", payload.ReusableUses)
 	}
-	uses := policy.DefaultReusableUses
+	uses := payload.ReusableUses
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), ApprovalDecisionPayload{
 		RequestID:    "req_1",
 		Nonce:        "nonce_1",
@@ -176,6 +176,9 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	case decision := <-resultCh:
 		if !decision.Approved || !decision.Reusable {
 			t.Fatalf("unexpected approval result: %+v", decision)
+		}
+		if decision.ReusableUses != 2 {
+			t.Fatalf("decision reusable uses = %d, want 2", decision.ReusableUses)
 		}
 	case err := <-errCh:
 		t.Fatalf("ApproveExec returned error: %v", err)

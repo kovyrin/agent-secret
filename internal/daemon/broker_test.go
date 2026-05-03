@@ -893,6 +893,105 @@ func TestBrokerReusableApprovalMissesWhenEnvironmentFingerprintChanges(t *testin
 	}
 }
 
+func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 2}}
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	cache := policy.NewSecretCache()
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+		Cache:    cache,
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.ReusableUses = 2
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if first.ApprovalID == "" {
+		t.Fatal("expected reusable approval id")
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("first MarkPayloadDelivered returned error: %v", err)
+	}
+
+	resolver.values[ref] = "second"
+	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", req)
+	if err != nil {
+		t.Fatalf("second HandleExec returned error: %v", err)
+	}
+	if second.Env["TOKEN"] != "first" {
+		t.Fatalf("second delivery did not reuse cached first value: %+v", second.Env)
+	}
+	if err := broker.MarkPayloadDelivered("req_2"); err != nil {
+		t.Fatalf("second MarkPayloadDelivered returned error: %v", err)
+	}
+	if _, ok := cache.Get(first.ApprovalID, ref, ""); ok {
+		t.Fatal("two-use approval cache scope remained after two deliveries")
+	}
+
+	third, err := broker.HandleExec(context.Background(), "req_3", "nonce_3", req)
+	if err != nil {
+		t.Fatalf("third HandleExec returned error: %v", err)
+	}
+	if third.Env["TOKEN"] != "second" {
+		t.Fatalf("fresh approval after exhaustion used stale value: %+v", third.Env)
+	}
+	if third.ApprovalID == first.ApprovalID {
+		t.Fatalf("fresh approval reused exhausted approval id %q", first.ApprovalID)
+	}
+	if approver.calls != 2 {
+		t.Fatalf("approver calls = %d, want fresh approval after two deliveries", approver.calls)
+	}
+}
+
+func TestBrokerReusableApprovalMissesWhenUseLimitChanges(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 2}}
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    &memoryAudit{},
+		Cache:    policy.NewSecretCache(),
+	})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.ReusableUses = 2
+
+	first, err := broker.HandleExec(context.Background(), "req_1", "nonce_1", req)
+	if err != nil {
+		t.Fatalf("first HandleExec returned error: %v", err)
+	}
+	if err := broker.MarkPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("MarkPayloadDelivered returned error: %v", err)
+	}
+
+	resolver.values[ref] = "second"
+	changed := req
+	changed.ReusableUses = 3
+	approver.decision.ReusableUses = 3
+	second, err := broker.HandleExec(context.Background(), "req_2", "nonce_2", changed)
+	if err != nil {
+		t.Fatalf("second HandleExec returned error: %v", err)
+	}
+	if second.ApprovalID == first.ApprovalID {
+		t.Fatalf("changed use limit reused approval %q", first.ApprovalID)
+	}
+	if second.Env["TOKEN"] != "second" {
+		t.Fatalf("changed use limit used cached value from old approval: %+v", second.Env)
+	}
+	if approver.calls != 2 {
+		t.Fatalf("approver calls = %d, want fresh approval after reusable use limit change", approver.calls)
+	}
+}
+
 func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	t.Parallel()
 

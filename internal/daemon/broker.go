@@ -31,8 +31,9 @@ type Approver interface {
 }
 
 type ApprovalDecision struct {
-	Approved bool
-	Reusable bool
+	Approved     bool
+	Reusable     bool
+	ReusableUses int
 }
 
 type Resolver interface {
@@ -494,7 +495,7 @@ func (b *Broker) freshGrant(
 	approvalID := ""
 	approvalExpiresAt := time.Time{}
 	if decision.Reusable {
-		approval, err := b.store.AddReusable(req, "", "")
+		approval, err := b.store.AddReusableWithLimit(req, decision.ReusableUses, "", "")
 		if err != nil {
 			return ExecGrant{}, err
 		}
