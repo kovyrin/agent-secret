@@ -43,11 +43,12 @@ write_path_trap_tools() {
   local tool=""
 
   mkdir -p "$trap_dir"
-  for tool in base64 security uuidgen codesign xcrun ditto hdiutil shasum; do
+  for tool in base64 security uuidgen codesign xcrun ditto hdiutil shasum \
+    mktemp rm mkdir ln chmod install cp sips iconutil go swift uname; do
     cat >"$trap_dir/$tool" <<'BASH'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$(basename "$0") $*" >>"$AGENT_SECRET_PATH_TRAP_LOG"
+printf '%s\n' "${0##*/} $*" >>"$AGENT_SECRET_PATH_TRAP_LOG"
 exit 44
 BASH
     chmod 755 "$trap_dir/$tool"
@@ -107,10 +108,10 @@ expect_failure "production release requires AGENT_SECRET_CODESIGN_IDENTITY" \
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/path-trap-out"
 assert_path_trap_clean "$trap_log"
 
-if grep -En '(^|[|;&][[:space:]]*)(base64|security|uuidgen)([[:space:]]|$)' "$import_certificate"; then
+if grep -En '(^|[|;&][[:space:]]*)(base64|security|uuidgen|mktemp|rm|chmod)([[:space:]]|$)' "$import_certificate"; then
   fail "import-codesign-certificate.sh contains bare secret-handling tool invocation"
 fi
-if grep -En '(^|[|;&][[:space:]]*)(codesign|xcrun|ditto|hdiutil|shasum)([[:space:]]|$)' \
+if grep -En '(^|[|;&][[:space:]]*)(codesign|xcrun|ditto|hdiutil|shasum|mktemp|rm|mkdir|ln|chmod|install|cp|sips|iconutil|go|swift|uname)([[:space:]]|$)' \
   "$build_release" "$project_root/scripts/build-app-bundle.sh"; then
   fail "release build scripts contain bare Apple tool invocation"
 fi

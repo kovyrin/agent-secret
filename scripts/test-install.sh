@@ -204,10 +204,25 @@ fi
 exit 64
 SCRIPT
 
+  for tool in mktemp rm cp mv mkdir awk sed head basename uname; do
+    cat >"$fake_bin/$tool" <<'SCRIPT'
+#!/bin/sh
+printf '%s' "${0##*/}" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+for arg in "$@"; do
+  printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+done
+printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+exit 44
+SCRIPT
+  done
+
   chmod 755 "$fake_bin/codesign" "$fake_bin/spctl" "$fake_bin/xcrun" \
     "$fake_bin/curl" "$fake_bin/shasum" \
     "$fake_bin/agent-secret" \
-    "$fake_bin/ditto" "$fake_bin/hdiutil"
+    "$fake_bin/ditto" "$fake_bin/hdiutil" \
+    "$fake_bin/mktemp" "$fake_bin/rm" "$fake_bin/cp" "$fake_bin/mv" \
+    "$fake_bin/mkdir" "$fake_bin/awk" "$fake_bin/sed" "$fake_bin/head" \
+    "$fake_bin/basename" "$fake_bin/uname"
 }
 
 make_fixture() {
