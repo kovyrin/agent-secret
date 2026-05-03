@@ -74,6 +74,8 @@ release target. Do not publish a release whose changelog section is empty.
    ```bash
    shasum -a 256 -c checksums.txt
    codesign --verify --strict --verbose=2 "$artifact"
+   codesign -dv --verbose=4 "$artifact" 2>&1 |
+     grep '^TeamIdentifier=B6L7QLWTZW$'
    xcrun stapler validate "$artifact"
    spctl --assess --type open \
      --context context:primary-signature \
@@ -86,11 +88,23 @@ release target. Do not publish a release whose changelog section is empty.
    ```bash
    hdiutil attach -readonly -nobrowse \
      -mountpoint "$mount_dir" "$artifact"
+   app="$mount_dir/Agent Secret.app"
+   daemon="$app/Contents/Library/Helpers/AgentSecretDaemon.app"
    codesign --verify --deep --strict \
-     --verbose=2 "$mount_dir/Agent Secret.app"
-   xcrun stapler validate "$mount_dir/Agent Secret.app"
+     --verbose=2 "$app"
+   codesign -dv --verbose=4 "$app" 2>&1 |
+     grep '^TeamIdentifier=B6L7QLWTZW$'
+   /usr/libexec/PlistBuddy \
+     -c 'Print :CFBundleIdentifier' \
+     "$app/Contents/Info.plist" |
+     grep '^com.kovyrin.agent-secret$'
+   /usr/libexec/PlistBuddy \
+     -c 'Print :CFBundleIdentifier' \
+     "$daemon/Contents/Info.plist" |
+     grep '^com.kovyrin.agent-secret.daemon$'
+   xcrun stapler validate "$app"
    spctl --assess --type execute \
-     --verbose "$mount_dir/Agent Secret.app"
+     --verbose "$app"
    hdiutil detach "$mount_dir"
    ```
 

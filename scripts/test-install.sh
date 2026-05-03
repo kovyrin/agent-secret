@@ -27,6 +27,35 @@ for arg in "$@"; do
   printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
 done
 printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+
+team_id_for_path() {
+  case "$1" in
+    *.dmg)
+      printf '%s\n' "${AGENT_SECRET_INSTALL_TEST_DMG_TEAM_ID:-${AGENT_SECRET_INSTALL_TEST_CODESIGN_TEAM_ID:-B6L7QLWTZW}}"
+      ;;
+    *AgentSecretDaemon.app)
+      printf '%s\n' "${AGENT_SECRET_INSTALL_TEST_DAEMON_TEAM_ID:-${AGENT_SECRET_INSTALL_TEST_CODESIGN_TEAM_ID:-B6L7QLWTZW}}"
+      ;;
+    */Contents/Resources/bin/agent-secret)
+      printf '%s\n' "${AGENT_SECRET_INSTALL_TEST_CLI_TEAM_ID:-${AGENT_SECRET_INSTALL_TEST_CODESIGN_TEAM_ID:-B6L7QLWTZW}}"
+      ;;
+    *)
+      printf '%s\n' "${AGENT_SECRET_INSTALL_TEST_APP_TEAM_ID:-${AGENT_SECRET_INSTALL_TEST_CODESIGN_TEAM_ID:-B6L7QLWTZW}}"
+      ;;
+  esac
+}
+
+for arg in "$@"; do
+  if [ "$arg" = "-dv" ]; then
+    last=""
+    for value in "$@"; do
+      last="$value"
+    done
+    printf 'TeamIdentifier=%s\n' "$(team_id_for_path "$last")" >&2
+    break
+  fi
+done
+
 exit "${AGENT_SECRET_INSTALL_TEST_CODESIGN_STATUS:-0}"
 SCRIPT
 
@@ -52,6 +81,7 @@ SCRIPT
 
   cat >"$fake_bin/ditto" <<'SCRIPT'
 #!/bin/sh
+printf 'ditto %s %s\n' "$1" "$2" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
 cp -R "$1" "$2"
 SCRIPT
 
@@ -72,7 +102,30 @@ if [ "$1" = "attach" ]; then
     exit 64
   fi
   cli="$mount_dir/Agent Secret.app/Contents/Resources/bin/agent-secret"
+  daemon_app="$mount_dir/Agent Secret.app/Contents/Library/Helpers/AgentSecretDaemon.app"
   mkdir -p "$(dirname "$cli")"
+  mkdir -p "$daemon_app/Contents/MacOS"
+  cat >"$mount_dir/Agent Secret.app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>${AGENT_SECRET_INSTALL_TEST_APP_BUNDLE_ID:-com.kovyrin.agent-secret}</string>
+</dict>
+</plist>
+PLIST
+  cat >"$daemon_app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>${AGENT_SECRET_INSTALL_TEST_DAEMON_BUNDLE_ID:-com.kovyrin.agent-secret.daemon}</string>
+</dict>
+</plist>
+PLIST
+  touch "$daemon_app/Contents/MacOS/Agent Secret"
   cat >"$cli" <<'APP'
 #!/bin/sh
 case "$1" in
@@ -177,9 +230,11 @@ test_identity_checks_run() {
   log="$tmp_dir/signed/tools.log"
 
   assert_log_contains "$log" "codesign --verify --strict --verbose=2"
+  assert_log_contains "$log" "codesign -dv --verbose=4"
   assert_log_contains "$log" "spctl --assess --type open --context context:primary-signature --verbose"
   assert_log_contains "$log" "xcrun stapler validate"
   assert_log_contains "$log" "codesign --verify --deep --strict --verbose=2"
+  assert_log_contains "$log" "codesign -dv --verbose=4"
   assert_log_contains "$log" "spctl --assess --type execute --verbose"
 }
 
@@ -190,6 +245,33 @@ test_identity_failure_stops_install() {
   assert_log_contains "$tmp_dir/unsigned-fail/tools.log" "codesign --verify --strict --verbose=2"
 }
 
+test_wrong_team_id_stops_install() {
+  if run_installer wrong-team AGENT_SECRET_INSTALL_TEST_CODESIGN_TEAM_ID=BADTEAM123; then
+    fail "installer succeeded with the wrong Developer ID Team ID"
+  fi
+  assert_log_contains "$tmp_dir/wrong-team/tools.log" "codesign -dv --verbose=4"
+}
+
+test_wrong_app_bundle_id_stops_install() {
+  if run_installer wrong-app-bundle \
+    AGENT_SECRET_INSTALL_TEST_APP_BUNDLE_ID=com.example.not-agent-secret; then
+    fail "installer succeeded with the wrong app bundle identifier"
+  fi
+  if grep -F "ditto " "$tmp_dir/wrong-app-bundle/tools.log" >/dev/null; then
+    fail "installer copied an app with the wrong bundle identifier"
+  fi
+}
+
+test_wrong_daemon_bundle_id_stops_install() {
+  if run_installer wrong-daemon-bundle \
+    AGENT_SECRET_INSTALL_TEST_DAEMON_BUNDLE_ID=com.example.not-agent-secret.daemon; then
+    fail "installer succeeded with the wrong daemon bundle identifier"
+  fi
+  if grep -F "ditto " "$tmp_dir/wrong-daemon-bundle/tools.log" >/dev/null; then
+    fail "installer copied an app with the wrong daemon bundle identifier"
+  fi
+}
+
 test_unsigned_override_skips_identity_checks() {
   run_installer unsigned-allowed \
     AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
@@ -198,7 +280,7 @@ test_unsigned_override_skips_identity_checks() {
     AGENT_SECRET_INSTALL_TEST_XCRUN_STATUS=23
 
   log="$tmp_dir/unsigned-allowed/tools.log"
-  if [ -s "$log" ]; then
+  if grep -E '^(codesign|spctl|xcrun) ' "$log" >/dev/null; then
     echo "---- tool log ----" >&2
     cat "$log" >&2
     fail "unsigned override should not call identity verification tools"
@@ -207,6 +289,9 @@ test_unsigned_override_skips_identity_checks() {
 
 test_identity_checks_run
 test_identity_failure_stops_install
+test_wrong_team_id_stops_install
+test_wrong_app_bundle_id_stops_install
+test_wrong_daemon_bundle_id_stops_install
 test_unsigned_override_skips_identity_checks
 
 echo "test-install: ok"

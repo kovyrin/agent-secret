@@ -197,10 +197,12 @@ AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
 ```
 
 The unattended installer verifies the DMG checksum, DMG code signature,
-Gatekeeper assessment, notarization ticket, and the mounted app bundle before
-copying anything into place. For local unsigned test artifacts only, set
-`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`. For signed but intentionally
-unstapled local artifacts, set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
+Developer ID Team ID, Gatekeeper assessment, notarization ticket, mounted app
+bundle ID, daemon helper bundle ID, and bundled CLI signature before copying
+anything into place. Maintainer releases are expected to use Team ID
+`B6L7QLWTZW`. For local unsigned test artifacts only, set
+`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`. For signed but intentionally unstapled
+local artifacts, set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`.
 
 Unattended uninstall:
 
