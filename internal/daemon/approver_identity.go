@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,7 +172,10 @@ func plistString(path string, key string) (string, error) {
 	for {
 		tok, err := decoder.Token()
 		if err != nil {
-			break
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return "", fmt.Errorf("%w: parse %s: %w", ErrApproverIdentity, path, err)
 		}
 		start, ok := tok.(xml.StartElement)
 		if !ok {

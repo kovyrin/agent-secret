@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,6 +111,26 @@ func TestPlistStringRejectsMissingKey(t *testing.T) {
 	_, err := plistString(infoPath, "MissingKey")
 	if !errors.Is(err, ErrApproverIdentity) {
 		t.Fatalf("error = %v, want ErrApproverIdentity", err)
+	}
+}
+
+func TestPlistStringReportsMalformedPlist(t *testing.T) {
+	t.Parallel()
+
+	infoPath := filepath.Join(t.TempDir(), "Info.plist")
+	if err := os.WriteFile(infoPath, []byte("<plist><dict><key>CFBundleIdentifier</key>"), 0o600); err != nil {
+		t.Fatalf("write Info.plist: %v", err)
+	}
+
+	_, err := plistString(infoPath, "CFBundleIdentifier")
+	if !errors.Is(err, ErrApproverIdentity) {
+		t.Fatalf("error = %v, want ErrApproverIdentity", err)
+	}
+	if !strings.Contains(err.Error(), "parse") {
+		t.Fatalf("error = %q, want parse context", err.Error())
+	}
+	if strings.Contains(err.Error(), "missing CFBundleIdentifier") {
+		t.Fatalf("error = %q, should not report parse failure as missing key", err.Error())
 	}
 }
 
