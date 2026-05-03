@@ -164,8 +164,13 @@ rm -rf "$HOME/Library/Application Support/agent-secret"
 Unattended uninstall:
 
 ```bash
-curl -fsSL \
-  https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
+version="$(
+  curl -fsSL https://api.github.com/repos/kovyrin/agent-secret/releases/latest |
+    awk -F'"' '/"tag_name":/ { print $4; exit }'
+)"
+test -n "$version"
+base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
+curl -fsSL "$base_url/${version}/uninstall.sh" | sh
 ```
 
 The uninstall script should:

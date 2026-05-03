@@ -250,13 +250,20 @@ AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
 Unattended uninstall:
 
 ```bash
-curl -fsSL \
-  https://raw.githubusercontent.com/kovyrin/agent-secret/main/uninstall.sh | sh
+version="$(
+  curl -fsSL https://api.github.com/repos/kovyrin/agent-secret/releases/latest |
+    awk -F'"' '/"tag_name":/ { print $4; exit }'
+)"
+test -n "$version"
+base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
+curl -fsSL "$base_url/${version}/uninstall.sh" | sh
 ```
 
 By default uninstall removes the app, CLI symlink, skill symlink, and known
 application support files, but leaves `~/Library/Logs/agent-secret` audit logs
 in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
+To pin an uninstall to a specific installed release, set `version` to that
+release tag instead of resolving the latest release.
 Custom app, command, skill, support, or audit paths require
 `AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1`; the script refuses broad,
 relative, or symlinked destination roots, and support/audit paths must end in
