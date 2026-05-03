@@ -307,34 +307,27 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
-	grant, err := s.broker.HandleExec(ctx, env.RequestID, env.Nonce, req)
+	delivery, err := s.broker.handleExecDelivery(ctx, env.RequestID, env.Nonce, req)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
 		return ""
 	}
-	if s.stopped() {
-		s.broker.MarkPayloadDeliveryFailed(env.RequestID)
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
-		return ""
-	}
-	if s.beforeExecResponseWrite != nil {
-		s.beforeExecResponseWrite()
-	}
-	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, grant.deliveryExpiresAt)
-	if err != nil {
-		s.broker.MarkPayloadDeliveryFailed(env.RequestID)
-		_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
-		return ""
-	}
-	defer clearWriteDeadline()
-	if err := writeOK(encoder, env.RequestID, env.Nonce, protocol.ExecResponsePayload{
-		Env:           grant.Env,
-		SecretAliases: grant.SecretAliases,
+	if err := delivery.deliver(func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
+		if s.stopped() {
+			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrDaemonStopped), ErrDaemonStopped)
+			return ErrDaemonStopped
+		}
+		if s.beforeExecResponseWrite != nil {
+			s.beforeExecResponseWrite()
+		}
+		clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, expiresAt)
+		if err != nil {
+			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(err), err)
+			return err
+		}
+		defer clearWriteDeadline()
+		return writeOK(encoder, env.RequestID, env.Nonce, payload)
 	}); err != nil {
-		s.broker.MarkPayloadDeliveryFailed(env.RequestID)
-		return ""
-	}
-	if err := s.broker.MarkPayloadDelivered(env.RequestID); err != nil {
 		return ""
 	}
 	return env.RequestID

@@ -77,6 +77,13 @@ type ExecGrant struct {
 	deliveryExpiresAt  time.Time
 }
 
+type execDelivery struct {
+	broker    *Broker
+	requestID string
+	payload   protocol.ExecResponsePayload
+	expiresAt time.Time
+}
+
 type activeExec struct {
 	nonce             string
 	req               request.ExecRequest
@@ -136,7 +143,36 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 	return broker, nil
 }
 
-func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ExecGrant, error) {
+func (b *Broker) handleExecDelivery(
+	ctx context.Context,
+	requestID string,
+	nonce string,
+	req request.ExecRequest,
+) (execDelivery, error) {
+	grant, err := b.handleExec(ctx, requestID, nonce, req)
+	if err != nil {
+		return execDelivery{}, err
+	}
+	return execDelivery{
+		broker:    b,
+		requestID: requestID,
+		payload: protocol.ExecResponsePayload{
+			Env:           grant.Env,
+			SecretAliases: grant.SecretAliases,
+		},
+		expiresAt: grant.deliveryExpiresAt,
+	}, nil
+}
+
+func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time) error) error {
+	if err := write(d.payload, d.expiresAt); err != nil {
+		d.broker.markPayloadDeliveryFailed(d.requestID)
+		return err
+	}
+	return d.broker.markPayloadDelivered(d.requestID)
+}
+
+func (b *Broker) handleExec(ctx context.Context, requestID string, nonce string, req request.ExecRequest) (ExecGrant, error) {
 	if requestID == "" || nonce == "" {
 		return ExecGrant{}, ErrInvalidNonce
 	}
@@ -267,7 +303,7 @@ func (b *Broker) requestError(ctx context.Context, req request.ExecRequest, err 
 	return err
 }
 
-func (b *Broker) MarkPayloadDelivered(requestID string) error {
+func (b *Broker) markPayloadDelivered(requestID string) error {
 	if b.stopped() {
 		return ErrDaemonStopped
 	}
@@ -320,7 +356,7 @@ func (b *Broker) markActivePayloadDelivered(requestID string) {
 	b.mu.Unlock()
 }
 
-func (b *Broker) MarkPayloadDeliveryFailed(requestID string) {
+func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 	b.mu.Lock()
 	active, ok := b.active[requestID]
 	if ok {
