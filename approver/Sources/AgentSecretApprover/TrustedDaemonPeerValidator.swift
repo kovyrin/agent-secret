@@ -54,6 +54,7 @@ import Foundation
             "Agent Secret"
         ]
         private static let expectedTeamIDKey: String = "AgentSecretExpectedTeamID"
+        private static let developmentExpectedTeamID: String = "-"
 
         private let expectedTeamID: String
         private let signatureChecker: DaemonCodeSignatureChecking
@@ -78,6 +79,10 @@ import Foundation
                 }
                 return TrustedExecutable(path: normalized, fileIdentity: identity)
             }
+        }
+
+        private static func isInsideAppBundle(_ path: String) -> Bool {
+            containingAppBundlePath(path) != nil
         }
 
         static func defaultForCurrentProcess() -> Self {
@@ -178,7 +183,12 @@ import Foundation
             }
 
             try trusted.validateCurrentFile()
-            if !expectedTeamID.isEmpty {
+            if expectedTeamID.isEmpty, Self.isInsideAppBundle(trusted.path) {
+                throw SocketDaemonClientError.untrustedDaemon(
+                    "expected Developer ID Team ID is required for daemon signature validation"
+                )
+            }
+            if !expectedTeamID.isEmpty, expectedTeamID != Self.developmentExpectedTeamID {
                 let staticTeamID = try signatureChecker.staticCodeTeamID(for: trusted.path)
                 guard staticTeamID == expectedTeamID else {
                     throw SocketDaemonClientError.untrustedDaemon("daemon Team ID does not match")

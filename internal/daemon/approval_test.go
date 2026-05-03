@@ -1064,6 +1064,55 @@ func TestDefaultApproverIdentityPolicyUsesBuildConfiguredTeamID(t *testing.T) {
 	}
 }
 
+func TestBundleApproverIdentityPolicyRejectsMissingTeamIDWhenSignatureVerificationEnabled(t *testing.T) {
+	t.Parallel()
+
+	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	_, err := (BundleApproverIdentityPolicy{VerifySignature: true}).ValidateApproverExecutable(executable)
+	if !errors.Is(err, ErrApproverIdentity) {
+		t.Fatalf("expected approver identity error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "expected Developer ID Team ID is required") {
+		t.Fatalf("error = %q, want missing Team ID context", err.Error())
+	}
+}
+
+func TestApproverPeerValidationRejectsMissingTeamIDWhenSignatureVerificationEnabled(t *testing.T) {
+	t.Parallel()
+
+	err := validateApproverPeer(
+		ExpectedApprover{
+			PID:             os.Getpid(),
+			ExecutablePath:  currentExecutable(t),
+			VerifySignature: true,
+		},
+		peerInfoForTest(t, os.Getpid(), currentExecutable(t)),
+	)
+	if !errors.Is(err, ErrApproverPeerMismatch) {
+		t.Fatalf("expected approver peer mismatch, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "expected Developer ID Team ID is required") {
+		t.Fatalf("error = %q, want missing Team ID context", err.Error())
+	}
+}
+
+func TestApproverPeerValidationAllowsExplicitDevelopmentTeamIDSentinel(t *testing.T) {
+	t.Parallel()
+
+	err := validateApproverPeer(
+		ExpectedApprover{
+			PID:             os.Getpid(),
+			ExecutablePath:  currentExecutable(t),
+			ExpectedTeamID:  developmentExpectedTeamID,
+			VerifySignature: true,
+		},
+		peerInfoForTest(t, os.Getpid(), currentExecutable(t)),
+	)
+	if err != nil {
+		t.Fatalf("explicit development Team ID sentinel returned error: %v", err)
+	}
+}
+
 func TestBundleApproverIdentityPolicyRejectsWrongBundleID(t *testing.T) {
 	t.Parallel()
 
@@ -1071,6 +1120,19 @@ func TestBundleApproverIdentityPolicyRejectsWrongBundleID(t *testing.T) {
 	_, err := (BundleApproverIdentityPolicy{VerifySignature: false}).ValidateApproverExecutable(executable)
 	if !errors.Is(err, ErrApproverIdentity) {
 		t.Fatalf("expected approver identity error, got %v", err)
+	}
+}
+
+func TestBundleApproverIdentityPolicyRejectsWrongExecutableName(t *testing.T) {
+	t.Parallel()
+
+	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, "Fake Approver")
+	_, err := (BundleApproverIdentityPolicy{VerifySignature: false}).ValidateApproverExecutable(executable)
+	if !errors.Is(err, ErrApproverIdentity) {
+		t.Fatalf("expected approver identity error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "executable") {
+		t.Fatalf("error = %q, want executable context", err.Error())
 	}
 }
 

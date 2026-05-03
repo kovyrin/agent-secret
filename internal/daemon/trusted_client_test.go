@@ -163,6 +163,76 @@ func TestTrustedExecutableValidatorRejectsMissingPIDForSignatureValidation(t *te
 	}
 }
 
+func TestTrustedExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *testing.T) {
+	t.Parallel()
+
+	trusted := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := TrustedExecutableValidator{
+		set: newTrustedExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, true),
+	}
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "expected Developer ID Team ID is required") {
+		t.Fatalf("error = %q, want missing Team ID context", err.Error())
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called despite missing expected team: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
+func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDSentinel(t *testing.T) {
+	t.Parallel()
+
+	trusted := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	verifier := &recordingSignatureVerifier{
+		pathErr:    errors.New("static verifier should not be called"),
+		processErr: errors.New("process verifier should not be called"),
+	}
+	validator := TrustedExecutableValidator{
+		set: newTrustedExecutableSetWithVerifier(
+			[]string{trusted},
+			developmentExpectedTeamID,
+			ErrUntrustedClient,
+			verifier,
+			true,
+		),
+	}
+
+	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
+		t.Fatalf("ValidateExecPeer returned error for development Team ID sentinel: %v", err)
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called for development Team ID sentinel: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
+func TestTrustedExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	trusted := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	verifier := &recordingSignatureVerifier{
+		pathErr:    errors.New("static verifier should not be called"),
+		processErr: errors.New("process verifier should not be called"),
+	}
+	validator := TrustedExecutableValidator{
+		set: newTrustedExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, false),
+	}
+
+	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
+		t.Fatalf("ValidateExecPeer returned error when signature verification disabled: %v", err)
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called when verification disabled: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
 func TestTrustedExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T) {
 	t.Parallel()
 
