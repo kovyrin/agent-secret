@@ -357,6 +357,23 @@ func isFatalCommandStartedAuditFailure(err error) bool {
 		daemon.ErrorCodeStaleApproval,
 		daemon.ErrorCodeUntrustedClient:
 		return true
+	case daemon.ErrorCodeApprovalDenied,
+		daemon.ErrorCodeApprovalUnavailable,
+		daemon.ErrorCodeApproverIdentityMismatch,
+		daemon.ErrorCodeApproverPeerMismatch,
+		daemon.ErrorCodeAuditFailed,
+		daemon.ErrorCodeBadApprovalDecision,
+		daemon.ErrorCodeBadCommandCompleted,
+		daemon.ErrorCodeBadRequest,
+		daemon.ErrorCodeContextCanceled,
+		daemon.ErrorCodeContextDeadlineExceeded,
+		daemon.ErrorCodeDaemonStopped,
+		daemon.ErrorCodeFrameTooLarge,
+		daemon.ErrorCodeNoPendingApproval,
+		daemon.ErrorCodePeerRejected,
+		daemon.ErrorCodeRequestFailed,
+		daemon.ErrorCodeResolveFailed:
+		return false
 	default:
 		return false
 	}
