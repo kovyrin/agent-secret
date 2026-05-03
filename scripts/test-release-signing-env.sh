@@ -100,6 +100,62 @@ expect_any_failure \
   "$import_certificate"
 assert_path_trap_clean "$trap_log"
 
+unsafe_keychain="$tmp_dir/unrelated-user-file"
+dummy_cert="$tmp_dir/dummy.p12"
+printf 'keep\n' >"$unsafe_keychain"
+printf 'not a real certificate\n' >"$dummy_cert"
+
+expect_failure "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH filename must be agent-secret-codesign*.keychain-db" \
+  env -i \
+  "PATH=$test_path" \
+  AGENT_SECRET_CODESIGN_CERT_P12_PATH="$dummy_cert" \
+  AGENT_SECRET_CODESIGN_CERT_PASSWORD=dummy-password \
+  AGENT_SECRET_CODESIGN_KEYCHAIN_PATH="$unsafe_keychain" \
+  "$import_certificate"
+
+if [[ "$(cat "$unsafe_keychain")" != "keep" ]]; then
+  fail "unsafe custom keychain path was modified"
+fi
+
+unsafe_keychain_dir="$tmp_dir/outside-temp"
+unsafe_keychain="$unsafe_keychain_dir/agent-secret-codesign.keychain-db"
+mkdir -p "$unsafe_keychain_dir"
+printf 'keep\n' >"$unsafe_keychain"
+
+expect_failure "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH must be under trusted temp directory" \
+  env -i \
+  "PATH=$test_path" \
+  RUNNER_TEMP="$tmp_dir/runner-temp" \
+  AGENT_SECRET_CODESIGN_CERT_P12_PATH="$dummy_cert" \
+  AGENT_SECRET_CODESIGN_CERT_PASSWORD=dummy-password \
+  AGENT_SECRET_CODESIGN_KEYCHAIN_PATH="$unsafe_keychain" \
+  "$import_certificate"
+
+if [[ "$(cat "$unsafe_keychain")" != "keep" ]]; then
+  fail "custom keychain path outside trusted temp was modified"
+fi
+
+runner_temp="$tmp_dir/runner-temp"
+symlink_target="$tmp_dir/symlink-target"
+symlink_parent="$runner_temp/keychains-link"
+unsafe_keychain="$symlink_parent/agent-secret-codesign.keychain-db"
+mkdir -p "$runner_temp" "$symlink_target"
+printf 'keep\n' >"$symlink_target/agent-secret-codesign.keychain-db"
+ln -s "$symlink_target" "$symlink_parent"
+
+expect_failure "AGENT_SECRET_CODESIGN_KEYCHAIN_PATH must not contain symlinked parent directories" \
+  env -i \
+  "PATH=$test_path" \
+  RUNNER_TEMP="$runner_temp" \
+  AGENT_SECRET_CODESIGN_CERT_P12_PATH="$dummy_cert" \
+  AGENT_SECRET_CODESIGN_CERT_PASSWORD=dummy-password \
+  AGENT_SECRET_CODESIGN_KEYCHAIN_PATH="$unsafe_keychain" \
+  "$import_certificate"
+
+if [[ "$(cat "$symlink_target/agent-secret-codesign.keychain-db")" != "keep" ]]; then
+  fail "custom keychain path through symlinked parent was modified"
+fi
+
 expect_failure "production release requires AGENT_SECRET_CODESIGN_IDENTITY" \
   env -i \
   "PATH=$trap_dir:$test_path" \
