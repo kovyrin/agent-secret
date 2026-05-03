@@ -77,6 +77,42 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerRebasesExecRequestTimeToDaemonClock(t *testing.T) {
+	t.Parallel()
+
+	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	approver := &recordingApprover{
+		decision: ApprovalDecision{Approved: true},
+		seen:     make(chan request.ExecRequest, 1),
+	}
+	client, cleanup := startTestServer(t, BrokerOptions{
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	req := testExecRequestAt(t, daemonNow.Add(24*time.Hour), []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.TTL = 10 * time.Minute
+	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
+	if _, err := client.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
+		t.Fatalf("RequestExec returned error: %v", err)
+	}
+
+	select {
+	case got := <-approver.seen:
+		if !got.ReceivedAt.Equal(daemonNow) {
+			t.Fatalf("received_at = %s, want daemon clock %s", got.ReceivedAt, daemonNow)
+		}
+		if !got.ExpiresAt.Equal(daemonNow.Add(req.TTL)) {
+			t.Fatalf("expires_at = %s, want daemon clock plus ttl %s", got.ExpiresAt, daemonNow.Add(req.TTL))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("approver did not receive exec request")
+	}
+}
+
 func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -516,6 +552,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	launcher := &recordingLauncher{expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	broker := newTestBroker(t, BrokerOptions{
+		Now:      time.Now,
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
@@ -577,6 +614,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	launcher := &recordingLauncher{expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	broker := newTestBroker(t, BrokerOptions{
+		Now:      time.Now,
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},

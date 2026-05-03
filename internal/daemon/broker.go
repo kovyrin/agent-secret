@@ -133,6 +133,7 @@ func (b *Broker) HandleExec(ctx context.Context, requestID string, nonce string,
 	if requestID == "" || nonce == "" {
 		return ExecGrant{}, ErrInvalidNonce
 	}
+	req = req.WithReceiptTime(b.now())
 	if err := b.preflightAudit(ctx); err != nil {
 		return ExecGrant{}, err
 	}

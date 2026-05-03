@@ -294,6 +294,30 @@ func TestExecRequestExpiryUsesDaemonReceiptTTL(t *testing.T) {
 	}
 }
 
+func TestExecRequestWithReceiptTimeRebasesExpiry(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir)
+	clientTime := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	daemonTime := clientTime.Add(24 * time.Hour)
+
+	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
+		o.ReceivedAt = clientTime
+		o.TTL = time.Minute
+	}))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+	rebased := req.WithReceiptTime(daemonTime)
+	if !rebased.ReceivedAt.Equal(daemonTime) {
+		t.Fatalf("received_at = %s, want %s", rebased.ReceivedAt, daemonTime)
+	}
+	if !rebased.ExpiresAt.Equal(daemonTime.Add(time.Minute)) {
+		t.Fatalf("expires_at = %s, want %s", rebased.ExpiresAt, daemonTime.Add(time.Minute))
+	}
+}
+
 func TestParseSecretRef(t *testing.T) {
 	t.Parallel()
 
