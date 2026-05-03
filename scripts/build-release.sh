@@ -9,14 +9,16 @@ Usage:
 Build a local macOS DMG release artifact and checksums.txt.
 
 Flags:
-  --output DIR   Output directory. Defaults to ./dist.
-  -h, --help     Show this help.
+  --output DIR                    Output directory. Defaults to ./dist.
+  --require-production-signing    Require Developer ID signing and notarization.
+  -h, --help                      Show this help.
 USAGE
 }
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
 output_dir="$project_root/dist"
+require_production_signing=0
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 notarize="${AGENT_SECRET_NOTARIZE:-0}"
 notary_key="${AGENT_SECRET_NOTARY_KEY:-}"
@@ -46,6 +48,10 @@ while [[ $# -gt 0 ]]; do
       output_dir="$2"
       shift 2
       ;;
+    --require-production-signing)
+      require_production_signing=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -69,6 +75,38 @@ done
 if [[ "$version" == "" ]]; then
   echo "build-release: VERSION is required" >&2
   exit 2
+fi
+
+require_production_release_signing() {
+  local missing=0
+
+  if [[ "$codesign_identity" == "" || "$codesign_identity" == "-" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_CODESIGN_IDENTITY" >&2
+    missing=1
+  fi
+  if [[ "$notarize" != "1" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_NOTARIZE=1" >&2
+    missing=1
+  fi
+  if [[ "$notary_key" == "" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_NOTARY_KEY" >&2
+    missing=1
+  fi
+  if [[ "$notary_key_id" == "" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_NOTARY_KEY_ID" >&2
+    missing=1
+  fi
+  if [[ "$notary_issuer_id" == "" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_NOTARY_ISSUER_ID" >&2
+    missing=1
+  fi
+  if [[ "$missing" -ne 0 ]]; then
+    exit 1
+  fi
+}
+
+if [[ "$require_production_signing" == "1" ]]; then
+  require_production_release_signing
 fi
 
 require_command() {
