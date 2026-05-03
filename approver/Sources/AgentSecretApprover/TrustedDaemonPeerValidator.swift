@@ -2,7 +2,6 @@ import Foundation
 
 #if canImport(Darwin)
     import Darwin
-    import Security
 
     struct TrustedDaemonPeerValidator: DaemonPeerValidator {
         private struct TrustedExecutable {
@@ -57,10 +56,16 @@ import Foundation
         private static let expectedTeamIDKey: String = "AgentSecretExpectedTeamID"
 
         private let expectedTeamID: String
+        private let signatureChecker: DaemonCodeSignatureChecking
         private let trustedExecutables: [TrustedExecutable]
 
-        init(expectedExecutablePaths: [String], expectedTeamID: String = Self.configuredExpectedTeamID()) {
+        init(
+            expectedExecutablePaths: [String],
+            expectedTeamID: String = Self.configuredExpectedTeamID(),
+            signatureChecker: DaemonCodeSignatureChecking = SecurityDaemonCodeSignatureChecker()
+        ) {
             self.expectedTeamID = expectedTeamID.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.signatureChecker = signatureChecker
 
             var seen = Set<String>()
             trustedExecutables = expectedExecutablePaths.compactMap { path in
@@ -147,51 +152,20 @@ import Foundation
             return value.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        private static func codeSignatureTeamID(for path: String) throws -> String {
-            var staticCode: SecStaticCode?
-            let createStatus = SecStaticCodeCreateWithPath(
-                URL(fileURLWithPath: path) as CFURL,
-                SecCSFlags(),
-                &staticCode
-            )
-            guard createStatus == errSecSuccess, let code = staticCode else {
-                throw SocketDaemonClientError.untrustedDaemon(
-                    "load daemon code signature failed with status \(createStatus)"
-                )
+        private static func validatePeerCredentials(_ info: DaemonPeerInfo) throws {
+            guard info.uid == getuid() else {
+                throw SocketDaemonClientError.untrustedDaemon("daemon uid does not match current user")
             }
-
-            let checkStatus = SecStaticCodeCheckValidity(
-                code,
-                SecCSFlags(rawValue: kSecCSStrictValidate),
-                nil
-            )
-            guard checkStatus == errSecSuccess else {
-                throw SocketDaemonClientError.untrustedDaemon(
-                    "daemon code signature validation failed with status \(checkStatus)"
-                )
+            guard info.gid == getgid() else {
+                throw SocketDaemonClientError.untrustedDaemon("daemon gid does not match current user")
             }
-
-            var information: CFDictionary?
-            let copyStatus = SecCodeCopySigningInformation(
-                code,
-                SecCSFlags(rawValue: kSecCSSigningInformation),
-                &information
-            )
-            guard copyStatus == errSecSuccess, let dictionary = information as? [String: Any] else {
-                throw SocketDaemonClientError.untrustedDaemon(
-                    "read daemon code signature failed with status \(copyStatus)"
-                )
+            guard info.pid > 0 else {
+                throw SocketDaemonClientError.untrustedDaemon("daemon pid is unavailable")
             }
-            guard let teamID = dictionary[kSecCodeInfoTeamIdentifier as String] as? String else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
-            }
-            guard !teamID.isEmpty else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
-            }
-            return teamID
         }
 
         func validateDaemonPeer(_ info: DaemonPeerInfo) throws {
+            try Self.validatePeerCredentials(info)
             let got = Self.comparablePath(info.executablePath)
             guard !got.isEmpty else {
                 throw SocketDaemonClientError.untrustedDaemon("daemon executable path is unavailable")
@@ -205,9 +179,13 @@ import Foundation
 
             try trusted.validateCurrentFile()
             if !expectedTeamID.isEmpty {
-                let teamID = try Self.codeSignatureTeamID(for: trusted.path)
-                guard teamID == expectedTeamID else {
+                let staticTeamID = try signatureChecker.staticCodeTeamID(for: trusted.path)
+                guard staticTeamID == expectedTeamID else {
                     throw SocketDaemonClientError.untrustedDaemon("daemon Team ID does not match")
+                }
+                let processTeamID = try signatureChecker.processTeamID(for: info.pid)
+                guard processTeamID == expectedTeamID else {
+                    throw SocketDaemonClientError.untrustedDaemon("daemon process Team ID does not match")
                 }
             }
         }
