@@ -65,6 +65,21 @@ func TestMergeEnvRejectsConflictsByDefault(t *testing.T) {
 	}
 }
 
+func TestMergeEnvRejectsDuplicateConflictsByDefault(t *testing.T) {
+	t.Parallel()
+
+	_, err := MergeEnv([]string{
+		"AGENT_SECRET_CANARY=first-stale-value",
+		"PATH=/usr/bin",
+		"AGENT_SECRET_CANARY=second-stale-value",
+	}, map[string]string{
+		"AGENT_SECRET_CANARY": syntheticSecret,
+	}, false)
+	if !errors.Is(err, ErrEnvironmentConflict) {
+		t.Fatalf("expected environment conflict, got %v", err)
+	}
+}
+
 func TestMergeEnvCanOverrideExistingAlias(t *testing.T) {
 	t.Parallel()
 
@@ -73,6 +88,36 @@ func TestMergeEnvCanOverrideExistingAlias(t *testing.T) {
 	}, true)
 	if err != nil {
 		t.Fatalf("MergeEnv returned error: %v", err)
+	}
+	if got := findEnv(env, "AGENT_SECRET_CANARY"); got != syntheticSecret {
+		t.Fatalf("merged env value = %q, want synthetic secret", got)
+	}
+}
+
+func TestMergeEnvOverrideRemovesDuplicateExistingAliases(t *testing.T) {
+	t.Parallel()
+
+	env, err := MergeEnv([]string{
+		"AGENT_SECRET_CANARY=first-stale-value",
+		"PATH=/usr/bin",
+		"AGENT_SECRET_CANARY=second-stale-value",
+		"KEEP=kept",
+	}, map[string]string{
+		"AGENT_SECRET_CANARY": syntheticSecret,
+	}, true)
+	if err != nil {
+		t.Fatalf("MergeEnv returned error: %v", err)
+	}
+	want := []string{
+		"PATH=/usr/bin",
+		"KEEP=kept",
+		"AGENT_SECRET_CANARY=" + syntheticSecret,
+	}
+	if !reflect.DeepEqual(env, want) {
+		t.Fatalf("merged env = %v, want %v", env, want)
+	}
+	if got := countEnv(env, "AGENT_SECRET_CANARY"); got != 1 {
+		t.Fatalf("merged env has %d canary entries, want 1: %v", got, env)
 	}
 	if got := findEnv(env, "AGENT_SECRET_CANARY"); got != syntheticSecret {
 		t.Fatalf("merged env value = %q, want synthetic secret", got)
@@ -441,6 +486,17 @@ func findEnv(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func countEnv(env []string, key string) int {
+	count := 0
+	for _, entry := range env {
+		gotKey, _, ok := strings.Cut(entry, "=")
+		if ok && gotKey == key {
+			count++
+		}
+	}
+	return count
 }
 
 func helperEnv(pairs ...string) map[string]string {

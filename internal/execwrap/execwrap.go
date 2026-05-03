@@ -167,35 +167,38 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 }
 
 func MergeEnv(base []string, overlay map[string]string, override bool) ([]string, error) {
-	positions := make(map[string]int, len(base))
-	out := slices.Clone(base)
-
-	for i, entry := range out {
-		key, _, ok := strings.Cut(entry, "=")
-		if ok {
-			positions[key] = i
-		}
-	}
-
 	aliases := make([]string, 0, len(overlay))
 	for alias := range overlay {
 		aliases = append(aliases, alias)
 	}
 	slices.Sort(aliases)
 
+	overlayAliases := make(map[string]struct{}, len(aliases))
 	for _, alias := range aliases {
-		value := overlay[alias]
-		entry := alias + "=" + value
-		if pos, exists := positions[alias]; exists {
-			if !override {
-				return nil, fmt.Errorf("%w: %s", ErrEnvironmentConflict, alias)
+		overlayAliases[alias] = struct{}{}
+	}
+
+	out := make([]string, 0, len(base)+len(overlay))
+	existing := make(map[string]struct{}, len(base))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			existing[key] = struct{}{}
+			if override {
+				if _, exists := overlayAliases[key]; exists {
+					continue
+				}
 			}
-			out[pos] = entry
-			continue
+		}
+		out = append(out, entry)
+	}
+
+	for _, alias := range aliases {
+		if _, exists := existing[alias]; exists && !override {
+			return nil, fmt.Errorf("%w: %s", ErrEnvironmentConflict, alias)
 		}
 
-		positions[alias] = len(out)
-		out = append(out, entry)
+		out = append(out, alias+"="+overlay[alias])
 	}
 
 	return out, nil
