@@ -2,7 +2,28 @@ import AgentSecretApprover
 import Foundation
 
 private let kArguments: [String] = Array(CommandLine.arguments.dropFirst())
-private let kSampleExpiration: TimeInterval = 1_800_000_000
+private let kSampleRequestJSON: String = """
+{
+    "requestID": "req_123",
+    "nonce": "nonce_456",
+    "reason": "Run Terraform plan for staging",
+    "command": ["/opt/homebrew/bin/terraform", "plan"],
+    "cwd": "/tmp/project",
+    "expiresAt": "2027-01-15T08:00:00Z",
+    "secrets": [
+        {
+            "alias": "EXAMPLE_TOKEN",
+            "ref": "op://Example Vault/Example Item/token",
+            "account": "Work"
+        }
+    ],
+    "resolvedExecutable": null,
+    "overrideEnv": false,
+    "allowMutableExecutable": false,
+    "overriddenAliases": [],
+    "reusableUses": 3
+}
+"""
 private let kOptions = try options(from: kArguments)
 
 private let kRequest: ApprovalRequest = try request(from: kOptions.requestPath)
@@ -100,21 +121,7 @@ private func decisionKind(from raw: String) throws -> ApprovalDecisionKind {
 
 private func request(from path: String?) throws -> ApprovalRequest {
     guard let path else {
-        return ApprovalRequest(
-            requestID: "req_123",
-            nonce: "nonce_456",
-            reason: "Run Terraform plan for staging",
-            command: ["/opt/homebrew/bin/terraform", "plan"],
-            cwd: "/tmp/project",
-            expiresAt: Date(timeIntervalSince1970: kSampleExpiration),
-            secrets: [
-                RequestedSecret(
-                    alias: "EXAMPLE_TOKEN",
-                    ref: "op://Example Vault/Example Item/token",
-                    account: "Work"
-                )
-            ]
-        )
+        return try decodeRequest(from: Data(kSampleRequestJSON.utf8))
     }
 
     let data: Data = if path == "-" {
@@ -122,6 +129,10 @@ private func request(from path: String?) throws -> ApprovalRequest {
     } else {
         try Data(contentsOf: URL(fileURLWithPath: path))
     }
+    return try decodeRequest(from: data)
+}
+
+private func decodeRequest(from data: Data) throws -> ApprovalRequest {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(ApprovalRequest.self, from: data)

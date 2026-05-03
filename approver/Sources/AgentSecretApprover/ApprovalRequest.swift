@@ -35,7 +35,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var overriddenAliases: [String]
     public var reusableUses: Int
 
-    public init(
+    init(
         requestID: String,
         nonce: String,
         reason: String,
