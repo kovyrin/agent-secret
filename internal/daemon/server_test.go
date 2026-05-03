@@ -21,6 +21,10 @@ import (
 
 type allowPeerValidator struct{}
 
+func (allowPeerValidator) Info(conn *net.UnixConn) (peercred.Info, error) {
+	return peercred.Inspect(conn)
+}
+
 func (allowPeerValidator) Validate(_ *net.UnixConn) error {
 	return nil
 }
@@ -35,6 +39,9 @@ func (v staticPeerValidator) Validate(_ *net.UnixConn) error {
 }
 
 func (v staticPeerValidator) Info(_ *net.UnixConn) (peercred.Info, error) {
+	if v.err != nil {
+		return peercred.Info{}, v.err
+	}
 	return v.info, nil
 }
 

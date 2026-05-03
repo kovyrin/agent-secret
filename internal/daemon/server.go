@@ -17,6 +17,7 @@ import (
 )
 
 type PeerValidator interface {
+	Info(conn *net.UnixConn) (peercred.Info, error)
 	Validate(conn *net.UnixConn) error
 }
 
@@ -396,13 +397,7 @@ func (s *Server) handleCommandCompleted(
 }
 
 func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
-	provider, ok := s.validator.(interface {
-		Info(conn *net.UnixConn) (peercred.Info, error)
-	})
-	if ok {
-		return provider.Info(conn)
-	}
-	return peercred.Inspect(conn)
+	return s.validator.Info(conn)
 }
 
 func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader, timeout time.Duration) (Envelope, error) {
