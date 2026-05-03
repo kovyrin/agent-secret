@@ -36,6 +36,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
+        with:
+          version: "2026.4.28"
+          sha256: f0f5fa48643a00442c8cc066f8350285896561f2491bcbbee93b1a9a8249816d
       - uses: ./.github/actions/local-action
 YAML
 "$check_script" "$tmp_dir/pinned.yml"
@@ -72,5 +76,31 @@ jobs:
       - uses: actions/checkout@34e1148
 YAML
 expect_failure "actions/checkout@34e1148" "$check_script" "$tmp_dir/short-sha.yml"
+
+cat >"$tmp_dir/mise-no-version.yml" <<'YAML'
+name: mise-no-version
+on: push
+jobs:
+  mise-no-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
+        with:
+          sha256: f0f5fa48643a00442c8cc066f8350285896561f2491bcbbee93b1a9a8249816d
+YAML
+expect_failure "jdx/mise-action must pin mise version and sha256" "$check_script" "$tmp_dir/mise-no-version.yml"
+
+cat >"$tmp_dir/mise-no-sha.yml" <<'YAML'
+name: mise-no-sha
+on: push
+jobs:
+  mise-no-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
+        with:
+          version: "2026.4.28"
+YAML
+expect_failure "jdx/mise-action must pin mise version and sha256" "$check_script" "$tmp_dir/mise-no-sha.yml"
 
 echo "test-workflow-actions-pinned: ok"

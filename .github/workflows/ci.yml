@@ -10,6 +10,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  AGENT_SECRET_MISE_VERSION: "2026.4.28"
+  AGENT_SECRET_MISE_SHA256_MACOS_ARM64: f0f5fa48643a00442c8cc066f8350285896561f2491bcbbee93b1a9a8249816d
 
 permissions:
   contents: read
@@ -25,6 +27,8 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
         with:
+          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
+          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
           install: true
           cache: true
 
@@ -50,6 +54,8 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
         with:
+          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
+          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
           install: true
           cache: true
 
@@ -72,8 +78,10 @@ jobs:
         include:
           - arch: arm64
             runner: macos-latest
+            mise_sha256: f0f5fa48643a00442c8cc066f8350285896561f2491bcbbee93b1a9a8249816d
           - arch: x86_64
             runner: macos-15-intel
+            mise_sha256: 43c02a612949a37ba53bb4e1e89859da2b198b6e7dad753f31cf66db5af36b19
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -81,6 +89,8 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
         with:
+          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
+          sha256: ${{ matrix.mise_sha256 }}
           install: true
           cache: true
 
