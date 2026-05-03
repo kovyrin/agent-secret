@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `32,396`.
+Current selected LOC: `32,404`.
 
-Cumulative reduction from baseline: `6,832` LOC.
+Cumulative reduction from baseline: `6,824` LOC.
 
-Remaining reduction needed: `4,937` LOC.
+Remaining reduction needed: `4,945` LOC.
 
 Measurement command:
 
@@ -196,7 +196,7 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `6720a0b`.
 - Change: replace the custom SwiftUI approval panel with a plain native
   `NSAlert` and remove the panel component tree.
 - LOC delta: -1,522.
