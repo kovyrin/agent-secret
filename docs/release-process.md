@@ -157,6 +157,13 @@ Do not print, commit, paste, or attach `.p8`, `.p12`, private key, or password
 material. If a notary API key must be recreated, use an App Store Connect Team
 Key and store the downloaded `.p8` directly in GitHub Secrets.
 
+## Installer Bootstrap Documentation
+
+Unattended install examples must fetch `install.sh` from an immutable release
+tag. Pinned installs set `AGENT_SECRET_VERSION` to that same tag. Latest
+installs resolve the latest release tag first, then fetch `install.sh` from that
+tag. Do not pipe `main/install.sh` into a shell.
+
 ## Toolchain Pin Maintenance
 
 The GitHub workflow pins both `jdx/mise-action` and the `mise` binary that the

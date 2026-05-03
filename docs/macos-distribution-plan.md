@@ -81,11 +81,14 @@ agent-secret skill-install
 
 ### Unattended Install
 
-Agents and setup scripts use:
+Agents and setup scripts pin the bootstrap script to the same immutable release
+tag as `AGENT_SECRET_VERSION`:
 
 ```bash
-curl -fsSL \
-  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+version="v0.3.1"
+base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
+curl -fsSL "$base_url/${version}/install.sh" |
+  AGENT_SECRET_VERSION="$version" sh
 ```
 
 The installer should:
@@ -125,11 +128,19 @@ relative, broad, or symlinked.
 
 ### Upgrade
 
-The upgrade path is intentionally the same as install:
+The upgrade path is intentionally the same as install. Latest-release upgrades
+resolve the release tag first and fetch `install.sh` from that tag, not from
+`main`:
 
 ```bash
-curl -fsSL \
-  https://raw.githubusercontent.com/kovyrin/agent-secret/main/install.sh | sh
+version="$(
+  curl -fsSL https://api.github.com/repos/kovyrin/agent-secret/releases/latest |
+    awk -F'"' '/"tag_name":/ { print $4; exit }'
+)"
+test -n "$version"
+base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
+curl -fsSL "$base_url/${version}/install.sh" |
+  AGENT_SECRET_VERSION="$version" sh
 ```
 
 The installer replaces the app bundle atomically enough for a user-level tool:
