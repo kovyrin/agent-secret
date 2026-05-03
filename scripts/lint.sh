@@ -35,11 +35,14 @@ if [ -d .github/workflows ]; then
 
   if [ ${#workflow_files[@]} -gt 0 ]; then
     actionlint "${workflow_files[@]}"
+    scripts/check-workflow-actions-pinned.sh "${workflow_files[@]}"
   fi
 fi
 scripts/check-format.sh toml
 scripts/check-format.sh swift
 swiftlint lint --strict --no-cache
 npx --no-install markdownlint '**/*.md'
+
+scripts/test-workflow-actions-pinned.sh
 
 (cd approver && swift test)
