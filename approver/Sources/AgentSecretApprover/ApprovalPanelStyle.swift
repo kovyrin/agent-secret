@@ -117,6 +117,7 @@ import Foundation
             static let secretPanelPadding: CGFloat = 14
             static let sectionLabelFontSize: CGFloat = 14
             static let sectionSpacing: CGFloat = 10
+            static let scrollableApprovalContentMaxHeight: CGFloat = 430
             static let singleLineLimit: Int = 1
             static let singleSecretCount: Int = 1
             static let subtleBorderOpacity: Double = 0.18

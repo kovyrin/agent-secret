@@ -18,20 +18,7 @@ import Foundation
 
         var body: some View {
             VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                header
-                prompt
-                if viewModel.highScopeWarning {
-                    ApprovalPanelHighScopeWarning(
-                        printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
-                        secretCount: viewModel.secretCount
-                    )
-                }
-                secretSection
-                requestContext
-                if !viewModel.cautionMessages.isEmpty {
-                    caution
-                }
-                details
+                scrollableRequestSummary
                 decisionButtons
                 footer
             }
@@ -52,6 +39,30 @@ import Foundation
             ) { date in
                 handleClockTick(date)
             }
+        }
+
+        private var scrollableRequestSummary: some View {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
+                    header
+                    prompt
+                    if viewModel.highScopeWarning {
+                        ApprovalPanelHighScopeWarning(
+                            printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
+                            secretCount: viewModel.secretCount
+                        )
+                    }
+                    secretSection
+                    requestContext
+                    if !viewModel.cautionMessages.isEmpty {
+                        caution
+                    }
+                    details
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: Metric.scrollableApprovalContentMaxHeight)
+            .scrollIndicators(.visible)
         }
 
         var viewModel: ApprovalRequestViewModel {
