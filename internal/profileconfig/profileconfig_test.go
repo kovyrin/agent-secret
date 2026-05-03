@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -417,6 +418,25 @@ profiles:
 	_, err = Find(root, root)
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("expected ErrInvalidConfig for directory, got %v", err)
+	}
+}
+
+func TestFindPreservesExplicitConfigStatErrors(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	_, err := Find(filepath.Join(filePath, "agent-secret.yml"), root)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if errors.Is(err, ErrConfigNotFound) {
+		t.Fatalf("expected stat error, got ErrConfigNotFound: %v", err)
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("expected wrapped stat error, got %v", err)
 	}
 }
 

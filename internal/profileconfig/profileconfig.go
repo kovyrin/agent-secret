@@ -237,18 +237,7 @@ func resolveProfile(doc configFile, path string, profileName string, stack []str
 
 func Find(configPath string, startDir string) (string, error) {
 	if configPath != "" {
-		path, err := filepath.Abs(configPath)
-		if err != nil {
-			return "", fmt.Errorf("resolve profile config path %q: %w", configPath, err)
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return "", fmt.Errorf("%w: %s", ErrConfigNotFound, path)
-		}
-		if info.IsDir() {
-			return "", fmt.Errorf("%w: %s is a directory", ErrInvalidConfig, path)
-		}
-		return path, nil
+		return findExplicit(configPath)
 	}
 
 	dir := startDir
@@ -282,6 +271,24 @@ func Find(configPath string, startDir string) (string, error) {
 		}
 		dir = parent
 	}
+}
+
+func findExplicit(configPath string) (string, error) {
+	path, err := filepath.Abs(configPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve profile config path %q: %w", configPath, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("stat profile config %s: %w", path, err)
+		}
+		return "", fmt.Errorf("%w: %s", ErrConfigNotFound, path)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%w: %s is a directory", ErrInvalidConfig, path)
+	}
+	return path, nil
 }
 
 func parseTTL(raw string, path string, profileName string) (time.Duration, error) {
