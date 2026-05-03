@@ -171,6 +171,51 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	}
 }
 
+func TestServerRejectsLifecycleReportsFromDifferentConnection(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	aud := &memoryAudit{}
+	path, stop := startRawTestServer(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    aud,
+	})
+	defer stop()
+
+	ownerConn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("owner Dial returned error: %v", err)
+	}
+	owner := NewClient(ownerConn)
+	defer func() { _ = owner.Close() }()
+
+	otherConn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("other Dial returned error: %v", err)
+	}
+	other := NewClient(otherConn)
+	defer func() { _ = other.Close() }()
+
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
+	if _, err := owner.RequestExec(context.Background(), "req_1", "nonce_1", req); err != nil {
+		t.Fatalf("RequestExec returned error: %v", err)
+	}
+	if err := other.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); !IsProtocolError(err, protocol.ErrorCodeInvalidNonce) {
+		t.Fatalf("cross-connection ReportStarted error = %v, want invalid_nonce", err)
+	}
+	if containsAuditEvent(aud.Events(), audit.EventCommandStarted) {
+		t.Fatal("cross-connection ReportStarted produced command_started audit event")
+	}
+
+	if err := owner.ReportStarted(context.Background(), "req_1", "nonce_1", 4321); err != nil {
+		t.Fatalf("owner ReportStarted returned error: %v", err)
+	}
+	if err := owner.ReportCompleted(context.Background(), "req_1", "nonce_1", 0, ""); err != nil {
+		t.Fatalf("owner ReportCompleted returned error: %v", err)
+	}
+}
+
 func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -950,11 +995,11 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 		},
 		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
-			wantCode: "bad_command_started",
+			wantCode: "invalid_nonce",
 		},
 		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
-			wantCode: "bad_command_completed",
+			wantCode: "invalid_nonce",
 		},
 		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: "banana", RequestID: "req_1", Nonce: "nonce_1"},
@@ -969,6 +1014,60 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 		if err := decoder.Decode(&resp); err != nil {
 			t.Fatalf("decode response for %s: %v", tt.env.Type, err)
 		}
+		payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
+		if err != nil {
+			t.Fatalf("decode error payload for %s: %v", tt.env.Type, err)
+		}
+		if string(payload.Code) != tt.wantCode {
+			t.Fatalf("%s code = %q, want %q", tt.env.Type, payload.Code, tt.wantCode)
+		}
+	}
+}
+
+func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	path, stop := startRawTestServer(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	defer stop()
+
+	conn, err := Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial returned error: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	encoder := json.NewEncoder(conn)
+	decoder := json.NewDecoder(conn)
+
+	writeRawExecRequest(t, encoder, "req_1", "nonce_1", testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: ref, Account: "Work"},
+	}))
+	if resp := readRawEnvelope(t, decoder); resp.Type != protocol.TypeOK {
+		t.Fatalf("exec response type = %q, want %q", resp.Type, protocol.TypeOK)
+	}
+
+	tests := []struct {
+		env      protocol.Envelope
+		wantCode string
+	}{
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_command_started",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_command_completed",
+		},
+	}
+	for _, tt := range tests {
+		if err := encoder.Encode(tt.env); err != nil {
+			t.Fatalf("encode %s: %v", tt.env.Type, err)
+		}
+		resp := readRawEnvelope(t, decoder)
 		payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
 		if err != nil {
 			t.Fatalf("decode error payload for %s: %v", tt.env.Type, err)

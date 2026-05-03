@@ -223,11 +223,17 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				nextReadTimeout = s.readTimeout
 			}
 		case protocol.TypeCommandStarted:
+			if !s.lifecycleRequestMatchesConnection(encoder, env, activeRequestID) {
+				continue
+			}
 			if s.handleCommandStarted(ctx, conn, encoder, env) {
 				commandStarted = true
 				nextReadTimeout = 0
 			}
 		case protocol.TypeCommandCompleted:
+			if !s.lifecycleRequestMatchesConnection(encoder, env, activeRequestID) {
+				continue
+			}
 			if s.handleCommandCompleted(ctx, conn, encoder, env) {
 				activeRequestID = ""
 				commandStarted = false
@@ -237,6 +243,18 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
 		}
 	}
+}
+
+func (s *Server) lifecycleRequestMatchesConnection(
+	encoder *json.Encoder,
+	env protocol.Envelope,
+	activeRequestID string,
+) bool {
+	if activeRequestID != "" && env.RequestID == activeRequestID {
+		return true
+	}
+	_ = writeErrorEncoder(encoder, env.RequestID, env.Nonce, codeForError(ErrInvalidNonce), ErrInvalidNonce)
+	return false
 }
 
 func (s *Server) handleApprovalPending(
