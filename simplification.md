@@ -31,11 +31,11 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `34,958`.
+Current selected LOC: `34,574`.
 
-Cumulative reduction from baseline: `4,270` LOC.
+Cumulative reduction from baseline: `4,654` LOC.
 
-Remaining reduction needed: `7,499` LOC.
+Remaining reduction needed: `7,115` LOC.
 
 Measurement command:
 
@@ -172,11 +172,19 @@ Docs:
 
 2026-05-03:
 
-- Commit: pending.
+- Commit: `e9d0867`.
 - Change: remove release PATH, GOROOT, and custom keychain trap scaffolding.
 - LOC delta: -375.
 - Verification: focused release signing and docs smoke tests, workflow action
   pin check, `actionlint`, `markdownlint`, `mise run lint`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: remove Swift tests that pin layout and app entrypoint implementation.
+- LOC delta: -384.
+- Verification: `swift test`, `mise run lint:swift`, `markdownlint`,
+  `git diff --check`, `mise run lint`.
 
 ## Current Decisions
 
