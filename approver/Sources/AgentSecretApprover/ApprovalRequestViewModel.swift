@@ -27,69 +27,37 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     private static let commandInspectorThreshold: Int = 96
     private static let secondsPerMinute: Int = 60
 
-    /// Prompt title.
     public let title: String
-    /// Request reason.
     public let reason: String
-    /// Shell-escaped compact argv display.
     public let command: String
-    /// True when the command should expose a full-text inspector affordance.
     public let commandNeedsInspector: Bool
-    /// Structured argv rows for the full command inspector.
     public let commandInspectionText: String
-    /// One view model per argv element.
     let commandArguments: [CommandArgumentViewModel]
-    /// Executable path displayed in the approval summary.
     public let executable: String
-    /// Working directory display.
     public let cwd: String
-    /// Working directory display shortened for the current user.
     public let projectFolder: String
-    /// Resolved executable display when known.
     public let resolvedExecutable: String?
-    /// Secret alias/ref rows without secret values.
     public let requestedSecrets: [RequestedSecretRowViewModel]
-    /// Secret alias/reference rows without secret values.
     public let secretRows: [String]
-    /// Total number of requested secrets.
     public let secretCount: Int
-    /// Requested secrets grouped by vault.
     public let vaultGroups: [SecretVaultGroupViewModel]
-    /// Number of vaults represented by this request.
     public let vaultCount: Int
-    /// Main prompt question.
     public let promptQuestion: String
-    /// Summary text next to the command pill.
     public let accessSummary: String
-    /// True when the request can no longer be approved.
     public let isExpired: Bool
-    /// True when the number of requested secrets deserves extra attention.
     public let highScopeWarning: Bool
-    /// Human-readable approval TTL.
     public let timeRemaining: String
-    /// Human-readable timer string for approval buttons.
     public let compactTimeRemaining: String
-    /// Maximum launches covered by reusable approval.
     public let reusableUses: Int
-    /// Reusable approval scope summary.
     public let scopeSummary: String
-    /// Reusable approval button title.
     public let allowReusableTitle: String
-    /// True when the command commonly prints its environment.
     public let printsEnvironmentWarning: Bool
-    /// True when approved aliases replace existing child environment variables.
     public let overrideEnv: Bool
-    /// Sanitized aliases that replace existing child environment variables.
     public let overriddenAliases: [String]
-    /// Environment override warning when applicable.
     public let overrideWarning: String?
-    /// Mutable executable opt-in warning when applicable.
     public let mutableExecutableWarning: String?
-    /// Caution messages visible in the default SwiftUI approval surface.
     public let cautionMessages: [String]
-    /// Footer copy with correct singular/plural wording.
     public let footerMessage: String
-    /// Full sanitized prompt body for AppKit alerts.
     public let renderedText: String
 
     /// Builds a prompt view model without including raw secret values.
