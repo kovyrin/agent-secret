@@ -15,6 +15,34 @@ Flags:
 USAGE
 }
 
+release_signing_env_present() {
+  local name=""
+  local value=""
+
+  for name in \
+    AGENT_SECRET_CODESIGN_CERT_P12_BASE64 \
+    AGENT_SECRET_CODESIGN_CERT_P12_PATH \
+    AGENT_SECRET_CODESIGN_CERT_PASSWORD \
+    AGENT_SECRET_CODESIGN_ENTITLEMENTS \
+    AGENT_SECRET_NOTARY_ISSUER_ID \
+    AGENT_SECRET_NOTARY_KEY \
+    AGENT_SECRET_NOTARY_KEY_ID; do
+    if [[ "${!name:-}" != "" ]]; then
+      return 0
+    fi
+  done
+
+  value="${AGENT_SECRET_CODESIGN_IDENTITY:-}"
+  if [[ "$value" != "" && "$value" != "-" ]]; then
+    return 0
+  fi
+  if [[ "${AGENT_SECRET_NOTARIZE:-}" == "1" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
 script_path="${BASH_SOURCE[0]}"
 script_dir_part="${script_path%/*}"
 if [[ "$script_dir_part" == "$script_path" ]]; then
@@ -27,6 +55,11 @@ project_root="$(cd -- "$script_dir/.." && pwd)"
 source "$project_root/scripts/bundle-metadata.sh"
 
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
+  if release_signing_env_present; then
+    echo "build-app-bundle: refusing to re-exec PATH-discovered mise while release signing environment is present" >&2
+    echo "build-app-bundle: run from a trusted toolchain context with AGENT_SECRET_IN_MISE=1" >&2
+    exit 1
+  fi
   if command -v mise >/dev/null 2>&1; then
     export AGENT_SECRET_IN_MISE=1
     exec mise exec -- "$0" "$@"
@@ -93,34 +126,6 @@ resolve_path_tool() {
   fi
   require_tool "$name" "$path"
   printf '%s\n' "$path"
-}
-
-release_signing_env_present() {
-  local name=""
-  local value=""
-
-  for name in \
-    AGENT_SECRET_CODESIGN_CERT_P12_BASE64 \
-    AGENT_SECRET_CODESIGN_CERT_P12_PATH \
-    AGENT_SECRET_CODESIGN_CERT_PASSWORD \
-    AGENT_SECRET_CODESIGN_ENTITLEMENTS \
-    AGENT_SECRET_NOTARY_ISSUER_ID \
-    AGENT_SECRET_NOTARY_KEY \
-    AGENT_SECRET_NOTARY_KEY_ID; do
-    if [[ "${!name:-}" != "" ]]; then
-      return 0
-    fi
-  done
-
-  value="${AGENT_SECRET_CODESIGN_IDENTITY:-}"
-  if [[ "$value" != "" && "$value" != "-" ]]; then
-    return 0
-  fi
-  if [[ "${AGENT_SECRET_NOTARIZE:-}" == "1" ]]; then
-    return 0
-  fi
-
-  return 1
 }
 
 require_release_go_toolchain() {
