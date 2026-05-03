@@ -252,6 +252,8 @@ fi
 if [ ${#workflow_files[@]} -gt 0 ]; then
   echo "Running actionlint on changed workflows..."
   actionlint "${workflow_files[@]}"
+  echo "Checking changed workflow action pins..."
+  scripts/check-workflow-actions-pinned.sh "${workflow_files[@]}"
 fi
 
 if [ ${#toml_files[@]} -gt 0 ]; then
