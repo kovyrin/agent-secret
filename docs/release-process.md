@@ -188,7 +188,10 @@ Signed release builds must already be inside a trusted toolchain context. The
 release builder refuses to re-exec a `mise` binary discovered through `PATH`
 when signing or notarization environment variables are present; CI uses the
 pinned `jdx/mise-action` and invokes the release builder through `mise exec`
-with `AGENT_SECRET_IN_MISE=1`.
+with `AGENT_SECRET_IN_MISE=1`. The app bundle builder also rejects an inherited
+`GOROOT` that does not match the selected Go binary and runs Go commands with
+`GOROOT` unset, so caller environment variables cannot silently swap the
+compiler for signed artifacts.
 
 ## Failed Release Runs
 

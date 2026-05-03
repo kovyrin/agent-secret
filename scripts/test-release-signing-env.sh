@@ -173,6 +173,39 @@ expect_failure "production release requires AGENT_SECRET_CODESIGN_IDENTITY" \
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/path-trap-out"
 assert_path_trap_clean "$trap_log"
 
+fake_goroot="$tmp_dir/fake-goroot"
+fake_goroot_log="$tmp_dir/fake-goroot.log"
+trusted_go="$(command -v go || true)"
+if [[ "$trusted_go" == "" ]] && command -v mise >/dev/null 2>&1; then
+  trusted_go="$(mise exec -- command -v go || true)"
+fi
+if [[ "$trusted_go" == "" || "$trusted_go" != /* ]]; then
+  fail "could not locate trusted go for GOROOT trap test"
+fi
+trusted_go_path="${trusted_go%/*}:$test_path"
+mkdir -p "$fake_goroot/bin"
+cat >"$fake_goroot/bin/go" <<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "fake-goroot-go $*" >>"$AGENT_SECRET_FAKE_GOROOT_LOG"
+exit 44
+BASH
+chmod 755 "$fake_goroot/bin/go"
+: >"$fake_goroot_log"
+
+expect_failure "inherited GOROOT does not match selected Go toolchain" \
+  env -i \
+  "PATH=$trusted_go_path" \
+  AGENT_SECRET_FAKE_GOROOT_LOG="$fake_goroot_log" \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  AGENT_SECRET_IN_MISE=1 \
+  GOROOT="$fake_goroot" \
+  "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/goroot-trap-out"
+if [[ -s "$fake_goroot_log" ]]; then
+  fail "release script executed fake GOROOT go: $(cat "$fake_goroot_log")"
+fi
+
 if grep -En '(^|[|;&][[:space:]]*)(base64|security|uuidgen|mktemp|rm|chmod)([[:space:]]|$)' "$import_certificate"; then
   fail "import-codesign-certificate.sh contains bare secret-handling tool invocation"
 fi
