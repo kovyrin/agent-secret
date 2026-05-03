@@ -3,9 +3,18 @@ import Foundation
 #if canImport(AppKit)
     import AppKit
 #endif
+#if canImport(SwiftUI)
+    import SwiftUI
+#endif
 
 /// Native macOS approval presenter.
 public final class AppKitApprovalPresenter: ApprovalPresenter {
+    #if canImport(AppKit)
+        private static let panelHeight: CGFloat = 660
+        private static let panelOrigin: CGFloat = 0
+        private static let panelWidth: CGFloat = 832
+    #endif
+
     /// Creates an AppKit-backed presenter.
     public init() {
         /* No dependencies to initialize. */
@@ -21,6 +30,19 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         }
 
         @MainActor
+        private static func bringForward(_ window: NSWindow) {
+            window.level = .modalPanel
+            window.collectionBehavior = [
+                .canJoinAllSpaces,
+                .fullScreenAuxiliary
+            ]
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
+        }
+
+        @MainActor
         private static func decideOnMain(for request: ApprovalRequest) -> ApprovalDecisionKind {
             if let preflightDecision: ApprovalDecisionKind = preflightDecision(for: request) {
                 return preflightDecision
@@ -28,15 +50,32 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
 
             let app = NSApplication.shared
             Self.activate(app)
-            let viewModel = ApprovalRequestViewModel(request: request)
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = viewModel.promptQuestion
-            alert.informativeText = viewModel.renderedText
-            alert.addButton(withTitle: "Deny")
-            alert.addButton(withTitle: "Allow Once")
-            alert.addButton(withTitle: "Allow Same Command Briefly")
-            return decision(for: alert.runModal())
+            let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
+            let window = NSPanel(
+                contentRect: NSRect(
+                    x: Self.panelOrigin,
+                    y: Self.panelOrigin,
+                    width: Self.panelWidth,
+                    height: Self.panelHeight
+                ),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.isMovableByWindowBackground = true
+            window.contentView = NSHostingView(
+                rootView: ApprovalRequestPanelView(request: request) { selectedDecision in
+                    coordinator.complete(with: selectedDecision)
+                }
+            )
+
+            Self.bringForward(window)
+            _ = app.runModal(for: window)
+            window.close()
+            return coordinator.decision
         }
 
         @MainActor
@@ -45,19 +84,6 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             now: Date = Date()
         ) -> ApprovalDecisionKind? {
             ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: now)
-        }
-
-        static func decision(for response: NSApplication.ModalResponse) -> ApprovalDecisionKind {
-            switch response {
-            case .alertSecondButtonReturn:
-                .approveOnce
-
-            case .alertThirdButtonReturn:
-                .approveReusable
-
-            default:
-                .deny
-            }
         }
     #endif
 

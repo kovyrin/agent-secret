@@ -31,11 +31,12 @@ Target selected LOC after cleanup: at most `27,459`.
 
 Required reduction: at least `11,769` LOC.
 
-Current selected LOC: `32,404`.
+Current selected LOC: `37,101` with restored planning docs and SwiftUI approval
+panel in the working tree.
 
-Cumulative reduction from baseline: `6,824` LOC.
+Cumulative reduction from baseline: `2,127` LOC.
 
-Remaining reduction needed: `4,945` LOC.
+Remaining reduction needed: `9,642` LOC.
 
 Measurement command:
 
@@ -115,9 +116,9 @@ Installer and release shell tests:
 Swift approver tests:
 
 - Current signal: implementation-heavy.
-- Target cut: 1,000-1,500 LOC.
-- Notes: keep protocol, peer trust, expiry, and display-safety tests. Trim
-  layout and internal-concurrency pinning.
+- Target cut: only duplicate tests that do not protect product-visible UI.
+- Notes: keep protocol, peer trust, expiry, display-safety tests, and the
+  polished custom approval panel.
 
 Production daemon, client, and approval code:
 
@@ -133,9 +134,11 @@ Installer and release scripts:
 
 Docs:
 
-- Current signal: historical debris.
-- Target cut: 500-1,500 LOC.
-- Notes: keep threat model, README, release process, and configuration docs.
+- Current signal: historical review artifacts only.
+- Target cut: only generated review reports or obsolete notes explicitly
+  approved for removal.
+- Notes: keep PRD, implementation plan, distribution plan, spike notes, threat
+  model, README, release process, and configuration docs.
 
 ## Progress
 
@@ -201,13 +204,38 @@ Docs:
   `NSAlert` and remove the panel component tree.
 - LOC delta: -1,522.
 - Verification: `swift test`, `mise run lint:swift`.
+- Status: invalid cleanup cut; restored in the working tree.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: restore `docs/prd.md`, `docs/implementation-plan.md`,
+  `docs/macos-distribution-plan.md`, and `docs/epic-2-spikes.md`; these are
+  project source-of-truth documents, not cleanup debris.
+- LOC delta: +3,147.
+- Verification: `scripts/test-release-docs.sh`, `markdownlint`,
+  `git diff --check`.
+
+2026-05-03:
+
+- Commit: pending.
+- Change: restore the custom SwiftUI approval panel and its component/test tree;
+  this is product UI, not cleanup debris.
+- LOC delta: +1,535.
+- Verification: `swift test`, `mise run lint:swift`, `markdownlint`,
+  `git diff --check`.
 
 ## Current Decisions
 
 - Keep `docs/threat-model.md` as the security contract.
+- Keep product source-of-truth documents such as the PRD and implementation
+  plan unless the user explicitly approves their removal.
+- Keep polished product UI unless the user explicitly asks for a redesign or
+  removal.
 - Treat complexity as a security and release-readiness risk.
 - Prefer fewer black-box security invariants over many narrow adversarial
   fixtures.
+- Do not cut product features to satisfy a LOC target.
 - Do not run another open-ended vulnerability review during this cleanup pass.
 
 ## Next Cleanup Pass
