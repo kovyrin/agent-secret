@@ -268,16 +268,16 @@ management commands for troubleshooting: `agent-secret daemon status`,
 `agent-secret daemon start`, and `agent-secret daemon stop`.
 
 `agent-secret daemon stop` is immediate in v1. It stops the daemon, cancels
-active approvals and sessions, clears daemon memory, stops accepting new work,
-and exits. It does not track, signal, or manage already-spawned child processes;
+active approvals, clears daemon memory, stops accepting new work, and exits. It
+does not track, signal, or manage already-spawned child processes;
 those processes continue under normal OS process semantics. Before stopping, the
 daemon should attempt one best-effort `daemon_stop` audit event. Failure to
 write that event must not block or delay shutdown.
 
 The daemon must not persist operational state beyond the append-only audit log.
-Reusable approvals, sessions, use counters, cached secret values, approval
-nonces, and socket paths are memory-only. Stopping the daemon clears that state;
-the already-written audit log remains as history.
+Reusable approvals, use counters, cached secret values, approval nonces, and
+socket paths are memory-only. Stopping the daemon clears that state; the
+already-written audit log remains as history.
 
 ### `Agent Secret.app`
 

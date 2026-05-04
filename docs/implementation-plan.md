@@ -734,8 +734,6 @@ Status: Complete
   - fail closed without spawning the child if one-shot TTL expires before spawn
   - keep reusable approval values in daemon memory until TTL, max-use
     exhaustion, or daemon stop
-  - keep session values in daemon memory until TTL, read-count exhaustion, daemon
-    stop, or explicit session destroy
   - treat env-mode TTL expiry as an approval/cache cleanup event, not as a
     reason to kill an already-running child process
 - Verification:
