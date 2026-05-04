@@ -29,8 +29,12 @@ type App struct {
 	DoctorApproverCheck func(context.Context) error
 	Stdout              io.Writer
 	Stderr              io.Writer
-	manager             daemonManager
+	managerFactory      daemonManagerFactory
 }
+
+type ControlManagerFactory func() (control.Manager, error)
+
+type daemonManagerFactory func() (daemonManager, error)
 
 type daemonManager interface {
 	EnsureRunning(ctx context.Context) error
@@ -85,29 +89,47 @@ func (m daemonControlManager) SocketPath() string {
 	return m.manager.SocketPath
 }
 
-func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
+func NewApp(newManager ControlManagerFactory, stdout io.Writer, stderr io.Writer) App {
 	if stdout == nil {
 		stdout = os.Stdout
 	}
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	if newManager == nil {
+		newManager = func() (control.Manager, error) {
+			return control.NewManager("")
+		}
+	}
 	return App{
-		Parser:       NewParser(),
-		InstallCLI:   install.InstallCLI,
-		InstallSkill: install.InstallSkill,
-		RandomReader: rand.Reader,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		manager:      daemonControlManager{manager: manager},
+		Parser:         NewParser(),
+		InstallCLI:     install.InstallCLI,
+		InstallSkill:   install.InstallSkill,
+		RandomReader:   rand.Reader,
+		Stdout:         stdout,
+		Stderr:         stderr,
+		managerFactory: newDaemonControlManagerFactory(newManager),
 	}
 }
 
-func (a App) daemonManager() daemonManager {
-	if a.manager != nil {
-		return a.manager
+func newDaemonControlManagerFactory(newManager ControlManagerFactory) daemonManagerFactory {
+	return func() (daemonManager, error) {
+		manager, err := newManager()
+		if err != nil {
+			return nil, err
+		}
+		return daemonControlManager{manager: manager}, nil
 	}
-	return daemonControlManager{}
+}
+
+func (a App) daemonManager() (daemonManager, error) {
+	factory := a.managerFactory
+	if factory == nil {
+		factory = newDaemonControlManagerFactory(func() (control.Manager, error) {
+			return control.NewManager("")
+		})
+	}
+	return factory()
 }
 
 func (a App) Run(ctx context.Context, args []string) int {
@@ -146,7 +168,11 @@ func (a App) Run(ctx context.Context, args []string) int {
 }
 
 func (a App) runExec(ctx context.Context, command Command) int {
-	manager := a.daemonManager()
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		return 1
+	}
 	if err := manager.EnsureRunning(ctx); err != nil {
 		a.stderrf("agent-secret: start daemon: %v\n", err)
 		return 1
@@ -205,7 +231,12 @@ func (a App) runExec(ctx context.Context, command Command) int {
 }
 
 func (a App) runDaemonStatus(ctx context.Context) int {
-	status, err := a.daemonManager().Status(ctx)
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stdoutf("agent-secretd: stopped (%v)\n", err)
+		return 1
+	}
+	status, err := manager.Status(ctx)
 	if err != nil {
 		a.stdoutf("agent-secretd: stopped (%v)\n", err)
 		return 1
@@ -215,7 +246,11 @@ func (a App) runDaemonStatus(ctx context.Context) int {
 }
 
 func (a App) runDaemonStart(ctx context.Context) int {
-	manager := a.daemonManager()
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		return 1
+	}
 	if err := manager.Start(ctx); err != nil {
 		a.stderrf("agent-secret: start daemon: %v\n", err)
 		return 1
@@ -230,7 +265,12 @@ func (a App) runDaemonStart(ctx context.Context) int {
 }
 
 func (a App) runDaemonStop(ctx context.Context) int {
-	if err := a.daemonManager().Stop(ctx); err != nil {
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		return 1
+	}
+	if err := manager.Stop(ctx); err != nil {
 		a.stderrf("agent-secret: stop daemon: %v\n", err)
 		return 1
 	}
@@ -239,7 +279,11 @@ func (a App) runDaemonStop(ctx context.Context) int {
 }
 
 func (a App) runDoctor(ctx context.Context) int {
-	manager := a.daemonManager()
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		return 1
+	}
 	healthy := true
 	a.stdoutln("agent-secret doctor")
 	a.stdoutf("platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)

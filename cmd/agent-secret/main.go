@@ -22,14 +22,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	manager, err := control.NewManager("")
-	if err != nil {
-		writeErrorf(stderr, "agent-secret: initialize daemon manager: %v\n", err)
-		return 1
-	}
-	app := cli.NewApp(manager, stdout, stderr)
+	app := cli.NewApp(newDaemonManager, stdout, stderr)
 	app.DoctorApproverCheck = checkApproverHealth
 	return app.Run(context.Background(), args)
+}
+
+func newDaemonManager() (control.Manager, error) {
+	return control.NewManager("")
 }
 
 func checkApproverHealth(ctx context.Context) error {

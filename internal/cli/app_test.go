@@ -29,6 +29,20 @@ import (
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
+func newTestApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
+	return NewApp(func() (control.Manager, error) {
+		return manager, nil
+	}, stdout, stderr)
+}
+
+func newTestAppWithDaemonManager(manager daemonManager, stdout io.Writer, stderr io.Writer) App {
+	app := NewApp(nil, stdout, stderr)
+	app.managerFactory = func() (daemonManager, error) {
+		return manager, nil
+	}
+	return app
+}
+
 func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
 		runAppExecHelper()
@@ -44,7 +58,7 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
 	code := app.Run(context.Background(), []string{
@@ -85,8 +99,7 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{}, &stdout, &stderr)
-	app.manager = manager
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
 	code := app.Run(context.Background(), []string{
@@ -138,7 +151,7 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 	t.Setenv("AGENT_SECRET_APP_EXPECT_PLAIN", "from-file")
 	t.Setenv("TOKEN", "parent-token")
@@ -174,7 +187,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
 	code := app.Run(context.Background(), []string{
@@ -203,7 +216,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 	defer cleanup()
 	var stdout lockedBuffer
 	var stderr lockedBuffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
 	code := app.Run(context.Background(), []string{
@@ -238,7 +251,7 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	app.DoctorApproverCheck = func(context.Context) error { return nil }
 
 	if code := app.Run(context.Background(), []string{"daemon", "status"}); code != 0 {
@@ -266,7 +279,7 @@ func TestAppDaemonStatusReportsStoppedAfterRequestCancellation(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{
+	app := newTestApp(control.Manager{
 		SocketPath: client.SocketPath,
 		DaemonPath: os.Args[0],
 	}, &stdout, &stderr)
@@ -304,7 +317,7 @@ func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	app.DoctorApproverCheck = func(context.Context) error { return nil }
 
 	code := app.Run(context.Background(), []string{"doctor"})
@@ -328,7 +341,7 @@ func TestAppDaemonStartAndStopCommands(t *testing.T) {
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 
 	if code := app.Run(context.Background(), []string{"daemon", "start"}); code != 0 {
 		t.Fatalf("daemon start exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
@@ -352,8 +365,7 @@ func TestAppDaemonCommandsUseManagerWithoutSocket(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{}, &stdout, &stderr)
-	app.manager = manager
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 
 	if code := app.Run(context.Background(), []string{"daemon", "status"}); code != 0 {
 		t.Fatalf("daemon status exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
@@ -419,12 +431,49 @@ func TestAppInstallCommands(t *testing.T) {
 	})
 }
 
+func TestAppSkipsDaemonManagerForNonDaemonCommands(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	managerCalls := 0
+	app := NewApp(func() (control.Manager, error) {
+		managerCalls++
+		return control.Manager{}, errors.New("daemon manager should not initialize")
+	}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+	app.InstallSkill = func(options install.SkillOptions) (install.SkillResult, error) {
+		return install.SkillResult{
+			LinkPath:   filepath.Join(options.SkillsDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/skills/agent-secret",
+		}, nil
+	}
+
+	for _, args := range [][]string{
+		{"help"},
+		{"install-cli", "--bin-dir", filepath.Join(t.TempDir(), "bin"), "--force"},
+		{"skill-install", "--skills-dir", filepath.Join(t.TempDir(), "skills"), "--force"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := app.Run(context.Background(), args); code != 0 {
+			t.Fatalf("%v exit=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
+		}
+	}
+	if managerCalls != 0 {
+		t.Fatalf("daemon manager factory called %d times for non-daemon commands", managerCalls)
+	}
+}
+
 func runInstallCommandTest(t *testing.T, args []string, configure func(*App), stdoutWant string) {
 	t.Helper()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{}, &stdout, &stderr)
+	app := newTestApp(control.Manager{}, &stdout, &stderr)
 	configure(&app)
 
 	code := app.Run(context.Background(), args)
@@ -439,7 +488,7 @@ func runInstallCommandTest(t *testing.T, args []string, configure func(*App), st
 func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}, &stdout, &stderr)
+	app := newTestApp(control.Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}, &stdout, &stderr)
 
 	if code := app.Run(context.Background(), []string{"bananas"}); code != 2 {
 		t.Fatalf("unknown command exit=%d, want 2", code)
@@ -473,8 +522,7 @@ func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{}, &stdout, &stderr)
-	app.manager = manager
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 	app.DoctorApproverCheck = nil
 
 	code := app.Run(context.Background(), []string{"doctor"})
@@ -498,7 +546,7 @@ func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
 func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(control.Manager{
+	app := newTestApp(control.Manager{
 		SocketPath: filepath.Join(t.TempDir(), "missing.sock"),
 	}, &stdout, &stderr)
 
@@ -533,7 +581,7 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 	entropyErr := errors.New("entropy unavailable")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(appTestManager(client), &stdout, &stderr)
+	app := newTestApp(appTestManager(client), &stdout, &stderr)
 	app.RandomReader = failingRandomReader{err: entropyErr}
 	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
 
@@ -560,7 +608,7 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 }
 
 func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
-	app := NewApp(control.Manager{}, nil, nil)
+	app := NewApp(nil, nil, nil)
 	if app.Stdout == nil || app.Stderr == nil {
 		t.Fatalf("NewApp did not install default writers: %+v", app)
 	}
