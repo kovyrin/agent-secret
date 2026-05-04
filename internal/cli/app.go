@@ -327,7 +327,7 @@ func (a App) runSkillInstall(command Command) int {
 	if installSkill == nil {
 		installSkill = install.InstallSkill
 	}
-	result, err := installSkill(command.InstallSkillOpts)
+	result, err := installSkill(command.InstallSkillOptions)
 	if err != nil {
 		a.stderrf("agent-secret: skill-install: %v\n", err)
 		return 1

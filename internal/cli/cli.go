@@ -39,11 +39,11 @@ const (
 )
 
 type Command struct {
-	Kind              Kind
-	ExecRequest       request.ExecRequest
-	InstallCLIOptions install.CLIOptions
-	InstallSkillOpts  install.SkillOptions
-	HelpText          string
+	Kind                Kind
+	ExecRequest         request.ExecRequest
+	InstallCLIOptions   install.CLIOptions
+	InstallSkillOptions install.SkillOptions
+	HelpText            string
 }
 
 type Parser struct{}
@@ -759,7 +759,7 @@ func parseSkillInstall(args []string) (Command, error) {
 	}
 	return Command{
 		Kind: KindSkillInstall,
-		InstallSkillOpts: install.SkillOptions{
+		InstallSkillOptions: install.SkillOptions{
 			SkillsDir: *skillsDir,
 			Force:     *force,
 		},

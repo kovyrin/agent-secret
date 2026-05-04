@@ -861,10 +861,10 @@ func TestParseSkillInstallOptions(t *testing.T) {
 	if command.Kind != KindSkillInstall {
 		t.Fatalf("kind = %s, want %s", command.Kind, KindSkillInstall)
 	}
-	if command.InstallSkillOpts.SkillsDir != "/tmp/skills" {
-		t.Fatalf("skills dir = %q, want /tmp/skills", command.InstallSkillOpts.SkillsDir)
+	if command.InstallSkillOptions.SkillsDir != "/tmp/skills" {
+		t.Fatalf("skills dir = %q, want /tmp/skills", command.InstallSkillOptions.SkillsDir)
 	}
-	if !command.InstallSkillOpts.Force {
+	if !command.InstallSkillOptions.Force {
 		t.Fatal("force = false, want true")
 	}
 }
