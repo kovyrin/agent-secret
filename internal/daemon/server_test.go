@@ -15,6 +15,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -141,7 +142,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
-		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 		ReadTimeout:   20 * time.Millisecond,
 	})
 	defer stop()
@@ -359,7 +360,7 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		ExecValidator: peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
 		MaxFrameBytes: 4096,
 		ReadTimeout:   time.Second,
 	})
@@ -516,7 +517,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
-		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 		beforeExecResponseWrite: func() {
 			hookOnce.Do(func() {
 				if approval, err := broker.grants.reusable.store.MatchReusableForReuseAudit(
@@ -679,7 +680,7 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		NewTrustedExecutableValidator([]string{exe}),
+		peertrust.NewExecutableValidator([]string{exe}),
 	)
 	defer stop()
 
@@ -727,7 +728,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	server, err := NewServer(ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
-		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -785,7 +786,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
 	)
 	defer stop()
 
@@ -892,7 +893,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 		Broker:        broker,
 		Approvals:     approver,
 		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 		ReadTimeout:   20 * time.Millisecond,
 	})
 	defer stop()
@@ -1148,7 +1149,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
 	)
 	defer stop()
 
@@ -1189,7 +1190,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		NewTrustedExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
 	)
 	defer stop()
 
@@ -1330,7 +1331,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
 		{err: ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
 		{err: approval.ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
-		{err: ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
+		{err: peertrust.ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
 		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
 		{err: context.DeadlineExceeded, want: protocol.ErrorCodeContextDeadlineExceeded},
 		{err: ErrSecretResolveFailed, want: protocol.ErrorCodeResolveFailed},
@@ -1422,7 +1423,7 @@ func startRawServerWithBroker(
 		broker,
 		approvals,
 		validator,
-		NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 	)
 }
 
@@ -1431,7 +1432,7 @@ func startRawServerWithBrokerAndExecValidator(
 	broker *Broker,
 	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
-	execValidator ExecPeerValidator,
+	execValidator peertrust.ExecValidator,
 ) (string, func()) {
 	t.Helper()
 	return startRawServerWithOptions(t, ServerOptions{

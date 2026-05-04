@@ -1,4 +1,4 @@
-package daemon
+package peertrust
 
 import (
 	"errors"
@@ -14,40 +14,40 @@ import (
 
 var ErrUntrustedClient = errors.New("untrusted daemon client")
 
-type ExecPeerValidator interface {
+type ExecValidator interface {
 	ValidateExecPeer(info peercred.Info) error
 }
 
-type TrustedExecutableValidator struct {
-	set trustedExecutableSet
+type ExecutableValidator struct {
+	set executableSet
 }
 
-type trustedExecutableSet struct {
-	entries           []trustedExecutable
+type executableSet struct {
+	entries           []executable
 	expectedTeamID    string
 	err               error
 	signatureVerifier trust.CodeSignatureVerifier
 	verifySignature   bool
 }
 
-type trustedExecutable struct {
+type executable struct {
 	path       string
 	fileInfo   os.FileInfo
 	bundlePath string
 }
 
-func NewTrustedExecutableValidator(paths []string) TrustedExecutableValidator {
-	return newTrustedExecutableValidator(paths, trust.DefaultExpectedTeamID())
+func NewExecutableValidator(paths []string) ExecutableValidator {
+	return newExecutableValidator(paths, trust.DefaultExpectedTeamID())
 }
 
-func newTrustedExecutableValidator(paths []string, expectedTeamID string) TrustedExecutableValidator {
-	return TrustedExecutableValidator{
-		set: newTrustedExecutableSet(paths, expectedTeamID, ErrUntrustedClient),
+func newExecutableValidator(paths []string, expectedTeamID string) ExecutableValidator {
+	return ExecutableValidator{
+		set: newExecutableSet(paths, expectedTeamID, ErrUntrustedClient),
 	}
 }
 
-func newTrustedExecutableSet(paths []string, expectedTeamID string, err error) trustedExecutableSet {
-	return newTrustedExecutableSetWithVerifier(
+func newExecutableSet(paths []string, expectedTeamID string, err error) executableSet {
+	return newExecutableSetWithVerifier(
 		paths,
 		expectedTeamID,
 		err,
@@ -56,15 +56,15 @@ func newTrustedExecutableSet(paths []string, expectedTeamID string, err error) t
 	)
 }
 
-func newTrustedExecutableSetWithVerifier(
+func newExecutableSetWithVerifier(
 	paths []string,
 	expectedTeamID string,
 	err error,
 	verifier trust.CodeSignatureVerifier,
 	verifySignature bool,
-) trustedExecutableSet {
+) executableSet {
 	seen := make(map[string]struct{}, len(paths))
-	entries := make([]trustedExecutable, 0, len(paths))
+	entries := make([]executable, 0, len(paths))
 	for _, path := range paths {
 		path = strings.TrimSpace(path)
 		if path == "" {
@@ -79,16 +79,16 @@ func newTrustedExecutableSetWithVerifier(
 			continue
 		}
 		seen[path] = struct{}{}
-		entry := trustedExecutable{
+		entry := executable{
 			path:     path,
 			fileInfo: info,
 		}
-		if bundlePath, ok := trustedClientBundlePath(path); ok {
+		if bundlePath, ok := clientBundlePath(path); ok {
 			entry.bundlePath = bundlePath
 		}
 		entries = append(entries, entry)
 	}
-	return trustedExecutableSet{
+	return executableSet{
 		entries:           entries,
 		expectedTeamID:    strings.TrimSpace(expectedTeamID),
 		err:               err,
@@ -97,15 +97,15 @@ func newTrustedExecutableSetWithVerifier(
 	}
 }
 
-func DefaultTrustedClientPaths() []string {
+func DefaultClientPaths() []string {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil
 	}
-	return trustedClientPathsForExecutable(exe)
+	return clientPathsForExecutable(exe)
 }
 
-func trustedClientPathsForExecutable(exe string) []string {
+func clientPathsForExecutable(exe string) []string {
 	dir := filepath.Dir(exe)
 	paths := []string{filepath.Join(dir, "agent-secret")}
 	if filepath.Base(exe) == "agent-secret" {
@@ -117,7 +117,7 @@ func trustedClientPathsForExecutable(exe string) []string {
 	return paths
 }
 
-func CurrentExecutableTrustedClientPaths() []string {
+func CurrentExecutableClientPaths() []string {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil
@@ -137,7 +137,7 @@ func bundledCLIPathForDaemonExecutable(exe string) (string, bool) {
 	return filepath.Join(hostApp, "Contents", "Resources", "bin", "agent-secret"), true
 }
 
-func trustedClientBundlePath(path string) (string, bool) {
+func clientBundlePath(path string) (string, bool) {
 	if filepath.Base(path) != "agent-secret" {
 		return "", false
 	}
@@ -174,11 +174,11 @@ func containingAppBundlePath(path string) (string, bool) {
 	}
 }
 
-func (v TrustedExecutableValidator) ValidateExecPeer(info peercred.Info) error {
+func (v ExecutableValidator) ValidateExecPeer(info peercred.Info) error {
 	return v.set.validatePeer(info)
 }
 
-func (v trustedExecutableSet) validatePeer(info peercred.Info) error {
+func (v executableSet) validatePeer(info peercred.Info) error {
 	if v.err == nil {
 		v.err = ErrUntrustedClient
 	}
@@ -201,7 +201,7 @@ func (v trustedExecutableSet) validatePeer(info peercred.Info) error {
 	return fmt.Errorf("%w: executable %q is not trusted", v.err, got)
 }
 
-func (e trustedExecutable) validatePeer(
+func (e executable) validatePeer(
 	info peercred.Info,
 	path string,
 	expectedTeamID string,
@@ -220,7 +220,7 @@ func (e trustedExecutable) validatePeer(
 		return fmt.Errorf("%w: executable %q changed since trust snapshot", errKind, path)
 	}
 	if e.bundlePath != "" {
-		currentBundlePath, ok := trustedClientBundlePath(path)
+		currentBundlePath, ok := clientBundlePath(path)
 		if !ok || currentBundlePath != e.bundlePath {
 			return fmt.Errorf("%w: executable %q is outside expected app bundle %q", errKind, path, e.bundlePath)
 		}
@@ -238,7 +238,7 @@ func (e trustedExecutable) validatePeer(
 	return nil
 }
 
-func (e trustedExecutable) isBundledPath(path string) bool {
+func (e executable) isBundledPath(path string) bool {
 	if e.bundlePath != "" {
 		return true
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -108,7 +109,7 @@ func runDaemonManagerHelper(t *testing.T) {
 	server, err := NewServer(ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
-		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "new server: %v\n", err)
@@ -168,8 +169,8 @@ func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	if unavailable {
 		t.Fatal("statusUnavailable = true for untrusted daemon peer")
 	}
-	if !errors.Is(err, ErrUntrustedDaemon) {
-		t.Fatalf("statusUnavailable error = %v, want %v", err, ErrUntrustedDaemon)
+	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		t.Fatalf("statusUnavailable error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
 	}
 }
 
@@ -270,8 +271,8 @@ func TestManagerStartRejectsUntrustedLiveSocket(t *testing.T) {
 	}
 
 	err := manager.Start(context.Background())
-	if !errors.Is(err, ErrUntrustedDaemon) {
-		t.Fatalf("Start error = %v, want %v", err, ErrUntrustedDaemon)
+	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		t.Fatalf("Start error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
 	}
 }
 

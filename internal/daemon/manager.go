@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 )
@@ -144,7 +145,7 @@ func (m Manager) Stop(ctx context.Context) error {
 }
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
-	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, NewTrustedDaemonValidator(m.trustedDaemonPaths()))
+	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(m.trustedDaemonPaths()))
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +190,7 @@ func (m Manager) trustedDaemonPaths() []string {
 			return nil
 		}
 	}
-	return trustedDaemonPathsForPath(daemonPath)
+	return peertrust.DaemonPathsForPath(daemonPath)
 }
 
 func (m Manager) protocolTimeout() time.Duration {

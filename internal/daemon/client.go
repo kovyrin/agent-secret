@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -36,10 +37,14 @@ type Client struct {
 const DefaultClientProtocolTimeout = DefaultProtocolReadTimeout
 
 func Connect(ctx context.Context, path string) (*Client, error) {
-	return ConnectWithPeerValidator(ctx, path, NewTrustedDaemonValidator(DefaultTrustedDaemonPaths()))
+	trustedPaths, err := defaultTrustedDaemonPaths()
+	if err != nil {
+		return nil, err
+	}
+	return ConnectWithPeerValidator(ctx, path, peertrust.NewDaemonValidator(trustedPaths))
 }
 
-func ConnectWithPeerValidator(ctx context.Context, path string, validator DaemonPeerValidator) (*Client, error) {
+func ConnectWithPeerValidator(ctx context.Context, path string, validator peertrust.DaemonPeerValidator) (*Client, error) {
 	conn, err := socket.Dial(ctx, path)
 	if err != nil {
 		return nil, err
@@ -51,15 +56,23 @@ func ConnectWithPeerValidator(ctx context.Context, path string, validator Daemon
 	return NewClient(conn), nil
 }
 
-func validateDaemonPeer(conn *net.UnixConn, validator DaemonPeerValidator) error {
+func validateDaemonPeer(conn *net.UnixConn, validator peertrust.DaemonPeerValidator) error {
 	if validator == nil {
 		return nil
 	}
 	info, err := peercred.Inspect(conn)
 	if err != nil {
-		return fmt.Errorf("%w: inspect daemon peer: %w", ErrUntrustedDaemon, err)
+		return fmt.Errorf("%w: inspect daemon peer: %w", peertrust.ErrUntrustedDaemon, err)
 	}
 	return validator.ValidateDaemonPeer(info)
+}
+
+func defaultTrustedDaemonPaths() ([]string, error) {
+	daemonPath, err := defaultDaemonPath()
+	if err != nil {
+		return nil, err
+	}
+	return peertrust.DaemonPathsForPath(daemonPath), nil
 }
 
 func NewClient(conn *net.UnixConn) *Client {

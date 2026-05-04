@@ -1,4 +1,4 @@
-package daemon
+package peertrust
 
 import (
 	"errors"
@@ -23,6 +23,15 @@ type recordingSignatureVerifier struct {
 	pids          []int
 }
 
+func writeExecutableAt(t *testing.T, dir string, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: peer trust tests need executable fixtures.
+		t.Fatalf("write executable: %v", err)
+	}
+	return path
+}
+
 func (v *recordingSignatureVerifier) VerifyPath(path string) (string, error) {
 	v.paths = append(v.paths, path)
 	if v.pathErr != nil {
@@ -39,16 +48,16 @@ func (v *recordingSignatureVerifier) VerifyProcess(pid int) (string, error) {
 	return v.processTeamID, nil
 }
 
-func newTestTrustedExecutableValidator(
+func newTestExecutableValidator(
 	paths []string,
 	verifier trust.CodeSignatureVerifier,
-) TrustedExecutableValidator {
-	return TrustedExecutableValidator{
-		set: newTrustedExecutableSetWithVerifier(paths, "TEAMID", ErrUntrustedClient, verifier, true),
+) ExecutableValidator {
+	return ExecutableValidator{
+		set: newExecutableSetWithVerifier(paths, "TEAMID", ErrUntrustedClient, verifier, true),
 	}
 }
 
-func TestTrustedExecutableValidatorMatchesComparableExecutablePath(t *testing.T) {
+func TestExecutableValidatorMatchesComparableExecutablePath(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -58,33 +67,33 @@ func TestTrustedExecutableValidatorMatchesComparableExecutablePath(t *testing.T)
 		t.Fatalf("symlink: %v", err)
 	}
 
-	validator := NewTrustedExecutableValidator([]string{link})
+	validator := NewExecutableValidator([]string{link})
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: target})
 	if err != nil {
 		t.Fatalf("ValidateExecPeer returned error: %v", err)
 	}
 }
 
-func TestTrustedExecutableValidatorRejectsUnlistedExecutable(t *testing.T) {
+func TestExecutableValidatorRejectsUnlistedExecutable(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	trusted := writeExecutableAt(t, dir, "agent-secret")
 	other := writeExecutableAt(t, dir, "raw-client")
 
-	validator := NewTrustedExecutableValidator([]string{trusted})
+	validator := NewExecutableValidator([]string{trusted})
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: other})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
 }
 
-func TestTrustedExecutableValidatorRejectsExecutableReplacedAfterStartup(t *testing.T) {
+func TestExecutableValidatorRejectsExecutableReplacedAfterStartup(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	trusted := writeExecutableAt(t, dir, "agent-secret")
-	validator := NewTrustedExecutableValidator([]string{trusted})
+	validator := NewExecutableValidator([]string{trusted})
 
 	if err := os.Remove(trusted); err != nil {
 		t.Fatalf("remove trusted executable: %v", err)
@@ -99,7 +108,7 @@ func TestTrustedExecutableValidatorRejectsExecutableReplacedAfterStartup(t *test
 	}
 }
 
-func TestTrustedExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
+func TestExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -108,7 +117,7 @@ func TestTrustedExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
 		pathTeamID:    "TEAMID",
 		processTeamID: "TEAMID",
 	}
-	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
 	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
 		t.Fatalf("ValidateExecPeer returned error: %v", err)
@@ -122,7 +131,7 @@ func TestTrustedExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
 	}
 }
 
-func TestTrustedExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testing.T) {
+func TestExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -131,7 +140,7 @@ func TestTrustedExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testin
 		pathTeamID:    "TEAMID",
 		processTeamID: "OTHERTEAM",
 	}
-	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
 	if !errors.Is(err, ErrUntrustedClient) {
@@ -146,7 +155,7 @@ func TestTrustedExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testin
 	}
 }
 
-func TestTrustedExecutableValidatorRejectsMissingPIDForSignatureValidation(t *testing.T) {
+func TestExecutableValidatorRejectsMissingPIDForSignatureValidation(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -155,7 +164,7 @@ func TestTrustedExecutableValidatorRejectsMissingPIDForSignatureValidation(t *te
 		pathTeamID:    "TEAMID",
 		processTeamID: "TEAMID",
 	}
-	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
@@ -166,7 +175,7 @@ func TestTrustedExecutableValidatorRejectsMissingPIDForSignatureValidation(t *te
 	}
 }
 
-func TestTrustedExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *testing.T) {
+func TestExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *testing.T) {
 	t.Parallel()
 
 	trusted := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, approval.DefaultApproverExecutable)
@@ -174,8 +183,8 @@ func TestTrustedExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *
 		pathTeamID:    "TEAMID",
 		processTeamID: "TEAMID",
 	}
-	validator := TrustedExecutableValidator{
-		set: newTrustedExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, true),
+	validator := ExecutableValidator{
+		set: newExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, true),
 	}
 
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
@@ -190,7 +199,7 @@ func TestTrustedExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *
 	}
 }
 
-func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDSentinel(t *testing.T) {
+func TestExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDSentinel(t *testing.T) {
 	t.Parallel()
 
 	trusted := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, approval.DefaultApproverExecutable)
@@ -198,8 +207,8 @@ func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDS
 		pathErr:    errors.New("static verifier should not be called"),
 		processErr: errors.New("process verifier should not be called"),
 	}
-	validator := TrustedExecutableValidator{
-		set: newTrustedExecutableSetWithVerifier(
+	validator := ExecutableValidator{
+		set: newExecutableSetWithVerifier(
 			[]string{trusted},
 			trust.DevelopmentExpectedTeamID,
 			ErrUntrustedClient,
@@ -216,7 +225,7 @@ func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDS
 	}
 }
 
-func TestTrustedExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
+func TestExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	trusted := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, approval.DefaultApproverExecutable)
@@ -224,8 +233,8 @@ func TestTrustedExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
 		pathErr:    errors.New("static verifier should not be called"),
 		processErr: errors.New("process verifier should not be called"),
 	}
-	validator := TrustedExecutableValidator{
-		set: newTrustedExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, false),
+	validator := ExecutableValidator{
+		set: newExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, false),
 	}
 
 	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
@@ -236,7 +245,7 @@ func TestTrustedExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestTrustedExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T) {
+func TestExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -245,7 +254,7 @@ func TestTrustedExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T
 		pathTeamID: "TEAMID",
 		processErr: errors.New("codesign refused pid"),
 	}
-	validator := newTestTrustedExecutableValidator([]string{trusted}, verifier)
+	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
 	if !errors.Is(err, ErrUntrustedClient) {
@@ -256,11 +265,11 @@ func TestTrustedExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T
 	}
 }
 
-func TestTrustedExecutableValidatorSkipsMissingTrustedPath(t *testing.T) {
+func TestExecutableValidatorSkipsMissingTrustedPath(t *testing.T) {
 	t.Parallel()
 
 	missing := filepath.Join(t.TempDir(), "agent-secret")
-	validator := NewTrustedExecutableValidator([]string{missing})
+	validator := NewExecutableValidator([]string{missing})
 
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: missing})
 	if !errors.Is(err, ErrUntrustedClient) {
@@ -268,7 +277,7 @@ func TestTrustedExecutableValidatorSkipsMissingTrustedPath(t *testing.T) {
 	}
 }
 
-func TestDefaultTrustedClientPathsIncludeBundledCLIForDaemonHelper(t *testing.T) {
+func TestDefaultClientPathsIncludeBundledCLIForDaemonHelper(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -285,17 +294,17 @@ func TestDefaultTrustedClientPathsIncludeBundledCLIForDaemonHelper(t *testing.T)
 	)
 	wantCLI := filepath.Join(appPath, "Contents", "Resources", "bin", "agent-secret")
 
-	got := trustedClientPathsForExecutable(daemonExe)
+	got := clientPathsForExecutable(daemonExe)
 	if !slices.Contains(got, wantCLI) {
 		t.Fatalf("trusted paths = %v, want bundled CLI %q", got, wantCLI)
 	}
 }
 
-func TestDefaultTrustedClientPathsDoNotIncludeUserLocalBin(t *testing.T) {
+func TestDefaultClientPathsDoNotIncludeUserLocalBin(t *testing.T) {
 	t.Parallel()
 
 	daemonExe := filepath.Join(t.TempDir(), "agent-secretd")
-	got := trustedClientPathsForExecutable(daemonExe)
+	got := clientPathsForExecutable(daemonExe)
 	for _, path := range got {
 		if strings.Contains(path, filepath.Join(".local", "bin", "agent-secret")) {
 			t.Fatalf("trusted paths include mutable user command path: %v", got)

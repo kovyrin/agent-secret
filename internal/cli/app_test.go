@@ -17,6 +17,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
@@ -611,7 +612,7 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:        broker,
 		Validator:     appAllowPeer{},
-		ExecValidator: daemon.NewTrustedExecutableValidator(daemon.CurrentExecutableTrustedClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)

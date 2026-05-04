@@ -1,4 +1,4 @@
-package daemon
+package peertrust
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ func TestTrustedDaemonPathsForDirectExecutable(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "agent-secretd")
-	got := trustedDaemonPathsForPath("  " + path + "  ")
+	got := DaemonPathsForPath("  " + path + "  ")
 	if len(got) != 1 || got[0] != path {
 		t.Fatalf("trusted daemon paths = %q, want [%q]", got, path)
 	}
@@ -25,7 +25,7 @@ func TestTrustedDaemonPathsForDirectExecutable(t *testing.T) {
 func TestTrustedDaemonPathsRejectEmptyPath(t *testing.T) {
 	t.Parallel()
 
-	if got := trustedDaemonPathsForPath(" \t "); got != nil {
+	if got := DaemonPathsForPath(" \t "); got != nil {
 		t.Fatalf("trusted daemon paths = %q, want nil", got)
 	}
 }
@@ -36,37 +36,37 @@ func TestTrustedDaemonPathsForAppBundleUseBundleExecutable(t *testing.T) {
 	executable := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, "AgentSecretDaemon")
 	bundlePath := filepath.Clean(filepath.Join(filepath.Dir(executable), "..", ".."))
 
-	got := trustedDaemonPathsForPath(bundlePath)
+	got := DaemonPathsForPath(bundlePath)
 	if len(got) != 1 || got[0] != executable {
 		t.Fatalf("trusted daemon paths = %q, want [%q]", got, executable)
 	}
 }
 
-func TestTrustedDaemonValidatorRejectsMissingPeerExecutable(t *testing.T) {
+func TestDaemonValidatorRejectsMissingPeerExecutable(t *testing.T) {
 	t.Parallel()
 
-	validator := NewTrustedDaemonValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secretd")})
+	validator := NewDaemonValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secretd")})
 	err := validator.ValidateDaemonPeer(peercred.Info{})
 	if !errors.Is(err, ErrUntrustedDaemon) {
 		t.Fatalf("ValidateDaemonPeer error = %v, want ErrUntrustedDaemon", err)
 	}
 }
 
-func TestTrustedDaemonValidatorAllowsTrustedExecutable(t *testing.T) {
+func TestDaemonValidatorAllowsTrustedExecutable(t *testing.T) {
 	t.Parallel()
 
 	trusted := writeExecutableAt(t, t.TempDir(), "agent-secretd")
-	validator := newTrustedDaemonValidator([]string{trusted}, "")
+	validator := newDaemonValidator([]string{trusted}, "")
 	if err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(trusted)); err != nil {
 		t.Fatalf("ValidateDaemonPeer returned error: %v", err)
 	}
 }
 
-func TestTrustedDaemonValidatorRejectsDifferentUID(t *testing.T) {
+func TestDaemonValidatorRejectsDifferentUID(t *testing.T) {
 	t.Parallel()
 
 	trusted := writeExecutableAt(t, t.TempDir(), "agent-secretd")
-	validator := newTrustedDaemonValidator([]string{trusted}, "")
+	validator := newDaemonValidator([]string{trusted}, "")
 	info := trustedDaemonPeerInfo(trusted)
 	info.UID = os.Getuid() + 1
 
@@ -79,11 +79,11 @@ func TestTrustedDaemonValidatorRejectsDifferentUID(t *testing.T) {
 	}
 }
 
-func TestTrustedDaemonValidatorRejectsDifferentGID(t *testing.T) {
+func TestDaemonValidatorRejectsDifferentGID(t *testing.T) {
 	t.Parallel()
 
 	trusted := writeExecutableAt(t, t.TempDir(), "agent-secretd")
-	validator := newTrustedDaemonValidator([]string{trusted}, "")
+	validator := newDaemonValidator([]string{trusted}, "")
 	info := trustedDaemonPeerInfo(trusted)
 	info.GID = os.Getgid() + 1
 

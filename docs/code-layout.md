@@ -53,16 +53,16 @@ daemon for approved environment payloads, and then uses `execwrap` to spawn and
 audit the wrapped child process. The CLI does not resolve 1Password values.
 
 `cmd/agent-secretd` wires the daemon runtime: audit writer, approver launcher,
-trusted-client validation, and lazy 1Password resolver construction. The daemon
-owns approval ordering, reusable approval/cache state, socket request handling,
-1Password fetches after approval, and metadata-only audit events.
+peer executable trust validation, and lazy 1Password resolver construction. The
+daemon owns approval ordering, reusable approval/cache state, socket request
+handling, 1Password fetches after approval, and metadata-only audit events.
 
-`internal/daemon` is the main trust-boundary package. It contains the Unix
-socket protocol client/server, daemon manager, broker orchestration,
-approver-request queue, process launcher, peer validation hooks, stop/status
-handlers, and reusable approval coordination. It depends on narrower packages
-for policy, request shapes, peer credentials, cached secret values, and audit
-output.
+`internal/daemon` is the daemon orchestration package. Its root package owns the
+server loop, daemon manager, broker, reusable grant issuer, stop/status handlers,
+and process launcher. Narrow subpackages own distinct daemon boundaries:
+`approval` handles approver IPC, `peertrust` validates trusted CLI and daemon
+peers, `protocol` defines wire envelopes, `socket` owns Unix socket paths and
+listeners, and `trust` wraps platform signature/plist checks.
 
 `internal/request` defines the value-free request model shared by CLI, daemon,
 policy, audit, and protocol code. It parses and validates `op://` reference

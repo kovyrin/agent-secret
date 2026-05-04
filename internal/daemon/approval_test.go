@@ -46,6 +46,31 @@ type contextObservingLauncher struct {
 	canceled chan struct{}
 }
 
+type recordingSignatureVerifier struct {
+	pathTeamID    string
+	processTeamID string
+	pathErr       error
+	processErr    error
+	paths         []string
+	pids          []int
+}
+
+func (v *recordingSignatureVerifier) VerifyPath(path string) (string, error) {
+	v.paths = append(v.paths, path)
+	if v.pathErr != nil {
+		return "", v.pathErr
+	}
+	return v.pathTeamID, nil
+}
+
+func (v *recordingSignatureVerifier) VerifyProcess(pid int) (string, error) {
+	v.pids = append(v.pids, pid)
+	if v.processErr != nil {
+		return "", v.processErr
+	}
+	return v.processTeamID, nil
+}
+
 func (l *recordingLauncher) Launch(
 	_ context.Context,
 	_ string,

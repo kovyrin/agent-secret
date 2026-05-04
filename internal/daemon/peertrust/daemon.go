@@ -1,4 +1,4 @@
-package daemon
+package peertrust
 
 import (
 	"errors"
@@ -17,29 +17,21 @@ type DaemonPeerValidator interface {
 	ValidateDaemonPeer(info peercred.Info) error
 }
 
-type TrustedDaemonValidator struct {
-	set trustedExecutableSet
+type DaemonValidator struct {
+	set executableSet
 }
 
-func NewTrustedDaemonValidator(paths []string) TrustedDaemonValidator {
-	return newTrustedDaemonValidator(paths, trust.DefaultExpectedTeamID())
+func NewDaemonValidator(paths []string) DaemonValidator {
+	return newDaemonValidator(paths, trust.DefaultExpectedTeamID())
 }
 
-func newTrustedDaemonValidator(paths []string, expectedTeamID string) TrustedDaemonValidator {
-	return TrustedDaemonValidator{
-		set: newTrustedExecutableSet(paths, expectedTeamID, ErrUntrustedDaemon),
+func newDaemonValidator(paths []string, expectedTeamID string) DaemonValidator {
+	return DaemonValidator{
+		set: newExecutableSet(paths, expectedTeamID, ErrUntrustedDaemon),
 	}
 }
 
-func DefaultTrustedDaemonPaths() []string {
-	path, err := defaultDaemonPath()
-	if err != nil {
-		return nil
-	}
-	return trustedDaemonPathsForPath(path)
-}
-
-func trustedDaemonPathsForPath(path string) []string {
+func DaemonPathsForPath(path string) []string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil
@@ -63,7 +55,7 @@ func bundleExecutablePath(bundlePath string) (string, error) {
 	return filepath.Join(bundlePath, "Contents", "MacOS", executableName), nil
 }
 
-func (v TrustedDaemonValidator) ValidateDaemonPeer(info peercred.Info) error {
+func (v DaemonValidator) ValidateDaemonPeer(info peercred.Info) error {
 	if info.UID != os.Getuid() {
 		return fmt.Errorf("%w: daemon uid %d != %d", ErrUntrustedDaemon, info.UID, os.Getuid())
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -45,7 +46,7 @@ type Server struct {
 	broker                  *Broker
 	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
-	execValidator           ExecPeerValidator
+	execValidator           peertrust.ExecValidator
 	maxFrameBytes           int64
 	readTimeout             time.Duration
 	beforeExecResponseWrite func()
@@ -57,7 +58,7 @@ type ServerOptions struct {
 	Broker                  *Broker
 	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
-	ExecValidator           ExecPeerValidator
+	ExecValidator           peertrust.ExecValidator
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
 	beforeExecResponseWrite func()
@@ -75,7 +76,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 	execValidator := opts.ExecValidator
 	if execValidator == nil {
-		execValidator = NewTrustedExecutableValidator(DefaultTrustedClientPaths())
+		execValidator = peertrust.NewExecutableValidator(peertrust.DefaultClientPaths())
 	}
 	maxFrameBytes := opts.MaxFrameBytes
 	if maxFrameBytes <= 0 {
@@ -503,7 +504,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeRequestExpired
 	case errors.Is(err, approval.ErrStaleApproval):
 		return protocol.ErrorCodeStaleApproval
-	case errors.Is(err, ErrUntrustedClient):
+	case errors.Is(err, peertrust.ErrUntrustedClient):
 		return protocol.ErrorCodeUntrustedClient
 	case errors.Is(err, context.Canceled):
 		return protocol.ErrorCodeContextCanceled

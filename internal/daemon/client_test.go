@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -31,7 +32,7 @@ func TestConnectAcceptsTrustedDaemonPeer(t *testing.T) {
 	client, err := ConnectWithPeerValidator(
 		context.Background(),
 		path,
-		NewTrustedDaemonValidator([]string{currentExecutable(t)}),
+		peertrust.NewDaemonValidator([]string{currentExecutable(t)}),
 	)
 	if err != nil {
 		t.Fatalf("ConnectWithPeerValidator returned error: %v", err)
@@ -52,7 +53,7 @@ func TestConnectRejectsUntrustedDaemonBeforeExecPayload(t *testing.T) {
 	client, err := ConnectWithPeerValidator(
 		context.Background(),
 		path,
-		NewTrustedDaemonValidator([]string{trustedDaemon}),
+		peertrust.NewDaemonValidator([]string{trustedDaemon}),
 	)
 	if err == nil {
 		defer func() { _ = client.Close() }()
@@ -66,8 +67,8 @@ func TestConnectRejectsUntrustedDaemonBeforeExecPayload(t *testing.T) {
 		}
 		t.Fatalf("ConnectWithPeerValidator accepted untrusted daemon; request error = %v", requestErr)
 	}
-	if !errors.Is(err, ErrUntrustedDaemon) {
-		t.Fatalf("ConnectWithPeerValidator error = %v, want %v", err, ErrUntrustedDaemon)
+	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		t.Fatalf("ConnectWithPeerValidator error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
 	}
 }
 
@@ -82,8 +83,8 @@ func TestManagerStatusRejectsUntrustedDaemonPeer(t *testing.T) {
 	}
 
 	_, err := manager.Status(context.Background())
-	if !errors.Is(err, ErrUntrustedDaemon) {
-		t.Fatalf("Status error = %v, want %v", err, ErrUntrustedDaemon)
+	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		t.Fatalf("Status error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
 	}
 }
 
@@ -111,7 +112,7 @@ func TestTrustedDaemonPathsForAppUseBundleExecutable(t *testing.T) {
 		t.Fatalf("write Info.plist: %v", err)
 	}
 
-	got := trustedDaemonPathsForPath(appPath)
+	got := peertrust.DaemonPathsForPath(appPath)
 	if len(got) != 1 || got[0] != executablePath {
 		t.Fatalf("trusted daemon paths = %v, want [%s]", got, executablePath)
 	}
