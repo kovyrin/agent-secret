@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -539,6 +540,61 @@ func TestSocketApproverRejectsIncompleteExpectedApprover(t *testing.T) {
 			}
 			if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); !errors.Is(err, approval.ErrNoPendingApproval) {
 				t.Fatalf("FetchPending after invalid launch = %v, want no pending approval", err)
+			}
+		})
+	}
+}
+
+func TestSocketApproverPreservesLauncherErrorBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		launchErr       error
+		want            error
+		notWant         error
+		launchTextCount int
+	}{
+		{
+			name:            "existing launch failure",
+			launchErr:       fmt.Errorf("%w: command failed", approval.ErrApproverLaunchFailed),
+			want:            approval.ErrApproverLaunchFailed,
+			launchTextCount: 1,
+		},
+		{
+			name:            "identity failure",
+			launchErr:       fmt.Errorf("%w: bad signature", approval.ErrApproverIdentity),
+			want:            approval.ErrApproverIdentity,
+			notWant:         approval.ErrApproverLaunchFailed,
+			launchTextCount: 0,
+		},
+		{
+			name:            "unclassified failure",
+			launchErr:       errors.New("spawn unavailable"),
+			want:            approval.ErrApproverLaunchFailed,
+			launchTextCount: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			launcher := &recordingLauncher{err: tc.launchErr}
+			approver := newSocketApproverForTest(t, launcher, time.Now)
+			req := approvalTestRequest(t, time.Now().Add(time.Minute))
+			_, err := approver.ApproveExec(
+				context.Background(),
+				testApprovalPayload(testCorrelation("req_1", "nonce_1"), req),
+			)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("ApproveExec error = %v, want %v", err, tc.want)
+			}
+			if tc.notWant != nil && errors.Is(err, tc.notWant) {
+				t.Fatalf("ApproveExec error = %v, should not match %v", err, tc.notWant)
+			}
+			if got := strings.Count(err.Error(), approval.ErrApproverLaunchFailed.Error()); got != tc.launchTextCount {
+				t.Fatalf("launch failure text count = %d in %q, want %d", got, err.Error(), tc.launchTextCount)
 			}
 		})
 	}

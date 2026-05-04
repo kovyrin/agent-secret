@@ -190,7 +190,7 @@ func (a *SocketApprover) promoteNext() {
 			a.cancel(job, context.Canceled)
 			return
 		}
-		a.complete(job, approvalResult{err: fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)})
+		a.complete(job, approvalResult{err: classifyLauncherError(err)})
 		return
 	}
 	if err := ValidateExpectedApprover(expected); err != nil {
@@ -208,6 +208,13 @@ func (a *SocketApprover) promoteNext() {
 	if expected.Exited != nil {
 		go a.monitorExpectedApprover(job, expected.Exited)
 	}
+}
+
+func classifyLauncherError(err error) error {
+	if errors.Is(err, ErrApproverLaunchFailed) || errors.Is(err, ErrApproverIdentity) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)
 }
 
 func (a *SocketApprover) complete(job *approvalJob, result approvalResult) {
