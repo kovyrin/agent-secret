@@ -321,6 +321,8 @@ cat >"$app_bundle/Contents/Info.plist" <<PLIST
   <string>$AGENT_SECRET_MIN_MACOS_VERSION</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSSupportsAutomaticTermination</key>
+  <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

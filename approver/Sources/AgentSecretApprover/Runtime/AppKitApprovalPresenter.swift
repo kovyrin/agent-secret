@@ -13,6 +13,8 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         private static let panelHeight: CGFloat = 660
         private static let panelOrigin: CGFloat = 0
         private static let panelWidth: CGFloat = 832
+
+        @MainActor private var activeWindow: NSWindow?
     #endif
 
     // swiftlint:disable:next no_empty_block
@@ -41,15 +43,24 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         }
 
         @MainActor
-        private static func decideOnMain(for request: ApprovalRequest) -> ApprovalDecisionKind {
-            if let preflightDecision: ApprovalDecisionKind = preflightDecision(for: request) {
+        static func preflightDecision(
+            for request: ApprovalRequest,
+            now: Date = Date()
+        ) -> ApprovalDecisionKind? {
+            ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: now)
+        }
+
+        @MainActor
+        private func decideOnMain(for request: ApprovalRequest) -> ApprovalDecisionKind {
+            if let preflightDecision: ApprovalDecisionKind = Self.preflightDecision(for: request) {
                 return preflightDecision
             }
 
             let app = NSApplication.shared
+            let logger = UnifiedApprovalLogger(category: "decisions")
             Self.activate(app)
             let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
-            let window = NSPanel(
+            let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: Self.panelOrigin,
                     y: Self.panelOrigin,
@@ -66,21 +77,17 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.isMovableByWindowBackground = true
             window.contentView = NSHostingView(
                 rootView: ApprovalRequestPanelView(request: request) { selectedDecision in
+                    logger.record("approval_modal_decision_selected", requestID: request.requestID)
                     coordinator.complete(with: selectedDecision)
                 }
             )
+            activeWindow = window
 
             Self.bringForward(window)
+            logger.record("approval_modal_presented", requestID: request.requestID)
             _ = app.runModal(for: window)
+            logger.record("approval_modal_returned", requestID: request.requestID)
             return coordinator.decision
-        }
-
-        @MainActor
-        static func preflightDecision(
-            for request: ApprovalRequest,
-            now: Date = Date()
-        ) -> ApprovalDecisionKind? {
-            ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: now)
         }
     #endif
 
@@ -89,7 +96,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
     @MainActor
     public func decide(for request: ApprovalRequest) -> ApprovalDecisionKind {
         #if canImport(AppKit)
-            Self.decideOnMain(for: request)
+            decideOnMain(for: request)
         #else
             .timeout
         #endif

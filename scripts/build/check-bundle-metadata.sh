@@ -88,6 +88,7 @@ assert_plist_value "$app_plist" CFBundleShortVersionString "$short_version"
 assert_plist_value "$app_plist" CFBundleVersion "$bundle_version"
 assert_plist_value "$app_plist" LSApplicationCategoryType "$AGENT_SECRET_APP_CATEGORY"
 assert_plist_value "$app_plist" LSMinimumSystemVersion "$AGENT_SECRET_MIN_MACOS_VERSION"
+assert_plist_value "$app_plist" NSSupportsAutomaticTermination "true"
 
 if [[ "$app_only" -eq 0 ]]; then
   daemon_plist="$daemon_bundle/Contents/Info.plist"

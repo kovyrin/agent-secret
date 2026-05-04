@@ -50,9 +50,21 @@ import XCTest
             XCTAssertEqual(coordinator.decision, .timeout)
             XCTAssertEqual(stopper.stopCount, 0)
 
-            _ = RunLoop.main.run(mode: .modalPanel, before: Date().addingTimeInterval(0.1))
+            let deadline = Date().addingTimeInterval(0.5)
+            while stopper.stopCount == 0, Date() < deadline {
+                _ = RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+                _ = RunLoop.main.run(mode: .modalPanel, before: Date().addingTimeInterval(0.01))
+            }
 
             XCTAssertEqual(stopper.stopCount, 1)
+        }
+
+        @MainActor
+        func testApprovalPanelWindowCanBecomeKeyAndMain() {
+            let window = ApprovalPanelWindow()
+
+            XCTAssertTrue(window.canBecomeKey)
+            XCTAssertTrue(window.canBecomeMain)
         }
     }
 #endif

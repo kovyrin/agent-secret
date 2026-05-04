@@ -33,6 +33,12 @@ final class ApprovalDaemonClientWorker: @unchecked Sendable {
         }
     }
 
+    func submitBlocking(_ decision: ApprovalDecision) throws {
+        try queue.sync {
+            try self.clientOnQueue().submit(decision)
+        }
+    }
+
     private func clientOnQueue() throws -> ApprovalDaemonClient {
         if let client {
             return client

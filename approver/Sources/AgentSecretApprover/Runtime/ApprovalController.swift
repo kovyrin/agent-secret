@@ -43,7 +43,13 @@ public final class ApprovalController {
             .guardDecision(presentedDecisionKind, at: now())
         let decision: ApprovalDecision = decision(for: decisionKind, request: request)
 
-        try await client.submit(decision)
+        logger.record("approval_decision_submit_started", requestID: request.requestID)
+        do {
+            try client.submitBlocking(decision)
+        } catch {
+            logger.record("approval_decision_submit_failed", requestID: request.requestID)
+            throw error
+        }
         logger.record("approval_decision_submitted", requestID: request.requestID)
         return decision
     }
