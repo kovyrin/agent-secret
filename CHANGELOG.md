@@ -18,7 +18,7 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
-## [0.0.1] - Pending
+## [0.0.1] - 2026-05-04
 
 Initial macOS-first release for installing and dogfooding Agent Secret as one
 local app, CLI, daemon, and bundled coding-agent skill.
