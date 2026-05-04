@@ -305,7 +305,7 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 	}
 	event := audit.FromExecRequest(eventType, requestID, active.req)
 	event.ChildPID = active.childPID
-	_ = b.audit.Record(ctx, event)
+	b.recordBestEffortAudit(ctx, event)
 }
 
 func (b *Broker) Stop(ctx context.Context) {
@@ -325,6 +325,11 @@ func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event)
 	if event.Type == "" {
 		event.Type = audit.EventDaemonStop
 	}
+	b.recordBestEffortAudit(ctx, event)
+}
+
+// recordBestEffortAudit documents terminal lifecycle audit writes that cannot be surfaced to a protocol caller.
+func (b *Broker) recordBestEffortAudit(ctx context.Context, event audit.Event) {
 	_ = b.audit.Record(ctx, event)
 }
 

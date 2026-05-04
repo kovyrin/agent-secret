@@ -1444,6 +1444,35 @@ func TestBrokerClientDisconnectAfterPayloadAuditsWithoutKillingProcess(t *testin
 	}
 }
 
+func TestBrokerClientDisconnectAuditFailureIsBestEffort(t *testing.T) {
+	t.Parallel()
+
+	aud := &memoryAudit{
+		errByType: map[audit.EventType]error{
+			audit.EventExecClientDisconnectedAfterPayload: errors.New("audit unavailable"),
+		},
+	}
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Audit:    aud,
+	})
+	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
+	})); err != nil {
+		t.Fatalf("HandleExec returned error: %v", err)
+	}
+	if err := broker.markPayloadDelivered("req_1"); err != nil {
+		t.Fatalf("markPayloadDelivered returned error: %v", err)
+	}
+
+	broker.ClientDisconnected(context.Background(), "req_1")
+
+	if err := broker.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 1234); !errors.Is(err, ErrUnknownRequest) {
+		t.Fatalf("disconnect audit failure left request active, ReportStarted = %v", err)
+	}
+}
+
 func TestBrokerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -1483,6 +1512,28 @@ func TestBrokerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 		t.Fatalf("disconnect child pid = %v, want 1234", disconnect.ChildPID)
 	}
 	assertAuditEventsValueFree(t, events)
+}
+
+func TestBrokerStopAuditFailureIsBestEffort(t *testing.T) {
+	t.Parallel()
+
+	broker := newTestBroker(t, BrokerOptions{
+		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+		Audit: &memoryAudit{
+			errByType: map[audit.EventType]error{
+				audit.EventDaemonStop: errors.New("audit unavailable"),
+			},
+		},
+	})
+
+	broker.Stop(context.Background())
+
+	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
+	})); !errors.Is(err, ErrDaemonStopped) {
+		t.Fatalf("stop audit failure left broker running, handleExec = %v", err)
+	}
 }
 
 func TestBrokerAuditFailureStopsBeforePayload(t *testing.T) {
