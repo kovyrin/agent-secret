@@ -58,7 +58,6 @@ configure_tool_paths() {
   tool_ditto="/usr/bin/ditto"
   tool_codesign="/usr/bin/codesign"
   tool_spctl="/usr/sbin/spctl"
-  tool_xcrun="/usr/bin/xcrun"
   tool_plistbuddy="/usr/libexec/PlistBuddy"
 
   if [ -z "$install_tool_dir" ]; then
@@ -78,7 +77,6 @@ configure_tool_paths() {
   tool_ditto="$install_tool_dir/ditto"
   tool_codesign="$install_tool_dir/codesign"
   tool_spctl="$install_tool_dir/spctl"
-  tool_xcrun="$install_tool_dir/xcrun"
 }
 
 is_system_root_alias() {
@@ -180,7 +178,6 @@ repo="$production_repo"
 github_url="$production_github_url"
 github_api="$production_github_api"
 allow_unsigned_install=0
-require_notarization=1
 expected_team_id="$production_expected_team_id"
 expected_app_bundle_id="$production_expected_app_bundle_id"
 expected_daemon_bundle_id="$production_expected_daemon_bundle_id"
@@ -190,7 +187,6 @@ if [ "$install_dev_mode" != "1" ]; then
   require_dev_mode_for_env AGENT_SECRET_GITHUB_URL
   require_dev_mode_for_env AGENT_SECRET_GITHUB_API
   require_dev_mode_for_env AGENT_SECRET_ALLOW_UNSIGNED_INSTALL
-  require_dev_mode_for_env AGENT_SECRET_REQUIRE_NOTARIZATION
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_TEAM_ID
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_APP_BUNDLE_ID
   require_dev_mode_for_env AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID
@@ -202,7 +198,6 @@ else
   github_url="${AGENT_SECRET_GITHUB_URL:-$production_github_url}"
   github_api="${AGENT_SECRET_GITHUB_API:-$production_github_api}"
   allow_unsigned_install="${AGENT_SECRET_ALLOW_UNSIGNED_INSTALL:-0}"
-  require_notarization="${AGENT_SECRET_REQUIRE_NOTARIZATION:-1}"
   expected_team_id="${AGENT_SECRET_EXPECTED_TEAM_ID:-$production_expected_team_id}"
   expected_app_bundle_id="${AGENT_SECRET_EXPECTED_APP_BUNDLE_ID:-$production_expected_app_bundle_id}"
   expected_daemon_bundle_id="${AGENT_SECRET_EXPECTED_DAEMON_BUNDLE_ID:-$production_expected_daemon_bundle_id}"
@@ -297,17 +292,12 @@ verify_dmg_identity() {
 
   require_tool codesign "$tool_codesign"
   require_tool spctl "$tool_spctl"
-  require_tool xcrun "$tool_xcrun"
 
   "$tool_codesign" --verify --strict --verbose=2 "$dmg" ||
     die "DMG code signature verification failed"
   verify_team_id "$dmg" "DMG"
   "$tool_spctl" --assess --type open --context context:primary-signature --verbose "$dmg" ||
     die "DMG Gatekeeper assessment failed"
-  if [ "$require_notarization" = "1" ]; then
-    "$tool_xcrun" stapler validate "$dmg" ||
-      die "DMG notarization ticket validation failed"
-  fi
 }
 
 codesign_team_id() {
@@ -370,10 +360,6 @@ verify_app_identity() {
   verify_team_id "$cli" "bundled agent-secret CLI"
   "$tool_spctl" --assess --type execute --verbose "$app" ||
     die "app Gatekeeper assessment failed"
-  if [ "$require_notarization" = "1" ]; then
-    "$tool_xcrun" stapler validate "$app" ||
-      die "app notarization ticket validation failed"
-  fi
 }
 
 stop_existing_daemon() {

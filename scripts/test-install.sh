@@ -69,16 +69,6 @@ printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
 exit "${AGENT_SECRET_INSTALL_TEST_SPCTL_STATUS:-0}"
 SCRIPT
 
-  cat >"$fake_bin/xcrun" <<'SCRIPT'
-#!/bin/sh
-printf 'xcrun' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
-for arg in "$@"; do
-  printf ' %s' "$arg" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
-done
-printf '\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
-exit "${AGENT_SECRET_INSTALL_TEST_XCRUN_STATUS:-0}"
-SCRIPT
-
   cat >"$fake_bin/curl" <<'SCRIPT'
 #!/bin/sh
 printf 'curl' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
@@ -217,7 +207,7 @@ exit 44
 SCRIPT
   done
 
-  chmod 755 "$fake_bin/codesign" "$fake_bin/spctl" "$fake_bin/xcrun" \
+  chmod 755 "$fake_bin/codesign" "$fake_bin/spctl" \
     "$fake_bin/curl" "$fake_bin/shasum" \
     "$fake_bin/agent-secret" \
     "$fake_bin/ditto" "$fake_bin/hdiutil" \
@@ -309,10 +299,15 @@ test_identity_checks_run() {
   assert_log_contains "$log" "codesign --verify --strict --verbose=2"
   assert_log_contains "$log" "codesign -dv --verbose=4"
   assert_log_contains "$log" "spctl --assess --type open --context context:primary-signature --verbose"
-  assert_log_contains "$log" "xcrun stapler validate"
   assert_log_contains "$log" "codesign --verify --deep --strict --verbose=2"
   assert_log_contains "$log" "codesign -dv --verbose=4"
   assert_log_contains "$log" "spctl --assess --type execute --verbose"
+}
+
+test_installer_has_no_developer_tool_dependency() {
+  if grep -E 'xcrun|stapler|AGENT_SECRET_REQUIRE_NOTARIZATION' "$project_root/install.sh" >/dev/null; then
+    fail "installer must not require developer tools or stapler validation"
+  fi
 }
 
 test_identity_failure_stops_install() {
@@ -450,11 +445,10 @@ test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
     AGENT_SECRET_INSTALL_DEV_MODE=1 \
     AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
     AGENT_SECRET_INSTALL_TEST_CODESIGN_STATUS=23 \
-    AGENT_SECRET_INSTALL_TEST_SPCTL_STATUS=23 \
-    AGENT_SECRET_INSTALL_TEST_XCRUN_STATUS=23
+    AGENT_SECRET_INSTALL_TEST_SPCTL_STATUS=23
 
   log="$tmp_dir/unsigned-allowed/tools.log"
-  if grep -E '^(codesign|spctl|xcrun) ' "$log" >/dev/null; then
+  if grep -E '^(codesign|spctl) ' "$log" >/dev/null; then
     echo "---- tool log ----" >&2
     cat "$log" >&2
     fail "unsigned override should not call identity verification tools"
@@ -482,6 +476,7 @@ test_install_cli_receives_original_path_before_sanitization() {
 }
 
 test_identity_checks_run
+test_installer_has_no_developer_tool_dependency
 test_identity_failure_stops_install
 test_wrong_team_id_stops_install
 test_wrong_app_bundle_id_stops_install

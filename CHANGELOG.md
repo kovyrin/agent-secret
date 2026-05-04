@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.4] - 2026-05-04
+
+### Fixed
+
+- The unattended installer no longer requires Xcode or Command Line Tools for
+  `xcrun stapler validate`; release notarization remains verified by CI and
+  Gatekeeper.
+
 ## [0.0.3] - 2026-05-04
 
 ### Fixed

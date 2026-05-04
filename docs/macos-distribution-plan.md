@@ -117,14 +117,18 @@ AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 install.sh
 For local smoke tests, set `AGENT_SECRET_INSTALL_DEV_MODE=1` and point
 `AGENT_SECRET_DMG` plus `AGENT_SECRET_CHECKSUMS_FILE` at locally built
 artifacts. Unsigned local artifacts must also set
-`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`; signed but unstapled local artifacts
-can set `AGENT_SECRET_REQUIRE_NOTARIZATION=0`. Production installs pin the
-GitHub host, repository, Team ID `B6L7QLWTZW`, and bundle identifiers
+`AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1`. Production installs pin the GitHub
+host, repository, Team ID `B6L7QLWTZW`, and bundle identifiers
 `com.kovyrin.agent-secret` and `com.kovyrin.agent-secret.daemon`; overriding
 those release trust roots requires development mode and local artifacts.
 Custom app, command, or skill destination roots require
 `AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1` and are rejected when empty,
 relative, broad, or symlinked.
+
+The unattended installer must not require Xcode or Command Line Tools. Release
+CI and maintainer verification use `stapler`, while customer installs rely on
+checksum, code signature, Team ID, bundle identifier, and Gatekeeper `spctl`
+assessment.
 
 ### Upgrade
 
