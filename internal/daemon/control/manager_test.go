@@ -289,6 +289,18 @@ func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 	}
 }
 
+func TestManagerProtocolTimeoutDefaultsAndOverrides(t *testing.T) {
+	t.Parallel()
+
+	if got := (Manager{}).protocolTimeout(); got != DefaultClientProtocolTimeout {
+		t.Fatalf("default protocol timeout = %s, want %s", got, DefaultClientProtocolTimeout)
+	}
+	manager := Manager{ProtocolTimeout: 250 * time.Millisecond}
+	if got := manager.protocolTimeout(); got != 250*time.Millisecond {
+		t.Fatalf("custom protocol timeout = %s, want 250ms", got)
+	}
+}
+
 func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 	t.Parallel()
 

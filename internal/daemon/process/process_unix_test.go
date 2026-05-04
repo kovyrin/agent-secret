@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -34,6 +35,49 @@ func TestDaemonStartCommandUsesDirectBinaryForNonBundlePath(t *testing.T) {
 	wantArgs := []string{"/tmp/agent-secretd", "--socket", "/tmp/d.sock"}
 	if !slices.Equal(cmd.Args, wantArgs) {
 		t.Fatalf("args = %q, want %q", cmd.Args, wantArgs)
+	}
+}
+
+func TestDaemonStartCommandUsesOpenForDarwinApp(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin app launch is only used on macOS")
+	}
+	t.Setenv("OP_ACCOUNT", "DefaultFixture")
+	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
+
+	cmd := StartCommand(context.Background(), "/Applications/Agent Secret.app", []string{"--socket", "/tmp/d.sock"})
+	if cmd.Path != "/usr/bin/open" {
+		t.Fatalf("command path = %q, want /usr/bin/open", cmd.Path)
+	}
+	wantArgs := []string{
+		"/usr/bin/open",
+		"-g",
+		"-n",
+		"/Applications/Agent Secret.app",
+		"--env",
+		"OP_ACCOUNT=DefaultFixture",
+		"--env",
+		"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
+		"--args",
+		"--socket",
+		"/tmp/d.sock",
+	}
+	if !slices.Equal(cmd.Args, wantArgs) {
+		t.Fatalf("args = %q, want %q", cmd.Args, wantArgs)
+	}
+}
+
+func TestDefaultDaemonPathReturnsDaemonCandidate(t *testing.T) {
+	t.Parallel()
+
+	path, err := DefaultDaemonPath()
+	if err != nil {
+		t.Fatalf("DefaultDaemonPath returned error: %v", err)
+	}
+	switch filepath.Base(path) {
+	case "agent-secretd", "AgentSecretDaemon.app":
+	default:
+		t.Fatalf("DefaultDaemonPath = %q, want daemon binary or app candidate", path)
 	}
 }
 

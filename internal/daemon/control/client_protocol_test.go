@@ -174,6 +174,48 @@ func TestClientRequestExecDefaultDeadlineUsesRequestExpiry(t *testing.T) {
 	}
 }
 
+func TestClientRequestExecDefaultDeadlineUsesRequestTTL(t *testing.T) {
+	t.Parallel()
+
+	defaultTimeout := 25 * time.Millisecond
+	client := &Client{DefaultTimeout: defaultTimeout}
+	req := testExecRequestAt(t, time.Now(), []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	req.ExpiresAt = time.Time{}
+	req.TTL = 2 * time.Minute
+	before := time.Now()
+	ctx, cancel := client.contextWithDefaultDeadline(context.Background(), protocol.TypeRequestExec, req)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("RequestExec context did not receive a deadline")
+	}
+	minDeadline := before.Add(req.TTL + defaultTimeout)
+	maxDeadline := time.Now().Add(req.TTL + defaultTimeout)
+	if deadline.Before(minDeadline) || deadline.After(maxDeadline) {
+		t.Fatalf("RequestExec TTL deadline = %s, want between %s and %s", deadline, minDeadline, maxDeadline)
+	}
+}
+
+func TestClientKeepsCallerDeadline(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{DefaultTimeout: time.Hour}
+	wantDeadline := time.Now().Add(50 * time.Millisecond)
+	callerCtx, cancel := context.WithDeadline(context.Background(), wantDeadline)
+	defer cancel()
+
+	ctx, returnedCancel := client.contextWithDefaultDeadline(callerCtx, protocol.TypeDaemonStatus, nil)
+	defer returnedCancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("caller deadline was dropped")
+	}
+	if !deadline.Equal(wantDeadline) {
+		t.Fatalf("deadline = %s, want caller deadline %s", deadline, wantDeadline)
+	}
+}
+
 func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
 	t.Parallel()
 
@@ -308,6 +350,70 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				t.Fatalf("error %q does not contain %q", err, tc.wantErrMsg)
 			}
 		})
+	}
+}
+
+func TestClientSubmitApprovalDecisionSendsProtocolMessage(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+		if env.Type != protocol.TypeApprovalDecision {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeApprovalDecision)
+		}
+		payload, err := protocol.DecodeRequiredPayload[approval.ApprovalDecisionPayload](env)
+		if err != nil {
+			t.Fatalf("decode approval decision: %v", err)
+		}
+		if payload.RequestID != "req_1" || payload.Nonce != "nonce_1" || payload.Decision != approval.ApprovalDecisionApproveOnce {
+			t.Fatalf("approval decision payload = %+v", payload)
+		}
+		return okResponseFrame(t, env, nil)
+	})
+	defer cleanup()
+
+	if err := client.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  approval.ApprovalDecisionApproveOnce,
+	}); err != nil {
+		t.Fatalf("SubmitApprovalDecision returned error: %v", err)
+	}
+}
+
+func TestValidateApprovalRequestPayloadRequiresFields(t *testing.T) {
+	t.Parallel()
+
+	valid := approval.ApprovalRequestPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Command:   []string{"terraform", "plan"},
+		ExpiresAt: time.Now().Add(time.Minute),
+		Secrets: []approval.ApprovalRequestedSecret{
+			{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+		},
+	}
+	if err := validateApprovalRequestPayload(valid); err != nil {
+		t.Fatalf("valid approval request returned error: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*approval.ApprovalRequestPayload)
+		wantErr string
+	}{
+		{name: "request id", mutate: func(payload *approval.ApprovalRequestPayload) { payload.RequestID = "" }, wantErr: "missing request id"},
+		{name: "nonce", mutate: func(payload *approval.ApprovalRequestPayload) { payload.Nonce = "" }, wantErr: "missing nonce"},
+		{name: "command", mutate: func(payload *approval.ApprovalRequestPayload) { payload.Command = nil }, wantErr: "missing command"},
+		{name: "expiry", mutate: func(payload *approval.ApprovalRequestPayload) { payload.ExpiresAt = time.Time{} }, wantErr: "missing expiry"},
+		{name: "secrets", mutate: func(payload *approval.ApprovalRequestPayload) { payload.Secrets = nil }, wantErr: "missing secrets"},
+	}
+	for _, tt := range tests {
+		payload := valid
+		tt.mutate(&payload)
+		err := validateApprovalRequestPayload(payload)
+		if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			t.Fatalf("%s error = %v, want %q", tt.name, err, tt.wantErr)
+		}
 	}
 }
 
