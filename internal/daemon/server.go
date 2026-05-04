@@ -402,10 +402,11 @@ func (s *Server) handleRequestExec(
 		return ""
 	}
 	wroteResponse := false
-	_, err = s.broker.HandleExecDelivery(ctx, env.Correlation(), req, func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
-		if s.stopped() {
-			return daemonbroker.ErrDaemonStopped
-		}
+	_, err = s.broker.HandleExecDelivery(ctx, env.Correlation(), req, func(
+		payload protocol.ExecResponsePayload,
+		expiresAt time.Time,
+		beforeWrite func() error,
+	) error {
 		if s.beforeExecResponseWrite != nil {
 			s.beforeExecResponseWrite()
 		}
@@ -414,6 +415,9 @@ func (s *Server) handleRequestExec(
 			return err
 		}
 		defer clearWriteDeadline()
+		if err := beforeWrite(); err != nil {
+			return err
+		}
 		if err := writeOK(encoder, env.Correlation(), payload); err != nil {
 			return err
 		}

@@ -33,8 +33,12 @@ func deliverExecForTest(
 	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (Grant, error) {
-	return deliverExecWithWriteForTest(ctx, b, correlation, req, func(protocol.ExecResponsePayload, time.Time) error {
-		return nil
+	return deliverExecWithWriteForTest(ctx, b, correlation, req, func(
+		_ protocol.ExecResponsePayload,
+		_ time.Time,
+		beforeWrite func() error,
+	) error {
+		return beforeWrite()
 	})
 }
 
@@ -43,7 +47,7 @@ func deliverExecWithWriteForTest(
 	b *Broker,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-	write func(protocol.ExecResponsePayload, time.Time) error,
+	write func(protocol.ExecResponsePayload, time.Time, func() error) error,
 ) (Grant, error) {
 	return b.HandleExecDelivery(ctx, correlation, req, write)
 }
@@ -79,8 +83,11 @@ func TestBrokerActivatesExecBeforePayloadWriteAndClearsOnWriteFailure(t *testing
 		broker,
 		correlation,
 		testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}),
-		func(protocol.ExecResponsePayload, time.Time) error {
+		func(_ protocol.ExecResponsePayload, _ time.Time, beforeWrite func() error) error {
 			requireActiveRequest(t, broker, correlation)
+			if err := beforeWrite(); err != nil {
+				return err
+			}
 			return writeErr
 		},
 	)
@@ -1192,9 +1199,9 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 		broker,
 		testCorrelation("req_2", "nonce_2"),
 		reuse,
-		func(protocol.ExecResponsePayload, time.Time) error {
+		func(_ protocol.ExecResponsePayload, _ time.Time, beforeWrite func() error) error {
 			now = req.ExpiresAt.Add(time.Second)
-			return approval.ErrRequestExpired
+			return beforeWrite()
 		},
 	)
 	if !errors.Is(err, approval.ErrRequestExpired) {
@@ -1204,6 +1211,65 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 		t.Fatal("expired reusable approval cache scope remained before payload delivery")
 	}
 	requireNoActiveRequest(t, broker, testCorrelation("req_2", ""), ErrUnknownRequest)
+}
+
+func TestBrokerDoesNotReturnPostWriteReusableFinalizationError(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	cache := secretcache.NewSecretCache()
+	broker, err := New(Options{
+		Now:      func() time.Time { return now },
+		Cache:    cache,
+		Approver: &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}},
+		Resolver: &mockResolver{values: map[string]string{ref: "first"}},
+		Audit:    &memoryAudit{},
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
+	if err != nil {
+		t.Fatalf("first deliverExec returned error: %v", err)
+	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
+
+	now = req.ExpiresAt.Add(-time.Millisecond)
+	reuse := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	wrotePayload := false
+	second, err := deliverExecWithWriteForTest(
+		context.Background(),
+		broker,
+		testCorrelation("req_2", "nonce_2"),
+		reuse,
+		func(payload protocol.ExecResponsePayload, _ time.Time, beforeWrite func() error) error {
+			if err := beforeWrite(); err != nil {
+				return err
+			}
+			if payload.Env["TOKEN"] != "first" {
+				t.Fatalf("reused payload env = %+v, want first value", payload.Env)
+			}
+			wrotePayload = true
+			now = req.ExpiresAt.Add(time.Second)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("post-write finalization error escaped delivery: %v", err)
+	}
+	if !wrotePayload {
+		t.Fatal("payload writer was not called")
+	}
+	if second.Env["TOKEN"] != "first" {
+		t.Fatalf("returned grant env = %+v, want first value", second.Env)
+	}
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
+		t.Fatal("expired reusable approval cache scope remained after post-write finalization")
+	}
+	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
 }
 
 func TestBrokerStopClearsReusableCache(t *testing.T) {

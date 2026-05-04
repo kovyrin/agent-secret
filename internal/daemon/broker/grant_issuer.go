@@ -77,16 +77,26 @@ func newGrantIssuer(
 	return issuer
 }
 
-func (g *grantIssuer) completeDelivery(delivery grantDelivery, result policy.DeliveryResult) error {
+func (g *grantIssuer) ensurePayloadWritable(
+	ctx context.Context,
+	req request.ExecRequest,
+	delivery grantDelivery,
+) error {
+	return g.ensureGrantStillActive(ctx, req, delivery.approvalID, delivery.expiresAt)
+}
+
+func (g *grantIssuer) finishDeliveryBeforePayload(delivery grantDelivery) {
 	if delivery.approvalID == "" {
-		return nil
+		return
 	}
-	if result == policy.DeliveryPayloadDelivered {
-		if err := g.reusable.ensureApprovalActive(delivery.approvalID, delivery.expiresAt); err != nil {
-			return err
-		}
+	_ = g.reusable.finishDelivery(delivery.approvalID, policy.DeliveryPrePayloadFailure)
+}
+
+func (g *grantIssuer) finishDeliveryAfterPayload(delivery grantDelivery) {
+	if delivery.approvalID == "" {
+		return
 	}
-	return g.reusable.finishDelivery(delivery.approvalID, result)
+	_ = g.reusable.finishDelivery(delivery.approvalID, policy.DeliveryPayloadDelivered)
 }
 
 func (g *grantIssuer) rollbackDelivery(delivery grantDelivery) {
@@ -94,7 +104,7 @@ func (g *grantIssuer) rollbackDelivery(delivery grantDelivery) {
 		g.reusable.rollbackApproval(delivery.mutationID)
 		return
 	}
-	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
+	g.finishDeliveryBeforePayload(delivery)
 }
 
 func (g *grantIssuer) issue(
@@ -205,7 +215,7 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 	delivered := false
 	defer func() {
 		if !delivered {
-			_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
+			g.finishDeliveryBeforePayload(delivery)
 		}
 	}()
 	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {

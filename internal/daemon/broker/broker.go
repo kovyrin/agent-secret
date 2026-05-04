@@ -119,7 +119,7 @@ func (b *Broker) HandleExecDelivery(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-	write func(protocol.ExecResponsePayload, time.Time) error,
+	write func(protocol.ExecResponsePayload, time.Time, func() error) error,
 ) (Grant, error) {
 	if correlation.RequestID == "" || correlation.Nonce == "" {
 		return Grant{}, protocol.ErrInvalidNonce
@@ -140,21 +140,22 @@ func (b *Broker) HandleExecDelivery(
 		return Grant{}, err
 	}
 	if err := b.activateExec(correlation, req); err != nil {
-		_ = b.grants.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
+		b.grants.finishDeliveryBeforePayload(issued.delivery)
 		return Grant{}, err
 	}
 	payload := protocol.ExecResponsePayload{
 		Env:           issued.grant.Env,
 		SecretAliases: issued.grant.SecretAliases,
 	}
-	if err := write(payload, issued.grant.payloadExpiresAt); err != nil {
+	beforeWrite := func() error {
+		return b.grants.ensurePayloadWritable(execCtx, req, issued.delivery)
+	}
+	if err := write(payload, issued.grant.payloadExpiresAt, beforeWrite); err != nil {
 		b.deactivateExec(correlation)
-		_ = b.grants.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
+		b.grants.finishDeliveryBeforePayload(issued.delivery)
 		return Grant{}, err
 	}
-	if err := b.grants.completeDelivery(issued.delivery, policy.DeliveryPayloadDelivered); err != nil {
-		return Grant{}, err
-	}
+	b.grants.finishDeliveryAfterPayload(issued.delivery)
 	return issued.grant, nil
 }
 
