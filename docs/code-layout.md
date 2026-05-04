@@ -61,10 +61,10 @@ handling, 1Password fetches after approval, and metadata-only audit events.
 `internal/daemon` is the daemon orchestration package. Its root package owns the
 server loop, broker, reusable grant issuer, and stop/status handlers. Narrow
 subpackages own distinct daemon boundaries: `approval` handles approver IPC,
-`control` manages CLI-side daemon start/status/stop flows, `peertrust`
-validates trusted CLI and daemon peers, `process` owns daemon launch commands,
-`protocol` defines wire envelopes, `socket` owns Unix socket paths and
-listeners, and `trust` wraps platform signature/plist checks.
+`control` owns CLI-side daemon clients and start/status/stop flows,
+`peertrust` validates trusted CLI and daemon peers, `process` owns daemon
+launch commands, `protocol` defines wire envelopes, `socket` owns Unix socket
+paths and listeners, and `trust` wraps platform signature/plist checks.
 
 `internal/request` defines the value-free request model shared by CLI, daemon,
 policy, audit, and protocol code. It parses and validates `op://` reference

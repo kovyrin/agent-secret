@@ -1,4 +1,4 @@
-package daemon
+package control
 
 import (
 	"bytes"
@@ -12,12 +12,48 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
+
+func testCorrelation(requestID string, nonce string) protocol.Correlation {
+	return protocol.Correlation{RequestID: requestID, Nonce: nonce}
+}
+
+func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecRequest {
+	t.Helper()
+	return testExecRequestAt(t, time.Now(), secrets)
+}
+
+func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec) request.ExecRequest {
+	t.Helper()
+
+	reqSecrets := make([]request.Secret, 0, len(secrets))
+	for _, spec := range secrets {
+		ref, err := request.ParseSecretRef(spec.Ref)
+		if err != nil {
+			t.Fatalf("ParseSecretRef returned error: %v", err)
+		}
+		reqSecrets = append(reqSecrets, request.Secret{Alias: spec.Alias, Ref: ref, Account: spec.Account})
+	}
+
+	return request.ExecRequest{
+		Reason:             "Run Terraform plan",
+		Command:            []string{"terraform", "plan"},
+		ResolvedExecutable: "/opt/homebrew/bin/terraform",
+		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
+		CWD:                "/tmp/project",
+		Secrets:            reqSecrets,
+		TTL:                request.DefaultExecTTL,
+		ReceivedAt:         now,
+		ExpiresAt:          now.Add(request.DefaultExecTTL),
+	}
+}
 
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	t.Parallel()
@@ -324,7 +360,7 @@ func TestClientRejectsMismatchedErrorResponseCorrelation(t *testing.T) {
 		{
 			name:    "command started nonce",
 			frame:   errorResponseFrame(t, "req_1", "nonce_stale"),
-			wantErr: ErrInvalidNonce,
+			wantErr: protocol.ErrInvalidNonce,
 			call: func(ctx context.Context, client *Client) error {
 				return client.ReportStarted(ctx, testCorrelation("req_1", "nonce_1"), 1234)
 			},
@@ -436,7 +472,7 @@ func execResponseFrame(t *testing.T, request protocol.Envelope, payload protocol
 func TestSameUIDValidatorRejectsInspectFailure(t *testing.T) {
 	t.Parallel()
 
-	err := (SameUIDValidator{}).Validate(&net.UnixConn{})
+	err := (daemon.SameUIDValidator{}).Validate(&net.UnixConn{})
 	if err == nil {
 		t.Fatal("expected invalid unix connection error")
 	}

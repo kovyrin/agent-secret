@@ -1,4 +1,4 @@
-package daemon
+package control
 
 import (
 	"bufio"
@@ -35,7 +35,7 @@ type Client struct {
 	DefaultTimeout time.Duration
 }
 
-const DefaultClientProtocolTimeout = DefaultProtocolReadTimeout
+const DefaultClientProtocolTimeout = 30 * time.Second
 
 func Connect(ctx context.Context, path string) (*Client, error) {
 	trustedPaths, err := defaultTrustedDaemonPaths()
@@ -362,7 +362,7 @@ func validateResponseCorrelation(resp protocol.Envelope, correlation protocol.Co
 		return fmt.Errorf("%w: response request id mismatch", protocol.ErrMalformedEnvelope)
 	}
 	if correlation.Nonce != "" && resp.Nonce != correlation.Nonce {
-		return ErrInvalidNonce
+		return protocol.ErrInvalidNonce
 	}
 	return nil
 }

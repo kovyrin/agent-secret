@@ -17,7 +17,6 @@ import (
 var (
 	ErrApprovalUnavailable  = errors.New("approval unavailable")
 	ErrAuditRequired        = errors.New("audit required")
-	ErrInvalidNonce         = errors.New("invalid request nonce")
 	ErrMissingCache         = errors.New("approved secret cache entry missing")
 	ErrNoResolver           = errors.New("secret resolver unavailable")
 	ErrSecretResolveFailed  = errors.New("secret resolve failed")
@@ -122,7 +121,7 @@ func (b *Broker) handleExecDelivery(
 	write func(protocol.ExecResponsePayload, time.Time) error,
 ) (ExecGrant, error) {
 	if correlation.RequestID == "" || correlation.Nonce == "" {
-		return ExecGrant{}, ErrInvalidNonce
+		return ExecGrant{}, protocol.ErrInvalidNonce
 	}
 	if b.stopped() {
 		return ExecGrant{}, ErrDaemonStopped
@@ -308,7 +307,7 @@ func (b *Broker) activeRequest(correlation protocol.Correlation) (*activeExec, e
 		return nil, ErrUnknownRequest
 	}
 	if active.nonce != correlation.Nonce {
-		return nil, ErrInvalidNonce
+		return nil, protocol.ErrInvalidNonce
 	}
 	return active, nil
 }

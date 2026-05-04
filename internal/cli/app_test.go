@@ -454,11 +454,11 @@ func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
 }
 
 func TestDaemonAuditReporterFatalStartedAuditClassification(t *testing.T) {
-	protocolErr := &daemon.ProtocolError{Code: protocol.ErrorCodeInvalidNonce, Message: "bad nonce"}
+	protocolErr := &control.ProtocolError{Code: protocol.ErrorCodeInvalidNonce, Message: "bad nonce"}
 	if !isFatalCommandStartedAuditFailure(protocolErr) {
 		t.Fatal("invalid nonce protocol error was not classified as fatal")
 	}
-	stoppedErr := &daemon.ProtocolError{Code: protocol.ErrorCodeDaemonStopped, Message: "daemon stopped"}
+	stoppedErr := &control.ProtocolError{Code: protocol.ErrorCodeDaemonStopped, Message: "daemon stopped"}
 	if isFatalCommandStartedAuditFailure(stoppedErr) {
 		t.Fatal("daemon stopped protocol error was classified as fatal")
 	}
@@ -474,7 +474,7 @@ func TestDaemonAuditReporterWarnsOnDaemonStoppedAfterChildStart(t *testing.T) {
 	client, _, cleanup := startPostStartStoppedAppDaemon(t)
 	defer cleanup()
 
-	daemonClient, err := daemon.ConnectWithPeerValidator(context.Background(), client.SocketPath, nil)
+	daemonClient, err := control.ConnectWithPeerValidator(context.Background(), client.SocketPath, nil)
 	if err != nil {
 		t.Fatalf("ConnectWithPeerValidator returned error: %v", err)
 	}

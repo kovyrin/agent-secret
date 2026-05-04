@@ -1389,7 +1389,7 @@ func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
 		t.Fatalf("deliverExec returned error: %v", err)
 	}
 	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
-	if err := broker.ReportStarted(context.Background(), testCorrelation("req_1", "wrong"), 1234); !errors.Is(err, ErrInvalidNonce) {
+	if err := broker.ReportStarted(context.Background(), testCorrelation("req_1", "wrong"), 1234); !errors.Is(err, protocol.ErrInvalidNonce) {
 		t.Fatalf("expected nonce mismatch, got %v", err)
 	}
 	if err := broker.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 1234); err != nil {

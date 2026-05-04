@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -30,13 +31,13 @@ func TestConnectAcceptsTrustedDaemonPeer(t *testing.T) {
 	})
 	defer stop()
 
-	client, err := ConnectWithPeerValidator(
+	client, err := control.ConnectWithPeerValidator(
 		context.Background(),
 		path,
 		peertrust.NewDaemonValidator([]string{currentExecutable(t)}),
 	)
 	if err != nil {
-		t.Fatalf("ConnectWithPeerValidator returned error: %v", err)
+		t.Fatalf("control.ConnectWithPeerValidator returned error: %v", err)
 	}
 	defer func() { _ = client.Close() }()
 	if _, err := client.Status(context.Background()); err != nil {
@@ -51,7 +52,7 @@ func TestConnectRejectsUntrustedDaemonBeforeExecPayload(t *testing.T) {
 	defer stop()
 	trustedDaemon := writeExecutableAt(t, t.TempDir(), "agent-secretd")
 
-	client, err := ConnectWithPeerValidator(
+	client, err := control.ConnectWithPeerValidator(
 		context.Background(),
 		path,
 		peertrust.NewDaemonValidator([]string{trustedDaemon}),
@@ -66,10 +67,10 @@ func TestConnectRejectsUntrustedDaemonBeforeExecPayload(t *testing.T) {
 		if requestErr == nil {
 			t.Fatalf("accepted exec payload from untrusted daemon: %+v", payload.Env)
 		}
-		t.Fatalf("ConnectWithPeerValidator accepted untrusted daemon; request error = %v", requestErr)
+		t.Fatalf("control.ConnectWithPeerValidator accepted untrusted daemon; request error = %v", requestErr)
 	}
 	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
-		t.Fatalf("ConnectWithPeerValidator error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
+		t.Fatalf("control.ConnectWithPeerValidator error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
 	}
 }
 

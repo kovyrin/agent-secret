@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -145,8 +144,8 @@ func (m Manager) Stop(ctx context.Context) error {
 	return fmt.Errorf("%w: daemon still responds after stop", ErrDaemonStillRunning)
 }
 
-func (m Manager) Connect(ctx context.Context) (*daemon.Client, error) {
-	client, err := daemon.ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(m.trustedDaemonPaths()))
+func (m Manager) Connect(ctx context.Context) (*Client, error) {
+	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(m.trustedDaemonPaths()))
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +197,7 @@ func (m Manager) protocolTimeout() time.Duration {
 	if m.ProtocolTimeout > 0 {
 		return m.ProtocolTimeout
 	}
-	return daemon.DefaultClientProtocolTimeout
+	return DefaultClientProtocolTimeout
 }
 
 func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {

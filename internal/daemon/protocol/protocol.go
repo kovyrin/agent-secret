@@ -56,6 +56,7 @@ const (
 )
 
 var (
+	ErrInvalidNonce      = errors.New("invalid request nonce")
 	ErrMalformedEnvelope = errors.New("malformed protocol envelope")
 	ErrProtocolFrameSize = errors.New("protocol frame exceeds maximum size")
 	ErrProtocolVersion   = errors.New("unsupported protocol version")

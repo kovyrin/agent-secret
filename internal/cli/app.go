@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
-	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -307,7 +306,7 @@ func (a App) stderrf(format string, args ...any) {
 }
 
 type daemonAuditReporter struct {
-	client      *daemon.Client
+	client      *control.Client
 	correlation protocol.Correlation
 	stderr      io.Writer
 }
@@ -339,13 +338,13 @@ func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEve
 }
 
 func isFatalCommandStartedAuditFailure(err error) bool {
-	if errors.Is(err, daemon.ErrInvalidNonce) ||
+	if errors.Is(err, protocol.ErrInvalidNonce) ||
 		errors.Is(err, protocol.ErrMalformedEnvelope) ||
 		errors.Is(err, protocol.ErrProtocolType) {
 		return true
 	}
 
-	var protocolErr *daemon.ProtocolError
+	var protocolErr *control.ProtocolError
 	if !errors.As(err, &protocolErr) {
 		return false
 	}

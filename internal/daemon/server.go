@@ -255,7 +255,7 @@ func (s *Server) lifecycleRequestMatchesConnection(
 	if activeRequestID != "" && env.RequestID == activeRequestID {
 		return true
 	}
-	_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrInvalidNonce), ErrInvalidNonce)
+	_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(protocol.ErrInvalidNonce), protocol.ErrInvalidNonce)
 	return false
 }
 
@@ -487,7 +487,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeApprovalDenied
 	case errors.Is(err, ErrAuditRequired):
 		return protocol.ErrorCodeAuditFailed
-	case errors.Is(err, ErrInvalidNonce):
+	case errors.Is(err, protocol.ErrInvalidNonce):
 		return protocol.ErrorCodeInvalidNonce
 	case errors.Is(err, approval.ErrApproverPeerMismatch):
 		return protocol.ErrorCodeApproverPeerMismatch
