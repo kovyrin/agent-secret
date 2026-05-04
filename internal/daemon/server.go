@@ -101,7 +101,7 @@ func (s *connectionState) resetReadTimeout() {
 	s.nextReadTimeout = s.defaultReadTimeout
 }
 
-func (s *connectionState) waitForApprovalDecision(timeout time.Duration) {
+func (s *connectionState) setApprovalDecisionReadTimeout(timeout time.Duration) {
 	s.nextReadTimeout = timeout
 }
 
@@ -270,7 +270,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 		case protocol.TypeApprovalPending:
 			if payload, ok := s.handleApprovalPending(ctx, conn, encoder, env); ok {
-				state.waitForApprovalDecision(s.approvalDecisionReadTimeout(payload.ExpiresAt))
+				state.setApprovalDecisionReadTimeout(s.approvalDecisionReadTimeout(payload.ExpiresAt))
 			}
 		case protocol.TypeApprovalDecision:
 			if s.approvals == nil {
