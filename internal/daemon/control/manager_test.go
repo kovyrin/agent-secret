@@ -212,6 +212,43 @@ func TestManagerStatusUnavailableAcceptsOnlyUnavailableDaemon(t *testing.T) {
 	}
 }
 
+func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+
+	if _, err := manager.Status(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
+		t.Fatalf("Status error = %v, want daemon unavailable", err)
+	}
+	if err := manager.CheckOnePassword(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
+		t.Fatalf("CheckOnePassword error = %v, want daemon unavailable", err)
+	}
+	if err := manager.Stop(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
+		t.Fatalf("Stop error = %v, want daemon unavailable", err)
+	}
+}
+
+func TestManagerStartRequiresDaemonPathAfterSocketPreparation(t *testing.T) {
+	t.Parallel()
+
+	dir := testfs.ShortTempDir(t, "agent-secret-manager-")
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: manager socket test needs a private custom directory.
+		t.Fatalf("chmod custom dir: %v", err)
+	}
+	manager := Manager{
+		SocketPath:     filepath.Join(dir, "agent-secretd.sock"),
+		StartupTimeout: time.Millisecond,
+	}
+
+	err := manager.EnsureRunning(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "daemon path is required") {
+		t.Fatalf("EnsureRunning error = %v, want daemon path required", err)
+	}
+	if got := testfs.StatMode(t, dir); got != 0o700 {
+		t.Fatalf("socket dir mode = %s, want 0700", got)
+	}
+}
+
 func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	t.Parallel()
 

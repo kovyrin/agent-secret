@@ -1,6 +1,7 @@
 package socket
 
 import (
+	"context"
 	"errors"
 	"net"
 	"os"
@@ -23,6 +24,49 @@ func TestDefaultPathIgnoresEnvironmentOverrides(t *testing.T) {
 	want := filepath.Join(home, "Library", "Application Support", "agent-secret", "agent-secretd.sock")
 	if path != want {
 		t.Fatalf("default socket path = %q, want %q", path, want)
+	}
+}
+
+func TestDialMissingSocketReturnsDaemonUnavailable(t *testing.T) {
+	t.Parallel()
+
+	_, err := Dial(context.Background(), filepath.Join(t.TempDir(), "missing.sock"))
+	if !errors.Is(err, ErrDaemonUnavailable) {
+		t.Fatalf("Dial error = %v, want daemon unavailable", err)
+	}
+}
+
+func TestCleanupStaleIgnoresMissingSocket(t *testing.T) {
+	t.Parallel()
+
+	if err := CleanupStale(filepath.Join(t.TempDir(), "missing.sock")); err != nil {
+		t.Fatalf("CleanupStale missing socket returned error: %v", err)
+	}
+}
+
+func TestPrepareDirectoryCreatesPrivateCustomParent(t *testing.T) {
+	t.Parallel()
+
+	parent := filepath.Join(testfs.ShortTempDir(t, "agent-secret-socket-"), "nested")
+	path := filepath.Join(parent, "agent-secretd.sock")
+	if err := PrepareDirectory(path); err != nil {
+		t.Fatalf("PrepareDirectory returned error: %v", err)
+	}
+	if got := testfs.StatMode(t, parent); got != 0o700 {
+		t.Fatalf("custom socket parent mode = %s, want 0700", got)
+	}
+}
+
+func TestAllowedSocketRootAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/etc", "/tmp", "/var"} {
+		if !isAllowedSocketRootAlias(path) {
+			t.Fatalf("isAllowedSocketRootAlias(%q) = false, want true", path)
+		}
+	}
+	if isAllowedSocketRootAlias(filepath.Join(t.TempDir(), "socket")) {
+		t.Fatal("temporary socket path was treated as an allowed root alias")
 	}
 }
 

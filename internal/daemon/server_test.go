@@ -52,6 +52,12 @@ func (v staticPeerValidator) Info(_ *net.UnixConn) (peercred.Info, error) {
 	return v.info, nil
 }
 
+func trustedCurrentPeer(t *testing.T) (PeerValidator, peertrust.ExecValidator) {
+	t.Helper()
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	return staticPeerValidator{info: peer}, peertrust.NewExecutableValidator([]string{peer.ExecutablePath})
+}
+
 func TestServerExecProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -142,10 +148,11 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 		Audit:    aud,
 	})
 	readTimeouts := make(chan time.Duration, 8)
-	path, stop := startRawServerWithOptions(t, ServerOptions{
+	validator, execValidator := trustedCurrentPeer(t)
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:        broker,
-		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		Validator:     validator,
+		ExecValidator: execValidator,
 		ReadTimeout:   time.Second,
 		beforeRead: func(timeout time.Duration) {
 			readTimeouts <- timeout
@@ -153,10 +160,6 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	client := control.NewClient(conn)
 	defer func() { _ = client.Close() }()
 
@@ -253,17 +256,16 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawTestServer(t, daemonbroker.Options{
-		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
-		Audit:    &memoryAudit{},
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator: allowPeerValidator{},
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -289,7 +291,7 @@ func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawServerWithOptions(t, ServerOptions{
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     allowPeerValidator{},
 		MaxFrameBytes: 96,
@@ -297,10 +299,6 @@ func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 
 	frame := `{"version":1,"type":"daemon.status","payload":"` + strings.Repeat("x", 128) + `"}` + "\n"
@@ -327,7 +325,7 @@ func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawServerWithOptions(t, ServerOptions{
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     allowPeerValidator{},
 		ReadTimeout:   25 * time.Millisecond,
@@ -335,10 +333,6 @@ func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write([]byte(`{"version":`)); err != nil {
 		t.Fatalf("write partial frame: %v", err)
@@ -347,7 +341,7 @@ func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 		t.Fatalf("set read deadline: %v", err)
 	}
 	buf := make([]byte, 1)
-	_, err = conn.Read(buf)
+	_, err := conn.Read(buf)
 	if err == nil {
 		t.Fatal("expected connection close for slow partial frame")
 	}
@@ -362,7 +356,7 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
-	path, stop := startRawServerWithOptions(t, ServerOptions{
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     staticPeerValidator{info: peer},
 		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
@@ -371,10 +365,6 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 
 	env := protocol.Envelope{
@@ -511,10 +501,11 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.ReusableUses = 1
 	var hookOnce sync.Once
-	path, stop := startRawServerWithOptions(t, ServerOptions{
+	validator, execValidator := trustedCurrentPeer(t)
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:        broker,
-		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		Validator:     validator,
+		ExecValidator: execValidator,
 		beforeExecResponseWrite: func() {
 			hookOnce.Do(func() {
 				now = daemonNow.Add(request.DefaultExecTTL + time.Second)
@@ -523,10 +514,6 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	client := control.NewClient(conn)
 	defer func() { _ = client.Close() }()
 
@@ -558,17 +545,18 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	defer unsubscribe()
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
-	path, stop := startRawTestServer(t, daemonbroker.Options{
-		Approver: approver,
-		Resolver: resolver,
-		Audit:    aud,
+	validator, execValidator := trustedCurrentPeer(t)
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: approver,
+			Resolver: resolver,
+			Audit:    aud,
+		}),
+		Validator:     validator,
+		ExecValidator: execValidator,
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
@@ -969,21 +957,21 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 func TestServerReportsApprovalUnavailable(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawTestServer(t, daemonbroker.Options{
-		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
-		Audit:    &memoryAudit{},
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:     allowPeerValidator{},
+		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial app client returned error: %v", err)
-	}
 	client := newApprovalSocketTestClient(conn)
 	defer func() { _ = client.Close() }()
 
-	_, err = client.FetchPending(context.Background())
+	_, err := client.FetchPending(context.Background())
 	if !control.IsProtocolError(err, protocol.ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable protocol error, got %v", err)
 	}
@@ -999,17 +987,18 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawTestServer(t, daemonbroker.Options{
-		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
-		Audit:    &memoryAudit{},
+	validator, execValidator := trustedCurrentPeer(t)
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:     validator,
+		ExecValidator: execValidator,
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -1057,17 +1046,18 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	path, stop := startRawTestServer(t, daemonbroker.Options{
-		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
-		Audit:    &memoryAudit{},
+	validator, execValidator := trustedCurrentPeer(t)
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:     validator,
+		ExecValidator: execValidator,
 	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -1175,23 +1165,17 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
-	path, stop := startRawServerWithBrokerAndExecValidator(
-		t,
-		newTestBroker(t, daemonbroker.Options{
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: approver,
 			Resolver: resolver,
 			Audit:    &memoryAudit{},
 		}),
-		nil,
-		staticPeerValidator{info: peer},
-		peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
-	)
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
+	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	client := control.NewClient(conn)
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
@@ -1216,23 +1200,17 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 		values: map[string]string{"op://Example/Item/token": canarySecretValue},
 	}
 	aud := &memoryAudit{}
-	path, stop := startRawServerWithBrokerAndExecValidator(
-		t,
-		newTestBroker(t, daemonbroker.Options{
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: approver,
 			Resolver: resolver,
 			Audit:    aud,
 		}),
-		nil,
-		staticPeerValidator{info: peer},
-		peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
-	)
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
+	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
@@ -1283,13 +1261,14 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
 	})
-	path, stop := startRawServerWithBroker(t, broker, approver, staticPeerValidator{info: peer})
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker:      broker,
+		Approvals:   approver,
+		Validator:   staticPeerValidator{info: peer},
+		ReadTimeout: time.Second,
+	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -1317,22 +1296,16 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawServerWithBroker(
-		t,
-		newTestBroker(t, daemonbroker.Options{
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		nil,
-		staticPeerValidator{err: peercred.ErrPolicyMismatch},
-	)
+		Validator: staticPeerValidator{err: peercred.ErrPolicyMismatch},
+	})
 	defer stop()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
 	defer func() { _ = conn.Close() }()
 	var resp protocol.Envelope
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
@@ -1507,6 +1480,31 @@ func startRawServerWithBrokerAndExecValidator(
 		Validator:     validator,
 		ExecValidator: execValidator,
 	})
+}
+
+func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixConn, func()) {
+	t.Helper()
+	server, err := NewServer(opts)
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+	serverConn, clientConn := unixsocket.Pair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(ctx, serverConn)
+	}()
+
+	return clientConn, func() {
+		_ = clientConn.Close()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("socket-pair server connection did not stop")
+		}
+	}
 }
 
 func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()) {
