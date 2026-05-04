@@ -5,10 +5,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -16,42 +14,9 @@ import (
 func TestPeerCredCapturesCurrentProcess(t *testing.T) {
 	t.Parallel()
 
-	socketPath := filepath.Join(
-		os.TempDir(),
-		"as-peer-"+strconv.Itoa(os.Getpid())+"-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".sock",
-	)
-	defer func() { _ = os.Remove(socketPath) }()
-	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
-	unixsocket.SkipIfBindUnavailable(t, err)
-	if err != nil {
-		t.Fatalf("listen unix: %v", err)
-	}
-	defer func() { _ = listener.Close() }()
-
-	accepted := make(chan *net.UnixConn, 1)
-	acceptErr := make(chan error, 1)
-	go func() {
-		conn, err := listener.AcceptUnix()
-		if err != nil {
-			acceptErr <- err
-			return
-		}
-		accepted <- conn
-	}()
-
-	client, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: socketPath, Net: "unix"})
-	if err != nil {
-		t.Fatalf("dial unix: %v", err)
-	}
+	server, client := unixsocket.Pair(t)
+	defer func() { _ = server.Close() }()
 	defer func() { _ = client.Close() }()
-
-	var server *net.UnixConn
-	select {
-	case err := <-acceptErr:
-		t.Fatalf("accept unix: %v", err)
-	case server = <-accepted:
-		defer func() { _ = server.Close() }()
-	}
 
 	info, err := Inspect(server)
 	if errors.Is(err, ErrUnsupportedOS) {

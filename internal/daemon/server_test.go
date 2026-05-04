@@ -57,7 +57,7 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	client, cleanup := startTestServer(t, daemonbroker.Options{
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -1361,16 +1361,40 @@ func fetchPendingApprovalOrExecError(
 
 func startTestServer(t *testing.T, opts daemonbroker.Options) (*control.Client, func()) {
 	t.Helper()
-	path, stop := startRawTestServer(t, opts)
-	conn, err := socket.Dial(context.Background(), path)
+	return startSocketPairTestServer(t, opts)
+}
+
+func startSocketPairTestServer(t *testing.T, opts daemonbroker.Options) (*control.Client, func()) {
+	t.Helper()
+
+	broker := newTestBroker(t, opts)
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	server, err := NewServer(ServerOptions{
+		Broker:        broker,
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+	})
 	if err != nil {
-		stop()
-		t.Fatalf("Dial returned error: %v", err)
+		t.Fatalf("NewServer returned error: %v", err)
 	}
-	client := control.NewClient(conn)
+
+	serverConn, clientConn := unixsocket.Pair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(ctx, serverConn)
+	}()
+
+	client := control.NewClient(clientConn)
 	return client, func() {
 		_ = client.Close()
-		stop()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("socket-pair server connection did not stop")
+		}
 	}
 }
 

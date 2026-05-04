@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -533,51 +532,24 @@ func TestSameUIDValidatorRejectsInspectFailure(t *testing.T) {
 func startRespondingDaemonClient(t *testing.T, response func(protocol.Envelope) []byte) (*Client, func()) {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("/tmp", "agent-secret-response-")
-	if err != nil {
-		t.Fatalf("MkdirTemp returned error: %v", err)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: socket tests need an owner-searchable private listener directory.
-		_ = os.RemoveAll(dir)
-		t.Fatalf("secure socket test directory: %v", err)
-	}
-	path := filepath.Join(dir, "daemon.sock")
-	listener, err := socket.ListenUnix(path)
-	unixsocket.SkipIfBindUnavailable(t, err)
-	if err != nil {
-		_ = os.RemoveAll(dir)
-		t.Fatalf("ListenUnix returned error: %v", err)
-	}
-
+	serverConn, clientConn := unixsocket.Pair(t)
 	serverDone := make(chan error, 1)
 	go func() {
-		conn, err := listener.AcceptUnix()
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = serverConn.Close() }()
 
 		var env protocol.Envelope
-		if err := json.NewDecoder(conn).Decode(&env); err != nil {
+		if err := json.NewDecoder(serverConn).Decode(&env); err != nil {
 			serverDone <- err
 			return
 		}
-		_, err = conn.Write(response(env))
+		_, err := serverConn.Write(response(env))
 		serverDone <- err
 	}()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		_ = listener.Close()
-		t.Fatalf("Dial returned error: %v", err)
-	}
-	client := NewClient(conn)
+	client := NewClient(clientConn)
 
 	return client, func() {
 		_ = client.Close()
-		_ = listener.Close()
-		defer func() { _ = os.RemoveAll(dir) }()
 		select {
 		case err := <-serverDone:
 			if err != nil && !errors.Is(err, net.ErrClosed) {
@@ -592,35 +564,15 @@ func startRespondingDaemonClient(t *testing.T, response func(protocol.Envelope) 
 func startStallingDaemonClient(t *testing.T) (*Client, <-chan protocol.Envelope, func()) {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("/tmp", "agent-secret-stall-")
-	if err != nil {
-		t.Fatalf("MkdirTemp returned error: %v", err)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: socket tests need an owner-searchable private listener directory.
-		_ = os.RemoveAll(dir)
-		t.Fatalf("secure socket test directory: %v", err)
-	}
-	path := filepath.Join(dir, "daemon.sock")
-	listener, err := socket.ListenUnix(path)
-	unixsocket.SkipIfBindUnavailable(t, err)
-	if err != nil {
-		_ = os.RemoveAll(dir)
-		t.Fatalf("ListenUnix returned error: %v", err)
-	}
-
+	serverConn, clientConn := unixsocket.Pair(t)
 	requests := make(chan protocol.Envelope, 1)
 	release := make(chan struct{})
 	serverDone := make(chan error, 1)
 	go func() {
-		conn, err := listener.AcceptUnix()
-		if err != nil {
-			serverDone <- err
-			return
-		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = serverConn.Close() }()
 
 		var env protocol.Envelope
-		if err := json.NewDecoder(conn).Decode(&env); err != nil {
+		if err := json.NewDecoder(serverConn).Decode(&env); err != nil {
 			serverDone <- err
 			return
 		}
@@ -629,18 +581,11 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan protocol.Envelope,
 		serverDone <- nil
 	}()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		_ = listener.Close()
-		t.Fatalf("Dial returned error: %v", err)
-	}
-	client := NewClient(conn)
+	client := NewClient(clientConn)
 
 	return client, requests, func() {
 		_ = client.Close()
 		close(release)
-		_ = listener.Close()
-		defer func() { _ = os.RemoveAll(dir) }()
 		select {
 		case err := <-serverDone:
 			if err != nil && !errors.Is(err, net.ErrClosed) {
