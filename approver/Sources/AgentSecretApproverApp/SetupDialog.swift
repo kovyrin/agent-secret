@@ -24,10 +24,18 @@ func runSetupDialog() {
 
             switch alert.runModal() {
             case .alertFirstButtonReturn:
-                message = runBundledAgentSecret(arguments: ["install-cli"])
+                let result = runBundledAgentSecret(arguments: ["install-cli"])
+                showSetupResult(
+                    title: result.succeeded ? "Command Line Tool Installed" : "Command Line Tool Install Failed",
+                    message: result.output,
+                    style: result.succeeded ? .informational : .warning
+                )
+                if result.succeeded {
+                    shouldContinue = false
+                }
 
             case .alertSecondButtonReturn:
-                message = runBundledAgentSecret(arguments: ["doctor"])
+                message = runBundledAgentSecret(arguments: ["doctor"]).output
 
             default:
                 shouldContinue = false
@@ -48,13 +56,25 @@ private func setupIntroText() -> String {
     """
 }
 
-private func runBundledAgentSecret(arguments: [String]) -> String {
+#if canImport(AppKit)
+    @MainActor
+    private func showSetupResult(title: String, message: String, style: NSAlert.Style) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = style
+        alert.addButton(withTitle: "Close")
+        alert.runModal()
+    }
+#endif
+
+private func runBundledAgentSecret(arguments: [String]) -> (output: String, succeeded: Bool) {
     guard let cliPath = bundledAgentSecretPath() else {
-        return """
+        return ("""
         The bundled agent-secret command was not found inside this app.
 
         Reinstall Agent Secret.app, then open the app again.
-        """
+        """, false)
     }
 
     let process = Process()
@@ -69,18 +89,19 @@ private func runBundledAgentSecret(arguments: [String]) -> String {
         try process.run()
         process.waitUntilExit()
     } catch {
-        return "Could not run \(cliPath): \(error)"
+        return ("Could not run \(cliPath): \(error)", false)
     }
 
     let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
     let output = (String(bytes: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     if process.terminationStatus == 0 {
-        return output.isEmpty ? "Command completed." : output
+        return (output.isEmpty ? "Command completed." : output, true)
     }
     if output.isEmpty {
-        return "agent-secret \(arguments.joined(separator: " ")) failed with exit \(process.terminationStatus)."
+        let command = arguments.joined(separator: " ")
+        return ("agent-secret \(command) failed with exit \(process.terminationStatus).", false)
     }
-    return output
+    return (output, false)
 }
 
 private func bundledAgentSecretPath() -> String? {

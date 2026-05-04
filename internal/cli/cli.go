@@ -800,6 +800,9 @@ The command creates:
 
   ~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
 
+On a clean macOS shell, ~/.local/bin is usually not on PATH. If install-cli
+prints a PATH warning, paste the shown one-liner into Terminal.
+
 When run from a development or test build, it links to the executable that is
 currently running. If the command is already a symlink to that executable, it is
 left in place. Existing regular files and symlinks to different targets are not
