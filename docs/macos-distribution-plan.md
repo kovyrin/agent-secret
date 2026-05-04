@@ -478,7 +478,6 @@ Maintainer release signing environment:
 
 ```bash
 AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
-AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
 AGENT_SECRET_NOTARIZE=1
 AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
 AGENT_SECRET_NOTARY_KEY_ID=KEYID

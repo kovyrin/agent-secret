@@ -87,13 +87,15 @@ cd approver && swift test
 scripts/build/build-app-bundle.sh
 ```
 
-`mise run test:smoke` runs the non-secret install, uninstall, release
-configuration, release ancestry, release notes, release publication, release
-version, release docs, public docs, and approver smoke checks:
+`mise run test:smoke` runs the non-secret install, uninstall, build signing
+contract, release configuration, release ancestry, release notes, release
+publication, release version, release docs, public docs, and approver smoke
+checks:
 
 ```bash
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
+AGENT_SECRET_IN_MISE=1 scripts/build/test-build-entitlements.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-signing-env.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
@@ -335,7 +337,6 @@ release examples must use that identity:
 
 ```bash
 AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
-AGENT_SECRET_CODESIGN_ENTITLEMENTS=path/to/entitlements.plist
 AGENT_SECRET_NOTARIZE=1
 AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
 AGENT_SECRET_NOTARY_KEY_ID=KEYID

@@ -37,8 +37,8 @@ output_dir="$project_root/dist"
 version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
-codesign_entitlements="${AGENT_SECRET_CODESIGN_ENTITLEMENTS:-}"
 approver_team_id="-"
+daemon_entitlements="$project_root/scripts/build/agent-secretd.entitlements"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -115,6 +115,10 @@ require_tool cp "$tool_cp"
 require_tool sips "$tool_sips"
 require_tool iconutil "$tool_iconutil"
 require_tool codesign "$tool_codesign"
+if [[ ! -f "$daemon_entitlements" ]]; then
+  echo "build-app-bundle: missing daemon entitlements at $daemon_entitlements" >&2
+  exit 1
+fi
 
 run_go() (
   unset GOROOT
@@ -164,12 +168,13 @@ make_icon() {
 
 sign_path() {
   local path="$1"
+  local entitlements="${2:-}"
   local args=(--force --sign "$codesign_identity")
 
   if [[ "$codesign_identity" != "-" ]]; then
     args+=(--timestamp --options runtime)
-    if [[ "$codesign_entitlements" != "" ]]; then
-      args+=(--entitlements "$codesign_entitlements")
+    if [[ "$entitlements" != "" ]]; then
+      args+=(--entitlements "$entitlements")
     fi
   fi
 
@@ -328,7 +333,7 @@ else
   echo "Signing app bundle with $codesign_identity..."
 fi
 sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
-sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app" "$daemon_entitlements"
 sign_path "$app_bundle"
 "$project_root/scripts/build/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"
 

@@ -78,6 +78,7 @@ description = "Run non-secret smoke tests"
 run = """
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
+AGENT_SECRET_IN_MISE=1 scripts/build/test-build-entitlements.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-signing-env.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
