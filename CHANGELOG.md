@@ -20,7 +20,7 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
-## [0.0.6] - Pending
+## [0.0.6] - 2026-05-04
 
 ### Fixed
 
