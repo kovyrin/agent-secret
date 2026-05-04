@@ -23,6 +23,7 @@ agent-secret/
     fileidentity/                # Executable identity capture and verification
     install/                     # User-level CLI and skill installation helpers
     opaccount/                   # 1Password account selection defaults
+    opref/                       # Shared 1Password reference grammar parser
     opresolver/                  # 1Password SDK desktop integration adapter
     peercred/                    # macOS Unix socket peer credential lookup
     policy/                      # Request validation, reuse, TTL, nonces,
@@ -103,6 +104,9 @@ cache values live in `internal/secretcache`, keyed by the policy scope.
 
 `internal/opaccount` owns 1Password account defaulting and selection. The CLI
 and `internal/opresolver` both use it so account behavior has one source.
+
+`internal/opref` owns `op://` reference grammar. Request parsing and resolver
+validation both adapt that parser so syntax has one owner.
 
 `internal/opresolver` is the only Go package that creates the 1Password SDK
 desktop-app integration client and resolves approved refs. Integration tests for

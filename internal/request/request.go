@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/opref"
 )
 
 const (
@@ -251,32 +252,17 @@ func ReusableUsesOrDefault(uses int) int {
 }
 
 func ParseSecretRef(ref string) (SecretRef, error) {
-	if strings.TrimSpace(ref) != ref || ref == "" {
-		return SecretRef{}, fmt.Errorf("%w: must be non-empty and untrimmed", ErrInvalidReference)
+	parsed, err := opref.Parse(ref)
+	if err != nil {
+		return SecretRef{}, fmt.Errorf("%w: %w", ErrInvalidReference, err)
 	}
-	if !strings.HasPrefix(ref, "op://") {
-		return SecretRef{}, fmt.Errorf("%w: must start with op://", ErrInvalidReference)
-	}
-
-	parts := strings.Split(strings.TrimPrefix(ref, "op://"), "/")
-	if len(parts) < 3 || len(parts) > 4 {
-		return SecretRef{}, fmt.Errorf("%w: expected op://vault/item[/section]/field-or-text-file", ErrInvalidReference)
-	}
-	if slices.Contains(parts, "") {
-		return SecretRef{}, fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
-	}
-
-	secretRef := SecretRef{
-		Raw:   ref,
-		Vault: parts[0],
-		Item:  parts[1],
-		Field: parts[len(parts)-1],
-	}
-	if len(parts) == 4 {
-		secretRef.Section = parts[2]
-	}
-
-	return secretRef, nil
+	return SecretRef{
+		Raw:     parsed.Raw,
+		Vault:   parsed.Vault,
+		Item:    parsed.Item,
+		Section: parsed.Section,
+		Field:   parsed.Field,
+	}, nil
 }
 
 func validateReason(reason string) (string, error) {

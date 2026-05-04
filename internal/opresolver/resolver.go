@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	onepassword "github.com/1password/onepassword-sdk-go"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
+	"github.com/kovyrin/agent-secret/internal/opref"
 )
 
 var ErrInvalidReference = errors.New("invalid 1Password secret reference")
@@ -113,21 +113,8 @@ func (s Secret) Metadata() SecretMetadata {
 }
 
 func ValidateReference(ref string) error {
-	if strings.TrimSpace(ref) != ref || ref == "" {
-		return fmt.Errorf("%w: must be non-empty and untrimmed", ErrInvalidReference)
-	}
-
-	if !strings.HasPrefix(ref, "op://") {
-		return fmt.Errorf("%w: must start with op://", ErrInvalidReference)
-	}
-
-	parts := strings.Split(strings.TrimPrefix(ref, "op://"), "/")
-	if len(parts) < 3 || len(parts) > 4 {
-		return fmt.Errorf("%w: expected op://vault/item[/section]/field-or-text-file", ErrInvalidReference)
-	}
-
-	if slices.Contains(parts, "") {
-		return fmt.Errorf("%w: path segments must be non-empty", ErrInvalidReference)
+	if _, err := opref.Parse(ref); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidReference, err)
 	}
 
 	return nil
