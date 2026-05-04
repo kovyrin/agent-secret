@@ -16,7 +16,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -166,7 +165,6 @@ type memoryAudit struct {
 	err         error
 	errByType   map[audit.EventType]error
 	events      []audit.Event
-	reuses      []policy.ReuseAuditEvent
 	subscribers []chan audit.Event
 }
 
@@ -202,16 +200,6 @@ func (m *callbackAudit) Record(ctx context.Context, event audit.Event) error {
 	return m.memoryAudit.Record(ctx, event)
 }
 
-func (m *memoryAudit) ApprovalReused(_ context.Context, event policy.ReuseAuditEvent) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.err != nil {
-		return m.err
-	}
-	m.reuses = append(m.reuses, event)
-	return nil
-}
-
 func (m *memoryAudit) Preflight(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -222,12 +210,6 @@ func (m *memoryAudit) Events() []audit.Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.events)
-}
-
-func (m *memoryAudit) Reuses() []policy.ReuseAuditEvent {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return slices.Clone(m.reuses)
 }
 
 func (m *memoryAudit) Subscribe() (<-chan audit.Event, func()) {

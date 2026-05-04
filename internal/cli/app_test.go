@@ -25,7 +25,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -786,10 +785,6 @@ func (r *appResolver) Resolve(_ context.Context, ref string, _ string) (string, 
 type appAudit struct{}
 
 func (a *appAudit) Record(_ context.Context, _ audit.Event) error {
-	return nil
-}
-
-func (a *appAudit) ApprovalReused(_ context.Context, _ policy.ReuseAuditEvent) error {
 	return nil
 }
 

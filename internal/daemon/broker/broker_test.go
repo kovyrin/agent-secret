@@ -320,7 +320,6 @@ type memoryAudit struct {
 	err       error
 	errByType map[audit.EventType]error
 	events    []audit.Event
-	reuses    []policy.ReuseAuditEvent
 }
 
 func (m *memoryAudit) Record(_ context.Context, event audit.Event) error {
@@ -347,16 +346,6 @@ func (m *contextCheckingAudit) Record(ctx context.Context, event audit.Event) er
 	return m.memoryAudit.Record(ctx, event)
 }
 
-func (m *memoryAudit) ApprovalReused(_ context.Context, event policy.ReuseAuditEvent) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.err != nil {
-		return m.err
-	}
-	m.reuses = append(m.reuses, event)
-	return nil
-}
-
 func (m *memoryAudit) Preflight(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -367,12 +356,6 @@ func (m *memoryAudit) Events() []audit.Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.events)
-}
-
-func (m *memoryAudit) Reuses() []policy.ReuseAuditEvent {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return slices.Clone(m.reuses)
 }
 
 func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
@@ -919,8 +902,15 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if len(resolver.Calls()) != 1 {
 		t.Fatalf("cached reusable approval refetched without force-refresh: %v", resolver.Calls())
 	}
-	if reuses := aud.Reuses(); len(reuses) != 1 {
-		t.Fatalf("expected approval_reused audit metadata, got %+v", reuses)
+	reuseEvent, ok := singleAuditEvent(aud.Events(), audit.EventApprovalReused)
+	if !ok {
+		t.Fatalf("expected one approval_reused audit event, got %+v", aud.Events())
+	}
+	if reuseEvent.ApprovalID != first.approvalID {
+		t.Fatalf("approval_reused approval id = %q, want %q", reuseEvent.ApprovalID, first.approvalID)
+	}
+	if reuseEvent.RemainingUses == nil || *reuseEvent.RemainingUses != 3 {
+		t.Fatalf("approval_reused remaining uses = %v, want 3", reuseEvent.RemainingUses)
 	}
 	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
 
@@ -1166,7 +1156,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
 		t.Fatal("expired reusable approval cache scope remained after force refresh")
 	}
-	if _, err := broker.grants.reusable.store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, _, err := broker.grants.reusable.store.MatchReusable(req); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("expired reusable approval remained in store: %v", err)
 	}
 }
@@ -1348,7 +1338,7 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	if len(cache.clearedScopes) != 1 {
 		t.Fatalf("cleared scopes = %v, want one rollback clear", cache.clearedScopes)
 	}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("reusable approval survived cache insertion failure: %v", err)
 	}
 	if approver.calls != 1 {
@@ -1398,10 +1388,57 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: cache.clearedScopes[0], Ref: ref}); ok {
 		t.Fatal("reusable cache scope survived command_starting audit failure")
 	}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("reusable approval survived command_starting audit failure: %v", err)
 	}
 	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrUnknownRequest)
+}
+
+func TestBrokerRollsBackReusableReservationWhenReuseAuditFails(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	aud := &memoryAudit{}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 2}}
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	broker := newTestBroker(t, Options{
+		Now:      func() time.Time { return now },
+		Cache:    secretcache.NewSecretCache(),
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.ReusableUses = 2
+
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
+	if err != nil {
+		t.Fatalf("first deliverExec returned error: %v", err)
+	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
+
+	aud.errByType = map[audit.EventType]error{audit.EventApprovalReused: errors.New("disk full")}
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), req)
+	if !errors.Is(err, ErrAuditRequired) {
+		t.Fatalf("expected approval_reused audit failure, got %v", err)
+	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_2", ""), ErrUnknownRequest)
+
+	aud.errByType = nil
+	retry, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_3", "nonce_3"), req)
+	if err != nil {
+		t.Fatalf("retry after approval_reused audit failure returned error: %v", err)
+	}
+	if retry.approvalID != first.approvalID {
+		t.Fatalf("retry used approval id %q, want original %q", retry.approvalID, first.approvalID)
+	}
+	if approver.calls != 1 {
+		t.Fatalf("retry used fresh approval path after rollback; approver calls = %d", approver.calls)
+	}
+	if len(resolver.Calls()) != 1 {
+		t.Fatalf("retry refetched cached secret after rollback: %v", resolver.Calls())
+	}
 }
 
 func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
@@ -1635,6 +1672,19 @@ func containsAuditEvent(events []audit.Event, eventType audit.EventType) bool {
 		}
 	}
 	return false
+}
+
+func singleAuditEvent(events []audit.Event, eventType audit.EventType) (audit.Event, bool) {
+	var found audit.Event
+	count := 0
+	for _, event := range events {
+		if event.Type != eventType {
+			continue
+		}
+		found = event
+		count++
+	}
+	return found, count == 1
 }
 
 func receiveBrokerSignal(t *testing.T, ch <-chan struct{}, message string) {

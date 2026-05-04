@@ -28,7 +28,6 @@ type Resolver interface {
 }
 
 type AuditSink interface {
-	policy.ReuseAuditSink
 	Preflight(ctx context.Context) error
 	Record(ctx context.Context, event audit.Event) error
 }

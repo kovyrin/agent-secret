@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -110,17 +109,6 @@ func FromExecRequest(eventType EventType, requestID string, req request.ExecRequ
 		OverriddenAliases:      slices.Clone(req.OverriddenAliases),
 		AllowMutableExecutable: req.AllowMutableExecutable,
 	}
-}
-
-func (w *Writer) ApprovalReused(ctx context.Context, event policy.ReuseAuditEvent) error {
-	remainingTTL := event.RemainingTTL.Milliseconds()
-	remainingUses := event.RemainingUses
-	return w.Record(ctx, Event{
-		Type:               EventApprovalReused,
-		ApprovalID:         event.ApprovalID,
-		RemainingTTLMillis: &remainingTTL,
-		RemainingUses:      &remainingUses,
-	})
 }
 
 func (w *Writer) Preflight(ctx context.Context) error {

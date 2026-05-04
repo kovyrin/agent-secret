@@ -1,7 +1,6 @@
 package policy
 
 import (
-	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -16,7 +15,6 @@ import (
 )
 
 var (
-	ErrAuditFailed           = errors.New("audit failed")
 	ErrExpired               = errors.New("policy object expired")
 	ErrMismatch              = errors.New("policy mismatch")
 	ErrUseExhausted          = errors.New("reusable approval use count exhausted")
@@ -25,11 +23,7 @@ var (
 
 const DefaultReusableUses = request.DefaultReusableUses
 
-type ReuseAuditSink interface {
-	ApprovalReused(ctx context.Context, event ReuseAuditEvent) error
-}
-
-type ReuseAuditEvent struct {
+type ReuseMetadata struct {
 	ApprovalID    string
 	RemainingTTL  time.Duration
 	RemainingUses int
@@ -173,25 +167,20 @@ func (s *Store) AddReusable(spec ReusableApprovalSpec) (ReusableApproval, error)
 	return *approval, nil
 }
 
-// MatchReusableForReuseAudit finds a reusable approval, prunes stale matches,
-// and records approval reuse when a live match is found.
+// MatchReusable finds a reusable approval and prunes stale matches.
 //
 // Expired or exhausted matches are reported as ErrExpired or ErrUseExhausted
 // wrapped in ReusableApprovalError so callers can inspect the stale approval
 // snapshot without treating a non-zero normal return as successful.
-func (s *Store) MatchReusableForReuseAudit(
-	ctx context.Context,
-	req request.ExecRequest,
-	sink ReuseAuditSink,
-) (ReusableApproval, error) {
+func (s *Store) MatchReusable(req request.ExecRequest) (ReusableApproval, ReuseMetadata, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	approval, err := s.findReusableLocked(ctx, req, sink)
+	approval, metadata, err := s.findReusableLocked(req)
 	if err != nil {
-		return ReusableApproval{}, reusableApprovalError(approval, err)
+		return ReusableApproval{}, ReuseMetadata{}, reusableApprovalError(approval, err)
 	}
-	return *approval, nil
+	return *approval, metadata, nil
 }
 
 // ReserveReusable reserves one use from a live reusable approval.
@@ -199,23 +188,19 @@ func (s *Store) MatchReusableForReuseAudit(
 // Expired or exhausted matches are reported as ErrExpired or ErrUseExhausted
 // wrapped in ReusableApprovalError so callers can inspect the stale approval
 // snapshot without treating a non-zero normal return as successful.
-func (s *Store) ReserveReusable(ctx context.Context, req request.ExecRequest, sink ReuseAuditSink) (ReusableApproval, error) {
+func (s *Store) ReserveReusable(req request.ExecRequest) (ReusableApproval, ReuseMetadata, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	approval, err := s.findReusableLocked(ctx, req, sink)
+	approval, metadata, err := s.findReusableLocked(req)
 	if err != nil {
-		return ReusableApproval{}, reusableApprovalError(approval, err)
+		return ReusableApproval{}, ReuseMetadata{}, reusableApprovalError(approval, err)
 	}
 	approval.ReservedUses++
-	return *approval, nil
+	return *approval, metadata, nil
 }
 
-func (s *Store) findReusableLocked(
-	ctx context.Context,
-	req request.ExecRequest,
-	sink ReuseAuditSink,
-) (*ReusableApproval, error) {
+func (s *Store) findReusableLocked(req request.ExecRequest) (*ReusableApproval, ReuseMetadata, error) {
 	key := NewReuseKey(req)
 	now := s.now()
 	var expired *ReusableApproval
@@ -244,27 +229,22 @@ func (s *Store) findReusableLocked(
 			continue
 		}
 
-		event := ReuseAuditEvent{
+		metadata := ReuseMetadata{
 			ApprovalID:    approval.ID,
 			RemainingTTL:  approval.ExpiresAt.Sub(now),
 			RemainingUses: remainingUses,
 		}
-		if sink != nil {
-			if err := sink.ApprovalReused(ctx, event); err != nil {
-				return nil, fmt.Errorf("%w: %w", ErrAuditFailed, err)
-			}
-		}
 
-		return approval, nil
+		return approval, metadata, nil
 	}
 
 	if expired != nil {
-		return expired, ErrExpired
+		return expired, ReuseMetadata{}, ErrExpired
 	}
 	if exhausted != nil {
-		return exhausted, ErrUseExhausted
+		return exhausted, ReuseMetadata{}, ErrUseExhausted
 	}
-	return nil, ErrMismatch
+	return nil, ReuseMetadata{}, ErrMismatch
 }
 
 func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (ReusableApproval, error) {

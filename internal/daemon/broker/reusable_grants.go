@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -54,19 +55,38 @@ func (m *reusableGrantManager) clear() {
 func (m *reusableGrantManager) reserve(
 	ctx context.Context,
 	req request.ExecRequest,
-	sink policy.ReuseAuditSink,
+	sink AuditSink,
 ) (policy.ReusableApproval, error) {
-	approval, err := m.store.ReserveReusable(ctx, req, sink)
+	approval, metadata, err := m.store.ReserveReusable(req)
 	if err != nil {
-		if errors.Is(err, policy.ErrAuditFailed) {
-			return policy.ReusableApproval{}, err
-		}
 		if snapshot, ok := policy.ReusableApprovalFromError(err); ok {
 			m.clearScopeForReusableError(snapshot, err)
 		}
 		return policy.ReusableApproval{}, nil
 	}
+	if err := recordReuseAudit(ctx, sink, metadata); err != nil {
+		_, _ = m.store.FinishReusableAttempt(approval.ID, policy.DeliveryPrePayloadFailure)
+		return policy.ReusableApproval{}, err
+	}
 	return approval, nil
+}
+
+func recordReuseAudit(ctx context.Context, sink AuditSink, metadata policy.ReuseMetadata) error {
+	if sink == nil {
+		return nil
+	}
+	remainingTTL := metadata.RemainingTTL.Milliseconds()
+	remainingUses := metadata.RemainingUses
+	event := audit.Event{
+		Type:               audit.EventApprovalReused,
+		ApprovalID:         metadata.ApprovalID,
+		RemainingTTLMillis: &remainingTTL,
+		RemainingUses:      &remainingUses,
+	}
+	if err := sink.Record(ctx, event); err != nil {
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	}
+	return nil
 }
 
 func (m *reusableGrantManager) finishDelivery(approvalID string, result policy.DeliveryResult) error {

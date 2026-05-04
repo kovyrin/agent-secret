@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -299,7 +298,7 @@ func TestWriterRejectsInvalidEventsAndClosedUse(t *testing.T) {
 	}
 }
 
-func TestWriterPreflightAndApprovalReused(t *testing.T) {
+func TestWriterPreflightAndRecordApprovalReused(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
@@ -311,13 +310,16 @@ func TestWriterPreflightAndApprovalReused(t *testing.T) {
 	if err := writer.Preflight(context.Background()); err != nil {
 		t.Fatalf("Preflight returned error: %v", err)
 	}
-	err = writer.ApprovalReused(context.Background(), policy.ReuseAuditEvent{
-		ApprovalID:    "approval_1",
-		RemainingTTL:  90 * time.Second,
-		RemainingUses: 2,
+	remainingTTLMillis := int64(90_000)
+	remainingUses := 2
+	err = writer.Record(context.Background(), Event{
+		Type:               EventApprovalReused,
+		ApprovalID:         "approval_1",
+		RemainingTTLMillis: &remainingTTLMillis,
+		RemainingUses:      &remainingUses,
 	})
 	if err != nil {
-		t.Fatalf("ApprovalReused returned error: %v", err)
+		t.Fatalf("Record approval_reused returned error: %v", err)
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("Close returned error: %v", err)

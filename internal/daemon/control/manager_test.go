@@ -24,7 +24,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -69,10 +68,6 @@ func (m *managerAudit) Record(_ context.Context, event audit.Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events = append(m.events, event)
-	return nil
-}
-
-func (m *managerAudit) ApprovalReused(_ context.Context, _ policy.ReuseAuditEvent) error {
 	return nil
 }
 

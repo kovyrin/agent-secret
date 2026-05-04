@@ -1,7 +1,6 @@
 package policy
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -14,20 +13,7 @@ import (
 
 const canarySecret = "synthetic-secret-value"
 
-type memoryReuseAudit struct {
-	err    error
-	events []ReuseAuditEvent
-}
-
-func (m *memoryReuseAudit) ApprovalReused(_ context.Context, event ReuseAuditEvent) error {
-	if m.err != nil {
-		return m.err
-	}
-	m.events = append(m.events, event)
-	return nil
-}
-
-func TestReusableApprovalMatchesExactRequestAndAuditsBeforeUse(t *testing.T) {
+func TestReusableApprovalMatchesExactRequestAndReturnsReuseMetadata(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
@@ -39,16 +25,15 @@ func TestReusableApprovalMatchesExactRequestAndAuditsBeforeUse(t *testing.T) {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
 
-	audit := &memoryReuseAudit{}
-	reused, err := store.MatchReusableForReuseAudit(context.Background(), req, audit)
+	reused, metadata, err := store.MatchReusable(req)
 	if err != nil {
-		t.Fatalf("MatchReusableForReuseAudit returned error: %v", err)
+		t.Fatalf("MatchReusable returned error: %v", err)
 	}
 	if reused.ID != approval.ID {
 		t.Fatalf("reused approval = %q, want %q", reused.ID, approval.ID)
 	}
-	if len(audit.events) != 1 || audit.events[0].RemainingUses != DefaultReusableUses {
-		t.Fatalf("unexpected audit events: %+v", audit.events)
+	if metadata.ApprovalID != approval.ID || metadata.RemainingUses != DefaultReusableUses {
+		t.Fatalf("unexpected reuse metadata: %+v", metadata)
 	}
 
 	after, err := store.FinishReusableAttempt(approval.ID, DeliveryPayloadDelivered)
@@ -101,7 +86,7 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 			changed.Secrets = append([]request.Secret(nil), req.Secrets...)
 			tt.mutate(&changed)
 
-			_, err := store.MatchReusableForReuseAudit(context.Background(), changed, nil)
+			_, _, err := store.MatchReusable(changed)
 			if !errors.Is(err, ErrMismatch) {
 				t.Fatalf("expected mismatch, got %v", err)
 			}
@@ -125,12 +110,12 @@ func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
 		t.Fatalf("max uses = %d, want 2", approval.MaxUses)
 	}
 
-	audit := &memoryReuseAudit{}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, audit); err != nil {
-		t.Fatalf("MatchReusableForReuseAudit returned error: %v", err)
+	_, metadata, err := store.MatchReusable(req)
+	if err != nil {
+		t.Fatalf("MatchReusable returned error: %v", err)
 	}
-	if len(audit.events) != 1 || audit.events[0].RemainingUses != 2 {
-		t.Fatalf("unexpected audit events: %+v", audit.events)
+	if metadata.RemainingUses != 2 {
+		t.Fatalf("remaining uses metadata = %d, want 2", metadata.RemainingUses)
 	}
 
 	for range 2 {
@@ -138,7 +123,7 @@ func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
 			t.Fatalf("FinishReusableAttempt returned error: %v", err)
 		}
 	}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected two-use approval to be removed, got %v", err)
 	}
 }
@@ -184,7 +169,7 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 		t.Fatalf("reserved uses = %d, want 1", approval.ReservedUses)
 	}
 
-	blocked, err := store.ReserveReusable(context.Background(), req, nil)
+	blocked, _, err := store.ReserveReusable(req)
 	if !errors.Is(err, ErrUseExhausted) {
 		t.Fatalf("expected reservation to exhaust available delivery slots, got %v", err)
 	}
@@ -207,7 +192,7 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 		t.Fatalf("after pre-payload failure = uses:%d reserved:%d, want uses:0 reserved:0", afterFailure.Uses, afterFailure.ReservedUses)
 	}
 
-	retry, err := store.ReserveReusable(context.Background(), req, nil)
+	retry, _, err := store.ReserveReusable(req)
 	if err != nil {
 		t.Fatalf("ReserveReusable after release returned error: %v", err)
 	}
@@ -222,7 +207,7 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 	if afterDelivery.Uses != 1 || afterDelivery.ReservedUses != 0 {
 		t.Fatalf("after payload delivery = uses:%d reserved:%d, want uses:1 reserved:0", afterDelivery.Uses, afterDelivery.ReservedUses)
 	}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected delivered one-use approval to be removed, got %v", err)
 	}
 }
@@ -273,7 +258,7 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 			t.Fatalf("FinishReusableAttempt returned error: %v", err)
 		}
 	}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected exhausted approval to be removed, got %v", err)
 	}
 
@@ -281,12 +266,12 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	if _, err := expiredStore.AddReusable(ReusableApprovalSpec{Request: req, ID: "expired", Nonce: "nonce"}); err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
-	expired, err := expiredStore.MatchReusableForReuseAudit(context.Background(), req, nil)
+	expired, _, err := expiredStore.MatchReusable(req)
 	if !errors.Is(err, ErrExpired) {
 		t.Fatalf("expected expired approval, got %v", err)
 	}
 	if expired.ID != "" {
-		t.Fatalf("MatchReusableForReuseAudit returned normal approval on expired error: %+v", expired)
+		t.Fatalf("MatchReusable returned normal approval on expired error: %+v", expired)
 	}
 	expiredSnapshot, ok := ReusableApprovalFromError(err)
 	if !ok {
@@ -295,7 +280,7 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	if expiredSnapshot.ID != "expired" {
 		t.Fatalf("expired approval id = %q, want expired", expiredSnapshot.ID)
 	}
-	if _, err := expiredStore.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+	if _, _, err := expiredStore.MatchReusable(req); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected expired approval to be removed, got %v", err)
 	}
 }
@@ -326,24 +311,8 @@ func TestFinishReusableAttemptRejectsExpiredApproval(t *testing.T) {
 	if expiredSnapshot.Uses != 0 {
 		t.Fatalf("expired approval consumed use: %d", expiredSnapshot.Uses)
 	}
-	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected expired approval to be removed, got %v", err)
-	}
-}
-
-func TestReusableApprovalAuditFailureFailsClosed(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
-	store := NewStore(func() time.Time { return now })
-	req := testRequest(t, now)
-	if _, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"}); err != nil {
-		t.Fatalf("AddReusable returned error: %v", err)
-	}
-
-	_, err := store.MatchReusableForReuseAudit(context.Background(), req, &memoryReuseAudit{err: errors.New("disk full")})
-	if !errors.Is(err, ErrAuditFailed) {
-		t.Fatalf("expected audit failure, got %v", err)
 	}
 }
 
