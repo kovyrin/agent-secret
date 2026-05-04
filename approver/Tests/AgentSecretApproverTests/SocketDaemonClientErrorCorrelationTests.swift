@@ -42,11 +42,11 @@ final class SocketDaemonClientErrorCorrelationTests: XCTestCase {
             DaemonEnvelope(
                 nonce: nonce,
                 payload: DaemonErrorPayload(
-                    code: "stale_approval",
+                    code: .staleApproval,
                     message: "stale approval response"
                 ),
                 requestID: requestID,
-                type: "error",
+                type: .error,
                 version: expectedProtocolVersion
             )
         )

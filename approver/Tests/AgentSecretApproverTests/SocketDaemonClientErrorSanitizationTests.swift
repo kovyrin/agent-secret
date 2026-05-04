@@ -26,16 +26,15 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
     private static let secretCanary: String = "synthetic-secret-value"
 
     private static func errorResponse(code: String, message: String) throws -> Data {
-        let envelope = DaemonEnvelope(
-            nonce: nil,
-            payload: DaemonErrorPayload(code: DaemonErrorCode(rawValue: code), message: message),
-            requestID: nil,
-            type: "error",
-            version: expectedProtocolVersion
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return try encoder.encode(envelope)
+        let object: [String: Any] = [
+            "payload": [
+                "code": code,
+                "message": message
+            ],
+            "type": "error",
+            "version": expectedProtocolVersion
+        ]
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
     private static func rawResponse(type: String, expiresAt: String = "2030-01-01T00:00:00Z") throws -> Data {
@@ -121,11 +120,11 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
     }
 
     func testDaemonErrorDisplayIncludesDaemonStopAndFallbackCodes() {
-        XCTAssertEqual(DaemonErrorDisplay.message(for: "daemon_stopped"), "daemon stopped")
-        XCTAssertEqual(DaemonErrorDisplay.message(for: "request_failed"), "daemon request failed")
-        XCTAssertEqual(DaemonErrorDisplay.message(for: "context_canceled"), "daemon request was canceled")
-        XCTAssertEqual(DaemonErrorDisplay.message(for: "context_deadline_exceeded"), "daemon request deadline expired")
-        XCTAssertEqual(DaemonErrorDisplay.message(for: "resolve_failed"), "daemon failed to resolve approved secret")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: .daemonStopped), "daemon stopped")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: .requestFailed), "daemon request failed")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: .contextCanceled), "daemon request was canceled")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: .contextDeadlineExceeded), "daemon request deadline expired")
+        XCTAssertEqual(DaemonErrorDisplay.message(for: .resolveFailed), "daemon failed to resolve approved secret")
     }
 
     func testUnexpectedResponseTypeDoesNotEchoDaemonText() throws {

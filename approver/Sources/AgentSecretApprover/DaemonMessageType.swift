@@ -1,29 +1,21 @@
 import Foundation
 
-struct DaemonMessageType: Codable, Equatable, ExpressibleByStringLiteral, Hashable, RawRepresentable {
-    static let daemonStatus = Self(rawValue: "daemon.status")
-    static let daemonStop = Self(rawValue: "daemon.stop")
-    static let approvalPending = Self(rawValue: "approval.pending")
-    static let approvalDecision = Self(rawValue: "approval.decision")
-    static let requestExec = Self(rawValue: "request.exec")
-    static let commandStarted = Self(rawValue: "command.started")
-    static let commandCompleted = Self(rawValue: "command.completed")
-    static let okResponse = Self(rawValue: "ok")
-    static let error = Self(rawValue: "error")
-
-    let rawValue: String
-
-    init(rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    init(stringLiteral value: String) {
-        self.init(rawValue: value)
-    }
+enum DaemonMessageType: String, Codable, Equatable, Hashable {
+    case approvalDecision = "approval.decision"
+    case approvalPending = "approval.pending"
+    case commandCompleted = "command.completed"
+    case commandStarted = "command.started"
+    case daemonStatus = "daemon.status"
+    case daemonStop = "daemon.stop"
+    case error
+    case okResponse = "ok"
+    case requestExec = "request.exec"
+    case unknown
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        rawValue = try container.decode(String.self)
+        let rawValue = try container.decode(String.self)
+        self = Self(rawValue: rawValue) ?? .unknown
     }
 
     func encode(to encoder: Encoder) throws {

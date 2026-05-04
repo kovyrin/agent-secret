@@ -1,11 +1,6 @@
 import Foundation
 
 enum DaemonErrorDisplay {
-    private enum Code {
-        static let maxLength: Int = 64
-    }
-
-    private static let allowedCodeScalars = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_")
     private static let messagesByCode: [DaemonErrorCode: String] = [
         .approvalDenied: "approval denied",
         .approvalUnavailable: "approval is unavailable",
@@ -33,20 +28,11 @@ enum DaemonErrorDisplay {
         .untrustedClient: "daemon rejected untrusted client"
     ]
 
-    static func sanitizedCode(_ rawCode: DaemonErrorCode?) -> DaemonErrorCode {
-        guard let rawCode else {
-            return .unknown
-        }
-        if rawCode.rawValue.isEmpty || rawCode.rawValue.count > Code.maxLength {
-            return .unknown
-        }
-        if !rawCode.rawValue.unicodeScalars.allSatisfy({ scalar in allowedCodeScalars.contains(scalar) }) {
-            return .unknown
-        }
-        return rawCode
+    static func displayCode(_ code: DaemonErrorCode?) -> DaemonErrorCode {
+        code ?? .unknown
     }
 
-    static func message(for rawCode: DaemonErrorCode?) -> String {
-        messagesByCode[sanitizedCode(rawCode)] ?? "daemon returned an error"
+    static func message(for code: DaemonErrorCode?) -> String {
+        messagesByCode[displayCode(code)] ?? "daemon returned an error"
     }
 }
