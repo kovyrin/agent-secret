@@ -20,16 +20,20 @@ agent-secret/
                                   # approver IPC, cache, and server handlers
     envfile/                     # dotenv-style env file parsing
     execwrap/                    # CLI-owned child process execution and audit
+    fileidentity/                # Executable identity capture and verification
     install/                     # User-level CLI and skill installation helpers
+    opaccount/                   # 1Password account selection defaults
     opresolver/                  # 1Password SDK desktop integration adapter
     peercred/                    # macOS Unix socket peer credential lookup
     policy/                      # Request validation, reuse, TTL, sessions,
                                   # nonces, and value-free policy state
     processhardening/            # Process-level hardening hooks
     profileconfig/               # Project-local profile config loading
+    randid/                      # Random request and approval identifiers
     request/                     # Exec request model and secret ref parsing
     secretcache/                 # Reusable/session secret value cache
     secretmem/                   # In-memory secret value handling
+    testsupport/                 # Shared Go test support helpers
   approver/
     Sources/
       AgentSecretApprover/
@@ -41,7 +45,7 @@ agent-secret/
           ViewModels/            # Approval panel view models and sanitizers
           Views/                 # SwiftUI/AppKit panel views and controls
           Style/                 # Presentation-local styling constants
-          Inspection/            # Text inspection helpers used by tests
+          Inspection/            # Production text inspection sheet models
         Runtime/                 # Controller, presenter, modal, logging runtime
       AgentSecretApproverApp/    # Shipped macOS approver/setup app executable
       AgentSecretApproverSmoke/  # Non-secret smoke executable
@@ -89,10 +93,17 @@ signature/plist checks.
 policy, audit, and protocol code. It parses and validates `op://` reference
 syntax but does not contact 1Password.
 
+`internal/fileidentity` captures and verifies executable identity metadata. The
+CLI records identities before exec, and daemon/policy code uses the same shape
+when validating approved command reuse.
+
 `internal/policy` validates request rules and tracks reusable approvals,
 sessions, use counts, TTLs, and nonces without storing raw secret values.
 Reusable approval cache values live in `internal/secretcache`, keyed by the
 policy scope.
+
+`internal/opaccount` owns 1Password account defaulting and selection. The CLI
+and `internal/opresolver` both use it so account behavior has one source.
 
 `internal/opresolver` is the only Go package that creates the 1Password SDK
 desktop-app integration client and resolves approved refs. Integration tests for
@@ -107,6 +118,9 @@ socket handlers. Peer credential policy decisions stay in `internal/daemon`.
 
 `internal/envfile` parses dotenv-style files before approval so env-file secret
 refs become normal request secrets.
+
+`internal/randid` generates random request, nonce, and reusable-approval
+identifiers for CLI and policy code.
 
 `internal/secretmem` holds in-memory secret value primitives used where raw
 values are unavoidable after approval. It is deliberately separate from policy
@@ -128,8 +142,8 @@ The `AgentSecretApprover` target is organized by runtime boundary: `Models`,
 `Protocol`, `DaemonClient`, `Trust`, `Presentation`, and `Runtime`. SwiftPM
 keeps those folders in one module; the folders are ownership boundaries, not
 compatibility layers. `Presentation` is split into `ViewModels`, `Views`,
-`Style`, and `Inspection` so panel state, rendering, styling, and test-only text
-projection stay visibly separate.
+`Style`, and `Inspection` so panel state, rendering, styling, and production
+text inspection stay visibly separate.
 
 Swift tests mirror those production ownership boundaries under
 `approver/Tests/AgentSecretApproverTests`. Cross-boundary fixtures live in
