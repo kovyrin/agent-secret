@@ -431,6 +431,59 @@ func TestAppInstallCommands(t *testing.T) {
 	})
 }
 
+func TestAppInstallCLIWarnsWhenCommandDirIsNotOnPath(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "other-bin"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(binDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "is not on PATH") {
+		t.Fatalf("install-cli stdout = %q, want PATH warning", stdout.String())
+	}
+	wantOneLiner := "grep -qxF 'export PATH=\"$HOME/.local/bin:$PATH\"' \"$HOME/.zprofile\" 2>/dev/null || " +
+		"printf '\\n%s\\n' 'export PATH=\"$HOME/.local/bin:$PATH\"' >> \"$HOME/.zprofile\"; exec zsh -l"
+	if !strings.Contains(stdout.String(), wantOneLiner) {
+		t.Fatalf("install-cli stdout = %q, want zsh setup one-liner %q", stdout.String(), wantOneLiner)
+	}
+}
+
+func TestAppInstallCLISkipsPathWarningWhenCommandDirIsOnPath(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	t.Setenv("PATH", strings.Join([]string{filepath.Join(t.TempDir(), "other-bin"), binDir}, string(os.PathListSeparator)))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(binDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.Contains(stdout.String(), "is not on PATH") {
+		t.Fatalf("install-cli stdout = %q, did not expect PATH warning", stdout.String())
+	}
+}
+
 func TestAppSkipsDaemonManagerForNonDaemonCommands(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -160,6 +160,7 @@ PLIST
 #!/bin/sh
 case "$1" in
   install-cli)
+    printf 'bundled-agent-secret install-cli PATH=%s\n' "${PATH-}" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
     bin_dir=""
     while [ "$#" -gt 0 ]; do
       if [ "$1" = "--bin-dir" ]; then
@@ -471,6 +472,15 @@ test_untrusted_existing_cli_is_not_used_for_daemon_stop() {
   fi
 }
 
+test_install_cli_receives_original_path_before_sanitization() {
+  local name="install-cli-original-path"
+  local original_path="$tmp_dir/$name/bin:$tmp_dir/$name/bin-dir:$PATH"
+
+  run_installer "$name" PATH="$original_path"
+
+  assert_log_contains "$tmp_dir/$name/tools.log" "bundled-agent-secret install-cli PATH=$original_path"
+}
+
 test_identity_checks_run
 test_identity_failure_stops_install
 test_wrong_team_id_stops_install
@@ -484,5 +494,6 @@ test_destination_validation_rejects_bad_paths
 test_destination_validation_rejects_symlinked_parent_dirs
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 test_untrusted_existing_cli_is_not_used_for_daemon_stop
+test_install_cli_receives_original_path_before_sanitization
 
 echo "test-install: ok"

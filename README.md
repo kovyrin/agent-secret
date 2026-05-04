@@ -193,7 +193,9 @@ Human install flow:
 2. Open the DMG and drag `Agent Secret.app` into `/Applications`.
 3. Open `Agent Secret.app`.
 4. Click `Install Command Line Tool`.
-5. Run:
+5. If the app warns that `~/.local/bin` is not on `PATH`, add the shown
+   one-liner in Terminal.
+6. Run:
 
    ```bash
    agent-secret doctor

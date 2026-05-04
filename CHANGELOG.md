@@ -49,6 +49,15 @@ local app, CLI, daemon, and bundled coding-agent skill.
 - Release process documentation that uses this changelog as the source for
   GitHub release notes.
 
+### Fixed
+
+- The setup app now finishes command-line tool installation with a one-button
+  confirmation instead of returning to the original setup dialog.
+- `agent-secret install-cli` now warns when the installed command directory is
+  not on `PATH` and shows a zsh one-liner for a clean macOS shell.
+- The unattended installer now bases that warning on the caller's original
+  `PATH`, not on the installer's sanitized tool `PATH`.
+
 ### Security
 
 - Secret values are kept out of help output, approval UI logs, audit records,
