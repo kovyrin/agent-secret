@@ -66,11 +66,10 @@ type Broker struct {
 }
 
 type execDelivery struct {
-	broker    *Broker
-	requestID string
-	grant     ExecGrant
-	payload   protocol.ExecResponsePayload
-	expiresAt time.Time
+	broker      *Broker
+	correlation protocol.Correlation
+	payload     protocol.ExecResponsePayload
+	expiresAt   time.Time
 }
 
 type activeExec struct {
@@ -146,28 +145,27 @@ func (b *Broker) handleExecDelivery(
 		return execDelivery{}, err
 	}
 	return execDelivery{
-		broker:    b,
-		requestID: correlation.RequestID,
-		grant:     grant,
+		broker:      b,
+		correlation: correlation,
 		payload: protocol.ExecResponsePayload{
 			Env:           grant.Env,
 			SecretAliases: grant.SecretAliases,
 		},
-		expiresAt: grant.deliveryExpiresAt,
+		expiresAt: grant.payloadExpiresAt,
 	}, nil
 }
 
 func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time) error) error {
 	writeErr := write(d.payload, d.expiresAt)
-	if err := d.broker.grants.completePayloadWrite(d.grant, writeErr == nil); err != nil {
-		d.broker.removeActiveExec(d.requestID)
+	if err := d.broker.grants.completePayloadWrite(d.correlation, writeErr == nil); err != nil {
+		d.broker.removeActiveExec(d.correlation.RequestID)
 		return err
 	}
 	if writeErr != nil {
-		d.broker.removeActiveExec(d.requestID)
+		d.broker.removeActiveExec(d.correlation.RequestID)
 		return writeErr
 	}
-	return d.broker.markPayloadDelivered(d.requestID)
+	return d.broker.markPayloadDelivered(d.correlation.RequestID)
 }
 
 func (b *Broker) handleExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (ExecGrant, error) {

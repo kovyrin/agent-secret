@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
@@ -20,13 +21,21 @@ type grantIssuer struct {
 	audit      AuditSink
 	fetchLimit int
 	stopped    func() bool
+
+	deliveryMu        sync.Mutex
+	pendingDeliveries map[string]grantDelivery
 }
 
 type ExecGrant struct {
-	Env               map[string]string
-	SecretAliases     []string
-	delivery          grantDelivery
-	deliveryExpiresAt time.Time
+	Env              map[string]string
+	SecretAliases    []string
+	approvalID       string
+	payloadExpiresAt time.Time
+}
+
+type issuedGrant struct {
+	grant    ExecGrant
+	delivery grantDelivery
 }
 
 type grantDelivery struct {
@@ -50,12 +59,13 @@ func newGrantIssuer(
 	stopped func() bool,
 ) *grantIssuer {
 	issuer := &grantIssuer{
-		now:        now,
-		approver:   approver,
-		resolver:   resolver,
-		audit:      audit,
-		fetchLimit: fetchLimit,
-		stopped:    stopped,
+		now:               now,
+		approver:          approver,
+		resolver:          resolver,
+		audit:             audit,
+		fetchLimit:        fetchLimit,
+		stopped:           stopped,
+		pendingDeliveries: make(map[string]grantDelivery),
 	}
 	issuer.reusable = newReusableGrantManager(now, store, cache, stopped)
 	return issuer
@@ -65,11 +75,12 @@ func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
 	return grantDelivery{attempt: attempt}
 }
 
-func (g *grantIssuer) completePayloadWrite(grant ExecGrant, written bool) error {
+func (g *grantIssuer) completePayloadWrite(correlation protocol.Correlation, written bool) error {
+	delivery := g.takeDelivery(correlation)
 	if written {
-		return g.completeDelivery(grant.delivery, policy.DeliveryPayloadDelivered)
+		return g.completeDelivery(delivery, policy.DeliveryPayloadDelivered)
 	}
-	_ = g.completeDelivery(grant.delivery, policy.DeliveryPrePayloadFailure)
+	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
 	return nil
 }
 
@@ -93,12 +104,47 @@ func (g *grantIssuer) rollbackDelivery(delivery grantDelivery) {
 	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
 }
 
+func (g *grantIssuer) trackDelivery(correlation protocol.Correlation, delivery grantDelivery) {
+	key := deliveryKey(correlation)
+	if key == "" || delivery.attempt.approvalID == "" {
+		return
+	}
+	g.deliveryMu.Lock()
+	g.pendingDeliveries[key] = delivery
+	g.deliveryMu.Unlock()
+}
+
+func (g *grantIssuer) takeDelivery(correlation protocol.Correlation) grantDelivery {
+	key := deliveryKey(correlation)
+	if key == "" {
+		return grantDelivery{}
+	}
+	g.deliveryMu.Lock()
+	defer g.deliveryMu.Unlock()
+	delivery := g.pendingDeliveries[key]
+	delete(g.pendingDeliveries, key)
+	return delivery
+}
+
+func (g *grantIssuer) clearPendingDeliveries() {
+	g.deliveryMu.Lock()
+	g.pendingDeliveries = make(map[string]grantDelivery)
+	g.deliveryMu.Unlock()
+}
+
 func (d grantDelivery) approvalID() string {
 	return d.attempt.approvalID
 }
 
 func (d grantDelivery) expiresAt() time.Time {
 	return d.attempt.expiresAt
+}
+
+func deliveryKey(correlation protocol.Correlation) string {
+	if correlation.RequestID == "" || correlation.Nonce == "" {
+		return ""
+	}
+	return correlation.RequestID + "\x00" + correlation.Nonce
 }
 
 func (g *grantIssuer) issue(
@@ -110,33 +156,34 @@ func (g *grantIssuer) issue(
 		return ExecGrant{}, err
 	}
 
-	grant, err := g.issueReusableGrant(ctx, req)
+	issued, err := g.issueReusableGrant(ctx, req)
 	if err != nil {
 		return ExecGrant{}, g.requestError(ctx, req, err)
 	}
-	if grant.Env == nil {
-		grant, err = g.freshGrant(ctx, correlation, req)
+	if issued.grant.Env == nil {
+		issued, err = g.freshGrant(ctx, correlation, req)
 		if err != nil {
 			return ExecGrant{}, g.requestError(ctx, req, err)
 		}
 	}
-	if err := g.ensureGrantStillActive(ctx, req, grant.delivery.approvalID(), grant.delivery.expiresAt()); err != nil {
-		g.rollbackDelivery(grant.delivery)
+	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID(), issued.delivery.expiresAt()); err != nil {
+		g.rollbackDelivery(issued.delivery)
 		return ExecGrant{}, err
 	}
-	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.delivery.expiresAt())
+	issued.grant.payloadExpiresAt = grantPayloadExpiresAt(req, issued.delivery.expiresAt())
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, correlation.RequestID, req)
 	if err := g.recordRequiredAudit(ctx, event); err != nil {
-		g.rollbackDelivery(grant.delivery)
+		g.rollbackDelivery(issued.delivery)
 		return ExecGrant{}, err
 	}
-	if err := g.ensureGrantStillActive(ctx, req, grant.delivery.approvalID(), grant.delivery.expiresAt()); err != nil {
-		g.rollbackDelivery(grant.delivery)
+	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID(), issued.delivery.expiresAt()); err != nil {
+		g.rollbackDelivery(issued.delivery)
 		return ExecGrant{}, err
 	}
+	g.trackDelivery(correlation, issued.delivery)
 
-	return grant, nil
+	return issued.grant, nil
 }
 
 func (g *grantIssuer) ensureRequestActive(ctx context.Context, req request.ExecRequest) error {
@@ -171,6 +218,7 @@ func (g *grantIssuer) ensureGrantStillActive(
 }
 
 func (g *grantIssuer) clearReusableGrants() {
+	g.clearPendingDeliveries()
 	g.reusable.clear()
 }
 
@@ -189,13 +237,13 @@ func (g *grantIssuer) requestError(ctx context.Context, req request.ExecRequest,
 	return err
 }
 
-func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRequest) (ExecGrant, error) {
+func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRequest) (issuedGrant, error) {
 	approval, err := g.reusable.reserve(ctx, req, g.audit)
 	if err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	if approval.ID == "" {
-		return ExecGrant{}, nil
+		return issuedGrant{}, nil
 	}
 	delivery := g.deliveryFor(reusableGrantAttempt{
 		approvalID: approval.ID,
@@ -209,34 +257,37 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 		}
 	}()
 	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 
 	var values map[string]string
 	if req.ForceRefresh {
 		refValues, err := g.resolveReusableRefresh(ctx, req)
 		if err != nil {
-			return ExecGrant{}, err
+			return issuedGrant{}, err
 		}
 		values, err = g.refreshedReusableValues(ctx, approval, req, refValues)
 		if err != nil {
-			return ExecGrant{}, err
+			return issuedGrant{}, err
 		}
 	} else {
 		values, err = g.reusable.cachedValues(approval.ID, req.Secrets)
 		if err != nil {
-			return ExecGrant{}, err
+			return issuedGrant{}, err
 		}
 	}
 	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 
 	delivered = true
-	return ExecGrant{
-		Env:           values,
-		SecretAliases: aliases(req.Secrets),
-		delivery:      delivery,
+	return issuedGrant{
+		grant: ExecGrant{
+			Env:           values,
+			SecretAliases: aliases(req.Secrets),
+			approvalID:    approval.ID,
+		},
+		delivery: delivery,
 	}, nil
 }
 
@@ -297,59 +348,63 @@ func (g *grantIssuer) freshGrant(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-) (ExecGrant, error) {
+) (issuedGrant, error) {
 	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	decision, err := g.approver.ApproveExec(ctx, correlation, req)
 	if err != nil {
 		if auditErr := g.recordApprovalError(ctx, correlation.RequestID, req, err); auditErr != nil {
-			return ExecGrant{}, auditErr
+			return issuedGrant{}, auditErr
 		}
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	if !decision.Approved {
 		if err := g.recordApprovalDenied(ctx, correlation.RequestID, req); err != nil {
-			return ExecGrant{}, err
+			return issuedGrant{}, err
 		}
-		return ExecGrant{}, ErrApprovalDenied
+		return issuedGrant{}, ErrApprovalDenied
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, correlation.RequestID, req)); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 
 	refValues, err := g.resolveUniqueRefs(ctx, correlation.RequestID, req)
 	if err != nil {
-		return ExecGrant{}, g.requestError(ctx, req, err)
+		return issuedGrant{}, g.requestError(ctx, req, err)
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
 
 	approvalID, approvalExpiresAt, err := g.reusable.createGrant(req, decision, refValues)
 	if err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 
-	return ExecGrant{
-		Env:           values,
-		SecretAliases: aliases(req.Secrets),
-		delivery: g.deliveryFor(reusableGrantAttempt{
-			approvalID: approvalID,
-			mutationID: approvalID,
-			expiresAt:  approvalExpiresAt,
-		}),
+	delivery := g.deliveryFor(reusableGrantAttempt{
+		approvalID: approvalID,
+		mutationID: approvalID,
+		expiresAt:  approvalExpiresAt,
+	})
+	return issuedGrant{
+		grant: ExecGrant{
+			Env:           values,
+			SecretAliases: aliases(req.Secrets),
+			approvalID:    approvalID,
+		},
+		delivery: delivery,
 	}, nil
 }
 
-func grantDeliveryExpiresAt(req request.ExecRequest, approvalExpiresAt time.Time) time.Time {
+func grantPayloadExpiresAt(req request.ExecRequest, approvalExpiresAt time.Time) time.Time {
 	if !approvalExpiresAt.IsZero() && approvalExpiresAt.Before(req.ExpiresAt) {
 		return approvalExpiresAt
 	}
