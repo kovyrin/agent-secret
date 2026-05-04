@@ -191,12 +191,11 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		Dir:                    command.ExecRequest.CWD,
 		BaseEnv:                command.ExecRequest.Env,
 		Env:                    payload.Env,
-		SecretAliases:          payload.SecretAliases,
 		OverrideEnv:            command.ExecRequest.OverrideEnv,
 		AllowMutableExecutable: command.ExecRequest.AllowMutableExecutable,
 		Stdout:                 a.Stdout,
 		Stderr:                 a.Stderr,
-		Audit:                  reporter,
+		Lifecycle:              reporter,
 	}, interrupts)
 	if err != nil {
 		a.stderrf("agent-secret: %v\n", err)
@@ -370,27 +369,27 @@ type daemonAuditReporter struct {
 	stderr      io.Writer
 }
 
-func (r daemonAuditReporter) Record(ctx context.Context, event execwrap.AuditEvent) error {
-	switch event.Type {
-	case execwrap.EventCommandStarting:
-		return nil
-	case execwrap.EventCommandStarted:
-		if err := r.client.ReportStarted(ctx, r.correlation, event.ChildPID); err != nil {
-			if isFatalCommandStartedAuditFailure(err) {
-				return err
-			}
-			_, _ = fmt.Fprintf(
-				r.stderr,
-				"agent-secret: warning: daemon disconnected after child start; command_started audit was not recorded: %v\n",
-				err,
-			)
+func (r daemonAuditReporter) CommandStarted(ctx context.Context, childPID int) error {
+	if err := r.client.ReportStarted(ctx, r.correlation, childPID); err != nil {
+		if isFatalCommandStartedAuditFailure(err) {
+			return err
 		}
-	case execwrap.EventCommandCompleted:
-		if err := r.client.ReportCompleted(ctx, r.correlation, event.ExitCode, event.Signal); err != nil {
-			_, _ = fmt.Fprintf(r.stderr, "agent-secret: warning: daemon completion audit was not recorded: %v\n", err)
-		}
-	default:
-		return fmt.Errorf("unsupported exec audit event type %q", event.Type)
+		_, _ = fmt.Fprintf(
+			r.stderr,
+			"agent-secret: warning: daemon disconnected after child start; command_started audit was not recorded: %v\n",
+			err,
+		)
+	}
+	return nil
+}
+
+func (r daemonAuditReporter) CommandCompleted(ctx context.Context, result execwrap.Result) error {
+	signal := ""
+	if result.Signal != nil {
+		signal = result.Signal.String()
+	}
+	if err := r.client.ReportCompleted(ctx, r.correlation, result.ExitCode, signal); err != nil {
+		_, _ = fmt.Fprintf(r.stderr, "agent-secret: warning: daemon completion audit was not recorded: %v\n", err)
 	}
 	return nil
 }

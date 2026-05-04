@@ -23,7 +23,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
-	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/policy"
@@ -617,11 +616,8 @@ func TestDaemonAuditReporterWarnsOnDaemonStoppedAfterChildStart(t *testing.T) {
 		},
 		stderr: &stderr,
 	}
-	if err := reporter.Record(context.Background(), execwrap.AuditEvent{
-		Type:     execwrap.EventCommandStarted,
-		ChildPID: os.Getpid(),
-	}); err != nil {
-		t.Fatalf("Record returned error: %v", err)
+	if err := reporter.CommandStarted(context.Background(), os.Getpid()); err != nil {
+		t.Fatalf("CommandStarted returned error: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "command_started audit was not recorded") {
 		t.Fatalf("stderr = %q, want command_started warning", stderr.String())

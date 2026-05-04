@@ -21,26 +21,9 @@ var ErrMutableExecutable = errors.New("mutable executable requires explicit opt-
 
 const terminateGracePeriod = 2 * time.Second
 
-type AuditSink interface {
-	Record(ctx context.Context, event AuditEvent) error
-}
-
-type EventType string
-
-const (
-	EventCommandStarting  EventType = "command_starting"
-	EventCommandStarted   EventType = "command_started"
-	EventCommandCompleted EventType = "command_completed"
-)
-
-type AuditEvent struct {
-	Type          EventType `json:"type"`
-	Command       []string  `json:"command,omitempty"`
-	CWD           string    `json:"cwd,omitempty"`
-	SecretAliases []string  `json:"secret_aliases,omitempty"`
-	ChildPID      int       `json:"child_pid,omitempty"`
-	ExitCode      int       `json:"exit_code,omitempty"`
-	Signal        string    `json:"signal,omitempty"`
+type LifecycleReporter interface {
+	CommandStarted(ctx context.Context, childPID int) error
+	CommandCompleted(ctx context.Context, result Result) error
 }
 
 type Spec struct {
@@ -50,13 +33,12 @@ type Spec struct {
 	Dir                    string
 	BaseEnv                []string
 	Env                    map[string]string
-	SecretAliases          []string
 	OverrideEnv            bool
 	AllowMutableExecutable bool
 	Stdin                  io.Reader
 	Stdout                 io.Writer
 	Stderr                 io.Writer
-	Audit                  AuditSink
+	Lifecycle              LifecycleReporter
 }
 
 type Result struct {
@@ -88,16 +70,6 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 		return Result{}, err
 	}
 
-	argv := append([]string{spec.Path}, spec.Args...)
-	if err := record(ctx, spec.Audit, AuditEvent{
-		Type:          EventCommandStarting,
-		Command:       argv,
-		CWD:           spec.Dir,
-		SecretAliases: sortedAliases(spec.SecretAliases),
-	}); err != nil {
-		return Result{}, err
-	}
-
 	stdin := readerOrDefault(spec.Stdin, os.Stdin)
 	commandContext := context.Background()
 	if ctx != nil {
@@ -123,13 +95,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 		return Result{}, err
 	}
 
-	if err := record(ctx, spec.Audit, AuditEvent{
-		Type:          EventCommandStarted,
-		Command:       argv,
-		CWD:           spec.Dir,
-		SecretAliases: sortedAliases(spec.SecretAliases),
-		ChildPID:      cmd.Process.Pid,
-	}); err != nil {
+	if err := commandStarted(ctx, spec.Lifecycle, cmd.Process.Pid); err != nil {
 		_ = terminateChild(cmd.Process)
 		_, _ = cmd.Process.Wait()
 		_ = restoreTerminal()
@@ -145,22 +111,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 	restoreErr := restoreTerminal()
 
 	result := resultFromState(cmd.ProcessState)
-	childPID := cmd.Process.Pid
-	if cmd.ProcessState != nil {
-		childPID = cmd.ProcessState.Pid()
-	}
-	event := AuditEvent{
-		Type:          EventCommandCompleted,
-		Command:       argv,
-		CWD:           spec.Dir,
-		SecretAliases: sortedAliases(spec.SecretAliases),
-		ChildPID:      childPID,
-		ExitCode:      result.ExitCode,
-	}
-	if result.Signal != nil {
-		event.Signal = result.Signal.String()
-	}
-	if err := record(ctx, spec.Audit, event); err != nil {
+	if err := commandCompleted(ctx, spec.Lifecycle, result); err != nil {
 		return result, err
 	}
 
@@ -287,18 +238,22 @@ func readerOrDefault(reader io.Reader, fallback io.Reader) io.Reader {
 	return fallback
 }
 
-func record(ctx context.Context, sink AuditSink, event AuditEvent) error {
-	if sink == nil {
+func commandStarted(ctx context.Context, reporter LifecycleReporter, childPID int) error {
+	if reporter == nil {
 		return nil
 	}
-	if err := sink.Record(ctx, event); err != nil {
-		return fmt.Errorf("record audit event %s: %w", event.Type, err)
+	if err := reporter.CommandStarted(ctx, childPID); err != nil {
+		return fmt.Errorf("report command started: %w", err)
 	}
 	return nil
 }
 
-func sortedAliases(aliases []string) []string {
-	out := slices.Clone(aliases)
-	slices.Sort(out)
-	return out
+func commandCompleted(ctx context.Context, reporter LifecycleReporter, result Result) error {
+	if reporter == nil {
+		return nil
+	}
+	if err := reporter.CommandCompleted(ctx, result); err != nil {
+		return fmt.Errorf("report command completed: %w", err)
+	}
+	return nil
 }

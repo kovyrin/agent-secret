@@ -25,32 +25,49 @@ const (
 	syntheticMultilineText = "-----BEGIN PRIVATE KEY-----\nline one\nline two\n-----END PRIVATE KEY-----\n"
 )
 
-type memoryAudit struct {
-	mu     sync.Mutex
-	events []AuditEvent
+type lifecycleEvent struct {
+	Type     string `json:"type"`
+	ChildPID int    `json:"child_pid,omitempty"`
+	ExitCode int    `json:"exit_code,omitempty"`
+	Signal   string `json:"signal,omitempty"`
 }
 
-func (m *memoryAudit) Record(_ context.Context, event AuditEvent) error {
+type memoryLifecycle struct {
+	mu     sync.Mutex
+	events []lifecycleEvent
+}
+
+func (m *memoryLifecycle) CommandStarted(_ context.Context, childPID int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.events = append(m.events, lifecycleEvent{Type: "command_started", ChildPID: childPID})
+	return nil
+}
+
+func (m *memoryLifecycle) CommandCompleted(_ context.Context, result Result) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	event := lifecycleEvent{Type: "command_completed", ExitCode: result.ExitCode}
+	if result.Signal != nil {
+		event.Signal = result.Signal.String()
+	}
 	m.events = append(m.events, event)
 	return nil
 }
 
-func (m *memoryAudit) Events() []AuditEvent {
+func (m *memoryLifecycle) Events() []lifecycleEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.events)
 }
 
-type failingAudit struct {
-	failType EventType
+type failingLifecycle struct{}
+
+func (f failingLifecycle) CommandStarted(context.Context, int) error {
+	return errors.New("lifecycle reporter offline")
 }
 
-func (f failingAudit) Record(_ context.Context, event AuditEvent) error {
-	if event.Type == f.failType {
-		return errors.New("audit offline")
-	}
+func (f failingLifecycle) CommandCompleted(context.Context, Result) error {
 	return nil
 }
 
@@ -174,19 +191,16 @@ func TestRunInjectsEnvOnlyIntoChildAndRecordsMetadata(t *testing.T) {
 	t.Parallel()
 
 	var stdout bytes.Buffer
-	audit := &memoryAudit{}
+	lifecycle := &memoryLifecycle{}
 	result, err := Run(context.Background(), Spec{
 		Path:                   os.Args[0],
 		PathIdentity:           currentExecutableIdentity(t),
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
 		Env:                    helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
-		SecretAliases: []string{
-			"AGENT_SECRET_CANARY",
-		},
-		OverrideEnv: true,
-		Stdout:      &stdout,
-		Audit:       audit,
+		OverrideEnv:            true,
+		Stdout:                 &stdout,
+		Lifecycle:              lifecycle,
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -201,12 +215,12 @@ func TestRunInjectsEnvOnlyIntoChildAndRecordsMetadata(t *testing.T) {
 		t.Fatalf("parent environment leaked injected value: %q", got)
 	}
 
-	encoded, err := json.Marshal(audit.Events())
+	encoded, err := json.Marshal(lifecycle.Events())
 	if err != nil {
-		t.Fatalf("marshal audit events: %v", err)
+		t.Fatalf("marshal lifecycle events: %v", err)
 	}
 	if bytes.Contains(encoded, []byte(syntheticSecret)) {
-		t.Fatalf("audit events contain synthetic secret: %s", encoded)
+		t.Fatalf("lifecycle events contain synthetic secret: %s", encoded)
 	}
 }
 
@@ -220,7 +234,6 @@ func TestRunPreservesMultilineSecretEnvValue(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-multiline-env"},
 		Env:                    helperEnv("AGENT_SECRET_MULTILINE", syntheticMultilineText),
-		SecretAliases:          []string{"AGENT_SECRET_MULTILINE"},
 		OverrideEnv:            true,
 		Stdout:                 &stdout,
 	}, nil)
@@ -355,23 +368,7 @@ func TestRunRejectsMutableExecutableWithoutOptIn(t *testing.T) {
 	}
 }
 
-func TestRunStopsBeforeSpawnWhenStartingAuditFails(t *testing.T) {
-	t.Parallel()
-
-	_, err := Run(context.Background(), Spec{
-		Path:                   os.Args[0],
-		PathIdentity:           currentExecutableIdentity(t),
-		AllowMutableExecutable: true,
-		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
-		Env:                    helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
-		Audit:                  failingAudit{failType: EventCommandStarting},
-	}, nil)
-	if err == nil {
-		t.Fatal("expected command_starting audit failure")
-	}
-}
-
-func TestRunTerminatesChildWhenStartedAuditFails(t *testing.T) {
+func TestRunTerminatesChildWhenStartedLifecycleFails(t *testing.T) {
 	t.Parallel()
 
 	_, err := Run(context.Background(), Spec{
@@ -380,10 +377,10 @@ func TestRunTerminatesChildWhenStartedAuditFails(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
 		Env:                    helperEnv(),
-		Audit:                  failingAudit{failType: EventCommandStarted},
+		Lifecycle:              failingLifecycle{},
 	}, nil)
 	if err == nil {
-		t.Fatal("expected command_started audit failure")
+		t.Fatal("expected command_started lifecycle failure")
 	}
 }
 
@@ -499,16 +496,15 @@ func TestRunTerminatesChildOnContextCancel(t *testing.T) {
 	}
 }
 
-func TestAuditEventShapeIsValueFree(t *testing.T) {
+func TestLifecycleEventShapeIsValueFree(t *testing.T) {
 	t.Parallel()
 
-	event := AuditEvent{
-		Type:          EventCommandStarting,
-		Command:       []string{"/usr/bin/env"},
-		SecretAliases: []string{"AGENT_SECRET_CANARY"},
-	}
+	event := lifecycleEvent{Type: "command_started", ChildPID: 1234}
 	if reflect.ValueOf(event).FieldByName("Env").IsValid() {
-		t.Fatal("audit event unexpectedly has an Env field")
+		t.Fatal("lifecycle event unexpectedly has an Env field")
+	}
+	if reflect.ValueOf(event).FieldByName("SecretAliases").IsValid() {
+		t.Fatal("lifecycle event unexpectedly has a SecretAliases field")
 	}
 
 	encoded, err := json.Marshal(event)
