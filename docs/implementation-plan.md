@@ -533,10 +533,10 @@ Status: Complete
 - Wired `agent-secret exec` to request approved env payloads from the daemon and
   then spawn the child itself with stdout/stderr passthrough and child exit-code
   propagation.
-- The product daemon currently fails closed for real `exec` requests because
-  native approval and real approver IPC are Epic 5. Epic 4 proves the exec path
-  with mock approver/resolver tests and the real daemon lifecycle with binary
-  smoke tests.
+- At Epic 4 completion, real `exec` requests still failed closed until the
+  native approval and 1Password resolver work landed in Epic 5. Epic 4 proved
+  the exec path with mock approver/resolver tests and the real daemon lifecycle
+  with binary smoke tests.
 - Verified with `go test ./...`, `go test -tags integration ./...`,
   `go build ./cmd/agent-secret ./cmd/agent-secretd`, lint, and manual binary
   smoke commands.
