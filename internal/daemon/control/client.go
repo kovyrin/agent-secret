@@ -10,7 +10,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -112,28 +111,6 @@ func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
 		return protocol.StatusPayload{}, err
 	}
 	return payload, nil
-}
-
-func (c *Client) FetchPendingApproval(ctx context.Context) (approval.ApprovalRequestPayload, error) {
-	payload, err := roundTripPayload[approval.ApprovalRequestPayload](
-		ctx,
-		c,
-		protocol.TypeApprovalPending,
-		protocol.Correlation{},
-		nil,
-	)
-	if err != nil {
-		return approval.ApprovalRequestPayload{}, err
-	}
-	if err := validateApprovalRequestPayload(payload); err != nil {
-		return approval.ApprovalRequestPayload{}, err
-	}
-	return payload, nil
-}
-
-func (c *Client) SubmitApprovalDecision(ctx context.Context, decision approval.ApprovalDecisionPayload) error {
-	correlation := protocol.Correlation{RequestID: decision.RequestID, Nonce: decision.Nonce}
-	return roundTripAck(ctx, c, protocol.TypeApprovalDecision, correlation, decision)
 }
 
 func (c *Client) RequestExec(
@@ -275,25 +252,6 @@ func roundTripResponse[T any](
 func validateStatusPayload(messageType protocol.MessageType, payload protocol.StatusPayload) error {
 	if payload.PID <= 0 {
 		return fmt.Errorf("%w: %s response has invalid pid", protocol.ErrMalformedEnvelope, messageType)
-	}
-	return nil
-}
-
-func validateApprovalRequestPayload(payload approval.ApprovalRequestPayload) error {
-	if payload.RequestID == "" {
-		return fmt.Errorf("%w: approval.pending response missing request id", protocol.ErrMalformedEnvelope)
-	}
-	if payload.Nonce == "" {
-		return fmt.Errorf("%w: approval.pending response missing nonce", protocol.ErrMalformedEnvelope)
-	}
-	if len(payload.Command) == 0 {
-		return fmt.Errorf("%w: approval.pending response missing command", protocol.ErrMalformedEnvelope)
-	}
-	if payload.ExpiresAt.IsZero() {
-		return fmt.Errorf("%w: approval.pending response missing expiry", protocol.ErrMalformedEnvelope)
-	}
-	if len(payload.Secrets) == 0 {
-		return fmt.Errorf("%w: approval.pending response missing secrets", protocol.ErrMalformedEnvelope)
 	}
 	return nil
 }

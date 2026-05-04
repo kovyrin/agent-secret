@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/daemon"
-	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
@@ -265,26 +264,6 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			wantErrMsg: "invalid pid",
 		},
 		{
-			name: "pending request id",
-			frame: func(t *testing.T, env protocol.Envelope) []byte {
-				t.Helper()
-
-				return okResponseFrame(t, env, approval.ApprovalRequestPayload{
-					Nonce:     "nonce_1",
-					Command:   []string{"terraform", "plan"},
-					ExpiresAt: time.Now().Add(time.Minute),
-					Secrets: []approval.ApprovalRequestedSecret{
-						{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
-					},
-				})
-			},
-			call: func(ctx context.Context, client *Client) error {
-				_, err := client.FetchPendingApproval(ctx)
-				return err
-			},
-			wantErrMsg: "missing request id",
-		},
-		{
 			name: "exec aliases",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
@@ -350,70 +329,6 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				t.Fatalf("error %q does not contain %q", err, tc.wantErrMsg)
 			}
 		})
-	}
-}
-
-func TestClientSubmitApprovalDecisionSendsProtocolMessage(t *testing.T) {
-	t.Parallel()
-
-	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
-		if env.Type != protocol.TypeApprovalDecision {
-			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeApprovalDecision)
-		}
-		payload, err := protocol.DecodeRequiredPayload[approval.ApprovalDecisionPayload](env)
-		if err != nil {
-			t.Fatalf("decode approval decision: %v", err)
-		}
-		if payload.RequestID != "req_1" || payload.Nonce != "nonce_1" || payload.Decision != approval.ApprovalDecisionApproveOnce {
-			t.Fatalf("approval decision payload = %+v", payload)
-		}
-		return okResponseFrame(t, env, nil)
-	})
-	defer cleanup()
-
-	if err := client.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
-		RequestID: "req_1",
-		Nonce:     "nonce_1",
-		Decision:  approval.ApprovalDecisionApproveOnce,
-	}); err != nil {
-		t.Fatalf("SubmitApprovalDecision returned error: %v", err)
-	}
-}
-
-func TestValidateApprovalRequestPayloadRequiresFields(t *testing.T) {
-	t.Parallel()
-
-	valid := approval.ApprovalRequestPayload{
-		RequestID: "req_1",
-		Nonce:     "nonce_1",
-		Command:   []string{"terraform", "plan"},
-		ExpiresAt: time.Now().Add(time.Minute),
-		Secrets: []approval.ApprovalRequestedSecret{
-			{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
-		},
-	}
-	if err := validateApprovalRequestPayload(valid); err != nil {
-		t.Fatalf("valid approval request returned error: %v", err)
-	}
-
-	tests := []struct {
-		name    string
-		mutate  func(*approval.ApprovalRequestPayload)
-		wantErr string
-	}{
-		{name: "request id", mutate: func(payload *approval.ApprovalRequestPayload) { payload.RequestID = "" }, wantErr: "missing request id"},
-		{name: "nonce", mutate: func(payload *approval.ApprovalRequestPayload) { payload.Nonce = "" }, wantErr: "missing nonce"},
-		{name: "command", mutate: func(payload *approval.ApprovalRequestPayload) { payload.Command = nil }, wantErr: "missing command"},
-		{name: "expiry", mutate: func(payload *approval.ApprovalRequestPayload) { payload.ExpiresAt = time.Time{} }, wantErr: "missing expiry"},
-		{name: "secrets", mutate: func(payload *approval.ApprovalRequestPayload) { payload.Secrets = nil }, wantErr: "missing secrets"},
-	}
-	for _, tt := range tests {
-		payload := valid
-		tt.mutate(&payload)
-		err := validateApprovalRequestPayload(payload)
-		if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-			t.Fatalf("%s error = %v, want %q", tt.name, err, tt.wantErr)
-		}
 	}
 }
 

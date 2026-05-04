@@ -820,18 +820,18 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
-	appClient := control.NewClient(appConn)
+	appClient := newApprovalSocketTestClient(appConn)
 	defer func() { _ = appClient.Close() }()
 	pending := fetchPendingApprovalOrExecError(t, launcher, 1, appClient, execErr)
 	if pending.RequestID != "req_1" || pending.Nonce != "nonce_1" {
 		t.Fatalf("unexpected pending approval payload: %+v", pending)
 	}
-	if err := appClient.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
+	if err := appClient.SubmitDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
 		Nonce:     pending.Nonce,
 		Decision:  approval.ApprovalDecisionApproveOnce,
 	}); err != nil {
-		t.Fatalf("SubmitApprovalDecision returned error: %v", err)
+		t.Fatalf("SubmitDecision returned error: %v", err)
 	}
 
 	select {
@@ -894,17 +894,17 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
-	appClient := control.NewClient(appConn)
+	appClient := newApprovalSocketTestClient(appConn)
 	defer func() { _ = appClient.Close() }()
 	pending := fetchPendingApprovalOrExecError(t, launcher, 1, appClient, execErr)
 	waitForReadTimeoutLongerThan(t, readTimeouts, time.Second)
 
-	if err := appClient.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
+	if err := appClient.SubmitDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
 		Nonce:     pending.Nonce,
 		Decision:  approval.ApprovalDecisionApproveOnce,
 	}); err != nil {
-		t.Fatalf("SubmitApprovalDecision returned error after protocol read timeout: %v", err)
+		t.Fatalf("SubmitDecision returned error after protocol read timeout: %v", err)
 	}
 
 	select {
@@ -922,18 +922,25 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 func TestServerReportsApprovalUnavailable(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startTestServer(t, daemonbroker.Options{
+	path, stop := startRawTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
 	})
-	defer cleanup()
+	defer stop()
 
-	_, err := client.FetchPendingApproval(context.Background())
+	conn, err := socket.Dial(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Dial app client returned error: %v", err)
+	}
+	client := newApprovalSocketTestClient(conn)
+	defer func() { _ = client.Close() }()
+
+	_, err = client.FetchPending(context.Background())
 	if !control.IsProtocolError(err, protocol.ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable protocol error, got %v", err)
 	}
-	if err := client.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
+	if err := client.SubmitDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
 		Decision:  approval.ApprovalDecisionApproveOnce,
@@ -1330,7 +1337,7 @@ func fetchPendingApprovalOrExecError(
 	t *testing.T,
 	launcher launchWaiter,
 	launchCount int,
-	client *control.Client,
+	client *approvalSocketTestClient,
 	execErr <-chan error,
 ) approval.ApprovalRequestPayload {
 	t.Helper()
@@ -1345,9 +1352,9 @@ func fetchPendingApprovalOrExecError(
 			t.Fatalf("approver launch %d was not observed: %v", launchCount, err)
 		}
 	}
-	pending, err := client.FetchPendingApproval(ctx)
+	pending, err := client.FetchPending(ctx)
 	if err != nil {
-		t.Fatalf("FetchPendingApproval returned error: %v", err)
+		t.Fatalf("FetchPending returned error: %v", err)
 	}
 	return pending
 }
