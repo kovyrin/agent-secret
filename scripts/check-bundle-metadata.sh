@@ -17,9 +17,9 @@ if [[ "$script_dir_part" == "$script_path" ]]; then
 fi
 script_dir="$(cd -- "$script_dir_part" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
-# shellcheck source=scripts/bundle-metadata.sh
+# shellcheck source=scripts/lib/bundle-metadata.sh
 # shellcheck disable=SC1091
-source "$project_root/scripts/bundle-metadata.sh"
+source "$project_root/scripts/lib/bundle-metadata.sh"
 
 app_only=0
 if [[ "${1:-}" == "--app-only" ]]; then

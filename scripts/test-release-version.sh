@@ -3,9 +3,9 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/.." && pwd)"
-# shellcheck source=scripts/bundle-metadata.sh
+# shellcheck source=scripts/lib/bundle-metadata.sh
 # shellcheck disable=SC1091
-source "$project_root/scripts/bundle-metadata.sh"
+source "$project_root/scripts/lib/bundle-metadata.sh"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-version-test.XXXXXX")"
 cleanup() {
