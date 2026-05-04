@@ -17,6 +17,11 @@ import (
 type ProcessApproverLauncher struct {
 	AppPath        string
 	IdentityPolicy ApproverIdentityPolicy
+	healthRunner   healthCheckRunner
+}
+
+type healthCheckRunner interface {
+	RunHealthCheck(ctx context.Context, executablePath string) (string, error)
 }
 
 func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
@@ -31,19 +36,8 @@ func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
 
 	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	//nolint:gosec // G204: executable was canonicalized and validated by the approver identity policy above.
-	cmd := exec.CommandContext(checkCtx, identity.ExecutablePath, "--health-check")
-	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	stdout, err := l.healthCheckRunner().RunHealthCheck(checkCtx, identity.ExecutablePath)
 	if err != nil {
-		return fmt.Errorf("%w: open /dev/null: %w", ErrApproverLaunchFailed, err)
-	}
-	defer func() { _ = devNull.Close() }()
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdin = devNull
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
 		if ctxErr := checkCtx.Err(); ctxErr != nil {
 			if errors.Is(ctxErr, context.DeadlineExceeded) {
 				return fmt.Errorf("%w: health check timed out: %w", ErrApproverLaunchFailed, ctxErr)
@@ -52,10 +46,37 @@ func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
 		}
 		return fmt.Errorf("%w: health check failed: %w", ErrApproverLaunchFailed, err)
 	}
-	if got := strings.TrimSpace(stdout.String()); got != "Agent Secret: ok" {
-		return fmt.Errorf("%w: unexpected health check response %q", ErrApproverLaunchFailed, got)
+	if stdout != "Agent Secret: ok" {
+		return fmt.Errorf("%w: unexpected health check response %q", ErrApproverLaunchFailed, stdout)
 	}
 	return nil
+}
+
+func (l ProcessApproverLauncher) healthCheckRunner() healthCheckRunner {
+	if l.healthRunner != nil {
+		return l.healthRunner
+	}
+	return processHealthCheckRunner{}
+}
+
+type processHealthCheckRunner struct{}
+
+func (processHealthCheckRunner) RunHealthCheck(ctx context.Context, executablePath string) (string, error) {
+	cmd := exec.CommandContext(ctx, executablePath, "--health-check")
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return "", fmt.Errorf("open /dev/null: %w", err)
+	}
+	defer func() { _ = devNull.Close() }()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdin = devNull
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, _ ApprovalRequestPayload) (ExpectedApprover, error) {

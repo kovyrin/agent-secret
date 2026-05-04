@@ -34,6 +34,18 @@ func (p staticApproverIdentityPolicy) ValidateApproverExecutable(path string) (A
 	return identity, nil
 }
 
+type fakeHealthCheckRunner struct {
+	stdout string
+	err    error
+}
+
+func (r fakeHealthCheckRunner) RunHealthCheck(ctx context.Context, _ string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return r.stdout, r.err
+}
+
 func TestProcessApproverLauncherExecutablePath(t *testing.T) {
 	t.Parallel()
 
@@ -240,31 +252,37 @@ func TestProcessApproverLauncherCarriesSignaturePolicyToExpectedPeer(t *testing.
 func TestProcessApproverLauncherHealthCheck(t *testing.T) {
 	t.Parallel()
 
-	helper := filepath.Join(t.TempDir(), "approver-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'Agent Secret: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
-		t.Fatalf("write helper: %v", err)
-	}
-
 	err := (ProcessApproverLauncher{
-		AppPath:        helper,
+		AppPath:        "/tmp/approver-helper",
 		IdentityPolicy: allowApproverIdentityPolicy{},
+		healthRunner:   fakeHealthCheckRunner{stdout: "Agent Secret: ok"},
 	}).CheckHealth(context.Background())
 	if err != nil {
 		t.Fatalf("CheckHealth returned error: %v", err)
 	}
 }
 
+func TestProcessHealthCheckRunnerRunsHelper(t *testing.T) {
+	helper := writeHealthCheckHelper(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stdout, err := (processHealthCheckRunner{}).RunHealthCheck(ctx, helper)
+	if err != nil {
+		t.Fatalf("RunHealthCheck returned error: %v", err)
+	}
+	if stdout != "Agent Secret: ok" {
+		t.Fatalf("RunHealthCheck stdout = %q, want health response", stdout)
+	}
+}
+
 func TestProcessApproverLauncherHealthCheckRejectsUnexpectedOutput(t *testing.T) {
 	t.Parallel()
 
-	helper := filepath.Join(t.TempDir(), "approver-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\necho nope\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
-		t.Fatalf("write helper: %v", err)
-	}
-
 	err := (ProcessApproverLauncher{
-		AppPath:        helper,
+		AppPath:        "/tmp/approver-helper",
 		IdentityPolicy: allowApproverIdentityPolicy{},
+		healthRunner:   fakeHealthCheckRunner{stdout: "nope"},
 	}).CheckHealth(context.Background())
 	if !errors.Is(err, ErrApproverLaunchFailed) {
 		t.Fatalf("CheckHealth error = %v, want ErrApproverLaunchFailed", err)
@@ -274,7 +292,6 @@ func TestProcessApproverLauncherHealthCheckRejectsUnexpectedOutput(t *testing.T)
 func TestProcessApproverLauncherHealthCheckPreservesContextErrors(t *testing.T) {
 	t.Parallel()
 
-	helper := writeHealthCheckHelper(t)
 	tests := []struct {
 		name    string
 		makeCtx func(*testing.T) context.Context
@@ -295,8 +312,9 @@ func TestProcessApproverLauncherHealthCheckPreservesContextErrors(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := (ProcessApproverLauncher{
-				AppPath:        helper,
+				AppPath:        "/tmp/approver-helper",
 				IdentityPolicy: allowApproverIdentityPolicy{},
+				healthRunner:   fakeHealthCheckRunner{stdout: "Agent Secret: ok"},
 			}).CheckHealth(tt.makeCtx(t))
 			if !errors.Is(err, ErrApproverLaunchFailed) {
 				t.Fatalf("CheckHealth error = %v, want ErrApproverLaunchFailed", err)
