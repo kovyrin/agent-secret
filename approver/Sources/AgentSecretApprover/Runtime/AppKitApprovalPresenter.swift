@@ -72,7 +72,6 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
 
             Self.bringForward(window)
             _ = app.runModal(for: window)
-            window.close()
             return coordinator.decision
         }
 
