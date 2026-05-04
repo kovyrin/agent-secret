@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
@@ -105,6 +106,34 @@ func TestExecutableValidatorRejectsExecutableReplacedAfterStartup(t *testing.T) 
 	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient after replacement, got %v", err)
+	}
+}
+
+func TestExecutableValidatorRejectsExecutableMutatedAfterStartupWhenSignatureDisabled(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	validator := ExecutableValidator{
+		set: newExecutableSetWithVerifier(
+			[]string{trusted},
+			"",
+			ErrUntrustedClient,
+			&recordingSignatureVerifier{},
+			false,
+		),
+	}
+
+	if err := os.WriteFile(trusted, []byte("#!/bin/sh\nexit 64\n# changed\n"), 0o755); err != nil { //nolint:gosec // G306: trusted-client tests need a mutated executable fixture.
+		t.Fatalf("mutate trusted executable: %v", err)
+	}
+
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("expected ErrUntrustedClient after mutation, got %v", err)
+	}
+	if !errors.Is(err, fileidentity.ErrMismatch) {
+		t.Fatalf("expected file identity mismatch after mutation, got %v", err)
 	}
 }
 

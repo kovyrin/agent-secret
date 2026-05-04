@@ -19,8 +19,15 @@ import Foundation
         }
 
         private struct FileIdentity: Equatable {
+            private static let permissionModeMask: mode_t = 0o777
+            private static let nanosecondsPerSecond: Int64 = 1_000_000_000
+
             let device: UInt64
             let inode: UInt64
+            let mode: UInt32
+            let size: Int64
+            let modTimeUnixNanoseconds: Int64
+            let changeTimeUnixNanoseconds: Int64
 
             init(path: String) throws {
                 var statBuffer = stat()
@@ -41,6 +48,14 @@ import Foundation
                 }
                 device = UInt64(statBuffer.st_dev)
                 inode = UInt64(statBuffer.st_ino)
+                mode = UInt32(statBuffer.st_mode & Self.permissionModeMask)
+                size = Int64(statBuffer.st_size)
+                modTimeUnixNanoseconds = Self.unixNanoseconds(statBuffer.st_mtimespec)
+                changeTimeUnixNanoseconds = Self.unixNanoseconds(statBuffer.st_ctimespec)
+            }
+
+            private static func unixNanoseconds(_ timestamp: timespec) -> Int64 {
+                Int64(timestamp.tv_sec) * nanosecondsPerSecond + Int64(timestamp.tv_nsec)
             }
         }
 

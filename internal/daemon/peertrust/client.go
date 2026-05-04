@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
@@ -33,7 +34,7 @@ type executableSet struct {
 
 type executable struct {
 	path       string
-	fileInfo   os.FileInfo
+	identity   fileidentity.Identity
 	bundlePath string
 }
 
@@ -86,9 +87,14 @@ func newExecutableSetWithVerifier(
 			candidateErrs = append(candidateErrs, fmt.Errorf("trusted executable %q is a directory", path))
 			continue
 		}
+		identity, err := fileidentity.Capture(path)
+		if err != nil {
+			candidateErrs = append(candidateErrs, err)
+			continue
+		}
 		entry := executable{
 			path:     path,
-			fileInfo: info,
+			identity: identity,
 		}
 		if bundlePath, ok := clientBundlePath(path); ok {
 			entry.bundlePath = bundlePath
@@ -231,12 +237,8 @@ func (e executable) validatePeer(
 	if errKind == nil {
 		errKind = ErrUntrustedClient
 	}
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("%w: stat trusted executable %q: %w", errKind, path, err)
-	}
-	if !os.SameFile(fileInfo, e.fileInfo) {
-		return fmt.Errorf("%w: executable %q changed since trust snapshot", errKind, path)
+	if err := fileidentity.Verify(path, e.identity); err != nil {
+		return fmt.Errorf("%w: executable %q changed since trust snapshot: %w", errKind, path, err)
 	}
 	if e.bundlePath != "" {
 		currentBundlePath, ok := clientBundlePath(path)
