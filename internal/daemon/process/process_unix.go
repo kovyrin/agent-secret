@@ -1,6 +1,6 @@
 //go:build unix
 
-package daemon
+package process
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	"syscall"
 )
 
-func configureDaemonProcess(cmd *exec.Cmd) {
+func ConfigureDaemonProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
 
-func daemonStartCommand(ctx context.Context, path string, args []string) *exec.Cmd {
+func StartCommand(ctx context.Context, path string, args []string) *exec.Cmd {
 	if runtime.GOOS == "darwin" && filepath.Ext(path) == ".app" {
 		openArgs := []string{"-g", "-n", path}
 		for _, env := range daemonAppEnvironment() {
@@ -31,7 +31,7 @@ func daemonStartCommand(ctx context.Context, path string, args []string) *exec.C
 	return exec.CommandContext(ctx, path, args...)
 }
 
-func defaultDaemonAppPath() (string, bool) {
+func DefaultDaemonAppPath() (string, bool) {
 	if runtime.GOOS != "darwin" {
 		return "", false
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
+	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 )
@@ -74,7 +75,7 @@ func (m Manager) Start(ctx context.Context) error {
 		return err
 	}
 
-	cmd := daemonStartCommand(ctx, m.DaemonPath, m.daemonArgs())
+	cmd := daemonprocess.StartCommand(ctx, m.DaemonPath, m.daemonArgs())
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("open /dev/null: %w", err)
@@ -83,7 +84,7 @@ func (m Manager) Start(ctx context.Context) error {
 	cmd.Stdin = devNull
 	cmd.Stdout = managerWriter(devNull, m.daemonStdout)
 	cmd.Stderr = managerWriter(devNull, m.daemonStderr)
-	configureDaemonProcess(cmd)
+	daemonprocess.ConfigureDaemonProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start agent-secretd: %w", err)
 	}
@@ -223,7 +224,7 @@ func (m Manager) daemonArgs() []string {
 }
 
 func defaultDaemonPath() (string, error) {
-	if appPath, ok := defaultDaemonAppPath(); ok {
+	if appPath, ok := daemonprocess.DefaultDaemonAppPath(); ok {
 		return appPath, nil
 	}
 

@@ -1,6 +1,6 @@
 //go:build !unix
 
-package daemon
+package process
 
 import (
 	"context"
@@ -12,7 +12,7 @@ func TestConfigureDaemonProcessLeavesCommandUnchanged(t *testing.T) {
 	t.Parallel()
 
 	cmd := exec.Command("agent-secretd")
-	configureDaemonProcess(cmd)
+	ConfigureDaemonProcess(cmd)
 	if cmd.SysProcAttr != nil {
 		t.Fatalf("SysProcAttr = %#v, want nil", cmd.SysProcAttr)
 	}
@@ -21,7 +21,7 @@ func TestConfigureDaemonProcessLeavesCommandUnchanged(t *testing.T) {
 func TestDaemonStartCommandUsesDaemonPathDirectly(t *testing.T) {
 	t.Parallel()
 
-	cmd := daemonStartCommand(context.Background(), "agent-secretd", []string{"--socket", "agent.sock"})
+	cmd := StartCommand(context.Background(), "agent-secretd", []string{"--socket", "agent.sock"})
 	wantArgs := []string{"agent-secretd", "--socket", "agent.sock"}
 	if len(cmd.Args) != len(wantArgs) {
 		t.Fatalf("args = %q, want %q", cmd.Args, wantArgs)
@@ -36,7 +36,7 @@ func TestDaemonStartCommandUsesDaemonPathDirectly(t *testing.T) {
 func TestDefaultDaemonAppPathUnsupported(t *testing.T) {
 	t.Parallel()
 
-	if path, ok := defaultDaemonAppPath(); ok || path != "" {
-		t.Fatalf("defaultDaemonAppPath = %q, %v; want empty false", path, ok)
+	if path, ok := DefaultDaemonAppPath(); ok || path != "" {
+		t.Fatalf("DefaultDaemonAppPath = %q, %v; want empty false", path, ok)
 	}
 }

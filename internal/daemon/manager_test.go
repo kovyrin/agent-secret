@@ -14,6 +14,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
+	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -319,12 +320,12 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
 	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/tmp/PoisonApprover.app")
 
-	appPath, ok := defaultDaemonAppPath()
+	appPath, ok := daemonprocess.DefaultDaemonAppPath()
 	if runtime.GOOS == "darwin" {
 		if !ok || appPath != daemonAppPath {
 			t.Fatalf("default daemon app path = %q, %v", appPath, ok)
 		}
-		cmd := daemonStartCommand(context.Background(), appPath, []string{"--socket", "/tmp/d.sock"})
+		cmd := daemonprocess.StartCommand(context.Background(), appPath, []string{"--socket", "/tmp/d.sock"})
 		if cmd.Path != "/usr/bin/open" {
 			t.Fatalf("darwin app command path = %q, want /usr/bin/open", cmd.Path)
 		}
@@ -353,47 +354,8 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 	if ok || appPath != "" {
 		t.Fatalf("non-darwin daemon app path = %q, %v", appPath, ok)
 	}
-	cmd := daemonStartCommand(context.Background(), "/tmp/agent-secretd", []string{"--socket", "/tmp/d.sock"})
+	cmd := daemonprocess.StartCommand(context.Background(), "/tmp/agent-secretd", []string{"--socket", "/tmp/d.sock"})
 	if cmd.Path != "/tmp/agent-secretd" {
 		t.Fatalf("daemon command path = %q, want direct binary", cmd.Path)
-	}
-}
-
-func TestDaemonAppPathForBundledExecutable(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	appPath := filepath.Join(root, "Agent Secret.app")
-	cliPath := filepath.Join(appPath, "Contents", "Resources", "bin", "agent-secret")
-	daemonAppPath := filepath.Join(appPath, "Contents", "Library", "Helpers", "AgentSecretDaemon.app")
-	if err := os.MkdirAll(filepath.Dir(cliPath), 0o750); err != nil {
-		t.Fatalf("create cli dir: %v", err)
-	}
-	if err := os.MkdirAll(daemonAppPath, 0o750); err != nil {
-		t.Fatalf("create daemon app: %v", err)
-	}
-	if err := os.WriteFile(cliPath, []byte("test"), 0o755); err != nil { //nolint:gosec // G306: bundled daemon path tests need a runnable CLI fixture.
-		t.Fatalf("write cli: %v", err)
-	}
-
-	got, ok := daemonAppPathForExecutable(cliPath)
-	if !ok || got != daemonAppPath {
-		t.Fatalf("daemon app path = %q, %v, want %q, true", got, ok, daemonAppPath)
-	}
-
-	symlinkPath := filepath.Join(root, "bin", "agent-secret")
-	if err := os.MkdirAll(filepath.Dir(symlinkPath), 0o750); err != nil {
-		t.Fatalf("create symlink dir: %v", err)
-	}
-	if err := os.Symlink(cliPath, symlinkPath); err != nil {
-		t.Fatalf("create cli symlink: %v", err)
-	}
-	resolvedDaemonAppPath, err := filepath.EvalSymlinks(daemonAppPath)
-	if err != nil {
-		t.Fatalf("resolve daemon app path: %v", err)
-	}
-	got, ok = daemonAppPathForExecutable(symlinkPath)
-	if !ok || got != resolvedDaemonAppPath {
-		t.Fatalf("daemon app path through symlink = %q, %v, want %q, true", got, ok, resolvedDaemonAppPath)
 	}
 }
