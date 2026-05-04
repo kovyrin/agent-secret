@@ -346,14 +346,18 @@ func (s *Server) handleRequestExec(
 			return err
 		}
 		defer clearWriteDeadline()
+		if err := writeOK(encoder, env.Correlation(), payload); err != nil {
+			return err
+		}
 		wroteResponse = true
-		return writeOK(encoder, env.Correlation(), payload)
+		return nil
 	})
 	if err != nil {
 		if !wroteResponse {
 			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+			return ""
 		}
-		return ""
+		return env.RequestID
 	}
 	return env.RequestID
 }

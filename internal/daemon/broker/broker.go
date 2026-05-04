@@ -136,14 +136,27 @@ func (b *Broker) HandleExecDelivery(
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()
-	grant, err := b.grants.issueAndDeliver(execCtx, correlation, req, write)
+	issued, err := b.grants.issue(execCtx, correlation, req)
 	if err != nil {
 		return Grant{}, err
 	}
 	if err := b.activateExec(correlation, req); err != nil {
+		_ = b.grants.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
 		return Grant{}, err
 	}
-	return grant, nil
+	payload := protocol.ExecResponsePayload{
+		Env:           issued.grant.Env,
+		SecretAliases: issued.grant.SecretAliases,
+	}
+	if err := write(payload, issued.grant.payloadExpiresAt); err != nil {
+		b.deactivateExec(correlation)
+		_ = b.grants.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
+		return Grant{}, err
+	}
+	if err := b.grants.completeDelivery(issued.delivery, policy.DeliveryPayloadDelivered); err != nil {
+		return Grant{}, err
+	}
+	return issued.grant, nil
 }
 
 func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (context.Context, context.CancelFunc) {
@@ -181,6 +194,15 @@ func (b *Broker) activateExec(correlation protocol.Correlation, req request.Exec
 		req:   req,
 	}
 	return nil
+}
+
+func (b *Broker) deactivateExec(correlation protocol.Correlation) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	active := b.active[correlation.RequestID]
+	if active != nil && active.nonce == correlation.Nonce {
+		delete(b.active, correlation.RequestID)
+	}
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {

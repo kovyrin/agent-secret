@@ -62,6 +62,34 @@ func requireNoActiveRequest(t *testing.T, b *Broker, correlation protocol.Correl
 	}
 }
 
+func TestBrokerActivatesExecBeforePayloadWriteAndClearsOnWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	broker := newTestBroker(t, Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	correlation := testCorrelation("req_1", "nonce_1")
+	writeErr := errors.New("write failed")
+
+	_, err := deliverExecWithWriteForTest(
+		context.Background(),
+		broker,
+		correlation,
+		testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}),
+		func(protocol.ExecResponsePayload, time.Time) error {
+			requireActiveRequest(t, broker, correlation)
+			return writeErr
+		},
+	)
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("deliverExec error = %v, want write failure", err)
+	}
+	requireNoActiveRequest(t, broker, correlation, ErrUnknownRequest)
+}
+
 type mockApprover struct {
 	decision approval.Decision
 	err      error
@@ -1148,7 +1176,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 		reuse,
 		func(protocol.ExecResponsePayload, time.Time) error {
 			now = req.ExpiresAt.Add(time.Second)
-			return nil
+			return approval.ErrRequestExpired
 		},
 	)
 	if !errors.Is(err, approval.ErrRequestExpired) {

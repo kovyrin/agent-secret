@@ -67,30 +67,6 @@ func newGrantIssuer(
 	return issuer
 }
 
-func (g *grantIssuer) issueAndDeliver(
-	ctx context.Context,
-	correlation protocol.Correlation,
-	req request.ExecRequest,
-	write func(protocol.ExecResponsePayload, time.Time) error,
-) (Grant, error) {
-	issued, err := g.issue(ctx, correlation, req)
-	if err != nil {
-		return Grant{}, err
-	}
-	payload := protocol.ExecResponsePayload{
-		Env:           issued.grant.Env,
-		SecretAliases: issued.grant.SecretAliases,
-	}
-	if err := write(payload, issued.grant.payloadExpiresAt); err != nil {
-		_ = g.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
-		return Grant{}, err
-	}
-	if err := g.completeDelivery(issued.delivery, policy.DeliveryPayloadDelivered); err != nil {
-		return Grant{}, err
-	}
-	return issued.grant, nil
-}
-
 func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
 	return grantDelivery{attempt: attempt}
 }
