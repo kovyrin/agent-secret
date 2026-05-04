@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
-	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -94,14 +93,13 @@ func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
 		stderr = os.Stderr
 	}
 	return App{
-		Parser:              NewParser(),
-		InstallCLI:          install.InstallCLI,
-		InstallSkill:        install.InstallSkill,
-		RandomReader:        rand.Reader,
-		DoctorApproverCheck: checkApproverHealth,
-		Stdout:              stdout,
-		Stderr:              stderr,
-		manager:             daemonControlManager{manager: manager},
+		Parser:       NewParser(),
+		InstallCLI:   install.InstallCLI,
+		InstallSkill: install.InstallSkill,
+		RandomReader: rand.Reader,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		manager:      daemonControlManager{manager: manager},
 	}
 }
 
@@ -308,10 +306,6 @@ func checkAuditLogWritable(ctx context.Context) (string, error) {
 		return path, err
 	}
 	return path, nil
-}
-
-func checkApproverHealth(ctx context.Context) error {
-	return (approval.ProcessApproverLauncher{}).CheckHealth(ctx)
 }
 
 func (a App) runInstallCLI(command Command) int {

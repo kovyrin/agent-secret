@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/kovyrin/agent-secret/internal/cli"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 )
@@ -27,7 +28,12 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	app := cli.NewApp(manager, stdout, stderr)
+	app.DoctorApproverCheck = checkApproverHealth
 	return app.Run(context.Background(), args)
+}
+
+func checkApproverHealth(ctx context.Context) error {
+	return (approval.ProcessApproverLauncher{}).CheckHealth(ctx)
 }
 
 func writeErrorf(stderr io.Writer, format string, args ...any) {
