@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -141,11 +142,15 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
+	readTimeouts := make(chan time.Duration, 8)
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
 		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 		ReadTimeout:   20 * time.Millisecond,
+		beforeRead: func(timeout time.Duration) {
+			readTimeouts <- timeout
+		},
 	})
 	defer stop()
 
@@ -164,8 +169,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	if err := client.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 4321); err != nil {
 		t.Fatalf("ReportStarted returned error: %v", err)
 	}
-
-	time.Sleep(60 * time.Millisecond)
+	waitForReadTimeout(t, readTimeouts, 0)
 
 	if err := client.ReportCompleted(context.Background(), testCorrelation("req_1", "nonce_1"), 0, ""); err != nil {
 		t.Fatalf("ReportCompleted returned error after protocol read timeout: %v", err)
@@ -402,6 +406,8 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
+	events, unsubscribe := aud.Subscribe()
+	defer unsubscribe()
 	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
@@ -416,16 +422,7 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	}
 	_ = client.Close()
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		for _, event := range aud.Events() {
-			if event.Type == audit.EventExecClientDisconnectedAfterPayload {
-				return
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("disconnect audit was not recorded: %+v", aud.Events())
+	_ = receiveAuditEvent(t, aud, events, audit.EventExecClientDisconnectedAfterPayload, "req_1")
 }
 
 func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
@@ -436,6 +433,8 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	req.ReusableUses = 1
 	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
 	aud := &callbackAudit{}
+	events, unsubscribe := aud.Subscribe()
+	defer unsubscribe()
 	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
@@ -470,7 +469,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	firstConn = conn
 	connMu.Unlock()
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
-	waitForAuditEvent(t, &aud.memoryAudit, audit.EventCommandStarting, "req_1")
+	waitForAuditEvent(t, &aud.memoryAudit, events, audit.EventCommandStarting, "req_1")
 
 	secondConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
@@ -556,6 +555,8 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
+	events, unsubscribe := aud.Subscribe()
+	defer unsubscribe()
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
 	path, stop := startRawTestServer(t, daemonbroker.Options{
@@ -593,7 +594,7 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	}
 
 	_ = conn.Close()
-	event := waitForAuditEvent(t, aud, audit.EventExecClientDisconnectedAfterPayload, "req_1")
+	event := waitForAuditEvent(t, aud, events, audit.EventExecClientDisconnectedAfterPayload, "req_1")
 	if event.RequestID != "req_1" {
 		t.Fatalf("disconnect request id = %q, want req_1", event.RequestID)
 	}
@@ -615,6 +616,8 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
+	events, unsubscribe := aud.Subscribe()
+	defer unsubscribe()
 	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): canarySecretValue}},
@@ -632,20 +635,11 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 	}
 	_ = client.Close()
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		for _, event := range aud.Events() {
-			if event.Type == audit.EventExecClientDisconnectedAfterStart {
-				if event.ChildPID == nil || *event.ChildPID != 4321 {
-					t.Fatalf("disconnect child pid = %v, want 4321", event.ChildPID)
-				}
-				assertAuditEventsValueFree(t, aud.Events())
-				return
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
+	event := receiveAuditEvent(t, aud, events, audit.EventExecClientDisconnectedAfterStart, "req_1")
+	if event.ChildPID == nil || *event.ChildPID != 4321 {
+		t.Fatalf("disconnect child pid = %v, want 4321", event.ChildPID)
 	}
-	t.Fatalf("post-start disconnect audit was not recorded: %+v", aud.Events())
+	assertAuditEventsValueFree(t, aud.Events())
 }
 
 func TestServerDaemonStopTerminatesListener(t *testing.T) {
@@ -867,12 +861,16 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
+	readTimeouts := make(chan time.Duration, 8)
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        broker,
 		Approvals:     approver,
 		Validator:     staticPeerValidator{info: peer},
 		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 		ReadTimeout:   20 * time.Millisecond,
+		beforeRead: func(timeout time.Duration) {
+			readTimeouts <- timeout
+		},
 	})
 	defer stop()
 
@@ -900,8 +898,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	appClient := control.NewClient(appConn)
 	defer func() { _ = appClient.Close() }()
 	pending := fetchPendingApprovalOrExecError(t, appClient, execErr)
-
-	time.Sleep(60 * time.Millisecond)
+	waitForReadTimeoutLongerThan(t, readTimeouts, 20*time.Millisecond)
 
 	if err := appClient.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
@@ -1319,30 +1316,27 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 
 func fetchPendingApprovalOrExecError(t *testing.T, client *control.Client, execErr <-chan error) approval.ApprovalRequestPayload {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+
+	for {
 		select {
 		case err := <-execErr:
 			t.Fatalf("RequestExec returned before pending approval: %v", err)
+		case <-timeout.C:
+			t.Fatal("timed out waiting for pending approval")
 		default:
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		pending, err := client.FetchPendingApproval(ctx)
-		cancel()
+
+		pending, err := client.FetchPendingApproval(context.Background())
 		if err == nil {
 			return pending
 		}
-		if !pendingApprovalFetchRetryable(err) {
+		if !control.IsProtocolError(err, protocol.ErrorCodeNoPendingApproval) {
 			t.Fatalf("FetchPendingApproval returned error: %v", err)
 		}
-		time.Sleep(time.Millisecond)
+		runtime.Gosched()
 	}
-	t.Fatal("timed out waiting for pending approval")
-	return approval.ApprovalRequestPayload{}
-}
-
-func pendingApprovalFetchRetryable(err error) bool {
-	return control.IsProtocolError(err, protocol.ErrorCodeNoPendingApproval) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func startTestServer(t *testing.T, opts daemonbroker.Options) (*control.Client, func()) {
@@ -1497,22 +1491,76 @@ func readRawEnvelope(t *testing.T, decoder *json.Decoder) protocol.Envelope {
 func waitForAuditEvent(
 	t *testing.T,
 	aud *memoryAudit,
+	events <-chan audit.Event,
 	eventType audit.EventType,
 	requestID string,
 ) audit.Event {
 	t.Helper()
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		for _, event := range aud.Events() {
+	for _, event := range aud.Events() {
+		if event.Type == eventType && event.RequestID == requestID {
+			return event
+		}
+	}
+	return receiveAuditEvent(t, aud, events, eventType, requestID)
+}
+
+func receiveAuditEvent(
+	t *testing.T,
+	aud *memoryAudit,
+	events <-chan audit.Event,
+	eventType audit.EventType,
+	requestID string,
+) audit.Event {
+	t.Helper()
+
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case event := <-events:
 			if event.Type == eventType && event.RequestID == requestID {
 				return event
 			}
+		case <-timeout.C:
+			t.Fatalf("audit event %s for request %s was not recorded: %+v", eventType, requestID, aud.Events())
+			return audit.Event{}
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("audit event %s for request %s was not recorded: %+v", eventType, requestID, aud.Events())
-	return audit.Event{}
+}
+
+func waitForReadTimeout(t *testing.T, timeouts <-chan time.Duration, want time.Duration) {
+	t.Helper()
+
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case got := <-timeouts:
+			if got == want {
+				return
+			}
+		case <-timeout.C:
+			t.Fatalf("read timeout %s was not observed", want)
+		}
+	}
+}
+
+func waitForReadTimeoutLongerThan(t *testing.T, timeouts <-chan time.Duration, floor time.Duration) {
+	t.Helper()
+
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case got := <-timeouts:
+			if got > floor {
+				return
+			}
+		case <-timeout.C:
+			t.Fatalf("read timeout longer than %s was not observed", floor)
+		}
+	}
 }
 
 func writeExecutableAt(t *testing.T, dir string, name string) string {

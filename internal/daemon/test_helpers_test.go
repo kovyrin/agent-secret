@@ -94,11 +94,12 @@ func resolverCallKey(ref string, account string) string {
 }
 
 type memoryAudit struct {
-	mu        sync.Mutex
-	err       error
-	errByType map[audit.EventType]error
-	events    []audit.Event
-	reuses    []policy.ReuseAuditEvent
+	mu          sync.Mutex
+	err         error
+	errByType   map[audit.EventType]error
+	events      []audit.Event
+	reuses      []policy.ReuseAuditEvent
+	subscribers []chan audit.Event
 }
 
 func (m *memoryAudit) Record(_ context.Context, event audit.Event) error {
@@ -111,6 +112,12 @@ func (m *memoryAudit) Record(_ context.Context, event audit.Event) error {
 		return err
 	}
 	m.events = append(m.events, event)
+	for _, subscriber := range m.subscribers {
+		select {
+		case subscriber <- event:
+		default:
+		}
+	}
 	return nil
 }
 
@@ -153,6 +160,25 @@ func (m *memoryAudit) Reuses() []policy.ReuseAuditEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.reuses)
+}
+
+func (m *memoryAudit) Subscribe() (<-chan audit.Event, func()) {
+	ch := make(chan audit.Event, 64)
+	m.mu.Lock()
+	m.subscribers = append(m.subscribers, ch)
+	m.mu.Unlock()
+
+	unsubscribe := func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for i, subscriber := range m.subscribers {
+			if subscriber == ch {
+				m.subscribers = append(m.subscribers[:i], m.subscribers[i+1:]...)
+				return
+			}
+		}
+	}
+	return ch, unsubscribe
 }
 
 func newTestBroker(t *testing.T, opts daemonbroker.Options) *daemonbroker.Broker {

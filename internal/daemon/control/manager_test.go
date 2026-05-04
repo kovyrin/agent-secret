@@ -140,7 +140,9 @@ func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	if err := manager.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop returned error: %v", err)
 	}
-	waitForStatusFailure(t, manager)
+	if _, err := manager.Status(context.Background()); err == nil {
+		t.Fatal("daemon still responded after stop")
+	}
 }
 
 func readManagerHelperOutput(t *testing.T, path string) string {
@@ -199,18 +201,6 @@ func runDaemonManagerHelper(t *testing.T) {
 		os.Exit(70)
 	}
 	os.Exit(0)
-}
-
-func waitForStatusFailure(t *testing.T, manager Manager) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := manager.Status(context.Background()); err != nil {
-			return
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	t.Fatal("daemon still responded after stop")
 }
 
 func TestManagerStatusUnavailableAcceptsOnlyUnavailableDaemon(t *testing.T) {

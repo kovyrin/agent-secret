@@ -50,6 +50,7 @@ type Server struct {
 	execValidator           peertrust.ExecValidator
 	maxFrameBytes           int64
 	readTimeout             time.Duration
+	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func()
 	stopOnce                sync.Once
 	stop                    chan struct{}
@@ -62,6 +63,7 @@ type ServerOptions struct {
 	ExecValidator           peertrust.ExecValidator
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
+	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func()
 }
 
@@ -96,6 +98,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		execValidator:           execValidator,
 		maxFrameBytes:           maxFrameBytes,
 		readTimeout:             readTimeout,
+		beforeRead:              opts.beforeRead,
 		beforeExecResponseWrite: opts.beforeExecResponseWrite,
 		stop:                    make(chan struct{}),
 	}, nil
@@ -420,6 +423,9 @@ func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
 }
 
 func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader, timeout time.Duration) (protocol.Envelope, error) {
+	if s.beforeRead != nil {
+		s.beforeRead(timeout)
+	}
 	if timeout > 0 {
 		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 			return protocol.Envelope{}, fmt.Errorf("set daemon read deadline: %w", err)

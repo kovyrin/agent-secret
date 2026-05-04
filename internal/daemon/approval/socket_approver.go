@@ -321,7 +321,7 @@ func (a *SocketApprover) activeWhenExpectedReady(ctx context.Context) (*approval
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	for a.active != nil && !a.active.expectedReady {
+	for (a.active == nil && len(a.queue) > 0) || (a.active != nil && !a.active.expectedReady) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

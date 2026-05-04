@@ -155,26 +155,22 @@ func TestClientRoundTripUsesDefaultDeadlineWithoutCallerDeadline(t *testing.T) {
 	}
 }
 
-func TestClientRequestExecDefaultDeadlineAllowsApprovalWaitUntilRequestExpiry(t *testing.T) {
+func TestClientRequestExecDefaultDeadlineUsesRequestExpiry(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
-		time.Sleep(60 * time.Millisecond)
-		return execResponseFrame(t, env, protocol.ExecResponsePayload{
-			Env:           map[string]string{"TOKEN": "value"},
-			SecretAliases: []string{"TOKEN"},
-		})
-	})
-	defer cleanup()
-	client.DefaultTimeout = 25 * time.Millisecond
-
+	defaultTimeout := 25 * time.Millisecond
+	client := &Client{DefaultTimeout: defaultTimeout}
 	req := testExecRequestAt(t, time.Now(), []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	got, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
-	if err != nil {
-		t.Fatalf("RequestExec returned error before request expiry: %v", err)
+	ctx, cancel := client.contextWithDefaultDeadline(context.Background(), protocol.TypeRequestExec, req)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("RequestExec context did not receive a deadline")
 	}
-	if got.Env["TOKEN"] != "value" {
-		t.Fatalf("exec response env = %+v", got.Env)
+	want := req.ExpiresAt.Add(defaultTimeout)
+	if !deadline.Equal(want) {
+		t.Fatalf("RequestExec deadline = %s, want %s", deadline, want)
 	}
 }
 

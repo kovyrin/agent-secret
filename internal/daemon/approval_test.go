@@ -482,8 +482,9 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 
 	exe := currentExecutable(t)
 	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
-	approver := newSocketApproverForTest(t, launcher, time.Now)
-	req := approvalTestRequest(t, time.Now().Add(20*time.Millisecond))
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	approver := newSocketApproverForTest(t, launcher, func() time.Time { return now })
+	req := approvalTestRequest(t, now)
 
 	_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, approval.ErrRequestExpired) {
@@ -916,27 +917,34 @@ func readFixture(t *testing.T, name string) []byte {
 
 func fetchPendingForTest(t *testing.T, approver *approval.SocketApprover, peer peercred.Info) approval.ApprovalRequestPayload {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
+
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		payload, err := approver.FetchPending(ctx, peer)
 		cancel()
 		if err == nil {
 			return payload
 		}
-		if !pendingFetchRetryable(err) {
+		if !errors.Is(err, approval.ErrNoPendingApproval) && !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("FetchPending returned error: %v", err)
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-timeout.C:
+			t.Fatal("timed out waiting for pending approval")
+		default:
+			runtime.Gosched()
+		}
 	}
-	t.Fatal("timed out waiting for pending approval")
-	return approval.ApprovalRequestPayload{}
 }
 
 func fetchPendingErrorForTest(t *testing.T, approver *approval.SocketApprover, peer peercred.Info, want error) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
+
+	timeout := time.NewTimer(time.Second)
+	defer timeout.Stop()
+	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		_, err := approver.FetchPending(ctx, peer)
 		cancel()
@@ -946,16 +954,16 @@ func fetchPendingErrorForTest(t *testing.T, approver *approval.SocketApprover, p
 		if err == nil {
 			t.Fatalf("FetchPending returned nil, want %v", want)
 		}
-		if !pendingFetchRetryable(err) {
+		if !errors.Is(err, approval.ErrNoPendingApproval) && !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("FetchPending returned error = %v, want %v", err, want)
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-timeout.C:
+			t.Fatalf("timed out waiting for FetchPending error %v", want)
+		default:
+			runtime.Gosched()
+		}
 	}
-	t.Fatalf("timed out waiting for FetchPending error %v", want)
-}
-
-func pendingFetchRetryable(err error) bool {
-	return errors.Is(err, approval.ErrNoPendingApproval) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func receiveApprovalSignal(t *testing.T, ch <-chan struct{}, message string) {
