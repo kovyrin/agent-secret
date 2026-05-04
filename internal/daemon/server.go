@@ -76,6 +76,62 @@ var (
 	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
 )
 
+type connectionState struct {
+	defaultReadTimeout time.Duration
+	nextReadTimeout    time.Duration
+	activeRequestID    string
+	commandStarted     bool
+}
+
+func newConnectionState(readTimeout time.Duration) connectionState {
+	return connectionState{defaultReadTimeout: readTimeout, nextReadTimeout: readTimeout}
+}
+
+func (s *connectionState) readTimeout() time.Duration {
+	return s.nextReadTimeout
+}
+
+func (s *connectionState) resetReadTimeout() {
+	if s.commandStarted {
+		s.nextReadTimeout = 0
+		return
+	}
+	s.nextReadTimeout = s.defaultReadTimeout
+}
+
+func (s *connectionState) waitForApprovalDecision(timeout time.Duration) {
+	s.nextReadTimeout = timeout
+}
+
+func (s *connectionState) beginExec(requestID string) {
+	s.activeRequestID = requestID
+	s.commandStarted = false
+	s.nextReadTimeout = s.defaultReadTimeout
+}
+
+func (s *connectionState) markStarted() {
+	s.commandStarted = true
+	s.nextReadTimeout = 0
+}
+
+func (s *connectionState) markCompleted() {
+	s.activeRequestID = ""
+	s.commandStarted = false
+	s.nextReadTimeout = s.defaultReadTimeout
+}
+
+func (s *connectionState) hasActiveRequest() bool {
+	return s.activeRequestID != ""
+}
+
+func (s *connectionState) matchesRequest(requestID string) bool {
+	return s.activeRequestID != "" && requestID == s.activeRequestID
+}
+
+func (s *connectionState) disconnectRequestID() string {
+	return s.activeRequestID
+}
+
 func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Broker == nil {
 		return nil, errors.New("broker is required")
@@ -168,14 +224,12 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 
 	reader := bufio.NewReader(conn)
 	encoder := json.NewEncoder(conn)
-	activeRequestID := ""
-	commandStarted := false
-	nextReadTimeout := s.readTimeout
+	state := newConnectionState(s.readTimeout)
 	for {
-		env, err := s.readEnvelope(conn, reader, nextReadTimeout)
+		env, err := s.readEnvelope(conn, reader, state.readTimeout())
 		if err != nil {
-			if activeRequestID != "" {
-				s.broker.ClientDisconnected(ctx, activeRequestID)
+			if requestID := state.disconnectRequestID(); requestID != "" {
+				s.broker.ClientDisconnected(ctx, requestID)
 			}
 			if errors.Is(err, protocol.ErrProtocolFrameSize) {
 				_ = writeErrorEncoder(encoder, protocol.Correlation{}, protocol.ErrorCodeFrameTooLarge, err)
@@ -193,10 +247,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			return
 		}
 
-		nextReadTimeout = s.readTimeout
-		if commandStarted {
-			nextReadTimeout = 0
-		}
+		state.resetReadTimeout()
 
 		//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 		switch env.Type {
@@ -208,7 +259,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 		case protocol.TypeApprovalPending:
 			if payload, ok := s.handleApprovalPending(ctx, conn, encoder, env); ok {
-				nextReadTimeout = s.approvalDecisionReadTimeout(payload.ExpiresAt)
+				state.waitForApprovalDecision(s.approvalDecisionReadTimeout(payload.ExpiresAt))
 			}
 		case protocol.TypeApprovalDecision:
 			if s.approvals == nil {
@@ -231,31 +282,26 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 			_ = writeOK(encoder, env.Correlation(), nil)
 		case protocol.TypeRequestExec:
-			if activeRequestID != "" {
+			if state.hasActiveRequest() {
 				_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
 				continue
 			}
 			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
-				activeRequestID = requestID
-				commandStarted = false
-				nextReadTimeout = s.readTimeout
+				state.beginExec(requestID)
 			}
 		case protocol.TypeCommandStarted:
-			if !s.lifecycleRequestMatchesConnection(encoder, env, activeRequestID) {
+			if !s.lifecycleRequestMatchesConnection(encoder, env, &state) {
 				continue
 			}
 			if s.handleCommandStarted(ctx, conn, encoder, env) {
-				commandStarted = true
-				nextReadTimeout = 0
+				state.markStarted()
 			}
 		case protocol.TypeCommandCompleted:
-			if !s.lifecycleRequestMatchesConnection(encoder, env, activeRequestID) {
+			if !s.lifecycleRequestMatchesConnection(encoder, env, &state) {
 				continue
 			}
 			if s.handleCommandCompleted(ctx, conn, encoder, env) {
-				activeRequestID = ""
-				commandStarted = false
-				nextReadTimeout = s.readTimeout
+				state.markCompleted()
 			}
 		default:
 			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
@@ -278,9 +324,9 @@ func (s *Server) handleStatusRequest(ctx context.Context, encoder *json.Encoder,
 func (s *Server) lifecycleRequestMatchesConnection(
 	encoder *json.Encoder,
 	env protocol.Envelope,
-	activeRequestID string,
+	state *connectionState,
 ) bool {
-	if activeRequestID != "" && env.RequestID == activeRequestID {
+	if state.matchesRequest(env.RequestID) {
 		return true
 	}
 	_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(protocol.ErrInvalidNonce), protocol.ErrInvalidNonce)
