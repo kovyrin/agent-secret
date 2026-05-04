@@ -405,7 +405,6 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
-	wroteResponse := false
 	_, err = s.broker.HandleExecDelivery(ctx, env.Correlation(), req, func(
 		payload protocol.ExecResponsePayload,
 		expiresAt time.Time,
@@ -425,15 +424,11 @@ func (s *Server) handleRequestExec(
 		if err := writeOK(encoder, env.Correlation(), payload); err != nil {
 			return err
 		}
-		wroteResponse = true
 		return nil
 	})
 	if err != nil {
-		if !wroteResponse {
-			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-			return ""
-		}
-		return env.RequestID
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
 	}
 	return env.RequestID
 }
