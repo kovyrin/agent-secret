@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.3] - Pending
+
+### Fixed
+
+- The setup app now renders the shell PATH command in a dark selectable
+  monospace block instead of plain alert text.
+
 ## [0.0.2] - 2026-05-04
 
 Follow-up macOS install UX release for clean-machine CLI setup.
