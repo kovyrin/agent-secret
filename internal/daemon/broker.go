@@ -68,7 +68,7 @@ type Broker struct {
 type execDelivery struct {
 	broker    *Broker
 	requestID string
-	delivery  grantDelivery
+	grant     ExecGrant
 	payload   protocol.ExecResponsePayload
 	expiresAt time.Time
 }
@@ -148,7 +148,7 @@ func (b *Broker) handleExecDelivery(
 	return execDelivery{
 		broker:    b,
 		requestID: correlation.RequestID,
-		delivery:  grant.delivery,
+		grant:     grant,
 		payload: protocol.ExecResponsePayload{
 			Env:           grant.Env,
 			SecretAliases: grant.SecretAliases,
@@ -159,7 +159,7 @@ func (b *Broker) handleExecDelivery(
 
 func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time) error) error {
 	writeErr := write(d.payload, d.expiresAt)
-	if err := d.delivery.completePayloadWrite(writeErr == nil); err != nil {
+	if err := d.broker.grants.completePayloadWrite(d.grant, writeErr == nil); err != nil {
 		d.broker.removeActiveExec(d.requestID)
 		return err
 	}

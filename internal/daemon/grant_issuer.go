@@ -30,7 +30,6 @@ type ExecGrant struct {
 }
 
 type grantDelivery struct {
-	issuer  *grantIssuer
 	attempt reusableGrantAttempt
 }
 
@@ -63,38 +62,35 @@ func newGrantIssuer(
 }
 
 func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
-	return grantDelivery{issuer: g, attempt: attempt}
+	return grantDelivery{attempt: attempt}
 }
 
-func (d grantDelivery) completePayloadWrite(written bool) error {
+func (g *grantIssuer) completePayloadWrite(grant ExecGrant, written bool) error {
 	if written {
-		return d.complete(policy.DeliveryPayloadDelivered)
+		return g.completeDelivery(grant.delivery, policy.DeliveryPayloadDelivered)
 	}
-	_ = d.complete(policy.DeliveryPrePayloadFailure)
+	_ = g.completeDelivery(grant.delivery, policy.DeliveryPrePayloadFailure)
 	return nil
 }
 
-func (d grantDelivery) complete(result policy.DeliveryResult) error {
-	if d.issuer == nil || d.attempt.approvalID == "" {
+func (g *grantIssuer) completeDelivery(delivery grantDelivery, result policy.DeliveryResult) error {
+	if delivery.attempt.approvalID == "" {
 		return nil
 	}
 	if result == policy.DeliveryPayloadDelivered {
-		if err := d.issuer.reusable.ensureApprovalActive(d.attempt.approvalID, d.attempt.expiresAt); err != nil {
+		if err := g.reusable.ensureApprovalActive(delivery.attempt.approvalID, delivery.attempt.expiresAt); err != nil {
 			return err
 		}
 	}
-	return d.issuer.reusable.finishDelivery(d.attempt.approvalID, result)
+	return g.reusable.finishDelivery(delivery.attempt.approvalID, result)
 }
 
-func (d grantDelivery) rollback() {
-	if d.issuer == nil {
+func (g *grantIssuer) rollbackDelivery(delivery grantDelivery) {
+	if delivery.attempt.mutationID != "" {
+		g.reusable.rollbackApproval(delivery.attempt.mutationID)
 		return
 	}
-	if d.attempt.mutationID != "" {
-		d.issuer.reusable.rollbackApproval(d.attempt.mutationID)
-		return
-	}
-	_ = d.complete(policy.DeliveryPrePayloadFailure)
+	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
 }
 
 func (d grantDelivery) approvalID() string {
@@ -125,18 +121,18 @@ func (g *grantIssuer) issue(
 		}
 	}
 	if err := g.ensureGrantStillActive(ctx, req, grant.delivery.approvalID(), grant.delivery.expiresAt()); err != nil {
-		grant.delivery.rollback()
+		g.rollbackDelivery(grant.delivery)
 		return ExecGrant{}, err
 	}
 	grant.deliveryExpiresAt = grantDeliveryExpiresAt(req, grant.delivery.expiresAt())
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, correlation.RequestID, req)
 	if err := g.recordRequiredAudit(ctx, event); err != nil {
-		grant.delivery.rollback()
+		g.rollbackDelivery(grant.delivery)
 		return ExecGrant{}, err
 	}
 	if err := g.ensureGrantStillActive(ctx, req, grant.delivery.approvalID(), grant.delivery.expiresAt()); err != nil {
-		grant.delivery.rollback()
+		g.rollbackDelivery(grant.delivery)
 		return ExecGrant{}, err
 	}
 
@@ -209,7 +205,7 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 	delivered := false
 	defer func() {
 		if !delivered {
-			_ = delivery.complete(policy.DeliveryPrePayloadFailure)
+			_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
 		}
 	}()
 	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {
