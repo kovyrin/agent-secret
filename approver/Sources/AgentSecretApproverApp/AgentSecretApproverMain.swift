@@ -22,6 +22,8 @@ private enum AgentSecretApproverMain {
                 clientFactory: { try SocketDaemonClient(socketPath: socketPath) },
                 presenter: presenter
             )
+            let terminationGuard = AutomaticTerminationGuard(reason: "Agent Secret approval in progress")
+            defer { terminationGuard.invalidate() }
             _ = try await controller.run()
         } catch {
             FileHandle.standardError.write(Data("Agent Secret: \(error)\n".utf8))

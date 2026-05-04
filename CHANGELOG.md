@@ -56,3 +56,8 @@ local app, CLI, daemon, and bundled coding-agent skill.
   test output, and release documentation.
 - Release signing credentials are loaded from GitHub Actions secrets into a
   temporary CI keychain that is deleted after the release artifact job.
+
+### Fixed
+
+- Native approval decisions stay alive long enough to submit after the approval
+  window closes.
