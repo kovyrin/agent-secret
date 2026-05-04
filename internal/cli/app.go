@@ -14,6 +14,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
@@ -24,7 +25,7 @@ import (
 
 type App struct {
 	Parser                 Parser
-	Manager                daemon.Manager
+	Manager                control.Manager
 	InstallCLI             func(install.CLIOptions) (install.CLIResult, error)
 	InstallSkill           func(install.SkillOptions) (install.SkillResult, error)
 	RandomReader           io.Reader
@@ -34,7 +35,7 @@ type App struct {
 	Stderr                 io.Writer
 }
 
-func NewApp(manager daemon.Manager, stdout io.Writer, stderr io.Writer) App {
+func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
 	if stdout == nil {
 		stdout = os.Stdout
 	}

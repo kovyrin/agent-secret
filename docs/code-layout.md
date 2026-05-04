@@ -48,9 +48,10 @@ examples, and future public documentation stable.
 ## Go Package Boundaries
 
 `cmd/agent-secret` is a thin entrypoint over `internal/cli`. The CLI parses
-requests, starts `agent-secretd` on demand through `daemon.Manager`, asks the
-daemon for approved environment payloads, and then uses `execwrap` to spawn and
-audit the wrapped child process. The CLI does not resolve 1Password values.
+requests, starts `agent-secretd` on demand through `daemon/control.Manager`,
+asks the daemon for approved environment payloads, and then uses `execwrap` to
+spawn and audit the wrapped child process. The CLI does not resolve 1Password
+values.
 
 `cmd/agent-secretd` wires the daemon runtime: audit writer, approver launcher,
 peer executable trust validation, and lazy 1Password resolver construction. The
@@ -58,12 +59,12 @@ daemon owns approval ordering, reusable approval/cache state, socket request
 handling, 1Password fetches after approval, and metadata-only audit events.
 
 `internal/daemon` is the daemon orchestration package. Its root package owns the
-server loop, daemon manager, broker, reusable grant issuer, and stop/status
-handlers. Narrow subpackages own distinct daemon boundaries: `approval` handles
-approver IPC, `peertrust` validates trusted CLI and daemon peers, `process`
-owns daemon launch commands, `protocol` defines wire envelopes, `socket` owns
-Unix socket paths and listeners, and `trust` wraps platform signature/plist
-checks.
+server loop, broker, reusable grant issuer, and stop/status handlers. Narrow
+subpackages own distinct daemon boundaries: `approval` handles approver IPC,
+`control` manages CLI-side daemon start/status/stop flows, `peertrust`
+validates trusted CLI and daemon peers, `process` owns daemon launch commands,
+`protocol` defines wire envelopes, `socket` owns Unix socket paths and
+listeners, and `trust` wraps platform signature/plist checks.
 
 `internal/request` defines the value-free request model shared by CLI, daemon,
 policy, audit, and protocol code. It parses and validates `op://` reference

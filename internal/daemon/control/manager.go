@@ -1,4 +1,4 @@
-package daemon
+package control
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -36,7 +36,7 @@ func NewManager(socketPath string) (Manager, error) {
 			return Manager{}, err
 		}
 	}
-	daemonPath, err := defaultDaemonPath()
+	daemonPath, err := daemonprocess.DefaultDaemonPath()
 	if err != nil {
 		return Manager{}, err
 	}
@@ -145,8 +145,8 @@ func (m Manager) Stop(ctx context.Context) error {
 	return fmt.Errorf("%w: daemon still responds after stop", ErrDaemonStillRunning)
 }
 
-func (m Manager) Connect(ctx context.Context) (*Client, error) {
-	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(m.trustedDaemonPaths()))
+func (m Manager) Connect(ctx context.Context) (*daemon.Client, error) {
+	client, err := daemon.ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(m.trustedDaemonPaths()))
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (m Manager) trustedDaemonPaths() []string {
 	daemonPath := m.DaemonPath
 	if daemonPath == "" {
 		var err error
-		daemonPath, err = defaultDaemonPath()
+		daemonPath, err = daemonprocess.DefaultDaemonPath()
 		if err != nil {
 			return nil
 		}
@@ -198,7 +198,7 @@ func (m Manager) protocolTimeout() time.Duration {
 	if m.ProtocolTimeout > 0 {
 		return m.ProtocolTimeout
 	}
-	return DefaultClientProtocolTimeout
+	return daemon.DefaultClientProtocolTimeout
 }
 
 func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
@@ -221,16 +221,4 @@ func (m Manager) daemonArgs() []string {
 		args = append(args, strings.ReplaceAll(arg, "{socket}", m.SocketPath))
 	}
 	return args
-}
-
-func defaultDaemonPath() (string, error) {
-	if appPath, ok := daemonprocess.DefaultDaemonAppPath(); ok {
-		return appPath, nil
-	}
-
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("get current executable: %w", err)
-	}
-	return filepath.Join(filepath.Dir(exe), "agent-secretd"), nil
 }

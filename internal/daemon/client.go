@@ -12,6 +12,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
+	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -68,7 +69,7 @@ func validateDaemonPeer(conn *net.UnixConn, validator peertrust.DaemonPeerValida
 }
 
 func defaultTrustedDaemonPaths() ([]string, error) {
-	daemonPath, err := defaultDaemonPath()
+	daemonPath, err := daemonprocess.DefaultDaemonPath()
 	if err != nil {
 		return nil, err
 	}

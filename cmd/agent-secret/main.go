@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/kovyrin/agent-secret/internal/cli"
-	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 )
 
@@ -21,7 +21,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	manager, err := daemon.NewManager("")
+	manager, err := control.NewManager("")
 	if err != nil {
 		writeErrorf(stderr, "agent-secret: initialize daemon manager: %v\n", err)
 		return 1

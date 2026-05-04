@@ -73,22 +73,6 @@ func TestConnectRejectsUntrustedDaemonBeforeExecPayload(t *testing.T) {
 	}
 }
 
-func TestManagerStatusRejectsUntrustedDaemonPeer(t *testing.T) {
-	t.Parallel()
-
-	path, stop := startFakeExecDaemon(t)
-	defer stop()
-	manager := Manager{
-		SocketPath: path,
-		DaemonPath: writeExecutableAt(t, t.TempDir(), "agent-secretd"),
-	}
-
-	_, err := manager.Status(context.Background())
-	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
-		t.Fatalf("Status error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
-	}
-}
-
 func TestTrustedDaemonPathsForAppUseBundleExecutable(t *testing.T) {
 	t.Parallel()
 

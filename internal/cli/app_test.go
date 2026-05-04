@@ -18,6 +18,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -216,7 +217,7 @@ func TestAppDaemonStatusUsesDefaultProtocolDeadline(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{
+	app := NewApp(control.Manager{
 		SocketPath:      client.SocketPath,
 		DaemonPath:      os.Args[0],
 		ProtocolTimeout: 25 * time.Millisecond,
@@ -334,7 +335,7 @@ func runInstallCommandTest(t *testing.T, args []string, configure func(*App), st
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{}, &stdout, &stderr)
+	app := NewApp(control.Manager{}, &stdout, &stderr)
 	configure(&app)
 
 	code := app.Run(context.Background(), args)
@@ -349,7 +350,7 @@ func runInstallCommandTest(t *testing.T, args []string, configure func(*App), st
 func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}, &stdout, &stderr)
+	app := NewApp(control.Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}, &stdout, &stderr)
 
 	if code := app.Run(context.Background(), []string{"bananas"}); code != 2 {
 		t.Fatalf("unknown command exit=%d, want 2", code)
@@ -373,7 +374,7 @@ func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
 func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := NewApp(daemon.Manager{
+	app := NewApp(control.Manager{
 		SocketPath: filepath.Join(t.TempDir(), "missing.sock"),
 	}, &stdout, &stderr)
 
@@ -435,7 +436,7 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 }
 
 func TestNewAppDefaultsWritersAndHelpRun(t *testing.T) {
-	app := NewApp(daemon.Manager{}, nil, nil)
+	app := NewApp(control.Manager{}, nil, nil)
 	if app.Stdout == nil || app.Stderr == nil {
 		t.Fatalf("NewApp did not install default writers: %+v", app)
 	}
@@ -538,8 +539,8 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-func appTestManager(client appTestClient) daemon.Manager {
-	return daemon.Manager{SocketPath: client.SocketPath, DaemonPath: os.Args[0]}
+func appTestManager(client appTestClient) control.Manager {
+	return control.Manager{SocketPath: client.SocketPath, DaemonPath: os.Args[0]}
 }
 
 type appApprover struct {

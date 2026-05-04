@@ -1,27 +1,96 @@
-package daemon
+package control
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/policy"
+	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
 const managerHelperBindUnavailablePrefix = "AGENT_SECRET_DAEMON_MANAGER_HELPER_BIND_UNAVAILABLE:"
+
+type allowPeerValidator struct{}
+
+func (allowPeerValidator) Info(conn *net.UnixConn) (peercred.Info, error) {
+	return peercred.Inspect(conn)
+}
+
+func (allowPeerValidator) Validate(_ *net.UnixConn) error {
+	return nil
+}
+
+type managerApprover struct{}
+
+func (managerApprover) ApproveExec(
+	_ context.Context,
+	_ protocol.Correlation,
+	_ request.ExecRequest,
+) (approval.Decision, error) {
+	return approval.Decision{Approved: true}, nil
+}
+
+type managerResolver struct {
+	values map[string]string
+}
+
+func (r managerResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
+	return r.values[resolverCallKey(ref, account)], nil
+}
+
+type managerAudit struct {
+	mu     sync.Mutex
+	events []audit.Event
+}
+
+func (m *managerAudit) Record(_ context.Context, event audit.Event) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, event)
+	return nil
+}
+
+func (m *managerAudit) ApprovalReused(_ context.Context, _ policy.ReuseAuditEvent) error {
+	return nil
+}
+
+func (m *managerAudit) Preflight(context.Context) error {
+	return nil
+}
+
+func (m *managerAudit) Events() []audit.Event {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.events)
+}
+
+func resolverCallKey(ref string, account string) string {
+	if account == "" {
+		return ref
+	}
+	return ref + "\x00" + account
+}
 
 func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_HELPER") == "1" {
@@ -98,17 +167,17 @@ func runDaemonManagerHelper(t *testing.T) {
 		_, _ = fmt.Fprintln(os.Stderr, "missing --socket")
 		os.Exit(64)
 	}
-	aud := &memoryAudit{}
-	broker, err := NewBroker(BrokerOptions{
-		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
-		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+	aud := &managerAudit{}
+	broker, err := daemon.NewBroker(daemon.BrokerOptions{
+		Approver: managerApprover{},
+		Resolver: managerResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "new broker: %v\n", err)
 		os.Exit(70)
 	}
-	server, err := NewServer(ServerOptions{
+	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
 		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
@@ -173,6 +242,22 @@ func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	}
 	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
 		t.Fatalf("statusUnavailable error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
+	}
+}
+
+func TestManagerStatusRejectsUntrustedDaemonPeer(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startFakeExecDaemon(t)
+	defer stop()
+	manager := Manager{
+		SocketPath: path,
+		DaemonPath: writeExecutableAt(t, t.TempDir(), "agent-secretd"),
+	}
+
+	_, err := manager.Status(context.Background())
+	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		t.Fatalf("Status error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
 	}
 }
 
@@ -359,4 +444,61 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 	if cmd.Path != "/tmp/agent-secretd" {
 		t.Fatalf("daemon command path = %q, want direct binary", cmd.Path)
 	}
+}
+
+func startFakeExecDaemon(t *testing.T) (string, func()) {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-fake-daemon-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	path := filepath.Join(dir, "d.sock")
+	listener, err := socket.ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
+	if err != nil {
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.AcceptUnix()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		serveFakeExecPayload(conn)
+	}()
+	return path, func() {
+		_ = listener.Close()
+		<-done
+		_ = os.RemoveAll(dir)
+	}
+}
+
+func serveFakeExecPayload(conn *net.UnixConn) {
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+	var env protocol.Envelope
+	if err := decoder.Decode(&env); err != nil {
+		return
+	}
+	resp, err := protocol.NewEnvelope(protocol.TypeOK, env.Correlation(), protocol.ExecResponsePayload{
+		Env:           map[string]string{"TOKEN": "attacker-controlled"},
+		SecretAliases: []string{"TOKEN"},
+	})
+	if err != nil {
+		return
+	}
+	if err := encoder.Encode(resp); err != nil {
+		return
+	}
+}
+
+func writeExecutableAt(t *testing.T, dir string, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon control tests need runnable fixture executables.
+		t.Fatalf("write executable: %v", err)
+	}
+	return path
 }

@@ -23,12 +23,24 @@ func StartCommand(ctx context.Context, path string, args []string) *exec.Cmd {
 		}
 		openArgs = append(openArgs, "--args")
 		openArgs = append(openArgs, args...)
-		//nolint:gosec // G204: open path is fixed; app path comes from NewManager defaults or explicit test Manager setup.
+		//nolint:gosec // G204: open path is fixed; app path comes from control.NewManager defaults or explicit test Manager setup.
 		return exec.CommandContext(ctx, "/usr/bin/open", openArgs...)
 	}
 
-	//nolint:gosec // G204: daemon path is not environment-controlled; production NewManager selects bundled/current executable paths.
+	//nolint:gosec // G204: daemon path is not environment-controlled; production control.NewManager selects bundled/current executable paths.
 	return exec.CommandContext(ctx, path, args...)
+}
+
+func DefaultDaemonPath() (string, error) {
+	if appPath, ok := DefaultDaemonAppPath(); ok {
+		return appPath, nil
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), "agent-secretd"), nil
 }
 
 func DefaultDaemonAppPath() (string, bool) {
