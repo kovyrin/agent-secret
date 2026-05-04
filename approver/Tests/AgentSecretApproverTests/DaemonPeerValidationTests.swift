@@ -185,6 +185,27 @@ import XCTest
             }
         }
 
+        func testTrustedDaemonValidatorReportsSkippedCandidateReasons() throws {
+            let missingPath = FileManager.default
+                .temporaryDirectory
+                .appendingPathComponent("missing-agent-secretd-\(UUID().uuidString)")
+                .path
+            let validator = TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [missingPath],
+                expectedTeamID: "-"
+            )
+            let info = try Self.currentPeerInfo()
+
+            XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
+                guard case let .untrustedDaemon(message) = error as? DaemonTrustError else {
+                    return XCTFail("expected untrusted daemon error, got \(error)")
+                }
+                XCTAssertTrue(message.contains("no trusted daemon executables configured"))
+                XCTAssertTrue(message.contains(missingPath))
+                XCTAssertTrue(message.contains("stat trusted daemon executable failed"))
+            }
+        }
+
         func testTrustedDaemonValidatorChecksProcessTeamIDWhenExpected() throws {
             let checker = FakeSignatureChecker()
             let validator = try TrustedDaemonPeerValidator(

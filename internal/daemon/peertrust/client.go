@@ -26,6 +26,7 @@ type executableSet struct {
 	entries           []executable
 	expectedTeamID    string
 	err               error
+	candidateErr      error
 	signatureVerifier trust.CodeSignatureVerifier
 	verifySignature   bool
 }
@@ -65,6 +66,7 @@ func newExecutableSetWithVerifier(
 ) executableSet {
 	seen := make(map[string]struct{}, len(paths))
 	entries := make([]executable, 0, len(paths))
+	var candidateErrs []error
 	for _, path := range paths {
 		path = strings.TrimSpace(path)
 		if path == "" {
@@ -74,11 +76,16 @@ func newExecutableSetWithVerifier(
 		if _, ok := seen[path]; ok {
 			continue
 		}
+		seen[path] = struct{}{}
 		info, err := os.Stat(path)
-		if err != nil || info.IsDir() {
+		if err != nil {
+			candidateErrs = append(candidateErrs, fmt.Errorf("stat trusted executable %q: %w", path, err))
 			continue
 		}
-		seen[path] = struct{}{}
+		if info.IsDir() {
+			candidateErrs = append(candidateErrs, fmt.Errorf("trusted executable %q is a directory", path))
+			continue
+		}
 		entry := executable{
 			path:     path,
 			fileInfo: info,
@@ -92,6 +99,7 @@ func newExecutableSetWithVerifier(
 		entries:           entries,
 		expectedTeamID:    strings.TrimSpace(expectedTeamID),
 		err:               err,
+		candidateErr:      errors.Join(candidateErrs...),
 		signatureVerifier: verifier,
 		verifySignature:   verifySignature,
 	}
@@ -186,6 +194,9 @@ func (v executableSet) validatePeer(info peercred.Info) error {
 		return fmt.Errorf("%w: peer executable path is unavailable", v.err)
 	}
 	if len(v.entries) == 0 {
+		if v.candidateErr != nil {
+			return fmt.Errorf("%w: no trusted executables configured: %w", v.err, v.candidateErr)
+		}
 		return fmt.Errorf("%w: no trusted executables configured", v.err)
 	}
 	got := comparablePath(info.ExecutablePath)

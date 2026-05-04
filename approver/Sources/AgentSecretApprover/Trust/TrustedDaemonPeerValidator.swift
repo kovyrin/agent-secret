@@ -59,6 +59,7 @@ import Foundation
         private let expectedTeamID: String
         private let signatureChecker: DaemonCodeSignatureChecking
         private let trustedExecutables: [TrustedExecutable]
+        private let candidateErrors: [String]
 
         init(
             expectedExecutablePaths: [String],
@@ -68,17 +69,22 @@ import Foundation
             self.expectedTeamID = expectedTeamID.trimmingCharacters(in: .whitespacesAndNewlines)
             self.signatureChecker = signatureChecker
 
+            var candidateErrors: [String] = []
             var seen = Set<String>()
             trustedExecutables = expectedExecutablePaths.compactMap { path in
                 let normalized = Self.comparablePath(path)
                 guard !normalized.isEmpty, seen.insert(normalized).inserted else {
                     return nil
                 }
-                guard let identity = try? FileIdentity(path: normalized) else {
+                do {
+                    let identity = try FileIdentity(path: normalized)
+                    return TrustedExecutable(path: normalized, fileIdentity: identity)
+                } catch {
+                    candidateErrors.append("\(normalized): \(error)")
                     return nil
                 }
-                return TrustedExecutable(path: normalized, fileIdentity: identity)
             }
+            self.candidateErrors = candidateErrors
         }
 
         private static func isInsideAppBundle(_ path: String) -> Bool {
@@ -176,7 +182,11 @@ import Foundation
                 throw DaemonTrustError.untrustedDaemon("daemon executable path is unavailable")
             }
             guard !trustedExecutables.isEmpty else {
-                throw DaemonTrustError.untrustedDaemon("no trusted daemon executables configured")
+                var message = "no trusted daemon executables configured"
+                if !candidateErrors.isEmpty {
+                    message += ": " + candidateErrors.joined(separator: "; ")
+                }
+                throw DaemonTrustError.untrustedDaemon(message)
             }
             guard let trusted = trustedExecutables.first(where: { $0.path == got }) else {
                 throw DaemonTrustError.untrustedDaemon("daemon executable is not trusted")

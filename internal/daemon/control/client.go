@@ -72,7 +72,7 @@ func defaultTrustedDaemonPaths() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return peertrust.DaemonPathsForPath(daemonPath), nil
+	return peertrust.DaemonPathsForPath(daemonPath)
 }
 
 func NewClient(conn *net.UnixConn) *Client {

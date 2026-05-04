@@ -145,7 +145,11 @@ func (m Manager) Stop(ctx context.Context) error {
 }
 
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
-	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(m.trustedDaemonPaths()))
+	trustedPaths, err := m.trustedDaemonPaths()
+	if err != nil {
+		return nil, err
+	}
+	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(trustedPaths))
 	if err != nil {
 		return nil, err
 	}
@@ -181,13 +185,13 @@ func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) err
 	}
 }
 
-func (m Manager) trustedDaemonPaths() []string {
+func (m Manager) trustedDaemonPaths() ([]string, error) {
 	daemonPath := m.DaemonPath
 	if daemonPath == "" {
 		var err error
 		daemonPath, err = daemonprocess.DefaultDaemonPath()
 		if err != nil {
-			return nil
+			return nil, err
 		}
 	}
 	return peertrust.DaemonPathsForPath(daemonPath)

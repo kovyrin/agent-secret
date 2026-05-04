@@ -31,19 +31,19 @@ func newDaemonValidator(paths []string, expectedTeamID string) DaemonValidator {
 	}
 }
 
-func DaemonPathsForPath(path string) []string {
+func DaemonPathsForPath(path string) ([]string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil
+		return nil, nil
 	}
 	if filepath.Ext(path) != ".app" {
-		return []string{path}
+		return []string{path}, nil
 	}
 	executable, err := bundleExecutablePath(path)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return []string{executable}
+	return []string{executable}, nil
 }
 
 func bundleExecutablePath(bundlePath string) (string, error) {
