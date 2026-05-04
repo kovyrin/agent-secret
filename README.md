@@ -291,9 +291,8 @@ By default this installs:
 
 Override the install locations with `--bin-dir`, `--app-dir`,
 `AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
-one-off flags, run `./scripts/dev-install.sh` directly. The dev installer also
-removes the old split-app development artifacts if they are present and repairs
-the command path even when it was left behind as an older regular binary.
+one-off flags, run `./scripts/dev-install.sh` directly. The dev installer
+replaces the app bundle and recreates the command and skill symlinks.
 
 By default, `agent-secret` uses the personal 1Password sign-in address
 `my.1password.com`. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` in the
