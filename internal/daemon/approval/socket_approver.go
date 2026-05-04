@@ -134,6 +134,9 @@ func (a *SocketApprover) SubmitDecision(
 	if decision.RequestID != job.payload.RequestID || decision.Nonce != job.payload.Nonce {
 		return ErrStaleApproval
 	}
+	if err := ValidateDecisionReusableUses(decision, job.payload.ReusableUses); err != nil {
+		return err
+	}
 	switch decision.Decision {
 	case ApprovalDecisionApproveOnce:
 		if a.completeIfExpired(job) {
@@ -143,9 +146,6 @@ func (a *SocketApprover) SubmitDecision(
 	case ApprovalDecisionApproveReusable:
 		if a.completeIfExpired(job) {
 			return nil
-		}
-		if err := ValidateReusableDecisionUses(decision, job.payload.ReusableUses); err != nil {
-			return err
 		}
 		a.complete(job, approvalResult{decision: Decision{
 			Approved:     true,

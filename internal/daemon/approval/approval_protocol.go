@@ -46,24 +46,6 @@ type ApprovalDecisionPayload struct {
 	ReusableUses *int                 `json:"reusable_uses,omitempty"`
 }
 
-func ValidateReusableDecisionUses(decision ApprovalDecisionPayload, expected int) error {
-	if expected <= 0 {
-		return fmt.Errorf("%w: invalid pending reusable use count %d", protocol.ErrMalformedEnvelope, expected)
-	}
-	if decision.ReusableUses == nil {
-		return fmt.Errorf("%w: missing reusable use count", protocol.ErrMalformedEnvelope)
-	}
-	if *decision.ReusableUses != expected {
-		return fmt.Errorf(
-			"%w: reusable use count %d does not match pending request count %d",
-			protocol.ErrMalformedEnvelope,
-			*decision.ReusableUses,
-			expected,
-		)
-	}
-	return nil
-}
-
 func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
 	secrets := make([]ApprovalRequestedSecret, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
@@ -91,4 +73,28 @@ func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest
 		AllowMutableExecutable: req.AllowMutableExecutable,
 		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 	}
+}
+
+func ValidateDecisionReusableUses(decision ApprovalDecisionPayload, expected int) error {
+	if decision.Decision != ApprovalDecisionApproveReusable {
+		if decision.ReusableUses != nil {
+			return fmt.Errorf("%w: reusable use count is only valid for approve_reusable", protocol.ErrMalformedEnvelope)
+		}
+		return nil
+	}
+	if expected <= 0 {
+		return fmt.Errorf("%w: invalid pending reusable use count %d", protocol.ErrMalformedEnvelope, expected)
+	}
+	if decision.ReusableUses == nil {
+		return fmt.Errorf("%w: missing reusable use count", protocol.ErrMalformedEnvelope)
+	}
+	if *decision.ReusableUses != expected {
+		return fmt.Errorf(
+			"%w: reusable use count %d does not match pending request count %d",
+			protocol.ErrMalformedEnvelope,
+			*decision.ReusableUses,
+			expected,
+		)
+	}
+	return nil
 }

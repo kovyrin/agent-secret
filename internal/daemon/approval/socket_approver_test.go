@@ -383,6 +383,62 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 	}
 }
 
+func TestSocketApproverRejectsReusableUseCountOnNonReusableDecisions(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
+	approver := newSocketApproverForTest(t, launcher, time.Now)
+	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	resultCh := make(chan approval.Decision, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- decision
+	}()
+	payload := fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
+	uses := payload.ReusableUses
+	for _, decisionKind := range []approval.ApprovalDecisionKind{
+		approval.ApprovalDecisionApproveOnce,
+		approval.ApprovalDecisionDeny,
+		approval.ApprovalDecisionTimeout,
+	} {
+		err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), approval.ApprovalDecisionPayload{
+			RequestID:    "req_1",
+			Nonce:        "nonce_1",
+			Decision:     decisionKind,
+			ReusableUses: &uses,
+		})
+		if !errors.Is(err, protocol.ErrMalformedEnvelope) {
+			t.Fatalf("SubmitDecision %s reusable count error = %v, want malformed envelope", decisionKind, err)
+		}
+	}
+
+	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), approval.ApprovalDecisionPayload{
+		RequestID: "req_1",
+		Nonce:     "nonce_1",
+		Decision:  approval.ApprovalDecisionApproveOnce,
+	})
+	if err != nil {
+		t.Fatalf("SubmitDecision approve_once returned error: %v", err)
+	}
+
+	select {
+	case decision := <-resultCh:
+		if !decision.Approved || decision.Reusable {
+			t.Fatalf("unexpected approval result: %+v", decision)
+		}
+	case err := <-errCh:
+		t.Fatalf("ApproveExec returned error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for approval result")
+	}
+}
+
 func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	t.Parallel()
 
