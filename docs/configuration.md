@@ -252,8 +252,8 @@ agent-secret install-cli --force
 ```
 
 `install-cli` creates or repairs the user-level `agent-secret` command symlink.
-It refuses to replace any existing path that is not already the target symlink,
-including a symlink to another target, unless `--force` is passed.
+It leaves an existing target symlink in place, refuses directories, and replaces
+an existing regular file or different symlink only when `--force` is passed.
 
 Skill installation:
 
@@ -272,3 +272,6 @@ skill symlink:
 
 The bundled skill covers general usage, project profiles, env-file use, safe
 verification, and migration from direct 1Password CLI access.
+The installer leaves an existing target symlink in place, refuses directories,
+and replaces an existing regular file or different symlink only when `--force`
+is passed.

@@ -446,9 +446,9 @@ agent-secret skill-install
 ```
 
 `agent-secret install-cli` installs or repairs the `agent-secret` symlink for
-the current user. It refuses to replace any existing path that is not already
-the target symlink, including a symlink to another target, unless `--force` is
-passed.
+the current user. It leaves an existing target symlink in place, refuses
+directories, and replaces an existing regular file or different symlink only
+when `--force` is passed.
 
 `agent-secret skill-install` installs or repairs the bundled coding-agent skill
 for the current user:
@@ -462,6 +462,9 @@ agent-secret skill-install --force
 The skill covers general Agent Secret usage, profiles, env files, safe
 verification, and migration from direct 1Password CLI usage. It is bundled in
 the app so upgrades keep the installed skill in sync with the installed CLI.
+The installer leaves an existing target symlink in place, refuses directories,
+and replaces an existing regular file or different symlink only when `--force`
+is passed.
 
 ## Project Profiles
 
