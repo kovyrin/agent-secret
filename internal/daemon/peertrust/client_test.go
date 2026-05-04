@@ -277,6 +277,20 @@ func TestExecutableValidatorSkipsMissingTrustedPath(t *testing.T) {
 	}
 }
 
+func TestClientPathDiscoveryReportsExecutableError(t *testing.T) {
+	executableErr := errors.New("executable unavailable")
+	executable := func() (string, error) {
+		return "", executableErr
+	}
+
+	if _, err := defaultClientPaths(executable); !errors.Is(err, executableErr) {
+		t.Fatalf("defaultClientPaths error = %v, want %v", err, executableErr)
+	}
+	if _, err := currentExecutableClientPaths(executable); !errors.Is(err, executableErr) {
+		t.Fatalf("currentExecutableClientPaths error = %v, want %v", err, executableErr)
+	}
+}
+
 func TestDefaultClientPathsIncludeBundledCLIForDaemonHelper(t *testing.T) {
 	t.Parallel()
 

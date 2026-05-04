@@ -13,6 +13,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
+	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -302,6 +303,15 @@ func currentExecutable(t *testing.T) string {
 		t.Fatalf("os.Executable returned error: %v", err)
 	}
 	return exe
+}
+
+func currentExecutableClientPaths(t *testing.T) []string {
+	t.Helper()
+	paths, err := peertrust.CurrentExecutableClientPaths()
+	if err != nil {
+		t.Fatalf("CurrentExecutableClientPaths returned error: %v", err)
+	}
+	return paths
 }
 
 func peerInfoForTest(t *testing.T, pid int, exe string) peercred.Info {

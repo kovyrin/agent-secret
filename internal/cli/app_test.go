@@ -841,7 +841,7 @@ func startAppTestServer(
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:           broker,
 		Validator:        appAllowPeer{},
-		ExecValidator:    peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		ExecValidator:    peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 		OnePasswordCheck: onePasswordCheck,
 	})
 	if err != nil {
@@ -856,6 +856,15 @@ func startAppTestServer(
 		<-done
 		_ = os.RemoveAll(dir)
 	}
+}
+
+func currentExecutableClientPaths(t *testing.T) []string {
+	t.Helper()
+	paths, err := peertrust.CurrentExecutableClientPaths()
+	if err != nil {
+		t.Fatalf("CurrentExecutableClientPaths returned error: %v", err)
+	}
+	return paths
 }
 
 func startPostStartStoppedAppDaemon(t *testing.T) (appTestClient, <-chan protocol.MessageType, func()) {

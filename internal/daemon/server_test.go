@@ -739,7 +739,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	server, err := NewServer(ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -900,7 +900,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 		Broker:        broker,
 		Approvals:     approver,
 		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 		ReadTimeout:   time.Second,
 		beforeRead: func(timeout time.Duration) {
 			readTimeouts <- timeout
@@ -964,7 +964,7 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 			Audit:    &memoryAudit{},
 		}),
 		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	})
 	defer stop()
 
@@ -1462,7 +1462,7 @@ func startRawServerWithBroker(
 		broker,
 		approvals,
 		validator,
-		peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	)
 }
 

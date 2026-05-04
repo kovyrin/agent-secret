@@ -142,7 +142,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 	execValidator := opts.ExecValidator
 	if execValidator == nil {
-		execValidator = peertrust.NewExecutableValidator(peertrust.DefaultClientPaths())
+		defaultClientPaths, err := peertrust.DefaultClientPaths()
+		if err != nil {
+			return nil, fmt.Errorf("default exec validator trusted clients: %w", err)
+		}
+		execValidator = peertrust.NewExecutableValidator(defaultClientPaths)
 	}
 	onePasswordCheck := opts.OnePasswordCheck
 	if onePasswordCheck == nil {

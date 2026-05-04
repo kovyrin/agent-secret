@@ -178,7 +178,7 @@ func runDaemonManagerHelper(t *testing.T) {
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "new server: %v\n", err)
@@ -210,6 +210,15 @@ func TestManagerStatusUnavailableAcceptsOnlyUnavailableDaemon(t *testing.T) {
 	if !unavailable {
 		t.Fatal("statusUnavailable = false, want true for missing daemon socket")
 	}
+}
+
+func currentExecutableClientPaths(t *testing.T) []string {
+	t.Helper()
+	paths, err := peertrust.CurrentExecutableClientPaths()
+	if err != nil {
+		t.Fatalf("CurrentExecutableClientPaths returned error: %v", err)
+	}
+	return paths
 }
 
 func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {

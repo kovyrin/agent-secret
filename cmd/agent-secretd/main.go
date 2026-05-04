@@ -60,10 +60,15 @@ func run() int {
 		stderrf("agent-secretd: initialize broker: %v\n", err)
 		return 1
 	}
+	defaultClientPaths, err := peertrust.DefaultClientPaths()
+	if err != nil {
+		stderrf("agent-secretd: discover trusted clients: %v\n", err)
+		return 1
+	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:           broker,
 		Approvals:        approver,
-		ExecValidator:    peertrust.NewExecutableValidator(peertrust.DefaultClientPaths()),
+		ExecValidator:    peertrust.NewExecutableValidator(defaultClientPaths),
 		OnePasswordCheck: onePasswordDesktopIntegrationCheck(config.accountName),
 	})
 	if err != nil {

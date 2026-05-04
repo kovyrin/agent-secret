@@ -105,12 +105,16 @@ func newExecutableSetWithVerifier(
 	}
 }
 
-func DefaultClientPaths() []string {
-	exe, err := os.Executable()
+func DefaultClientPaths() ([]string, error) {
+	return defaultClientPaths(os.Executable)
+}
+
+func defaultClientPaths(executable func() (string, error)) ([]string, error) {
+	exe, err := executable()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("discover current executable for default trusted clients: %w", err)
 	}
-	return clientPathsForExecutable(exe)
+	return clientPathsForExecutable(exe), nil
 }
 
 func clientPathsForExecutable(exe string) []string {
@@ -125,12 +129,16 @@ func clientPathsForExecutable(exe string) []string {
 	return paths
 }
 
-func CurrentExecutableClientPaths() []string {
-	exe, err := os.Executable()
+func CurrentExecutableClientPaths() ([]string, error) {
+	return currentExecutableClientPaths(os.Executable)
+}
+
+func currentExecutableClientPaths(executable func() (string, error)) ([]string, error) {
+	exe, err := executable()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("discover current executable for trusted clients: %w", err)
 	}
-	return []string{exe}
+	return []string{exe}, nil
 }
 
 func bundledCLIPathForDaemonExecutable(exe string) (string, bool) {
