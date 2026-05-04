@@ -183,7 +183,7 @@ func TestListenUnixRejectsSymlinkCustomSocketAncestorBeforeMkdirAll(t *testing.T
 	}
 }
 
-func TestValidateDirectoryRejectsSymlinkParent(t *testing.T) {
+func TestValidateSocketDirectoryForPathRejectsSymlinkParent(t *testing.T) {
 	t.Parallel()
 
 	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
@@ -195,13 +195,13 @@ func TestValidateDirectoryRejectsSymlinkParent(t *testing.T) {
 		t.Fatalf("symlink socket dir: %v", err)
 	}
 
-	err := ValidateDirectory(filepath.Join(link, "agent-secretd.sock"))
+	err := ValidateSocketDirectoryForPath(filepath.Join(link, "agent-secretd.sock"))
 	if !errors.Is(err, ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
 }
 
-func TestValidateDirectoryRejectsSymlinkAncestor(t *testing.T) {
+func TestValidateSocketDirectoryForPathRejectsSymlinkAncestor(t *testing.T) {
 	t.Parallel()
 
 	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
@@ -213,7 +213,7 @@ func TestValidateDirectoryRejectsSymlinkAncestor(t *testing.T) {
 		t.Fatalf("symlink socket ancestor: %v", err)
 	}
 
-	err := ValidateDirectory(filepath.Join(link, "nested", "agent-secretd.sock"))
+	err := ValidateSocketDirectoryForPath(filepath.Join(link, "nested", "agent-secretd.sock"))
 	if !errors.Is(err, ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}

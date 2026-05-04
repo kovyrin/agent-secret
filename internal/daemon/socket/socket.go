@@ -52,7 +52,7 @@ func PrepareDirectory(path string) error {
 	return prepareCustomSocketDirectory(filepath.Dir(path))
 }
 
-func ValidateDirectory(path string) error {
+func ValidateSocketDirectoryForPath(path string) error {
 	return rejectInsecureSocketDirectory(filepath.Dir(path))
 }
 

@@ -208,7 +208,7 @@ func (a App) runDoctor(ctx context.Context) int {
 		healthy = false
 		a.stdoutf("daemon: failed (%v)\n", err)
 	}
-	if err := socket.ValidateDirectory(a.Manager.SocketPath); err != nil {
+	if err := socket.ValidateSocketDirectoryForPath(a.Manager.SocketPath); err != nil {
 		healthy = false
 		a.stdoutf("socket directory: failed (%v)\n", err)
 	} else {
