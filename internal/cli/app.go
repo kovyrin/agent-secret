@@ -20,6 +20,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
+	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/randid"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -327,10 +328,14 @@ func (a App) runDoctor(ctx context.Context) int {
 			a.stdoutln("native approver: ok")
 		}
 	}
-	account := opaccount.SelectDesktopAccount(
-		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
-		os.Getenv("OP_ACCOUNT"),
-	)
+	account, configSource, err := doctorOnePasswordAccount()
+	if err != nil {
+		healthy = false
+		a.stdoutf("project config: failed (%v)\n", err)
+	}
+	if configSource != "" {
+		a.stdoutf("project config: %s\n", configSource)
+	}
 	a.stdoutf("1password account: %s\n", account)
 	if err := manager.CheckOnePassword(ctx, account); err != nil {
 		healthy = false
@@ -342,6 +347,27 @@ func (a App) runDoctor(ctx context.Context) int {
 		return 1
 	}
 	return 0
+}
+
+func doctorOnePasswordAccount() (string, string, error) {
+	metadata, err := profileconfig.LoadMetadata(profileconfig.LoadOptions{})
+	if err == nil {
+		if metadata.Account != "" {
+			return metadata.Account, metadata.SourcePath, nil
+		}
+		return defaultOnePasswordAccount(), metadata.SourcePath, nil
+	}
+	if errors.Is(err, profileconfig.ErrConfigNotFound) {
+		return defaultOnePasswordAccount(), "", nil
+	}
+	return defaultOnePasswordAccount(), "", err
+}
+
+func defaultOnePasswordAccount() string {
+	return opaccount.SelectDesktopAccount(
+		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
+		os.Getenv("OP_ACCOUNT"),
+	)
 }
 
 func checkAuditLogWritable(ctx context.Context) (string, error) {

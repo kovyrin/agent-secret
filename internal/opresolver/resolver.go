@@ -28,6 +28,9 @@ type ClientOptions struct {
 
 type Resolver struct {
 	secrets SecretsAPI
+	// The 1Password SDK releases client IDs from a finalizer on its Client.
+	// Keep the owner reachable for as long as this resolver is cached.
+	keepAlive any
 }
 
 type Secret struct {
@@ -40,11 +43,15 @@ type SecretMetadata struct {
 }
 
 func NewResolver(secrets SecretsAPI) (*Resolver, error) {
+	return newResolverWithKeepAlive(secrets, nil)
+}
+
+func newResolverWithKeepAlive(secrets SecretsAPI, keepAlive any) (*Resolver, error) {
 	if secrets == nil {
 		return nil, errors.New("secrets API is required")
 	}
 
-	return &Resolver{secrets: secrets}, nil
+	return &Resolver{secrets: secrets, keepAlive: keepAlive}, nil
 }
 
 func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, error) {
@@ -60,7 +67,7 @@ func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, err
 		return nil, fmt.Errorf("create 1Password SDK client: %w", err)
 	}
 
-	return NewResolver(client.Secrets())
+	return newResolverWithKeepAlive(client.Secrets(), client)
 }
 
 func desktopAccount(accountOverride string) string {

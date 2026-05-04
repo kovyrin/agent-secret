@@ -701,6 +701,58 @@ profiles:
 	}
 }
 
+func TestParseExecExplicitSecretsUseConfigOnlyAccount(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+account: fixture.1password.com
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser()
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Explicit only",
+		"--secret", "TOKEN=op://Fixture Infra/PlanetScale Slow Logs Token/credential",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
+		t.Fatalf("secrets = %+v, want TOKEN only", req.Secrets)
+	}
+	if req.Secrets[0].Account != "fixture.1password.com" {
+		t.Fatalf("secret account = %q, want fixture.1password.com", req.Secrets[0].Account)
+	}
+
+	command, err = parser.Parse([]string{
+		"exec",
+		"--config", filepath.Join(root, "agent-secret.yml"),
+		"--reason", "Explicit config only",
+		"--secret", "TOKEN=op://Fixture Infra/PlanetScale Slow Logs Token/credential",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse with explicit config returned error: %v", err)
+	}
+	if got := command.ExecRequest.Secrets[0].Account; got != "fixture.1password.com" {
+		t.Fatalf("explicit config secret account = %q, want fixture.1password.com", got)
+	}
+}
+
 func TestParseExecMergesProfileAndExplicitSecretsWithOverrides(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")

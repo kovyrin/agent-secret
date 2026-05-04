@@ -135,6 +135,19 @@ func TestNewResolverRequiresSecretsAPI(t *testing.T) {
 	}
 }
 
+func TestNewResolverWithKeepAliveStoresOwner(t *testing.T) {
+	t.Parallel()
+
+	owner := &struct{}{}
+	resolver, err := newResolverWithKeepAlive(&fakeSecretsAPI{value: "synthetic-secret-value"}, owner)
+	if err != nil {
+		t.Fatalf("newResolverWithKeepAlive returned error: %v", err)
+	}
+	if resolver.keepAlive != owner {
+		t.Fatal("resolver did not retain keep-alive owner")
+	}
+}
+
 func TestResolveSecretRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
 	t.Parallel()
 
