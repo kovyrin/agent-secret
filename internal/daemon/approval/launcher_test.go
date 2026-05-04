@@ -506,7 +506,7 @@ func readBundleMetadata(t *testing.T) map[string]string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	path := filepath.Join(filepath.Dir(file), "..", "..", "..", "scripts", "bundle-metadata.sh")
+	path := filepath.Join(filepath.Dir(file), "..", "..", "..", "scripts", "lib", "bundle-metadata.sh")
 	//nolint:gosec // G304: test metadata path is derived from runtime.Caller within this repository.
 	data, err := os.ReadFile(path)
 	if err != nil {
