@@ -34,8 +34,10 @@ Source: [Product Requirements](prd.md)
   scoped credentials.
 - A generic `op-secrets.yml`-style config-driven secret sync flow is a candidate
   follow-on dogfood workflow.
-- The first implementation accepts explicit `--secret ALIAS=op://...` mappings
-  only. Config-file mapping support is deferred.
+- V1 `exec` accepts explicit `--secret ALIAS=op://...` mappings,
+  project-local `agent-secret.yml` / `.agent-secret.yml` profiles including
+  `default_profile`, and `--env-file` inputs. A broader `--secret-config` or
+  config-driven sync workflow remains a follow-on dogfood candidate.
 - Delivery is env-only `agent-secret exec`; session/socket delivery remains a
   future Epic 6 concern for tools or wrappers that cannot consume env vars
   cleanly.
