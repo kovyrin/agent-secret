@@ -12,6 +12,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
@@ -56,6 +57,37 @@ func TestConnectWithPeerValidatorRejectsUntrustedDaemonBeforeExecPayload(t *test
 	}
 }
 
+func TestValidateDaemonPeerAllowsNilValidator(t *testing.T) {
+	t.Parallel()
+
+	daemonConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = daemonConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+
+	if err := validateDaemonPeer(clientConn, nil); err != nil {
+		t.Fatalf("validateDaemonPeer returned error: %v", err)
+	}
+}
+
+func TestValidateDaemonPeerInspectsSocketPairPeer(t *testing.T) {
+	t.Parallel()
+
+	daemonConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = daemonConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+
+	validator := &recordingDaemonPeerValidator{}
+	if err := validateDaemonPeer(clientConn, validator); err != nil {
+		t.Fatalf("validateDaemonPeer returned error: %v", err)
+	}
+	if !validator.called {
+		t.Fatal("validator was not called")
+	}
+	if validator.info.UID != os.Getuid() {
+		t.Fatalf("daemon peer uid = %d, want %d", validator.info.UID, os.Getuid())
+	}
+}
+
 func startStatusDaemon(t *testing.T) (string, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-status-daemon-")
@@ -85,6 +117,17 @@ func startStatusDaemon(t *testing.T) (string, func()) {
 			t.Fatalf("fake status daemon returned error: %v", err)
 		}
 	}
+}
+
+type recordingDaemonPeerValidator struct {
+	called bool
+	info   peercred.Info
+}
+
+func (v *recordingDaemonPeerValidator) ValidateDaemonPeer(info peercred.Info) error {
+	v.called = true
+	v.info = info
+	return nil
 }
 
 func serveStatusPayload(conn *net.UnixConn) error {

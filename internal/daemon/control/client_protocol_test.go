@@ -481,6 +481,32 @@ func TestClientCheckOnePasswordUsesDiagnosticsRequest(t *testing.T) {
 	}
 }
 
+func TestClientRequestStopUsesDaemonStopRequest(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan protocol.Envelope, 1)
+	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+		requests <- env
+		return okResponseFrame(t, env, protocol.StatusPayload{PID: 4321})
+	})
+	defer cleanup()
+
+	payload, err := client.RequestStop(context.Background())
+	if err != nil {
+		t.Fatalf("RequestStop returned error: %v", err)
+	}
+	if payload.PID != 4321 {
+		t.Fatalf("RequestStop PID = %d, want 4321", payload.PID)
+	}
+	env := receiveStalledRequest(t, requests)
+	if env.Type != protocol.TypeDaemonStop {
+		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeDaemonStop)
+	}
+	if len(env.Payload) != 0 {
+		t.Fatalf("daemon stop payload = %s, want empty", env.Payload)
+	}
+}
+
 func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
 	t.Helper()
 

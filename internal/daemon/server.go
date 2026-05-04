@@ -54,6 +54,7 @@ type Server struct {
 	now                     func() time.Time
 	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func()
+	listenUnix              func(string) (unixListener, error)
 	stopOnce                sync.Once
 	stop                    chan struct{}
 }
@@ -177,12 +178,22 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		now:                     now,
 		beforeRead:              opts.beforeRead,
 		beforeExecResponseWrite: opts.beforeExecResponseWrite,
+		listenUnix:              listenUnix,
 		stop:                    make(chan struct{}),
 	}, nil
 }
 
+type unixListener interface {
+	AcceptUnix() (*net.UnixConn, error)
+	Close() error
+}
+
+func listenUnix(path string) (unixListener, error) {
+	return socket.ListenUnix(path)
+}
+
 func (s *Server) ListenAndServe(ctx context.Context, path string) error {
-	listener, err := socket.ListenUnix(path)
+	listener, err := s.listenUnix(path)
 	if err != nil {
 		return err
 	}
@@ -191,7 +202,7 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 	return s.Serve(ctx, listener)
 }
 
-func (s *Server) Serve(ctx context.Context, listener *net.UnixListener) error {
+func (s *Server) Serve(ctx context.Context, listener unixListener) error {
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()

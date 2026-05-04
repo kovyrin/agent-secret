@@ -3,10 +3,12 @@ package socket
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -328,3 +330,95 @@ func TestCleanupStaleSocketRefusesLiveDaemon(t *testing.T) {
 	}
 	<-done
 }
+
+func TestCleanupStaleRefusesLiveDaemonSocketWithoutBind(t *testing.T) {
+	t.Parallel()
+
+	conn := &recordingCloseConn{}
+	removeCalled := false
+	err := cleanupStale("agent-secretd.sock", staleSocketDeps{
+		lstat: func(string) (os.FileInfo, error) {
+			return fakeFileInfo{mode: os.ModeSocket | 0o600}, nil
+		},
+		dial: func(context.Context, string) (closeableConn, error) {
+			return conn, nil
+		},
+		remove: func(string) error {
+			removeCalled = true
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected live daemon socket rejection")
+	}
+	if !conn.closed {
+		t.Fatal("live daemon connection was not closed")
+	}
+	if removeCalled {
+		t.Fatal("live daemon socket was removed")
+	}
+}
+
+func TestCleanupStaleRemovesUnavailableDaemonSocketWithoutBind(t *testing.T) {
+	t.Parallel()
+
+	removedPath := ""
+	err := cleanupStale("agent-secretd.sock", staleSocketDeps{
+		lstat: func(string) (os.FileInfo, error) {
+			return fakeFileInfo{mode: os.ModeSocket | 0o600}, nil
+		},
+		dial: func(context.Context, string) (closeableConn, error) {
+			return nil, ErrDaemonUnavailable
+		},
+		remove: func(path string) error {
+			removedPath = path
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("CleanupStale returned error: %v", err)
+	}
+	if removedPath != "agent-secretd.sock" {
+		t.Fatalf("removed path = %q, want agent-secretd.sock", removedPath)
+	}
+}
+
+func TestCleanupStaleWrapsRemoveErrorsWithoutBind(t *testing.T) {
+	t.Parallel()
+
+	removeErr := errors.New("remove failed")
+	err := cleanupStale("agent-secretd.sock", staleSocketDeps{
+		lstat: func(string) (os.FileInfo, error) {
+			return fakeFileInfo{mode: os.ModeSocket | 0o600}, nil
+		},
+		dial: func(context.Context, string) (closeableConn, error) {
+			return nil, ErrDaemonUnavailable
+		},
+		remove: func(string) error {
+			return removeErr
+		},
+	})
+	if !errors.Is(err, removeErr) {
+		t.Fatalf("CleanupStale error = %v, want %v", err, removeErr)
+	}
+}
+
+type recordingCloseConn struct {
+	closed bool
+}
+
+func (c *recordingCloseConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+type fakeFileInfo struct {
+	mode fs.FileMode
+}
+
+func (f fakeFileInfo) Name() string       { return "agent-secretd.sock" }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() fs.FileMode  { return f.mode }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.mode.IsDir() }
+func (f fakeFileInfo) Sys() any           { return nil }

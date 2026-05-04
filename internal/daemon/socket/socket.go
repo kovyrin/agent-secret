@@ -186,7 +186,29 @@ func Dial(ctx context.Context, path string) (*net.UnixConn, error) {
 }
 
 func CleanupStale(path string) error {
-	info, err := os.Lstat(path)
+	return cleanupStale(path, staleSocketDeps{
+		lstat:  os.Lstat,
+		dial:   dialCloseable,
+		remove: os.Remove,
+	})
+}
+
+type staleSocketDeps struct {
+	lstat  func(string) (os.FileInfo, error)
+	dial   func(context.Context, string) (closeableConn, error)
+	remove func(string) error
+}
+
+type closeableConn interface {
+	Close() error
+}
+
+func dialCloseable(ctx context.Context, path string) (closeableConn, error) {
+	return Dial(ctx, path)
+}
+
+func cleanupStale(path string, deps staleSocketDeps) error {
+	info, err := deps.lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -199,12 +221,12 @@ func CleanupStale(path string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	conn, err := Dial(ctx, path)
+	conn, err := deps.dial(ctx, path)
 	if err == nil {
 		_ = conn.Close()
 		return fmt.Errorf("daemon already listening on %s", path)
 	}
-	if err := os.Remove(path); err != nil {
+	if err := deps.remove(path); err != nil {
 		return fmt.Errorf("remove stale daemon socket: %w", err)
 	}
 	return nil

@@ -672,6 +672,53 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	assertRequesterAudit(t, events[0], peer, "")
 }
 
+func TestServerDaemonStopOverSocketPairAuditsRequester(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	aud := &memoryAudit{}
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    aud,
+		}),
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: peertrust.NewExecutableValidator([]string{exe}),
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+
+	serverConn, clientConn := unixsocket.Pair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(ctx, serverConn)
+	}()
+	client := control.NewClient(clientConn)
+	defer func() {
+		_ = client.Close()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("socket-pair server connection did not stop")
+		}
+	}()
+
+	if _, err := client.RequestStop(context.Background()); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+	events := aud.Events()
+	if len(events) != 1 || events[0].Type != audit.EventDaemonStop {
+		t.Fatalf("stop audit events = %+v", events)
+	}
+	assertRequesterAudit(t, events[0], peer, "")
+}
+
 func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 	t.Parallel()
 
@@ -729,17 +776,6 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
 	})
-	dir, err := os.MkdirTemp("/tmp", "agent-secret-test-")
-	if err != nil {
-		t.Fatalf("MkdirTemp returned error: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	path := filepath.Join(dir, "d.sock")
-	listener, err := socket.ListenUnix(path)
-	unixsocket.SkipIfBindUnavailable(t, err)
-	if err != nil {
-		t.Fatalf("ListenUnix returned error: %v", err)
-	}
 	server, err := NewServer(ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
@@ -748,27 +784,25 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
 	}
+
+	serverConn, clientConn := unixsocket.Pair(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(ctx, listener) }()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(ctx, serverConn)
+	}()
 	defer func() {
+		_ = clientConn.Close()
 		cancel()
-		_ = listener.Close()
 		select {
-		case err := <-done:
-			if err != nil && !errors.Is(err, net.ErrClosed) {
-				t.Fatalf("server returned error: %v", err)
-			}
+		case <-done:
 		case <-time.After(time.Second):
-			t.Fatal("server did not stop")
+			t.Fatal("socket-pair server connection did not stop")
 		}
 	}()
 
-	conn, err := socket.Dial(context.Background(), path)
-	if err != nil {
-		t.Fatalf("Dial returned error: %v", err)
-	}
-	client := control.NewClient(conn)
+	client := control.NewClient(clientConn)
 	defer func() { _ = client.Close() }()
 
 	if _, err := client.Status(context.Background()); err != nil {
@@ -783,6 +817,116 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	}
 	if calls := resolver.Calls(); len(calls) != 0 {
 		t.Fatalf("resolver called after daemon stop: %v", calls)
+	}
+}
+
+func TestServerServeStopsWhenServerStops(t *testing.T) {
+	t.Parallel()
+
+	aud := &memoryAudit{}
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    aud,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+	listener := newFakeUnixListener()
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(t.Context(), listener) }()
+
+	server.Stop(context.Background())
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve returned error after stop: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not stop after Server.Stop")
+	}
+	if !listener.IsClosed() {
+		t.Fatal("Server.Stop did not close listener")
+	}
+	if events := aud.Events(); len(events) != 1 || events[0].Type != audit.EventDaemonStop {
+		t.Fatalf("stop audit events = %+v", events)
+	}
+}
+
+func TestServerServeReturnsAcceptErrors(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("listener failed")
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+
+	err = server.Serve(t.Context(), &fakeUnixListener{acceptErr: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Serve error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestServerListenAndServeStopsInjectedListenerOnContextCancel(t *testing.T) {
+	aud := &memoryAudit{}
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    aud,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+
+	listener := newFakeUnixListener()
+	socketPath := filepath.Join(t.TempDir(), "agent-secretd.sock")
+	var gotPath string
+	server.listenUnix = func(path string) (unixListener, error) {
+		gotPath = path
+		return listener, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := server.ListenAndServe(ctx, socketPath); err != nil {
+		t.Fatalf("ListenAndServe returned error: %v", err)
+	}
+	if gotPath != socketPath {
+		t.Fatalf("ListenAndServe path = %q, want %q", gotPath, socketPath)
+	}
+	if !listener.IsClosed() {
+		t.Fatal("context cancellation did not close injected listener")
+	}
+}
+
+func TestServerListenAndServeReturnsListenErrors(t *testing.T) {
+	wantErr := errors.New("listen failed")
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+	server.listenUnix = func(string) (unixListener, error) { return nil, wantErr }
+
+	err = server.ListenAndServe(context.Background(), filepath.Join(t.TempDir(), "agent-secretd.sock"))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ListenAndServe error = %v, want %v", err, wantErr)
 	}
 }
 
@@ -1546,6 +1690,43 @@ func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()
 		_ = os.RemoveAll(dir)
 	}
 	return path, stop
+}
+
+type fakeUnixListener struct {
+	acceptErr error
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func newFakeUnixListener() *fakeUnixListener {
+	return &fakeUnixListener{closed: make(chan struct{})}
+}
+
+func (l *fakeUnixListener) AcceptUnix() (*net.UnixConn, error) {
+	if l.acceptErr != nil {
+		return nil, l.acceptErr
+	}
+	<-l.closed
+	return nil, net.ErrClosed
+}
+
+func (l *fakeUnixListener) Close() error {
+	l.closeOnce.Do(func() {
+		if l.closed == nil {
+			l.closed = make(chan struct{})
+		}
+		close(l.closed)
+	})
+	return nil
+}
+
+func (l *fakeUnixListener) IsClosed() bool {
+	select {
+	case <-l.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 func testSocketPath(t *testing.T) string {
