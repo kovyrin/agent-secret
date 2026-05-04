@@ -249,13 +249,14 @@ Project profiles:
   op:// are treated as secret refs; other values are passed to the child as
   plain environment entries. When multiple env files define the same key, the
   later file wins. Env-file keys override the caller environment for that child.
-  --account applies when a loaded profile, config, or explicit secret entry does
-  not already supply an account default.
-  --only filters profile-loaded aliases and env-file secret aliases before
-  one-off --secret refs are added.
-  Explicit --secret-only invocations do not load default_profile.
-  CLI --reason and --ttl override profile defaults.
-  Account precedence is per-secret account, profile account, top-level account,
+	  --account applies when a loaded profile, config, or explicit secret entry does
+	  not already supply an account default.
+	  --only filters profile-loaded aliases and env-file secret aliases before
+	  one-off --secret refs are added.
+	  Invocations with explicit --secret or --env-file sources do not load
+	  default_profile unless --profile is provided.
+	  CLI --reason and --ttl override profile defaults.
+	  Account precedence is per-secret account, profile account, top-level account,
   --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
   Included profiles are resolved in order. Later includes and the selected
   profile override earlier secrets with the same alias.

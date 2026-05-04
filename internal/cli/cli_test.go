@@ -923,6 +923,10 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		if strings.Contains(command.HelpText, "synthetic-secret-value") {
 			t.Fatalf("%s help contains secret-looking canary value", tt.name)
 		}
+		phantomSecretOnly := "--secret" + "-only"
+		if strings.Contains(command.HelpText, phantomSecretOnly) {
+			t.Fatalf("%s help names nonexistent %s mode", tt.name, phantomSecretOnly)
+		}
 	}
 }
 
