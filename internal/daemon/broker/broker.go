@@ -266,7 +266,7 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 	b.recordBestEffortAudit(ctx, event)
 }
 
-func (b *Broker) Stop(ctx context.Context, event audit.Event) {
+func (b *Broker) StopWithAuditEvent(ctx context.Context, event audit.Event) {
 	b.stopOnce.Do(func() { close(b.stop) })
 	b.RecordStopAttempt(ctx, event)
 	b.mu.Lock()

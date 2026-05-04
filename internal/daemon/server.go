@@ -215,7 +215,7 @@ func (s *Server) Stop(ctx context.Context) {
 }
 
 func (s *Server) stopWithAudit(ctx context.Context, event audit.Event) {
-	s.broker.Stop(ctx, event)
+	s.broker.StopWithAuditEvent(ctx, event)
 	s.stopOnce.Do(func() { close(s.stop) })
 }
 

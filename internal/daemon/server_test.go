@@ -658,7 +658,7 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	if _, err := client.Status(context.Background()); err != nil {
 		t.Fatalf("Status returned error: %v", err)
 	}
-	if _, err := client.Stop(context.Background()); err != nil {
+	if _, err := client.RequestStop(context.Background()); err != nil {
 		t.Fatalf("Stop returned error: %v", err)
 	}
 	events := aud.Events()
@@ -811,7 +811,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	if _, err := client.Status(context.Background()); err != nil {
 		t.Fatalf("Status returned error: %v", err)
 	}
-	if _, err := client.Stop(context.Background()); !control.IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
+	if _, err := client.RequestStop(context.Background()); !control.IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
 		t.Fatalf("expected untrusted_client stop error, got %v", err)
 	}
 	if _, err := client.Status(context.Background()); err != nil {

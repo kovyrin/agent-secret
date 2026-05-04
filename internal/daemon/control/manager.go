@@ -124,7 +124,7 @@ func (m Manager) Stop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := client.Stop(ctx); err != nil {
+	if _, err := client.RequestStop(ctx); err != nil {
 		_ = client.Close()
 		return err
 	}

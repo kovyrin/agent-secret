@@ -102,7 +102,7 @@ func (c *Client) Status(ctx context.Context) (protocol.StatusPayload, error) {
 	return payload, nil
 }
 
-func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
+func (c *Client) RequestStop(ctx context.Context) (protocol.StatusPayload, error) {
 	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStop, protocol.Correlation{}, nil)
 	if err != nil {
 		return protocol.StatusPayload{}, err

@@ -1300,7 +1300,7 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: grant.approvalID, Ref: ref}); !ok {
 		t.Fatal("expected reusable value in cache")
 	}
-	broker.Stop(context.Background(), audit.Event{})
+	broker.StopWithAuditEvent(context.Background(), audit.Event{})
 	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: grant.approvalID, Ref: ref}); ok {
 		t.Fatal("daemon stop left reusable cache scope reachable")
 	}
@@ -1327,7 +1327,7 @@ func TestBrokerStopCancelsPendingApproval(t *testing.T) {
 	}()
 	receiveBrokerSignal(t, approver.started, "approval was not requested before stop")
 
-	broker.Stop(context.Background(), audit.Event{})
+	broker.StopWithAuditEvent(context.Background(), audit.Event{})
 
 	receiveBrokerSignal(t, approver.canceled, "stop did not cancel pending approval")
 	select {
@@ -1372,7 +1372,7 @@ func TestBrokerStopCancelsSecretResolution(t *testing.T) {
 	}()
 	receiveBrokerSignal(t, resolver.started, "secret resolution did not start before stop")
 
-	broker.Stop(context.Background(), audit.Event{})
+	broker.StopWithAuditEvent(context.Background(), audit.Event{})
 
 	receiveBrokerSignal(t, resolver.canceled, "stop did not cancel secret resolution")
 	select {
@@ -1658,7 +1658,7 @@ func TestBrokerStopAuditFailureIsBestEffort(t *testing.T) {
 		},
 	})
 
-	broker.Stop(context.Background(), audit.Event{})
+	broker.StopWithAuditEvent(context.Background(), audit.Event{})
 
 	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
