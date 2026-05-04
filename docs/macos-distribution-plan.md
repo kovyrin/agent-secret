@@ -331,7 +331,9 @@ The root `install.sh` is the supported unattended installer. It:
 - Copy the app bundle.
 - Run the bundled CLI's `install-cli`.
 - Run the bundled CLI's `skill-install`.
-- Run `agent-secret doctor`.
+- Run `agent-secret doctor` and report diagnostics without failing the install
+  when optional local dependencies such as 1Password desktop integration are
+  not configured yet.
 
 It does not depend on Homebrew, 1Password CLI, or repo checkout state.
 

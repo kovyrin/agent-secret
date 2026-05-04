@@ -439,4 +439,7 @@ echo "Installing Agent Secret skill"
 "$target_app/Contents/Resources/bin/agent-secret" skill-install --skills-dir "$skills_dir" --force
 
 echo "Running diagnostics"
-"$bin_dir/agent-secret" doctor
+if ! "$bin_dir/agent-secret" doctor; then
+  echo "agent-secret install: diagnostics reported issues; installation completed" >&2
+  echo "agent-secret install: rerun $bin_dir/agent-secret doctor after fixing local setup" >&2
+fi
