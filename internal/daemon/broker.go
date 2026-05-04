@@ -158,14 +158,14 @@ func (b *Broker) handleExecDelivery(
 }
 
 func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time) error) error {
-	if err := write(d.payload, d.expiresAt); err != nil {
-		d.broker.markPayloadDeliveryFailed(d.requestID)
-		d.delivery.markPrePayloadFailure()
-		return err
-	}
-	if err := d.delivery.markPayloadDelivered(); err != nil {
+	writeErr := write(d.payload, d.expiresAt)
+	if err := d.delivery.completePayloadWrite(writeErr == nil); err != nil {
 		d.broker.removeActiveExec(d.requestID)
 		return err
+	}
+	if writeErr != nil {
+		d.broker.removeActiveExec(d.requestID)
+		return writeErr
 	}
 	return d.broker.markPayloadDelivered(d.requestID)
 }
@@ -245,10 +245,6 @@ func (b *Broker) markActivePayloadDelivered(requestID string) bool {
 		return true
 	}
 	return false
-}
-
-func (b *Broker) markPayloadDeliveryFailed(requestID string) {
-	b.removeActiveExec(requestID)
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {

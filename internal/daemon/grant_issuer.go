@@ -66,21 +66,24 @@ func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
 	return grantDelivery{issuer: g, attempt: attempt}
 }
 
-func (d grantDelivery) markPayloadDelivered() error {
+func (d grantDelivery) completePayloadWrite(written bool) error {
+	if written {
+		return d.complete(policy.DeliveryPayloadDelivered)
+	}
+	_ = d.complete(policy.DeliveryPrePayloadFailure)
+	return nil
+}
+
+func (d grantDelivery) complete(result policy.DeliveryResult) error {
 	if d.issuer == nil || d.attempt.approvalID == "" {
 		return nil
 	}
-	if err := d.issuer.reusable.ensureApprovalActive(d.attempt.approvalID, d.attempt.expiresAt); err != nil {
-		return err
+	if result == policy.DeliveryPayloadDelivered {
+		if err := d.issuer.reusable.ensureApprovalActive(d.attempt.approvalID, d.attempt.expiresAt); err != nil {
+			return err
+		}
 	}
-	return d.issuer.reusable.finishPayloadDelivered(d.attempt.approvalID)
-}
-
-func (d grantDelivery) markPrePayloadFailure() {
-	if d.issuer == nil {
-		return
-	}
-	d.issuer.reusable.finishPrePayloadFailure(d.attempt.approvalID)
+	return d.issuer.reusable.finishDelivery(d.attempt.approvalID, result)
 }
 
 func (d grantDelivery) rollback() {
@@ -91,7 +94,7 @@ func (d grantDelivery) rollback() {
 		d.issuer.reusable.rollbackApproval(d.attempt.mutationID)
 		return
 	}
-	d.markPrePayloadFailure()
+	_ = d.complete(policy.DeliveryPrePayloadFailure)
 }
 
 func (d grantDelivery) approvalID() string {
@@ -206,7 +209,7 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 	delivered := false
 	defer func() {
 		if !delivered {
-			delivery.markPrePayloadFailure()
+			_ = delivery.complete(policy.DeliveryPrePayloadFailure)
 		}
 	}()
 	if err := g.ensureGrantStillActive(ctx, req, approval.ID, approval.ExpiresAt); err != nil {

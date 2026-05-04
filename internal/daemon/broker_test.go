@@ -27,7 +27,7 @@ func testCorrelation(requestID string, nonce string) protocol.Correlation {
 }
 
 func markGrantPayloadDelivered(b *Broker, requestID string, grant ExecGrant) error {
-	if err := grant.delivery.markPayloadDelivered(); err != nil {
+	if err := grant.delivery.completePayloadWrite(true); err != nil {
 		b.removeActiveExec(requestID)
 		return err
 	}

@@ -73,30 +73,28 @@ func (m *reusableGrantManager) reserve(
 	return approval, nil
 }
 
-func (m *reusableGrantManager) finishPayloadDelivered(approvalID string) error {
-	approval, err := m.store.FinishReusableAttempt(approvalID, policy.DeliveryPayloadDelivered)
+func (m *reusableGrantManager) finishDelivery(approvalID string, result policy.DeliveryResult) error {
+	if approvalID == "" {
+		return nil
+	}
+	approval, err := m.store.FinishReusableAttempt(approvalID, result)
 	if err != nil {
-		m.clearScope(approvalID)
-		if errors.Is(err, policy.ErrExpired) {
-			return ErrRequestExpired
+		if result == policy.DeliveryPayloadDelivered {
+			m.clearScope(approvalID)
+			if errors.Is(err, policy.ErrExpired) {
+				return ErrRequestExpired
+			}
+			return err
 		}
-		return err
+		if errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted) {
+			m.clearScope(approvalID)
+		}
+		return nil
 	}
 	if approval.Uses >= approval.MaxUses {
 		m.clearScope(approval.ID)
 	}
 	return nil
-}
-
-func (m *reusableGrantManager) finishPrePayloadFailure(approvalID string) {
-	if approvalID == "" {
-		return
-	}
-	if _, err := m.store.FinishReusableAttempt(approvalID, policy.DeliveryPrePayloadFailure); err != nil {
-		if errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted) {
-			m.clearScope(approvalID)
-		}
-	}
 }
 
 func (m *reusableGrantManager) rollbackApproval(approvalID string) {
