@@ -18,21 +18,19 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
-	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/randid"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type App struct {
-	Parser                 Parser
-	InstallCLI             func(install.CLIOptions) (install.CLIResult, error)
-	InstallSkill           func(install.SkillOptions) (install.SkillResult, error)
-	RandomReader           io.Reader
-	DoctorApproverCheck    func(context.Context) error
-	DoctorOnePasswordCheck func(context.Context) error
-	Stdout                 io.Writer
-	Stderr                 io.Writer
-	manager                daemonManager
+	Parser              Parser
+	InstallCLI          func(install.CLIOptions) (install.CLIResult, error)
+	InstallSkill        func(install.SkillOptions) (install.SkillResult, error)
+	RandomReader        io.Reader
+	DoctorApproverCheck func(context.Context) error
+	Stdout              io.Writer
+	Stderr              io.Writer
+	manager             daemonManager
 }
 
 type daemonManager interface {
@@ -41,6 +39,7 @@ type daemonManager interface {
 	Status(ctx context.Context) (protocol.StatusPayload, error)
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
+	CheckOnePassword(ctx context.Context) error
 	SocketPath() string
 }
 
@@ -79,6 +78,10 @@ func (m daemonControlManager) Stop(ctx context.Context) error {
 	return m.manager.Stop(ctx)
 }
 
+func (m daemonControlManager) CheckOnePassword(ctx context.Context) error {
+	return m.manager.CheckOnePassword(ctx)
+}
+
 func (m daemonControlManager) SocketPath() string {
 	return m.manager.SocketPath
 }
@@ -91,15 +94,14 @@ func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
 		stderr = os.Stderr
 	}
 	return App{
-		Parser:                 NewParser(),
-		InstallCLI:             install.InstallCLI,
-		InstallSkill:           install.InstallSkill,
-		RandomReader:           rand.Reader,
-		DoctorApproverCheck:    checkApproverHealth,
-		DoctorOnePasswordCheck: checkOnePasswordDesktopIntegration,
-		Stdout:                 stdout,
-		Stderr:                 stderr,
-		manager:                daemonControlManager{manager: manager},
+		Parser:              NewParser(),
+		InstallCLI:          install.InstallCLI,
+		InstallSkill:        install.InstallSkill,
+		RandomReader:        rand.Reader,
+		DoctorApproverCheck: checkApproverHealth,
+		Stdout:              stdout,
+		Stderr:              stderr,
+		manager:             daemonControlManager{manager: manager},
 	}
 }
 
@@ -280,13 +282,11 @@ func (a App) runDoctor(ctx context.Context) int {
 			a.stdoutln("native approver: ok")
 		}
 	}
-	if check := a.DoctorOnePasswordCheck; check != nil {
-		if err := check(ctx); err != nil {
-			healthy = false
-			a.stdoutf("1password desktop integration: failed (%v)\n", err)
-		} else {
-			a.stdoutln("1password desktop integration: ok")
-		}
+	if err := manager.CheckOnePassword(ctx); err != nil {
+		healthy = false
+		a.stdoutf("1password desktop integration: failed (%v)\n", err)
+	} else {
+		a.stdoutln("1password desktop integration: ok")
 	}
 	if !healthy {
 		return 1
@@ -312,15 +312,6 @@ func checkAuditLogWritable(ctx context.Context) (string, error) {
 
 func checkApproverHealth(ctx context.Context) error {
 	return (approval.ProcessApproverLauncher{}).CheckHealth(ctx)
-}
-
-func checkOnePasswordDesktopIntegration(ctx context.Context) error {
-	_, err := opresolver.NewDesktopResolver(ctx, opresolver.ClientOptions{
-		Account:            os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
-		IntegrationName:    "Agent Secret Doctor",
-		IntegrationVersion: "dev",
-	})
-	return err
 }
 
 func (a App) runInstallCLI(command Command) int {

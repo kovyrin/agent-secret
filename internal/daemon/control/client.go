@@ -113,6 +113,10 @@ func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
 	return payload, nil
 }
 
+func (c *Client) CheckOnePassword(ctx context.Context) error {
+	return roundTripAck(ctx, c, protocol.TypeOnePasswordStatus, protocol.Correlation{}, nil)
+}
+
 func (c *Client) RequestExec(
 	ctx context.Context,
 	correlation protocol.Correlation,

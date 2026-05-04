@@ -61,9 +61,10 @@ func run() int {
 		return 1
 	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
-		Broker:        broker,
-		Approvals:     approver,
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.DefaultClientPaths()),
+		Broker:           broker,
+		Approvals:        approver,
+		ExecValidator:    peertrust.NewExecutableValidator(peertrust.DefaultClientPaths()),
+		OnePasswordCheck: onePasswordDesktopIntegrationCheck(config.accountName),
 	})
 	if err != nil {
 		stderrf("agent-secretd: initialize server: %v\n", err)
@@ -74,6 +75,17 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func onePasswordDesktopIntegrationCheck(accountName string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		_, err := opresolver.NewDesktopResolver(ctx, opresolver.ClientOptions{
+			Account:            accountName,
+			IntegrationName:    "Agent Secret Doctor",
+			IntegrationVersion: "dev",
+		})
+		return err
+	}
 }
 
 type daemonConfig struct {

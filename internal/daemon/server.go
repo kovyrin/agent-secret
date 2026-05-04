@@ -48,6 +48,7 @@ type Server struct {
 	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
 	execValidator           peertrust.ExecValidator
+	onePasswordCheck        func(context.Context) error
 	maxFrameBytes           int64
 	readTimeout             time.Duration
 	beforeRead              func(time.Duration)
@@ -61,6 +62,7 @@ type ServerOptions struct {
 	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
 	ExecValidator           peertrust.ExecValidator
+	OnePasswordCheck        func(context.Context) error
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
 	beforeRead              func(time.Duration)
@@ -69,7 +71,10 @@ type ServerOptions struct {
 
 const DefaultProtocolReadTimeout = 30 * time.Second
 
-var ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
+var (
+	ErrRequestAlreadyActive        = errors.New("connection already has an active exec request")
+	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
+)
 
 func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Broker == nil {
@@ -82,6 +87,10 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	execValidator := opts.ExecValidator
 	if execValidator == nil {
 		execValidator = peertrust.NewExecutableValidator(peertrust.DefaultClientPaths())
+	}
+	onePasswordCheck := opts.OnePasswordCheck
+	if onePasswordCheck == nil {
+		onePasswordCheck = func(context.Context) error { return ErrOnePasswordCheckUnavailable }
 	}
 	maxFrameBytes := opts.MaxFrameBytes
 	if maxFrameBytes <= 0 {
@@ -96,6 +105,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		approvals:               opts.Approvals,
 		validator:               validator,
 		execValidator:           execValidator,
+		onePasswordCheck:        onePasswordCheck,
 		maxFrameBytes:           maxFrameBytes,
 		readTimeout:             readTimeout,
 		beforeRead:              opts.beforeRead,
@@ -190,8 +200,8 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 
 		//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 		switch env.Type {
-		case protocol.TypeDaemonStatus:
-			_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
+		case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus:
+			s.handleStatusRequest(ctx, encoder, env)
 		case protocol.TypeDaemonStop:
 			if s.handleDaemonStop(ctx, conn, encoder, env) {
 				return
@@ -251,6 +261,18 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
 		}
 	}
+}
+
+func (s *Server) handleStatusRequest(ctx context.Context, encoder *json.Encoder, env protocol.Envelope) {
+	if env.Type == protocol.TypeDaemonStatus {
+		_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
+		return
+	}
+	if err := s.onePasswordCheck(ctx); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeResolveFailed, err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), nil)
 }
 
 func (s *Server) lifecycleRequestMatchesConnection(

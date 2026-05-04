@@ -240,7 +240,6 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	var stderr bytes.Buffer
 	app := NewApp(appTestManager(client), &stdout, &stderr)
 	app.DoctorApproverCheck = func(context.Context) error { return nil }
-	app.DoctorOnePasswordCheck = func(context.Context) error { return nil }
 
 	if code := app.Run(context.Background(), []string{"daemon", "status"}); code != 0 {
 		t.Fatalf("daemon status exit=%d stderr=%q", code, stderr.String())
@@ -298,15 +297,14 @@ func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
 		Audit:    &appAudit{},
+	}, func(context.Context) error {
+		return errors.New("desktop integration unavailable")
 	})
 	defer cleanup()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	app := NewApp(appTestManager(client), &stdout, &stderr)
 	app.DoctorApproverCheck = func(context.Context) error { return nil }
-	app.DoctorOnePasswordCheck = func(context.Context) error {
-		return errors.New("desktop integration unavailable")
-	}
 
 	code := app.Run(context.Background(), []string{"doctor"})
 	if code != 1 {
@@ -477,7 +475,6 @@ func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
 	app := NewApp(control.Manager{}, &stdout, &stderr)
 	app.manager = manager
 	app.DoctorApproverCheck = nil
-	app.DoctorOnePasswordCheck = nil
 
 	code := app.Run(context.Background(), []string{"doctor"})
 	if code != 0 {
@@ -655,12 +652,14 @@ type appFakeDaemonManager struct {
 	statusErr  error
 	startErr   error
 	stopErr    error
+	checkErr   error
 
 	ensureCalls  int
 	connectCalls int
 	statusCalls  int
 	startCalls   int
 	stopCalls    int
+	checkCalls   int
 }
 
 func (m *appFakeDaemonManager) EnsureRunning(context.Context) error {
@@ -692,6 +691,11 @@ func (m *appFakeDaemonManager) Start(context.Context) error {
 func (m *appFakeDaemonManager) Stop(context.Context) error {
 	m.stopCalls++
 	return m.stopErr
+}
+
+func (m *appFakeDaemonManager) CheckOnePassword(context.Context) error {
+	m.checkCalls++
+	return m.checkErr
 }
 
 func (m *appFakeDaemonManager) SocketPath() string {
@@ -810,7 +814,11 @@ func (appAllowPeer) Validate(_ *net.UnixConn) error {
 	return nil
 }
 
-func startAppTestServer(t *testing.T, opts daemonbroker.Options) (appTestClient, func()) {
+func startAppTestServer(
+	t *testing.T,
+	opts daemonbroker.Options,
+	onePasswordChecks ...func(context.Context) error,
+) (appTestClient, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-")
 	if err != nil {
@@ -826,10 +834,15 @@ func startAppTestServer(t *testing.T, opts daemonbroker.Options) (appTestClient,
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
+	onePasswordCheck := func(context.Context) error { return nil }
+	if len(onePasswordChecks) > 0 {
+		onePasswordCheck = onePasswordChecks[0]
+	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
-		Broker:        broker,
-		Validator:     appAllowPeer{},
-		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		Broker:           broker,
+		Validator:        appAllowPeer{},
+		ExecValidator:    peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
+		OnePasswordCheck: onePasswordCheck,
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -938,6 +951,10 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 		switch env.Type {
 		case protocol.TypeDaemonStatus:
 			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, protocol.StatusPayload{PID: os.Getpid()}); err != nil {
+				return err
+			}
+		case protocol.TypeOnePasswordStatus:
+			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, nil); err != nil {
 				return err
 			}
 		case protocol.TypeRequestExec:

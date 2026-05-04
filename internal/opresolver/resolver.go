@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
 	onepassword "github.com/1password/onepassword-sdk-go"
+	"github.com/kovyrin/agent-secret/internal/opaccount"
 )
 
 var ErrInvalidReference = errors.New("invalid 1Password secret reference")
@@ -47,10 +49,7 @@ func NewResolver(secrets SecretsAPI) (*Resolver, error) {
 
 func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, error) {
 	normalized := normalizeDesktopOptions(opts)
-	account, err := desktopAccount(ctx, normalized.Account)
-	if err != nil {
-		return nil, err
-	}
+	account := desktopAccount(normalized.Account)
 
 	client, err := onepassword.NewClient(
 		ctx,
@@ -62,6 +61,10 @@ func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, err
 	}
 
 	return NewResolver(client.Secrets())
+}
+
+func desktopAccount(accountOverride string) string {
+	return opaccount.SelectDesktopAccount(accountOverride, os.Getenv("OP_ACCOUNT"))
 }
 
 func normalizeDesktopOptions(opts ClientOptions) ClientOptions {

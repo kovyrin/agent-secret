@@ -15,15 +15,16 @@ const DefaultMaxProtocolFrameBytes int64 = 1 << 20
 type MessageType string
 
 const (
-	TypeDaemonStatus     MessageType = "daemon.status"
-	TypeDaemonStop       MessageType = "daemon.stop"
-	TypeApprovalPending  MessageType = "approval.pending"
-	TypeApprovalDecision MessageType = "approval.decision"
-	TypeRequestExec      MessageType = "request.exec"
-	TypeCommandStarted   MessageType = "command.started"
-	TypeCommandCompleted MessageType = "command.completed"
-	TypeOK               MessageType = "ok"
-	TypeError            MessageType = "error"
+	TypeDaemonStatus      MessageType = "daemon.status"
+	TypeDaemonStop        MessageType = "daemon.stop"
+	TypeOnePasswordStatus MessageType = "onepassword.status"
+	TypeApprovalPending   MessageType = "approval.pending"
+	TypeApprovalDecision  MessageType = "approval.decision"
+	TypeRequestExec       MessageType = "request.exec"
+	TypeCommandStarted    MessageType = "command.started"
+	TypeCommandCompleted  MessageType = "command.completed"
+	TypeOK                MessageType = "ok"
+	TypeError             MessageType = "error"
 )
 
 type ErrorCode string

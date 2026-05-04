@@ -144,6 +144,15 @@ func (m Manager) Stop(ctx context.Context) error {
 	return fmt.Errorf("%w: daemon still responds after stop", ErrDaemonStillRunning)
 }
 
+func (m Manager) CheckOnePassword(ctx context.Context) error {
+	client, err := m.Connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	return client.CheckOnePassword(ctx)
+}
+
 func (m Manager) Connect(ctx context.Context) (*Client, error) {
 	trustedPaths, err := m.trustedDaemonPaths()
 	if err != nil {

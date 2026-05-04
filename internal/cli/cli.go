@@ -12,7 +12,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/envfile"
 	"github.com/kovyrin/agent-secret/internal/install"
-	"github.com/kovyrin/agent-secret/internal/opresolver"
+	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -561,7 +561,7 @@ func execAccountFallback(cliAccount string) string {
 	if account := strings.TrimSpace(os.Getenv("OP_ACCOUNT")); account != "" {
 		return account
 	}
-	return opresolver.DefaultDesktopAccount
+	return opaccount.DefaultDesktopAccount
 }
 
 func newOnlySet(aliases []string) map[string]struct{} {

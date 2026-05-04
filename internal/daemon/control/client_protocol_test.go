@@ -459,6 +459,28 @@ func TestClientAllowsUncorrelatedStatusErrorResponse(t *testing.T) {
 	}
 }
 
+func TestClientCheckOnePasswordUsesDiagnosticsRequest(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan protocol.Envelope, 1)
+	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+		requests <- env
+		return emptyOKResponseFrame(t, env)
+	})
+	defer cleanup()
+
+	if err := client.CheckOnePassword(context.Background()); err != nil {
+		t.Fatalf("CheckOnePassword returned error: %v", err)
+	}
+	env := receiveStalledRequest(t, requests)
+	if env.Type != protocol.TypeOnePasswordStatus {
+		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeOnePasswordStatus)
+	}
+	if len(env.Payload) != 0 {
+		t.Fatalf("onepassword status payload = %s, want empty", env.Payload)
+	}
+}
+
 func errorResponseFrame(t *testing.T, requestID string, nonce string) []byte {
 	t.Helper()
 

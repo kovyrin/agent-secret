@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/opresolver"
+	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -358,7 +358,7 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 		appAccount string
 		want       string
 	}{
-		{name: "built-in", want: opresolver.DefaultDesktopAccount},
+		{name: "built-in", want: opaccount.DefaultDesktopAccount},
 		{name: "op account", opAccount: " Personal ", want: "Personal"},
 		{name: "app account", opAccount: " Personal ", appAccount: " Work ", want: "Work"},
 	}

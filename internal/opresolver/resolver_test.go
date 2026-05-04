@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/kovyrin/agent-secret/internal/opaccount"
 )
 
 type fakeSecretsAPI struct {
@@ -162,10 +164,7 @@ func TestNormalizeDesktopOptionsAllowsDefaultAccount(t *testing.T) {
 
 func TestDesktopAccountUsesExplicitOverride(t *testing.T) {
 	t.Setenv("OP_ACCOUNT", "FromEnv")
-	account, err := desktopAccount(context.Background(), " Fixture ")
-	if err != nil {
-		t.Fatalf("desktopAccount returned error: %v", err)
-	}
+	account := desktopAccount(" Fixture ")
 	if account != "Fixture" {
 		t.Fatalf("account = %q, want explicit override", account)
 	}
@@ -173,21 +172,15 @@ func TestDesktopAccountUsesExplicitOverride(t *testing.T) {
 
 func TestDesktopAccountUsesOPAccountEnvironment(t *testing.T) {
 	t.Setenv("OP_ACCOUNT", " Fixture ")
-	account, err := desktopAccount(context.Background(), "")
-	if err != nil {
-		t.Fatalf("desktopAccount returned error: %v", err)
-	}
+	account := desktopAccount("")
 	if account != "Fixture" {
 		t.Fatalf("account = %q, want OP_ACCOUNT", account)
 	}
 }
 
 func TestDesktopAccountUsesSDKDefaultWhenUnset(t *testing.T) {
-	account, err := desktopAccountWith(context.Background(), "", "")
-	if err != nil {
-		t.Fatalf("desktopAccount returned error: %v", err)
-	}
-	if account != DefaultDesktopAccount {
+	account := opaccount.SelectDesktopAccount("", "")
+	if account != opaccount.DefaultDesktopAccount {
 		t.Fatalf("account = %q, want default account", account)
 	}
 }

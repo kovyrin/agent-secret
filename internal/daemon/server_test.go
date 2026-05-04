@@ -680,6 +680,53 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	assertRequesterAudit(t, events[0], peer, "")
 }
 
+func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
+	t.Parallel()
+
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	checkErr := errors.New("desktop integration unavailable")
+	checkCalls := 0
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:        staticPeerValidator{info: peer},
+		ExecValidator:    peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		OnePasswordCheck: func(context.Context) error { checkCalls++; return checkErr },
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+
+	serverConn, clientConn := unixsocket.Pair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(ctx, serverConn)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("server connection did not stop")
+		}
+	}()
+
+	client := control.NewClient(clientConn)
+	defer func() { _ = client.Close() }()
+	err = client.CheckOnePassword(context.Background())
+	if !control.IsProtocolError(err, protocol.ErrorCodeResolveFailed) {
+		t.Fatalf("CheckOnePassword error = %v, want resolve_failed", err)
+	}
+	if checkCalls != 1 {
+		t.Fatalf("one password check calls = %d, want 1", checkCalls)
+	}
+}
+
 func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	t.Parallel()
 

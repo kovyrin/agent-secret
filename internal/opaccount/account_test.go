@@ -1,11 +1,8 @@
-package opresolver
+package opaccount
 
-import (
-	"context"
-	"testing"
-)
+import "testing"
 
-func TestDesktopAccountWithPrecedence(t *testing.T) {
+func TestSelectDesktopAccountPrecedence(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -26,7 +23,7 @@ func TestDesktopAccountWithPrecedence(t *testing.T) {
 			want:      "EnvAccount",
 		},
 		{
-			name: "sdk default",
+			name: "built in default",
 			want: DefaultDesktopAccount,
 		},
 	}
@@ -35,10 +32,7 @@ func TestDesktopAccountWithPrecedence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := desktopAccountWith(context.Background(), tt.accountOverride, tt.opAccount)
-			if err != nil {
-				t.Fatalf("desktopAccountWith returned error: %v", err)
-			}
+			got := SelectDesktopAccount(tt.accountOverride, tt.opAccount)
 			if got != tt.want {
 				t.Fatalf("account = %q, want %q", got, tt.want)
 			}
