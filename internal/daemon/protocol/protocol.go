@@ -151,32 +151,31 @@ func ReadEnvelopeFrame(reader *bufio.Reader, maxBytes int64) (Envelope, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxProtocolFrameBytes
 	}
-	line, err := reader.ReadBytes('\n')
-	if errors.Is(err, bufio.ErrBufferFull) {
-		for {
-			if int64(len(line)) > maxBytes {
+
+	var line []byte
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if len(chunk) > 0 {
+			if int64(len(line))+int64(len(chunk)) > maxBytes {
 				return Envelope{}, fmt.Errorf("%w: max %d bytes", ErrProtocolFrameSize, maxBytes)
 			}
-			chunk, chunkErr := reader.ReadBytes('\n')
 			line = append(line, chunk...)
-			if !errors.Is(chunkErr, bufio.ErrBufferFull) {
-				err = chunkErr
-				break
-			}
 		}
-	}
-	if errors.Is(err, io.EOF) && len(line) == 0 {
-		return Envelope{}, io.EOF
-	}
-	if errors.Is(err, io.EOF) {
-		return Envelope{}, fmt.Errorf("%w: unterminated JSON frame", ErrMalformedEnvelope)
-	}
-	if err != nil {
+		if err == nil {
+			break
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if errors.Is(err, io.EOF) && len(line) == 0 {
+			return Envelope{}, io.EOF
+		}
+		if errors.Is(err, io.EOF) {
+			return Envelope{}, fmt.Errorf("%w: unterminated JSON frame", ErrMalformedEnvelope)
+		}
 		return Envelope{}, err
 	}
-	if int64(len(line)) > maxBytes {
-		return Envelope{}, fmt.Errorf("%w: max %d bytes", ErrProtocolFrameSize, maxBytes)
-	}
+
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 {
 		return Envelope{}, fmt.Errorf("%w: empty frame", ErrMalformedEnvelope)

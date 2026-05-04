@@ -116,3 +116,44 @@ func TestReadEnvelopeFrame(t *testing.T) {
 		})
 	}
 }
+
+func TestReadEnvelopeFrameStopsAtFragmentSizeLimit(t *testing.T) {
+	t.Parallel()
+
+	readErr := errors.New("read past frame size limit")
+	source := &limitedReadSource{
+		data:      strings.Repeat("x", 64) + "\n",
+		readLimit: 1,
+		err:       readErr,
+	}
+	reader := bufio.NewReaderSize(source, 16)
+
+	_, err := ReadEnvelopeFrame(reader, 8)
+
+	if !errors.Is(err, ErrProtocolFrameSize) {
+		t.Fatalf("ReadEnvelopeFrame error = %v, want %v", err, ErrProtocolFrameSize)
+	}
+	if source.reads != 1 {
+		t.Fatalf("ReadEnvelopeFrame performed %d reads, want 1", source.reads)
+	}
+}
+
+type limitedReadSource struct {
+	data      string
+	readLimit int
+	reads     int
+	err       error
+}
+
+func (s *limitedReadSource) Read(p []byte) (int, error) {
+	if s.reads >= s.readLimit {
+		return 0, s.err
+	}
+	s.reads++
+	if s.data == "" {
+		return 0, io.EOF
+	}
+	n := copy(p, s.data)
+	s.data = s.data[n:]
+	return n, nil
+}
