@@ -41,6 +41,20 @@ type grantDelivery struct {
 	expiresAt  time.Time
 }
 
+type uniqueRefFetch struct {
+	resolved       map[secretIdentity]string
+	pending        []secretIdentity
+	failedIdentity secretIdentity
+	failed         bool
+	err            error
+}
+
+type uniqueRefFetchResult struct {
+	identity secretIdentity
+	value    string
+	err      error
+}
+
 func newGrantIssuer(
 	now func() time.Time,
 	store *policy.Store,
@@ -356,21 +370,38 @@ func (g *grantIssuer) resolveUniqueRefs(
 ) (map[secretIdentity]string, error) {
 	secrets := req.Secrets
 	identities := uniqueSecretIdentities(secrets)
-	type result struct {
-		identity secretIdentity
-		value    string
-		err      error
-	}
 
 	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventSecretFetchStarted, requestID, req)); err != nil {
 		return nil, err
 	}
 
+	fetch := g.fetchUniqueRefs(ctx, identities)
+	if fetch.err != nil {
+		if fetch.failed {
+			if err := g.recordSecretFetchFailed(ctx, requestID, secrets, fetch.failedIdentity, fetch.err); err != nil {
+				return nil, err
+			}
+		} else if auditErr := g.recordSecretFetchFailedForIdentities(
+			ctx,
+			requestID,
+			secrets,
+			fetch.pending,
+			fetch.err,
+		); auditErr != nil {
+			return nil, auditErr
+		}
+		return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, fetch.err)
+	}
+
+	return fetch.resolved, nil
+}
+
+func (g *grantIssuer) fetchUniqueRefs(ctx context.Context, identities []secretIdentity) uniqueRefFetch {
 	fetchCtx, cancelFetches := context.WithCancel(ctx)
 	defer cancelFetches()
 
 	sem := make(chan struct{}, g.fetchLimit)
-	results := make(chan result, len(identities))
+	results := make(chan uniqueRefFetchResult, len(identities))
 	for _, identity := range identities {
 		go func(identity secretIdentity) {
 			select {
@@ -382,7 +413,7 @@ func (g *grantIssuer) resolveUniqueRefs(
 
 			value, err := g.resolver.Resolve(fetchCtx, identity.ref, identity.account)
 			select {
-			case results <- result{identity: identity, value: value, err: err}:
+			case results <- uniqueRefFetchResult{identity: identity, value: value, err: err}:
 			case <-fetchCtx.Done():
 			}
 		}(identity)
@@ -394,35 +425,31 @@ func (g *grantIssuer) resolveUniqueRefs(
 		pending[identity] = struct{}{}
 	}
 	for remaining := len(identities); remaining > 0; remaining-- {
-		var got result
+		var got uniqueRefFetchResult
 		select {
 		case got = <-results:
 			delete(pending, got.identity)
 		case <-fetchCtx.Done():
-			err := contextCause(fetchCtx)
-			if auditErr := g.recordSecretFetchFailedForIdentities(
-				ctx,
-				requestID,
-				secrets,
-				pendingIdentities(identities, pending),
-				err,
-			); auditErr != nil {
-				return nil, auditErr
+			return uniqueRefFetch{
+				resolved: resolved,
+				pending:  pendingIdentities(identities, pending),
+				err:      contextCause(fetchCtx),
 			}
-			return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, err)
 		}
 
 		if got.err != nil {
 			cancelFetches()
-			if err := g.recordSecretFetchFailed(ctx, requestID, secrets, got.identity, got.err); err != nil {
-				return nil, err
+			return uniqueRefFetch{
+				resolved:       resolved,
+				failedIdentity: got.identity,
+				failed:         true,
+				err:            got.err,
 			}
-			return nil, fmt.Errorf("%w: resolve approved ref: %w", ErrSecretResolveFailed, got.err)
 		}
 		resolved[got.identity] = got.value
 	}
 
-	return resolved, nil
+	return uniqueRefFetch{resolved: resolved}
 }
 
 func (g *grantIssuer) recordRequiredAudit(ctx context.Context, event audit.Event) error {
