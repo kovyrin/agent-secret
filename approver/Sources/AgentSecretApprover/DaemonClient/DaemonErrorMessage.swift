@@ -1,6 +1,6 @@
 import Foundation
 
-enum DaemonErrorDisplay {
+enum DaemonErrorMessage {
     private static let messagesByCode: [DaemonErrorCode: String] = [
         .approvalDenied: "approval denied",
         .approvalUnavailable: "approval is unavailable",

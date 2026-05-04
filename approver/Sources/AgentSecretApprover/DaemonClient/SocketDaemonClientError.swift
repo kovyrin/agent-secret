@@ -59,8 +59,8 @@ enum SocketDaemonClientError: Error, CustomStringConvertible, Equatable {
     }
 
     private static func daemonErrorDescription(code: DaemonErrorCode) -> String {
-        let displayCode = DaemonErrorDisplay.displayCode(code).rawValue
-        return "daemon error \(displayCode): \(DaemonErrorDisplay.message(for: code))"
+        let displayCode = DaemonErrorMessage.displayCode(code).rawValue
+        return "daemon error \(displayCode): \(DaemonErrorMessage.message(for: code))"
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
