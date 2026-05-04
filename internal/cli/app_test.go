@@ -18,6 +18,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -37,7 +38,7 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 	}
 
 	ref := "op://Example/Item/token"
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
 		Audit:    &appAudit{},
@@ -74,7 +75,7 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 	}
 
 	ref := "op://Example/Item/token"
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
 		Audit:    &appAudit{},
@@ -116,7 +117,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 		return
 	}
 
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: false}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
 		Audit:    &appAudit{},
@@ -180,7 +181,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 
 func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &appAudit{},
@@ -244,7 +245,7 @@ func TestAppDaemonStatusUsesDefaultProtocolDeadline(t *testing.T) {
 
 func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
 		Audit:    &appAudit{},
@@ -271,7 +272,7 @@ func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 }
 
 func TestAppDaemonStartAndStopCommands(t *testing.T) {
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &appAudit{},
@@ -399,7 +400,7 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 
 func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 	ref := "op://Example/Item/token"
-	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
+	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
 		Audit:    &appAudit{},
@@ -595,7 +596,7 @@ func (appAllowPeer) Validate(_ *net.UnixConn) error {
 	return nil
 }
 
-func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient, func()) {
+func startAppTestServer(t *testing.T, opts daemonbroker.Options) (appTestClient, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-")
 	if err != nil {
@@ -607,9 +608,9 @@ func startAppTestServer(t *testing.T, opts daemon.BrokerOptions) (appTestClient,
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
-	broker, err := daemon.NewBroker(opts)
+	broker, err := daemonbroker.New(opts)
 	if err != nil {
-		t.Fatalf("NewBroker returned error: %v", err)
+		t.Fatalf("New returned error: %v", err)
 	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:        broker,
@@ -734,7 +735,7 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 				return err
 			}
 		case protocol.TypeCommandStarted, protocol.TypeCommandCompleted:
-			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemon.ErrDaemonStopped); err != nil {
+			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemonbroker.ErrDaemonStopped); err != nil {
 				return err
 			}
 		case protocol.TypeDaemonStop,

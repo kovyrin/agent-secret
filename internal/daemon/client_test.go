@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -22,7 +23,7 @@ func TestConnectAcceptsTrustedDaemonPeer(t *testing.T) {
 	t.Parallel()
 
 	path, stop := startRawServerWithOptions(t, ServerOptions{
-		Broker: newTestBroker(t, BrokerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},

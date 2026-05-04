@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -43,7 +44,7 @@ func (SameUIDValidator) Validate(conn *net.UnixConn) error {
 }
 
 type Server struct {
-	broker                  *Broker
+	broker                  *daemonbroker.Broker
 	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
 	execValidator           peertrust.ExecValidator
@@ -55,7 +56,7 @@ type Server struct {
 }
 
 type ServerOptions struct {
-	Broker                  *Broker
+	Broker                  *daemonbroker.Broker
 	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
 	ExecValidator           peertrust.ExecValidator
@@ -65,6 +66,8 @@ type ServerOptions struct {
 }
 
 const DefaultProtocolReadTimeout = 30 * time.Second
+
+var ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
 
 func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.Broker == nil {
@@ -139,7 +142,7 @@ func (s *Server) Stop(ctx context.Context) {
 }
 
 func (s *Server) stopWithAudit(ctx context.Context, event audit.Event) {
-	s.broker.stopWithAudit(ctx, event)
+	s.broker.Stop(ctx, event)
 	s.stopOnce.Do(func() { close(s.stop) })
 }
 
@@ -173,7 +176,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			continue
 		}
 		if s.stopped() && env.Type != protocol.TypeDaemonStatus {
-			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrDaemonStopped), ErrDaemonStopped)
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(daemonbroker.ErrDaemonStopped), daemonbroker.ErrDaemonStopped)
 			return
 		}
 
@@ -196,7 +199,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			}
 		case protocol.TypeApprovalDecision:
 			if s.approvals == nil {
-				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
+				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, approval.ErrUnavailable)
 				continue
 			}
 			payload, err := protocol.DecodePayload[approval.ApprovalDecisionPayload](env)
@@ -266,7 +269,7 @@ func (s *Server) handleApprovalPending(
 	env protocol.Envelope,
 ) (approval.ApprovalRequestPayload, bool) {
 	if s.approvals == nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, approval.ErrUnavailable)
 		return approval.ApprovalRequestPayload{}, false
 	}
 	peer, err := s.peerInfo(conn)
@@ -298,7 +301,7 @@ func (s *Server) handleDaemonStop(
 		return false
 	}
 	if err := s.execValidator.ValidateExecPeer(peer); err != nil {
-		s.broker.recordDaemonStopAttempt(ctx, daemonStopAuditEvent(peer, err))
+		s.broker.RecordStopAttempt(ctx, daemonStopAuditEvent(peer, err))
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
@@ -322,15 +325,15 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
-	req = req.WithReceiptTime(s.broker.now())
+	req = req.WithReceiptTime(s.broker.Now())
 	if err := req.ValidateForDaemon(); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
 	wroteResponse := false
-	_, err = s.broker.handleExecDelivery(ctx, env.Correlation(), req, func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
+	_, err = s.broker.HandleExecDelivery(ctx, env.Correlation(), req, func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
 		if s.stopped() {
-			return ErrDaemonStopped
+			return daemonbroker.ErrDaemonStopped
 		}
 		if s.beforeExecResponseWrite != nil {
 			s.beforeExecResponseWrite()
@@ -356,7 +359,7 @@ func (s *Server) setExecResponseWriteDeadline(conn *net.UnixConn, expiresAt time
 	if expiresAt.IsZero() {
 		return func() {}, nil
 	}
-	remaining := expiresAt.Sub(s.broker.now())
+	remaining := expiresAt.Sub(s.broker.Now())
 	if remaining <= 0 {
 		return func() {}, approval.ErrRequestExpired
 	}
@@ -447,7 +450,7 @@ func daemonStopAuditEvent(peer peercred.Info, err error) audit.Event {
 		RequesterPath: peer.ExecutablePath,
 	}
 	if err != nil {
-		event.ErrorCode = auditErrorCode(codeForError(err))
+		event.ErrorCode = audit.ErrorCode(codeForError(err))
 	}
 	return event
 }
@@ -485,7 +488,7 @@ func codeForError(err error) protocol.ErrorCode {
 	switch {
 	case errors.Is(err, approval.ErrApprovalDenied):
 		return protocol.ErrorCodeApprovalDenied
-	case errors.Is(err, ErrAuditRequired):
+	case errors.Is(err, daemonbroker.ErrAuditRequired):
 		return protocol.ErrorCodeAuditFailed
 	case errors.Is(err, protocol.ErrInvalidNonce):
 		return protocol.ErrorCodeInvalidNonce
@@ -497,7 +500,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeNoPendingApproval
 	case errors.Is(err, ErrRequestAlreadyActive):
 		return protocol.ErrorCodeRequestActive
-	case errors.Is(err, ErrDaemonStopped):
+	case errors.Is(err, daemonbroker.ErrDaemonStopped):
 		return protocol.ErrorCodeDaemonStopped
 	case errors.Is(err, approval.ErrRequestExpired):
 		return protocol.ErrorCodeRequestExpired
@@ -509,7 +512,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeContextCanceled
 	case errors.Is(err, context.DeadlineExceeded):
 		return protocol.ErrorCodeContextDeadlineExceeded
-	case errors.Is(err, ErrSecretResolveFailed):
+	case errors.Is(err, daemonbroker.ErrSecretResolveFailed):
 		return protocol.ErrorCodeResolveFailed
 	default:
 		return protocol.ErrorCodeRequestFailed

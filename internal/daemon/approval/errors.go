@@ -10,4 +10,5 @@ var (
 	ErrNoPendingApproval    = errors.New("no pending approval request")
 	ErrRequestExpired       = errors.New("request expired")
 	ErrStaleApproval        = errors.New("stale approval response")
+	ErrUnavailable          = errors.New("approval unavailable")
 )

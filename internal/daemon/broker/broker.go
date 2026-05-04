@@ -1,4 +1,4 @@
-package daemon
+package broker
 
 import (
 	"context"
@@ -15,14 +15,12 @@ import (
 )
 
 var (
-	ErrApprovalUnavailable  = errors.New("approval unavailable")
-	ErrAuditRequired        = errors.New("audit required")
-	ErrMissingCache         = errors.New("approved secret cache entry missing")
-	ErrNoResolver           = errors.New("secret resolver unavailable")
-	ErrSecretResolveFailed  = errors.New("secret resolve failed")
-	ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
-	ErrDaemonStopped        = errors.New("daemon stopped")
-	ErrUnknownRequest       = errors.New("unknown request")
+	ErrAuditRequired       = errors.New("audit required")
+	ErrMissingCache        = errors.New("approved secret cache entry missing")
+	ErrNoResolver          = errors.New("secret resolver unavailable")
+	ErrSecretResolveFailed = errors.New("secret resolve failed")
+	ErrDaemonStopped       = errors.New("daemon stopped")
+	ErrUnknownRequest      = errors.New("unknown request")
 )
 
 type Resolver interface {
@@ -59,7 +57,7 @@ type activeExec struct {
 	childPID *int
 }
 
-type BrokerOptions struct {
+type Options struct {
 	Now        func() time.Time
 	Store      *policy.Store
 	Cache      SecretCache
@@ -69,7 +67,7 @@ type BrokerOptions struct {
 	FetchLimit int
 }
 
-func NewBroker(opts BrokerOptions) (*Broker, error) {
+func New(opts Options) (*Broker, error) {
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -78,7 +76,7 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 		return nil, ErrAuditRequired
 	}
 	if opts.Approver == nil {
-		return nil, ErrApprovalUnavailable
+		return nil, approval.ErrUnavailable
 	}
 	if opts.Resolver == nil {
 		return nil, ErrNoResolver
@@ -114,32 +112,36 @@ func NewBroker(opts BrokerOptions) (*Broker, error) {
 	return broker, nil
 }
 
-func (b *Broker) handleExecDelivery(
+func (b *Broker) Now() time.Time {
+	return b.now()
+}
+
+func (b *Broker) HandleExecDelivery(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
 	write func(protocol.ExecResponsePayload, time.Time) error,
-) (ExecGrant, error) {
+) (Grant, error) {
 	if correlation.RequestID == "" || correlation.Nonce == "" {
-		return ExecGrant{}, protocol.ErrInvalidNonce
+		return Grant{}, protocol.ErrInvalidNonce
 	}
 	if b.stopped() {
-		return ExecGrant{}, ErrDaemonStopped
+		return Grant{}, ErrDaemonStopped
 	}
 	if err := b.grants.preflightAudit(ctx); err != nil {
-		return ExecGrant{}, err
+		return Grant{}, err
 	}
 	if req.Expired(b.now()) {
-		return ExecGrant{}, approval.ErrRequestExpired
+		return Grant{}, approval.ErrRequestExpired
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()
 	grant, err := b.grants.issueAndDeliver(execCtx, correlation, req, write)
 	if err != nil {
-		return ExecGrant{}, err
+		return Grant{}, err
 	}
 	if err := b.activateExec(correlation, req); err != nil {
-		return ExecGrant{}, err
+		return Grant{}, err
 	}
 	return grant, nil
 }
@@ -242,20 +244,16 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 	b.recordBestEffortAudit(ctx, event)
 }
 
-func (b *Broker) Stop(ctx context.Context) {
-	b.stopWithAudit(ctx, audit.Event{Type: audit.EventDaemonStop})
-}
-
-func (b *Broker) stopWithAudit(ctx context.Context, event audit.Event) {
+func (b *Broker) Stop(ctx context.Context, event audit.Event) {
 	b.stopOnce.Do(func() { close(b.stop) })
-	b.recordDaemonStopAttempt(ctx, event)
+	b.RecordStopAttempt(ctx, event)
 	b.mu.Lock()
 	b.active = make(map[string]*activeExec)
 	b.mu.Unlock()
 	b.grants.clearReusableGrants()
 }
 
-func (b *Broker) recordDaemonStopAttempt(ctx context.Context, event audit.Event) {
+func (b *Broker) RecordStopAttempt(ctx context.Context, event audit.Event) {
 	if event.Type == "" {
 		event.Type = audit.EventDaemonStop
 	}

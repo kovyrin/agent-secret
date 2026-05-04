@@ -18,6 +18,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -168,7 +169,7 @@ func runDaemonManagerHelper(t *testing.T) {
 		os.Exit(64)
 	}
 	aud := &managerAudit{}
-	broker, err := daemon.NewBroker(daemon.BrokerOptions{
+	broker, err := daemonbroker.New(daemonbroker.Options{
 		Approver: managerApprover{},
 		Resolver: managerResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,

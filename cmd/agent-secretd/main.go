@@ -11,6 +11,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
@@ -50,7 +51,7 @@ func run() int {
 		return 1
 	}
 
-	broker, err := daemon.NewBroker(daemon.BrokerOptions{
+	broker, err := daemonbroker.New(daemonbroker.Options{
 		Approver: approver,
 		Resolver: newResolver(config.accountName),
 		Audit:    auditWriter,
@@ -109,6 +110,6 @@ func stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, args...)
 }
 
-func newResolver(account string) daemon.Resolver {
+func newResolver(account string) daemonbroker.Resolver {
 	return opresolver.NewDesktopPool(account)
 }

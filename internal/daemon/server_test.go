@@ -15,6 +15,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -56,7 +57,7 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -101,7 +102,7 @@ func TestServerStampsExecRequestTimeWithDaemonClock(t *testing.T) {
 		decision: approval.Decision{Approved: true},
 		seen:     make(chan request.ExecRequest, 1),
 	}
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Now:      func() time.Time { return daemonNow },
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
@@ -135,7 +136,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -180,7 +181,7 @@ func TestServerRejectsLifecycleReportsFromDifferentConnection(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	path, stop := startRawTestServer(t, BrokerOptions{
+	path, stop := startRawTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -223,7 +224,7 @@ func TestServerRejectsLifecycleReportsFromDifferentConnection(t *testing.T) {
 func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey("op://Example/Item/token", "Work"): "value"}},
 		Audit:    &memoryAudit{},
@@ -249,7 +250,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawTestServer(t, BrokerOptions{
+	path, stop := startRawTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
@@ -286,7 +287,7 @@ func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 	t.Parallel()
 
 	path, stop := startRawServerWithOptions(t, ServerOptions{
-		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     allowPeerValidator{},
 		MaxFrameBytes: 96,
 		ReadTimeout:   time.Second,
@@ -324,7 +325,7 @@ func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 	t.Parallel()
 
 	path, stop := startRawServerWithOptions(t, ServerOptions{
-		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     allowPeerValidator{},
 		ReadTimeout:   25 * time.Millisecond,
 		MaxFrameBytes: 1024,
@@ -359,7 +360,7 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	path, stop := startRawServerWithOptions(t, ServerOptions{
-		Broker:        newTestBroker(t, BrokerOptions{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     staticPeerValidator{info: peer},
 		ExecValidator: peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
 		MaxFrameBytes: 4096,
@@ -401,7 +402,7 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -435,7 +436,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	req.ReusableUses = 1
 	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
 	aud := &callbackAudit{}
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -470,7 +471,6 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	connMu.Unlock()
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
 	waitForAuditEvent(t, &aud.memoryAudit, audit.EventCommandStarting, "req_1")
-	waitForInactiveRequest(t, broker, "req_1")
 
 	secondConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
@@ -501,9 +501,9 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	now := daemonNow
 	ref := "op://Example/Item/token"
-	cache := secretcache.NewSecretCache()
+	cache := newRecordingSecretCache()
 	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Now:      func() time.Time { return now },
 		Cache:    cache,
 		Approver: approver,
@@ -513,23 +513,12 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.ReusableUses = 1
 	var hookOnce sync.Once
-	var approvalMu sync.Mutex
-	var approvalID string
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
 		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
 		beforeExecResponseWrite: func() {
 			hookOnce.Do(func() {
-				if approval, err := broker.grants.reusable.store.MatchReusableForReuseAudit(
-					context.Background(),
-					req,
-					nil,
-				); approval.ID != "" || err != nil {
-					approvalMu.Lock()
-					approvalID = approval.ID
-					approvalMu.Unlock()
-				}
 				now = daemonNow.Add(request.DefaultExecTTL + time.Second)
 			})
 		},
@@ -546,15 +535,8 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !control.IsProtocolError(err, protocol.ErrorCodeRequestExpired) {
 		t.Fatalf("RequestExec error = %v, want request_expired", err)
 	}
-	waitForInactiveRequest(t, broker, "req_1")
-	approvalMu.Lock()
-	gotApprovalID := approvalID
-	approvalMu.Unlock()
-	if gotApprovalID == "" {
-		t.Fatal("server did not create a reusable approval before payload delivery")
-	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: gotApprovalID, Ref: ref, Account: "Work"}); ok {
-		t.Fatal("expired reusable approval cache scope remained after failed payload delivery")
+	if !cache.ScopeCleared() {
+		t.Fatal("expired reusable approval cache scope was not cleared after failed payload delivery")
 	}
 
 	payload, err := client.RequestExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
@@ -576,7 +558,7 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	aud := &memoryAudit{}
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
-	path, stop := startRawTestServer(t, BrokerOptions{
+	path, stop := startRawTestServer(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: resolver,
 		Audit:    aud,
@@ -633,7 +615,7 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): canarySecretValue}},
 		Audit:    aud,
@@ -674,7 +656,7 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	aud := &memoryAudit{}
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
-		newTestBroker(t, BrokerOptions{
+		newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
@@ -710,7 +692,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	resolver := &mockResolver{values: map[string]string{ref: "value"}}
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
@@ -780,7 +762,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	aud := &memoryAudit{}
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
-		newTestBroker(t, BrokerOptions{
+		newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
@@ -822,7 +804,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	ref := "op://Example/Item/token"
 	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Now:      time.Now,
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
@@ -879,7 +861,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	ref := "op://Example/Item/token"
 	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Now:      time.Now,
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
@@ -944,7 +926,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 func TestServerReportsApprovalUnavailable(t *testing.T) {
 	t.Parallel()
 
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
@@ -967,7 +949,7 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	t.Parallel()
 
-	path, stop := startRawTestServer(t, BrokerOptions{
+	path, stop := startRawTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
@@ -1025,7 +1007,7 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	path, stop := startRawTestServer(t, BrokerOptions{
+	path, stop := startRawTestServer(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
@@ -1080,7 +1062,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
@@ -1105,7 +1087,7 @@ func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
 
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
-	client, cleanup := startTestServer(t, BrokerOptions{
+	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
@@ -1133,7 +1115,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
-		newTestBroker(t, BrokerOptions{
+		newTestBroker(t, daemonbroker.Options{
 			Approver: approver,
 			Resolver: resolver,
 			Audit:    &memoryAudit{},
@@ -1174,7 +1156,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 	aud := &memoryAudit{}
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
-		newTestBroker(t, BrokerOptions{
+		newTestBroker(t, daemonbroker.Options{
 			Approver: approver,
 			Resolver: resolver,
 			Audit:    aud,
@@ -1234,7 +1216,7 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 	approver := newSocketApproverForTest(t, &recordingLauncher{
 		expected: approval.ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath},
 	}, time.Now)
-	broker := newTestBroker(t, BrokerOptions{
+	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
@@ -1274,7 +1256,7 @@ func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
 
 	path, stop := startRawServerWithBroker(
 		t,
-		newTestBroker(t, BrokerOptions{
+		newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
@@ -1313,19 +1295,19 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		want protocol.ErrorCode
 	}{
 		{err: approval.ErrApprovalDenied, want: protocol.ErrorCodeApprovalDenied},
-		{err: ErrAuditRequired, want: protocol.ErrorCodeAuditFailed},
+		{err: daemonbroker.ErrAuditRequired, want: protocol.ErrorCodeAuditFailed},
 		{err: protocol.ErrInvalidNonce, want: protocol.ErrorCodeInvalidNonce},
 		{err: approval.ErrApproverPeerMismatch, want: protocol.ErrorCodeApproverPeerMismatch},
 		{err: approval.ErrApproverIdentity, want: protocol.ErrorCodeApproverIdentityMismatch},
 		{err: approval.ErrNoPendingApproval, want: protocol.ErrorCodeNoPendingApproval},
 		{err: ErrRequestAlreadyActive, want: protocol.ErrorCodeRequestActive},
-		{err: ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
+		{err: daemonbroker.ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
 		{err: approval.ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
 		{err: approval.ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
 		{err: peertrust.ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
 		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
 		{err: context.DeadlineExceeded, want: protocol.ErrorCodeContextDeadlineExceeded},
-		{err: ErrSecretResolveFailed, want: protocol.ErrorCodeResolveFailed},
+		{err: daemonbroker.ErrSecretResolveFailed, want: protocol.ErrorCodeResolveFailed},
 		{err: errors.New("other"), want: protocol.ErrorCodeRequestFailed},
 	}
 	for _, tt := range tests {
@@ -1363,7 +1345,7 @@ func pendingApprovalFetchRetryable(err error) bool {
 	return control.IsProtocolError(err, protocol.ErrorCodeNoPendingApproval) || errors.Is(err, context.DeadlineExceeded)
 }
 
-func startTestServer(t *testing.T, opts BrokerOptions) (*control.Client, func()) {
+func startTestServer(t *testing.T, opts daemonbroker.Options) (*control.Client, func()) {
 	t.Helper()
 	path, stop := startRawTestServer(t, opts)
 	conn, err := socket.Dial(context.Background(), path)
@@ -1380,7 +1362,7 @@ func startTestServer(t *testing.T, opts BrokerOptions) (*control.Client, func())
 
 func startTestServerWithBroker(
 	t *testing.T,
-	broker *Broker,
+	broker *daemonbroker.Broker,
 	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
 ) (appTestClient, func()) {
@@ -1398,7 +1380,7 @@ func startTestServerWithBroker(
 	}
 }
 
-func startRawTestServer(t *testing.T, opts BrokerOptions) (string, func()) {
+func startRawTestServer(t *testing.T, opts daemonbroker.Options) (string, func()) {
 	t.Helper()
 	broker := newTestBroker(t, opts)
 	return startRawServerWithBroker(t, broker, nil, allowPeerValidator{})
@@ -1412,7 +1394,7 @@ type appTestClient struct {
 
 func startRawServerWithBroker(
 	t *testing.T,
-	broker *Broker,
+	broker *daemonbroker.Broker,
 	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
 ) (string, func()) {
@@ -1428,7 +1410,7 @@ func startRawServerWithBroker(
 
 func startRawServerWithBrokerAndExecValidator(
 	t *testing.T,
-	broker *Broker,
+	broker *daemonbroker.Broker,
 	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
 	execValidator peertrust.ExecValidator,
@@ -1533,22 +1515,6 @@ func waitForAuditEvent(
 	return audit.Event{}
 }
 
-func waitForInactiveRequest(t *testing.T, broker *Broker, requestID string) {
-	t.Helper()
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		broker.mu.Lock()
-		_, active := broker.active[requestID]
-		broker.mu.Unlock()
-		if !active {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("request %s remained active after response write failure", requestID)
-}
-
 func writeExecutableAt(t *testing.T, dir string, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -1556,6 +1522,41 @@ func writeExecutableAt(t *testing.T, dir string, name string) string {
 		t.Fatalf("write executable: %v", err)
 	}
 	return path
+}
+
+type recordingSecretCache struct {
+	mu       sync.Mutex
+	delegate *secretcache.SecretCache
+	cleared  bool
+}
+
+func newRecordingSecretCache() *recordingSecretCache {
+	return &recordingSecretCache{delegate: secretcache.NewSecretCache()}
+}
+
+func (c *recordingSecretCache) Put(key secretcache.CacheKey, value string) error {
+	return c.delegate.Put(key, value)
+}
+
+func (c *recordingSecretCache) Get(key secretcache.CacheKey) (string, bool) {
+	return c.delegate.Get(key)
+}
+
+func (c *recordingSecretCache) ClearScope(scopeID string) {
+	c.mu.Lock()
+	c.cleared = true
+	c.mu.Unlock()
+	c.delegate.ClearScope(scopeID)
+}
+
+func (c *recordingSecretCache) Clear() {
+	c.delegate.Clear()
+}
+
+func (c *recordingSecretCache) ScopeCleared() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cleared
 }
 
 func assertRequesterAudit(t *testing.T, event audit.Event, peer peercred.Info, wantErrorCode protocol.ErrorCode) {
@@ -1570,7 +1571,7 @@ func assertRequesterAudit(t *testing.T, event audit.Event, peer peercred.Info, w
 	if event.RequesterPath != peer.ExecutablePath {
 		t.Fatalf("requester path = %q, want %q", event.RequesterPath, peer.ExecutablePath)
 	}
-	if event.ErrorCode != auditErrorCode(wantErrorCode) {
+	if event.ErrorCode != audit.ErrorCode(wantErrorCode) {
 		t.Fatalf("stop error code = %q, want %q", event.ErrorCode, wantErrorCode)
 	}
 }

@@ -1,4 +1,4 @@
-package daemon
+package broker
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type grantIssuer struct {
 	stopped    func() bool
 }
 
-type ExecGrant struct {
+type Grant struct {
 	Env              map[string]string
 	SecretAliases    []string
 	approvalID       string
@@ -31,7 +31,7 @@ type ExecGrant struct {
 }
 
 type issuedGrant struct {
-	grant    ExecGrant
+	grant    Grant
 	delivery grantDelivery
 }
 
@@ -72,10 +72,10 @@ func (g *grantIssuer) issueAndDeliver(
 	correlation protocol.Correlation,
 	req request.ExecRequest,
 	write func(protocol.ExecResponsePayload, time.Time) error,
-) (ExecGrant, error) {
+) (Grant, error) {
 	issued, err := g.issue(ctx, correlation, req)
 	if err != nil {
-		return ExecGrant{}, err
+		return Grant{}, err
 	}
 	payload := protocol.ExecResponsePayload{
 		Env:           issued.grant.Env,
@@ -83,10 +83,10 @@ func (g *grantIssuer) issueAndDeliver(
 	}
 	if err := write(payload, issued.grant.payloadExpiresAt); err != nil {
 		_ = g.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
-		return ExecGrant{}, err
+		return Grant{}, err
 	}
 	if err := g.completeDelivery(issued.delivery, policy.DeliveryPayloadDelivered); err != nil {
-		return ExecGrant{}, err
+		return Grant{}, err
 	}
 	return issued.grant, nil
 }
@@ -256,7 +256,7 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 
 	delivered = true
 	return issuedGrant{
-		grant: ExecGrant{
+		grant: Grant{
 			Env:           values,
 			SecretAliases: aliases(req.Secrets),
 			approvalID:    approval.ID,
@@ -369,7 +369,7 @@ func (g *grantIssuer) freshGrant(
 		expiresAt:  approvalExpiresAt,
 	})
 	return issuedGrant{
-		grant: ExecGrant{
+		grant: Grant{
 			Env:           values,
 			SecretAliases: aliases(req.Secrets),
 			approvalID:    approvalID,
