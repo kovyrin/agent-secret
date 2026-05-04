@@ -51,7 +51,8 @@ go test -tags integration ./...
 ```
 
 Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when you want to force
-a specific 1Password account instead of `my.1password.com`.
+a specific 1Password account instead of the detected single signed-in
+1Password CLI account.
 
 The live test logs only value length and SHA-256 metadata. It does not print the
 secret value. On 2026-04-28, this passed against a test account after

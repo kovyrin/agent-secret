@@ -113,8 +113,9 @@ func (c *Client) RequestStop(ctx context.Context) (protocol.StatusPayload, error
 	return payload, nil
 }
 
-func (c *Client) CheckOnePassword(ctx context.Context) error {
-	return roundTripAck(ctx, c, protocol.TypeOnePasswordStatus, protocol.Correlation{}, nil)
+func (c *Client) CheckOnePassword(ctx context.Context, account string) error {
+	payload := protocol.OnePasswordStatusPayload{Account: account}
+	return roundTripAck(ctx, c, protocol.TypeOnePasswordStatus, protocol.Correlation{}, payload)
 }
 
 func (c *Client) RequestExec(

@@ -147,7 +147,8 @@ Agent Secret chooses the account for each secret independently:
 3. Top-level `account`.
 4. CLI `--account`.
 5. `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT`.
-6. Built-in default `my.1password.com`.
+6. The single signed-in 1Password CLI account, when one can be detected.
+7. Built-in default `my.1password.com`.
 
 The account is part of the secret identity used for resolution, reusable
 approval matching, and in-memory caching. The same `op://` reference in two

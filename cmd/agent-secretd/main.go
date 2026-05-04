@@ -53,7 +53,7 @@ func run() int {
 
 	broker, err := daemonbroker.New(daemonbroker.Options{
 		Approver: approver,
-		Resolver: opresolver.NewDesktopPool(config.accountName),
+		Resolver: opresolver.NewDesktopPool(),
 		Audit:    auditWriter,
 	})
 	if err != nil {
@@ -69,7 +69,7 @@ func run() int {
 		Broker:           broker,
 		Approvals:        approver,
 		ExecValidator:    peertrust.NewExecutableValidator(defaultClientPaths),
-		OnePasswordCheck: onePasswordDesktopIntegrationCheck(config.accountName),
+		OnePasswordCheck: onePasswordDesktopIntegrationCheck(),
 	})
 	if err != nil {
 		stderrf("agent-secretd: initialize server: %v\n", err)
@@ -82,8 +82,8 @@ func run() int {
 	return 0
 }
 
-func onePasswordDesktopIntegrationCheck(accountName string) func(context.Context) error {
-	return func(ctx context.Context) error {
+func onePasswordDesktopIntegrationCheck() func(context.Context, string) error {
+	return func(ctx context.Context, accountName string) error {
 		_, err := opresolver.NewDesktopResolver(ctx, opresolver.ClientOptions{
 			Account:            accountName,
 			IntegrationName:    "Agent Secret Doctor",
@@ -94,8 +94,7 @@ func onePasswordDesktopIntegrationCheck(accountName string) func(context.Context
 }
 
 type daemonConfig struct {
-	socketPath  string
-	accountName string
+	socketPath string
 }
 
 func parseDaemonConfig(args []string) (daemonConfig, error) {
@@ -108,12 +107,6 @@ func parseDaemonConfig(args []string) (daemonConfig, error) {
 	flags := flag.NewFlagSet("agent-secretd", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&config.socketPath, "socket", socketPath, "daemon socket path")
-	flags.StringVar(
-		&config.accountName,
-		"account",
-		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
-		"1Password account sign-in address, name, or UUID; empty uses OP_ACCOUNT or my.1password.com",
-	)
 	if err := flags.Parse(args); err != nil {
 		return daemonConfig{}, err
 	}

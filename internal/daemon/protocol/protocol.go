@@ -104,6 +104,10 @@ type StatusPayload struct {
 	PID int `json:"pid"`
 }
 
+type OnePasswordStatusPayload struct {
+	Account string `json:"account"`
+}
+
 func NewEnvelope(messageType MessageType, correlation Correlation, payload any) (Envelope, error) {
 	raw, err := marshalPayload(payload)
 	if err != nil {

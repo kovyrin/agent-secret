@@ -469,15 +469,19 @@ func TestClientCheckOnePasswordUsesDiagnosticsRequest(t *testing.T) {
 	})
 	defer cleanup()
 
-	if err := client.CheckOnePassword(context.Background()); err != nil {
+	if err := client.CheckOnePassword(context.Background(), "my.1password.ca"); err != nil {
 		t.Fatalf("CheckOnePassword returned error: %v", err)
 	}
 	env := receiveStalledRequest(t, requests)
 	if env.Type != protocol.TypeOnePasswordStatus {
 		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeOnePasswordStatus)
 	}
-	if len(env.Payload) != 0 {
-		t.Fatalf("onepassword status payload = %s, want empty", env.Payload)
+	payload, err := protocol.DecodeRequiredPayload[protocol.OnePasswordStatusPayload](env)
+	if err != nil {
+		t.Fatalf("decode onepassword status payload: %v", err)
+	}
+	if payload.Account != "my.1password.ca" {
+		t.Fatalf("onepassword status account = %q, want my.1password.ca", payload.Account)
 	}
 }
 

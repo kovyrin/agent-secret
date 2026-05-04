@@ -356,9 +356,21 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 		name       string
 		opAccount  string
 		appAccount string
+		opScript   string
 		want       string
 	}{
 		{name: "built-in", want: opaccount.DefaultDesktopAccount},
+		{
+			name: "detected 1Password CLI account",
+			opScript: `
+if [ "$1" = "account" ] && [ "$2" = "list" ] && [ "$3" = "--format=json" ]; then
+  printf '%s\n' '[{"url":"my.1password.ca"}]'
+  exit 0
+fi
+exit 64
+`,
+			want: "my.1password.ca",
+		},
 		{name: "op account", opAccount: " Personal ", want: "Personal"},
 		{name: "app account", opAccount: " Personal ", appAccount: " Work ", want: "Work"},
 	}
@@ -370,6 +382,9 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 				t.Fatalf("create bin dir: %v", err)
 			}
 			writeExecutable(t, binDir, "tool")
+			if tt.opScript != "" {
+				writeExecutableBody(t, binDir, "op", tt.opScript)
+			}
 			t.Chdir(root)
 			t.Setenv("PATH", binDir)
 			if tt.opAccount != "" {
@@ -933,8 +948,14 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 func writeExecutable(t *testing.T, dir string, name string) {
 	t.Helper()
 
+	writeExecutableBody(t, dir, name, "exit 0\n")
+}
+
+func writeExecutableBody(t *testing.T, dir string, name string, body string) {
+	t.Helper()
+
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: CLI parser tests need runnable fixture commands on PATH.
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil { //nolint:gosec // G306: CLI parser tests need runnable fixture commands on PATH.
 		t.Fatalf("write executable: %v", err)
 	}
 }
