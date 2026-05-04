@@ -4,12 +4,14 @@ import XCTest
 
 final class ApprovalDecisionTests: XCTestCase {
     func testFactoriesPopulateReusableUsesOnlyForReusableApproval() {
-        XCTAssertNil(ApprovalDecision.approveOnce(requestID: "req_1", nonce: "nonce_1").reusableUses)
-        XCTAssertNil(ApprovalDecision.deny(requestID: "req_1", nonce: "nonce_1").reusableUses)
-        XCTAssertNil(ApprovalDecision.timeout(requestID: "req_1", nonce: "nonce_1").reusableUses)
+        let request = sampleRequest(reusableUses: 3)
+
+        XCTAssertNil(ApprovalDecision.approveOnce(for: request).reusableUses)
+        XCTAssertNil(ApprovalDecision.deny(for: request).reusableUses)
+        XCTAssertNil(ApprovalDecision.timeout(for: request).reusableUses)
         XCTAssertEqual(
             ApprovalDecision
-                .approveReusable(requestID: "req_1", nonce: "nonce_1", reusableUses: 3)
+                .approveReusable(for: request)
                 .reusableUses,
             3
         )
@@ -18,17 +20,13 @@ final class ApprovalDecisionTests: XCTestCase {
     func testReusableApprovalFactoryNormalizesOutOfRangeUseLimits() {
         XCTAssertEqual(
             ApprovalDecision
-                .approveReusable(requestID: "req_1", nonce: "nonce_1", reusableUses: 0)
+                .approveReusable(for: sampleRequest(reusableUses: 0))
                 .reusableUses,
             ApprovalRequest.defaultReusableUses
         )
         XCTAssertEqual(
             ApprovalDecision
-                .approveReusable(
-                    requestID: "req_1",
-                    nonce: "nonce_1",
-                    reusableUses: ApprovalRequest.maxReusableUses + 1
-                )
+                .approveReusable(for: sampleRequest(reusableUses: ApprovalRequest.maxReusableUses + 1))
                 .reusableUses,
             ApprovalRequest.defaultReusableUses
         )
@@ -81,5 +79,18 @@ final class ApprovalDecisionTests: XCTestCase {
 
     private func decode(_ json: String) throws -> ApprovalDecision {
         try JSONDecoder().decode(ApprovalDecision.self, from: Data(json.utf8))
+    }
+
+    private func sampleRequest(reusableUses: Int = ApprovalRequest.defaultReusableUses) -> ApprovalRequest {
+        ApprovalRequest(
+            requestID: "req_1",
+            nonce: "nonce_1",
+            reason: "Run tests",
+            command: ["/usr/bin/true"],
+            cwd: "/tmp/project",
+            expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
+            secrets: [],
+            reusableUses: reusableUses
+        )
     }
 }

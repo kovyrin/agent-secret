@@ -28,9 +28,18 @@ final class SocketDaemonClientErrorCorrelationTests: XCTestCase {
     private static let staleRequestID: String = "req_stale"
 
     private static var sampleDecision: ApprovalDecision {
-        .approveOnce(
+        .approveOnce(for: sampleRequest)
+    }
+
+    private static var sampleRequest: ApprovalRequest {
+        ApprovalRequest(
             requestID: requestID,
-            nonce: "nonce_456"
+            nonce: "nonce_456",
+            reason: "Run command",
+            command: ["/usr/bin/env", "true"],
+            cwd: "/tmp/project",
+            expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
+            secrets: []
         )
     }
 

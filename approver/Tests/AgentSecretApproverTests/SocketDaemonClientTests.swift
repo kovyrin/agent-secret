@@ -33,10 +33,7 @@ final class SocketDaemonClientTests: XCTestCase {
     private static let unsupportedProtocolVersion: Int = 99
 
     private static var sampleDecision: ApprovalDecision {
-        .approveOnce(
-            requestID: requestID,
-            nonce: "nonce_456"
-        )
+        .approveOnce(for: sampleRequest)
     }
 
     private static var sampleRequest: ApprovalRequest {

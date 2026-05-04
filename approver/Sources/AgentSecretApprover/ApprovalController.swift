@@ -35,12 +35,7 @@ public final class ApprovalController {
         logger.record("approval_request_loaded", requestID: request.requestID)
 
         let decisionKind: ApprovalDecisionKind = presenter.decide(for: request)
-        let decision: ApprovalDecision = decision(
-            for: decisionKind,
-            requestID: request.requestID,
-            nonce: request.nonce,
-            reusableUses: request.reusableUses
-        )
+        let decision: ApprovalDecision = decision(for: decisionKind, request: request)
 
         try await client.submit(decision)
         logger.record("approval_decision_submitted", requestID: request.requestID)
@@ -49,22 +44,20 @@ public final class ApprovalController {
 
     private func decision(
         for decisionKind: ApprovalDecisionKind,
-        requestID: String,
-        nonce: String,
-        reusableUses: Int
+        request: ApprovalRequest
     ) -> ApprovalDecision {
         switch decisionKind {
         case .approveOnce:
-            .approveOnce(requestID: requestID, nonce: nonce)
+            .approveOnce(for: request)
 
         case .approveReusable:
-            .approveReusable(requestID: requestID, nonce: nonce, reusableUses: reusableUses)
+            .approveReusable(for: request)
 
         case .deny:
-            .deny(requestID: requestID, nonce: nonce)
+            .deny(for: request)
 
         case .timeout:
-            .timeout(requestID: requestID, nonce: nonce)
+            .timeout(for: request)
         }
     }
 }

@@ -44,25 +44,25 @@ public struct ApprovalDecision: Codable, Equatable, Sendable {
         )
     }
 
-    public static func approveOnce(requestID: String, nonce: String) -> Self {
-        Self(requestID: requestID, nonce: nonce, decision: .approveOnce, reusableUses: nil)
+    public static func approveOnce(for request: ApprovalRequest) -> Self {
+        Self(requestID: request.requestID, nonce: request.nonce, decision: .approveOnce, reusableUses: nil)
     }
 
-    public static func approveReusable(requestID: String, nonce: String, reusableUses: Int) -> Self {
+    public static func approveReusable(for request: ApprovalRequest) -> Self {
         Self(
-            requestID: requestID,
-            nonce: nonce,
+            requestID: request.requestID,
+            nonce: request.nonce,
             decision: .approveReusable,
-            reusableUses: ApprovalRequest.boundedReusableUses(reusableUses)
+            reusableUses: request.reusableUses
         )
     }
 
-    public static func deny(requestID: String, nonce: String) -> Self {
-        Self(requestID: requestID, nonce: nonce, decision: .deny, reusableUses: nil)
+    public static func deny(for request: ApprovalRequest) -> Self {
+        Self(requestID: request.requestID, nonce: request.nonce, decision: .deny, reusableUses: nil)
     }
 
-    public static func timeout(requestID: String, nonce: String) -> Self {
-        Self(requestID: requestID, nonce: nonce, decision: .timeout, reusableUses: nil)
+    public static func timeout(for request: ApprovalRequest) -> Self {
+        Self(requestID: request.requestID, nonce: request.nonce, decision: .timeout, reusableUses: nil)
     }
 
     private static func normalizedReusableUses(

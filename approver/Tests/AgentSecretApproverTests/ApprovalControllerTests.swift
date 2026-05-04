@@ -166,10 +166,7 @@ final class ApprovalControllerTests: XCTestCase {
 
         XCTAssertEqual(
             decision,
-            .approveOnce(
-                requestID: request.requestID,
-                nonce: request.nonce
-            )
+            .approveOnce(for: request)
         )
         XCTAssertEqual(client.submittedDecision, decision)
 
