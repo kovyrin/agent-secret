@@ -55,7 +55,7 @@ func TestValidateReference(t *testing.T) {
 	}
 }
 
-func TestResolveReturnsValueWithoutLoggingIt(t *testing.T) {
+func TestResolveSecretReturnsValueWithoutLoggingIt(t *testing.T) {
 	t.Parallel()
 
 	const canary = "synthetic-secret-value"
@@ -65,9 +65,9 @@ func TestResolveReturnsValueWithoutLoggingIt(t *testing.T) {
 		t.Fatalf("NewResolver returned error: %v", err)
 	}
 
-	secret, err := resolver.Resolve(context.Background(), "op://Example Vault/Item/password")
+	secret, err := resolver.ResolveSecret(context.Background(), "op://Example Vault/Item/password")
 	if err != nil {
-		t.Fatalf("Resolve returned error: %v", err)
+		t.Fatalf("ResolveSecret returned error: %v", err)
 	}
 
 	if secret.Value() != canary {
@@ -86,7 +86,7 @@ func TestResolveReturnsValueWithoutLoggingIt(t *testing.T) {
 	}
 }
 
-func TestResolvePreservesMultilineTextValue(t *testing.T) {
+func TestResolveSecretPreservesMultilineTextValue(t *testing.T) {
 	t.Parallel()
 
 	const textSecret = "-----BEGIN PRIVATE KEY-----\nline one\nline two\n-----END PRIVATE KEY-----\n"
@@ -96,9 +96,9 @@ func TestResolvePreservesMultilineTextValue(t *testing.T) {
 		t.Fatalf("NewResolver returned error: %v", err)
 	}
 
-	secret, err := resolver.Resolve(context.Background(), "op://Example Vault/Document Item/key.pem")
+	secret, err := resolver.ResolveSecret(context.Background(), "op://Example Vault/Document Item/key.pem")
 	if err != nil {
-		t.Fatalf("Resolve returned error: %v", err)
+		t.Fatalf("ResolveSecret returned error: %v", err)
 	}
 
 	if secret.Value() != textSecret {
@@ -109,7 +109,7 @@ func TestResolvePreservesMultilineTextValue(t *testing.T) {
 	}
 }
 
-func TestResolveWrapsSDKError(t *testing.T) {
+func TestResolveSecretWrapsSDKError(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeSecretsAPI{err: errors.New("locked")}
@@ -118,7 +118,7 @@ func TestResolveWrapsSDKError(t *testing.T) {
 		t.Fatalf("NewResolver returned error: %v", err)
 	}
 
-	_, err = resolver.Resolve(context.Background(), "op://Example Vault/Item/password")
+	_, err = resolver.ResolveSecret(context.Background(), "op://Example Vault/Item/password")
 	if err == nil {
 		t.Fatal("expected resolve error")
 	}
@@ -133,7 +133,7 @@ func TestNewResolverRequiresSecretsAPI(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
+func TestResolveSecretRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeSecretsAPI{value: "synthetic-secret-value"}
@@ -142,7 +142,7 @@ func TestResolveRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
 		t.Fatalf("NewResolver returned error: %v", err)
 	}
 
-	_, err = resolver.Resolve(context.Background(), "Example Vault/Item/password")
+	_, err = resolver.ResolveSecret(context.Background(), "Example Vault/Item/password")
 	if !errors.Is(err, ErrInvalidReference) {
 		t.Fatalf("expected invalid reference error, got %v", err)
 	}

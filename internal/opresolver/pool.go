@@ -71,7 +71,7 @@ func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (
 	if err != nil {
 		return "", fmt.Errorf("create 1Password resolver: %w", err)
 	}
-	secret, err := resolver.Resolve(ctx, ref)
+	secret, err := resolver.ResolveSecret(ctx, ref)
 	if err != nil {
 		return "", fmt.Errorf("resolve secret: %w", err)
 	}

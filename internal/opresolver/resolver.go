@@ -84,7 +84,7 @@ func normalizeDesktopOptions(opts ClientOptions) ClientOptions {
 	}
 }
 
-func (r *Resolver) Resolve(ctx context.Context, ref string) (Secret, error) {
+func (r *Resolver) ResolveSecret(ctx context.Context, ref string) (Secret, error) {
 	if err := ValidateReference(ref); err != nil {
 		return Secret{}, err
 	}
