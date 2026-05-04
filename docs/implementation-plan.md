@@ -38,7 +38,7 @@ Source: [Product Requirements](prd.md)
   project-local `agent-secret.yml` / `.agent-secret.yml` profiles including
   `default_profile`, and `--env-file` inputs. A broader `--secret-config` or
   config-driven sync workflow remains a follow-on dogfood candidate.
-- Delivery is env-only `agent-secret exec`; session/socket delivery remains a
+- Delivery is env-only `agent-secret exec`; session-handle delivery remains a
   future Epic 6 concern for tools or wrappers that cannot consume env vars
   cleanly.
 - V1 approval binds to command shape, cwd, delivery mode, TTL, and exact secret
@@ -896,14 +896,13 @@ Status: Complete
   - `go test ./...`
   - manual smoke with the native helper
 
-## Epic 6: Daemon And Session Model
+## Epic 6: Session Handles And `with-session`
 
 Status: Not started
 
 ### Epic 6 Acceptance Criteria
 
-- A hidden per-user daemon owns reusable approval/session state and local socket
-  endpoints.
+- Session state lives inside the existing hidden per-user daemon.
 - `session create`, `session list`, `session destroy`, and `with-session` work.
 - Handles cannot be resolved after TTL, max-read exhaustion, or destroy.
 - Handles cannot be resolved when macOS peer UID, PID, executable path, or cwd
@@ -914,7 +913,7 @@ Status: Not started
 
 ### Epic 6 Definition Of Done
 
-- Unit tests cover the session store and socket server.
+- Unit tests cover the session store and session daemon endpoints.
 - Integration tests cover local socket request flow with fake SDK and approver.
 - `go test ./...` passes.
 
@@ -926,18 +925,20 @@ Status: Not started
 
 ### Epic 6 Tasks
 
-#### Task 1: Expand daemon socket server
+#### Task 1: Add session endpoints to the daemon socket
 
-- Goal: support reusable approvals and sessions behind the per-user Unix socket.
-- Preconditions/inputs: core request and policy packages.
-- Failing test/check: socket tests fail until the server accepts valid request
-  envelopes, rejects malformed versions, rejects wrong-UID peers, and cleans
-  stale sockets. Strict PID/executable/cwd checks are tested with session/socket
-  value reads, not MVP `exec`.
+- Goal: add session-handle lifecycle and value-read messages to the existing
+  per-user Unix socket.
+- Preconditions/inputs: working daemon socket, approval, resolver, audit, and
+  reusable-approval infrastructure.
+- Failing test/check: daemon tests fail until the server accepts valid session
+  requests, rejects malformed versions, rejects wrong-UID peers, and enforces
+  strict PID/executable/cwd checks before resolving session handles.
 - Implementation:
-  - add socket directory setup with mode `0700`
-  - add JSON message envelopes
-  - add graceful startup and shutdown
+  - add session request, list, destroy, and value-read envelopes
+  - persist session metadata and approved refs in daemon memory only
+  - reuse existing socket peer validation before each session value read
+  - audit session lifecycle and value-read metadata without secret values
 - Verification:
   - `go test ./...`
 
@@ -1045,10 +1046,11 @@ Status: Not started
 - Epic 5 can run in parallel with Epic 4 once approval fixtures are defined.
 - The first dogfood target is Epic 4 plus Epic 5: env-only `exec`, hidden daemon
   startup, and reusable same-command approvals.
-- Epic 6 depends on the first working `exec` plus reusable approval path. It
-  should not block initial Terraform/Ansible dogfood.
-- Epic 7 should follow the first working `exec` path, then broaden after
-  sessions land.
+- Epic 6 depends on the completed `exec`, daemon socket, native approval, and
+  reusable approval paths. It should not block initial Terraform/Ansible
+  dogfood.
+- Epic 7 should follow the first working `exec` path, then broaden after session
+  handles land.
 
 ## Testing Strategy
 
