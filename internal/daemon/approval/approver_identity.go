@@ -38,7 +38,7 @@ func expectedTeamIDForSignatureValidation(expectedTeamID string, errKind error) 
 }
 
 func (p BundleApproverIdentityPolicy) ValidateApproverExecutable(path string) (ApproverIdentity, error) {
-	path, err := comparableApproverPath(path)
+	path, err := comparableApproverPath(path, ErrApproverIdentity)
 	if err != nil {
 		return ApproverIdentity{}, err
 	}
@@ -72,7 +72,7 @@ func (p BundleApproverIdentityPolicy) ValidateApproverExecutable(path string) (A
 		return ApproverIdentity{}, fmt.Errorf("%w: executable %q != %q", ErrApproverIdentity, executableName, expectedExecutable)
 	}
 	bundleExecutable := filepath.Join(bundlePath, "Contents", "MacOS", executableName)
-	bundleExecutable, err = comparableApproverPath(bundleExecutable)
+	bundleExecutable, err = comparableApproverPath(bundleExecutable, ErrApproverIdentity)
 	if err != nil {
 		return ApproverIdentity{}, err
 	}
@@ -111,7 +111,7 @@ func appBundleForExecutable(path string) (string, error) {
 	dir := filepath.Dir(path)
 	for {
 		if filepath.Ext(dir) == ".app" {
-			bundlePath, err := comparableApproverPath(dir)
+			bundlePath, err := comparableApproverPath(dir, ErrApproverIdentity)
 			if err != nil {
 				return "", err
 			}

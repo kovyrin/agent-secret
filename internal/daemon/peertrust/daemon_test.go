@@ -87,7 +87,7 @@ func TestDaemonValidatorReportsSkippedTrustedPathReasons(t *testing.T) {
 	if !errors.Is(err, ErrUntrustedDaemon) {
 		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrUntrustedDaemon)
 	}
-	if !strings.Contains(err.Error(), missingPath) || !strings.Contains(err.Error(), "stat trusted executable") {
+	if !strings.Contains(err.Error(), missingPath) || !strings.Contains(err.Error(), "canonicalize trusted executable") {
 		t.Fatalf("ValidateDaemonPeer error = %q, want skipped candidate context", err.Error())
 	}
 }

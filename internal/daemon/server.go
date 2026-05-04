@@ -77,6 +77,7 @@ const DefaultProtocolReadTimeout = 30 * time.Second
 var (
 	ErrRequestAlreadyActive        = errors.New("connection already has an active exec request")
 	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
+	errExecValidatorRequired       = errors.New("exec validator is required")
 )
 
 type connectionState struct {
@@ -145,11 +146,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 	execValidator := opts.ExecValidator
 	if execValidator == nil {
-		defaultClientPaths, err := peertrust.DefaultClientPaths()
-		if err != nil {
-			return nil, fmt.Errorf("default exec validator trusted clients: %w", err)
-		}
-		execValidator = peertrust.NewExecutableValidator(defaultClientPaths)
+		return nil, errExecValidatorRequired
 	}
 	onePasswordCheck := opts.OnePasswordCheck
 	if onePasswordCheck == nil {

@@ -171,7 +171,6 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
-		ApprovalRequestPayload{},
 	)
 	if err != nil {
 		t.Fatalf("Launch returned error: %v", err)
@@ -198,7 +197,6 @@ func TestProcessApproverLauncherExposesEarlyProcessExit(t *testing.T) {
 	}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
-		ApprovalRequestPayload{},
 	)
 	if err != nil {
 		t.Fatalf("Launch returned error: %v", err)
@@ -233,7 +231,6 @@ func TestProcessApproverLauncherCarriesSignaturePolicyToExpectedPeer(t *testing.
 	}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
-		ApprovalRequestPayload{},
 	)
 	if err != nil {
 		t.Fatalf("Launch returned error: %v", err)
@@ -337,7 +334,6 @@ func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
 	_, err := (ProcessApproverLauncher{AppPath: helper}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
-		ApprovalRequestPayload{},
 	)
 	if !errors.Is(err, ErrApproverIdentity) {
 		t.Fatalf("expected approver identity error, got %v", err)
@@ -379,7 +375,6 @@ func TestProcessApproverLauncherWrapsStartFailure(t *testing.T) {
 	}).Launch(
 		context.Background(),
 		"/tmp/agent-secret-test.sock",
-		ApprovalRequestPayload{},
 	)
 	if !errors.Is(err, ErrApproverLaunchFailed) {
 		t.Fatalf("expected launch failure, got %v", err)
@@ -394,7 +389,7 @@ func TestBundleApproverIdentityPolicyValidatesBundleMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateApproverExecutable returned error: %v", err)
 	}
-	wantExecutable, err := comparableApproverPath(executable)
+	wantExecutable, err := comparableApproverPath(executable, ErrApproverIdentity)
 	if err != nil {
 		t.Fatalf("comparableApproverPath returned error: %v", err)
 	}

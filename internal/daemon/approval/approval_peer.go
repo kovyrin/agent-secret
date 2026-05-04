@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
@@ -42,11 +43,11 @@ func ValidateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 		}
 		return nil
 	}
-	expectedPath, err := comparableApproverPath(expected.ExecutablePath)
+	expectedPath, err := comparableApproverPath(expected.ExecutablePath, ErrApproverPeerMismatch)
 	if err != nil {
 		return err
 	}
-	gotPath, err := comparableApproverPath(got.ExecutablePath)
+	gotPath, err := comparableApproverPath(got.ExecutablePath, ErrApproverPeerMismatch)
 	if err != nil {
 		return err
 	}
@@ -67,15 +68,15 @@ func ValidateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	return nil
 }
 
-func comparableApproverPath(path string) (string, error) {
-	abs, err := filepath.Abs(path)
+func comparableApproverPath(path string, errKind error) (string, error) {
+	resolved, err := pathresolve.Strict(path)
 	if err != nil {
-		return "", fmt.Errorf("normalize approver path: %w", err)
+		if errKind == nil {
+			errKind = ErrApproverIdentity
+		}
+		return "", fmt.Errorf("%w: normalize approver path %q: %w", errKind, path, err)
 	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved, nil
-	}
-	return abs, nil
+	return resolved, nil
 }
 
 func defaultApproverPath() (string, error) {
@@ -104,7 +105,7 @@ func defaultApproverPath() (string, error) {
 
 func approverCandidatesForExecutable(executable string) []string {
 	executables := []string{executable}
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil && resolved != executable {
+	if resolved := pathresolve.BestEffort(executable); resolved != executable {
 		executables = append(executables, resolved)
 	}
 

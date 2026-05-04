@@ -26,7 +26,7 @@ type ApprovalEndpoint interface {
 }
 
 type ApproverLauncher interface {
-	Launch(ctx context.Context, socketPath string, payload ApprovalRequestPayload) (ExpectedApprover, error)
+	Launch(ctx context.Context, socketPath string) (ExpectedApprover, error)
 }
 
 type ApproverIdentityPolicy interface {

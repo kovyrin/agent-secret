@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -60,18 +62,17 @@ func (r *recordingApprover) ApproveExec(
 type recordingLauncher struct {
 	launches launchWatcher
 	mu       sync.Mutex
-	launched []approval.ApprovalRequestPayload
+	count    int
 	expected approval.ExpectedApprover
 }
 
 func (l *recordingLauncher) Launch(
 	_ context.Context,
 	_ string,
-	payload approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.launched = append(l.launched, payload)
+	l.count++
 	l.launches.record()
 	return l.expected, nil
 }
@@ -270,14 +271,31 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 		reqSecrets = append(reqSecrets, request.Secret{Alias: spec.Alias, Ref: ref, Account: spec.Account})
 	}
 
+	cwd, err := pathresolve.Strict(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize cwd: %v", err)
+	}
+	executableDir := filepath.Join(cwd, "bin")
+	if err := os.Mkdir(executableDir, 0o750); err != nil {
+		t.Fatalf("mkdir executable dir: %v", err)
+	}
+	executable := filepath.Join(executableDir, "terraform")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon tests need a runnable fixture executable.
+		t.Fatalf("write executable: %v", err)
+	}
+	executableIdentity, err := fileidentity.Capture(executable)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
+
 	return request.ExecRequest{
 		Reason:             "Run Terraform plan",
 		Command:            []string{"terraform", "plan"},
-		ResolvedExecutable: "/opt/homebrew/bin/terraform",
-		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
-		CWD:                "/tmp/project",
+		ResolvedExecutable: executable,
+		ExecutableIdentity: executableIdentity,
+		CWD:                cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{
-			"PATH=/opt/homebrew/bin",
+			"PATH=" + executableDir,
 			"NODE_OPTIONS=--require ./safe.js",
 		}),
 		Secrets:    reqSecrets,

@@ -58,6 +58,27 @@ func trustedCurrentPeer(t *testing.T) (PeerValidator, peertrust.ExecValidator) {
 	return staticPeerValidator{info: peer}, peertrust.NewExecutableValidator([]string{peer.ExecutablePath})
 }
 
+func trustedCurrentExecValidator(t *testing.T) peertrust.ExecValidator {
+	t.Helper()
+	_, execValidator := trustedCurrentPeer(t)
+	return execValidator
+}
+
+func TestNewServerRequiresExecValidator(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+	})
+	if !errors.Is(err, errExecValidatorRequired) {
+		t.Fatalf("NewServer error = %v, want %v", err, errExecValidatorRequired)
+	}
+}
+
 func TestServerExecProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -827,6 +848,7 @@ func TestServerServeStopsWhenServerStops(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
+		ExecValidator: trustedCurrentExecValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -862,6 +884,7 @@ func TestServerServeReturnsAcceptErrors(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
+		ExecValidator: trustedCurrentExecValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -881,6 +904,7 @@ func TestServerListenAndServeStopsInjectedListenerOnContextCancel(t *testing.T) 
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
+		ExecValidator: trustedCurrentExecValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -915,6 +939,7 @@ func TestServerListenAndServeReturnsListenErrors(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
+		ExecValidator: trustedCurrentExecValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1629,6 +1654,9 @@ func startRawServerWithBrokerAndExecValidator(
 
 func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixConn, func()) {
 	t.Helper()
+	if opts.ExecValidator == nil {
+		opts.ExecValidator = trustedCurrentExecValidator(t)
+	}
 	server, err := NewServer(opts)
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1654,6 +1682,9 @@ func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixC
 
 func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()) {
 	t.Helper()
+	if opts.ExecValidator == nil {
+		opts.ExecValidator = trustedCurrentExecValidator(t)
+	}
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-test-")
 	if err != nil {
 		t.Fatalf("MkdirTemp returned error: %v", err)
