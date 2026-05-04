@@ -103,8 +103,7 @@ type mockApprover struct {
 
 func (m *mockApprover) ApproveExec(
 	_ context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	m.calls++
 	if m.order != nil {
@@ -121,8 +120,7 @@ type afterApprovalApprover struct {
 
 func (a *afterApprovalApprover) ApproveExec(
 	_ context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	a.calls++
 	if a.after != nil {
@@ -137,8 +135,7 @@ type contextExpiringApprover struct {
 
 func (a *contextExpiringApprover) ApproveExec(
 	ctx context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	<-ctx.Done()
 	close(a.done)
@@ -151,8 +148,7 @@ type contextDenyingApprover struct {
 
 func (a *contextDenyingApprover) ApproveExec(
 	ctx context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	<-ctx.Done()
 	close(a.done)
@@ -166,8 +162,7 @@ type blockingApprover struct {
 
 func (a *blockingApprover) ApproveExec(
 	ctx context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	close(a.started)
 	<-ctx.Done()

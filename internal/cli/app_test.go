@@ -773,8 +773,7 @@ type appApprover struct {
 
 func (a *appApprover) ApproveExec(
 	_ context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	return a.decision, nil
 }

@@ -99,14 +99,14 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	}
 }
 
-func TestServerStampsExecRequestTimeWithDaemonClock(t *testing.T) {
+func TestServerStampsApprovalExpiryWithDaemonClock(t *testing.T) {
 	t.Parallel()
 
 	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
 	approver := &recordingApprover{
 		decision: approval.Decision{Approved: true},
-		seen:     make(chan request.ExecRequest, 1),
+		seen:     make(chan approval.ApprovalRequestPayload, 1),
 	}
 	client, cleanup := startTestServer(t, daemonbroker.Options{
 		Now:      func() time.Time { return daemonNow },
@@ -126,14 +126,11 @@ func TestServerStampsExecRequestTimeWithDaemonClock(t *testing.T) {
 
 	select {
 	case got := <-approver.seen:
-		if !got.ReceivedAt.Equal(daemonNow) {
-			t.Fatalf("received_at = %s, want daemon clock %s", got.ReceivedAt, daemonNow)
-		}
 		if !got.ExpiresAt.Equal(daemonNow.Add(req.TTL)) {
 			t.Fatalf("expires_at = %s, want daemon clock plus ttl %s", got.ExpiresAt, daemonNow.Add(req.TTL))
 		}
 	case <-time.After(time.Second):
-		t.Fatal("approver did not receive exec request")
+		t.Fatal("approver did not receive approval payload")
 	}
 }
 

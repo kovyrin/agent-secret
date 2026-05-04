@@ -35,8 +35,7 @@ type mockApprover struct {
 
 func (m *mockApprover) ApproveExec(
 	_ context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	m.calls++
 	if m.order != nil {
@@ -47,15 +46,14 @@ func (m *mockApprover) ApproveExec(
 
 type recordingApprover struct {
 	decision approval.Decision
-	seen     chan request.ExecRequest
+	seen     chan approval.ApprovalRequestPayload
 }
 
 func (r *recordingApprover) ApproveExec(
 	_ context.Context,
-	_ protocol.Correlation,
-	req request.ExecRequest,
+	payload approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
-	r.seen <- req
+	r.seen <- payload
 	return r.decision, nil
 }
 

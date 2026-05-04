@@ -3,17 +3,15 @@ package approval
 import (
 	"context"
 
-	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type Approver interface {
 	// ApproveExec returns Decision{Approved: false}, nil for user denial.
 	// Errors are reserved for approval failures such as timeout, launch failure,
 	// cancellation, or malformed approval traffic.
-	ApproveExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (Decision, error)
+	ApproveExec(ctx context.Context, payload ApprovalRequestPayload) (Decision, error)
 }
 
 type Decision struct {

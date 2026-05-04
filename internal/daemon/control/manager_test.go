@@ -24,7 +24,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -45,8 +44,7 @@ type managerApprover struct{}
 
 func (managerApprover) ApproveExec(
 	_ context.Context,
-	_ protocol.Correlation,
-	_ request.ExecRequest,
+	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
 	return approval.Decision{Approved: true}, nil
 }

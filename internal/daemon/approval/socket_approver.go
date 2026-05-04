@@ -9,7 +9,6 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
-	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type SocketApprover struct {
@@ -58,11 +57,10 @@ func NewSocketApprover(socketPath string, launcher ApproverLauncher, now func() 
 
 func (a *SocketApprover) ApproveExec(
 	ctx context.Context,
-	correlation protocol.Correlation,
-	req request.ExecRequest,
+	payload ApprovalRequestPayload,
 ) (Decision, error) {
 	job := &approvalJob{
-		payload: NewRequestPayload(correlation, req),
+		payload: payload,
 		done:    make(chan struct{}),
 		result:  make(chan approvalResult, 1),
 	}
