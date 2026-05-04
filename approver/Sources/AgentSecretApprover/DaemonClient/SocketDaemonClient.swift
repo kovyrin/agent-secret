@@ -166,8 +166,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private func daemonError(from payload: DaemonErrorPayload) -> SocketDaemonClientError {
-        let code: DaemonErrorCode = DaemonErrorMessage.displayCode(payload.code)
-        return .daemonError(code)
+        .daemonError(payload.code)
     }
 
     private func send(_ envelope: DaemonEnvelope<some Encodable>) throws {

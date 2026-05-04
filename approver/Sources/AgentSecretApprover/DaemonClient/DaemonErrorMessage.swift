@@ -28,11 +28,7 @@ enum DaemonErrorMessage {
         .untrustedClient: "daemon rejected untrusted client"
     ]
 
-    static func displayCode(_ code: DaemonErrorCode?) -> DaemonErrorCode {
-        code ?? .unknown
-    }
-
-    static func message(for code: DaemonErrorCode?) -> String {
-        messagesByCode[displayCode(code)] ?? "daemon returned an error"
+    static func message(for code: DaemonErrorCode) -> String {
+        messagesByCode[code] ?? "daemon returned an error"
     }
 }
