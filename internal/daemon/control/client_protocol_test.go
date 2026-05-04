@@ -73,7 +73,14 @@ func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := roundTrip[protocol.StatusPayload](ctx, client, protocol.TypeDaemonStatus, protocol.Correlation{}, nil); !errors.Is(err, context.Canceled) {
+	if _, err := roundTripResponse[protocol.StatusPayload](
+		ctx,
+		client,
+		protocol.TypeDaemonStatus,
+		protocol.Correlation{},
+		nil,
+		false,
+	); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled round trip, got %v", err)
 	}
 }

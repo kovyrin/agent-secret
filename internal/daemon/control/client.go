@@ -148,16 +148,6 @@ func (c *Client) ReportCompleted(
 	})
 }
 
-func roundTrip[T any](
-	ctx context.Context,
-	c *Client,
-	messageType protocol.MessageType,
-	correlation protocol.Correlation,
-	payload any,
-) (T, error) {
-	return roundTripResponse[T](ctx, c, messageType, correlation, payload, false)
-}
-
 func roundTripPayload[T any](
 	ctx context.Context,
 	c *Client,
