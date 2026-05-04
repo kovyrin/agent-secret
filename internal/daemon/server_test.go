@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -147,7 +146,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 		Broker:        broker,
 		Validator:     allowPeerValidator{},
 		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
-		ReadTimeout:   20 * time.Millisecond,
+		ReadTimeout:   time.Second,
 		beforeRead: func(timeout time.Duration) {
 			readTimeouts <- timeout
 		},
@@ -823,7 +822,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	}
 	appClient := control.NewClient(appConn)
 	defer func() { _ = appClient.Close() }()
-	pending := fetchPendingApprovalOrExecError(t, appClient, execErr)
+	pending := fetchPendingApprovalOrExecError(t, launcher, 1, appClient, execErr)
 	if pending.RequestID != "req_1" || pending.Nonce != "nonce_1" {
 		t.Fatalf("unexpected pending approval payload: %+v", pending)
 	}
@@ -867,7 +866,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 		Approvals:     approver,
 		Validator:     staticPeerValidator{info: peer},
 		ExecValidator: peertrust.NewExecutableValidator(peertrust.CurrentExecutableClientPaths()),
-		ReadTimeout:   20 * time.Millisecond,
+		ReadTimeout:   time.Second,
 		beforeRead: func(timeout time.Duration) {
 			readTimeouts <- timeout
 		},
@@ -897,8 +896,8 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	}
 	appClient := control.NewClient(appConn)
 	defer func() { _ = appClient.Close() }()
-	pending := fetchPendingApprovalOrExecError(t, appClient, execErr)
-	waitForReadTimeoutLongerThan(t, readTimeouts, 20*time.Millisecond)
+	pending := fetchPendingApprovalOrExecError(t, launcher, 1, appClient, execErr)
+	waitForReadTimeoutLongerThan(t, readTimeouts, time.Second)
 
 	if err := appClient.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
@@ -1327,29 +1326,30 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 	}
 }
 
-func fetchPendingApprovalOrExecError(t *testing.T, client *control.Client, execErr <-chan error) approval.ApprovalRequestPayload {
+func fetchPendingApprovalOrExecError(
+	t *testing.T,
+	launcher launchWaiter,
+	launchCount int,
+	client *control.Client,
+	execErr <-chan error,
+) approval.ApprovalRequestPayload {
 	t.Helper()
-	timeout := time.NewTimer(time.Second)
-	defer timeout.Stop()
 
-	for {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := launcher.waitForLaunch(ctx, launchCount); err != nil {
 		select {
-		case err := <-execErr:
-			t.Fatalf("RequestExec returned before pending approval: %v", err)
-		case <-timeout.C:
-			t.Fatal("timed out waiting for pending approval")
+		case execErr := <-execErr:
+			t.Fatalf("RequestExec returned before pending approval: %v", execErr)
 		default:
+			t.Fatalf("approver launch %d was not observed: %v", launchCount, err)
 		}
-
-		pending, err := client.FetchPendingApproval(context.Background())
-		if err == nil {
-			return pending
-		}
-		if !control.IsProtocolError(err, protocol.ErrorCodeNoPendingApproval) {
-			t.Fatalf("FetchPendingApproval returned error: %v", err)
-		}
-		runtime.Gosched()
 	}
+	pending, err := client.FetchPendingApproval(ctx)
+	if err != nil {
+		t.Fatalf("FetchPendingApproval returned error: %v", err)
+	}
+	return pending
 }
 
 func startTestServer(t *testing.T, opts daemonbroker.Options) (*control.Client, func()) {
