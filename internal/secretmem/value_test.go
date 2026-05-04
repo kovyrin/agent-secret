@@ -18,12 +18,12 @@ func TestValueRoundTrip(t *testing.T) {
 		}
 	})
 
-	got, err := value.String()
+	got, err := value.Reveal()
 	if err != nil {
-		t.Fatalf("String returned error: %v", err)
+		t.Fatalf("Reveal returned error: %v", err)
 	}
 	if got != "super-secret" {
-		t.Fatalf("String = %q, want super-secret", got)
+		t.Fatalf("Reveal = %q, want super-secret", got)
 	}
 }
 
@@ -40,12 +40,12 @@ func TestValueSupportsEmptySecret(t *testing.T) {
 		}
 	})
 
-	got, err := value.String()
+	got, err := value.Reveal()
 	if err != nil {
-		t.Fatalf("String returned error: %v", err)
+		t.Fatalf("Reveal returned error: %v", err)
 	}
 	if got != "" {
-		t.Fatalf("String = %q, want empty string", got)
+		t.Fatalf("Reveal = %q, want empty string", got)
 	}
 }
 
@@ -62,7 +62,7 @@ func TestDestroyIsIdempotent(t *testing.T) {
 	if err := value.Destroy(); err != nil {
 		t.Fatalf("second Destroy returned error: %v", err)
 	}
-	if _, err := value.String(); !errors.Is(err, ErrDestroyed) {
-		t.Fatalf("String after Destroy error = %v, want ErrDestroyed", err)
+	if _, err := value.Reveal(); !errors.Is(err, ErrDestroyed) {
+		t.Fatalf("Reveal after Destroy error = %v, want ErrDestroyed", err)
 	}
 }

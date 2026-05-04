@@ -42,7 +42,7 @@ func New(value string) (*Value, error) {
 	return &Value{data: data, length: len(value)}, nil
 }
 
-func (v *Value) String() (string, error) {
+func (v *Value) Reveal() (string, error) {
 	if v == nil || v.data == nil {
 		return "", ErrDestroyed
 	}

@@ -43,7 +43,7 @@ func (c *SecretCache) Get(key CacheKey) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	resolved, err := value.String()
+	resolved, err := value.Reveal()
 	if err != nil {
 		return "", false
 	}
