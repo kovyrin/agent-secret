@@ -79,7 +79,7 @@ func (processHealthCheckRunner) RunHealthCheck(ctx context.Context, executablePa
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, _ ApprovalRequestPayload) (ExpectedApprover, error) {
+func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string) (ExpectedApprover, error) {
 	executable, err := l.executablePath()
 	if err != nil {
 		return ExpectedApprover{}, err

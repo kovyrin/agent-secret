@@ -184,7 +184,7 @@ func (a *SocketApprover) promoteNext() {
 		return
 	}
 	launchCtx := job.launchContext()
-	expected, err := a.launcher.Launch(launchCtx, a.socketPath, job.payload)
+	expected, err := a.launcher.Launch(launchCtx, a.socketPath)
 	if err != nil {
 		if job.canceled() {
 			a.cancel(job, context.Canceled)

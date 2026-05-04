@@ -60,18 +60,17 @@ func (r *recordingApprover) ApproveExec(
 type recordingLauncher struct {
 	launches launchWatcher
 	mu       sync.Mutex
-	launched []approval.ApprovalRequestPayload
+	count    int
 	expected approval.ExpectedApprover
 }
 
 func (l *recordingLauncher) Launch(
 	_ context.Context,
 	_ string,
-	payload approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.launched = append(l.launched, payload)
+	l.count++
 	l.launches.record()
 	return l.expected, nil
 }

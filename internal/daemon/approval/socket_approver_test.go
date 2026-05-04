@@ -32,7 +32,7 @@ func testApprovalPayload(correlation protocol.Correlation, req request.ExecReque
 type recordingLauncher struct {
 	launches launchWatcher
 	mu       sync.Mutex
-	launched []approval.ApprovalRequestPayload
+	count    int
 	expected approval.ExpectedApprover
 	err      error
 }
@@ -50,7 +50,7 @@ type exitingLauncher struct {
 type sequenceLauncher struct {
 	launches launchWatcher
 	mu       sync.Mutex
-	launched []approval.ApprovalRequestPayload
+	count    int
 	expected []approval.ExpectedApprover
 }
 
@@ -94,11 +94,10 @@ func (v *recordingSignatureVerifier) VerifyProcess(pid int) (string, error) {
 func (l *recordingLauncher) Launch(
 	_ context.Context,
 	_ string,
-	payload approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.launched = append(l.launched, payload)
+	l.count++
 	if l.err != nil {
 		return approval.ExpectedApprover{}, l.err
 	}
@@ -109,7 +108,7 @@ func (l *recordingLauncher) Launch(
 func (l *recordingLauncher) Count() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.launched)
+	return l.count
 }
 
 func (l *recordingLauncher) waitForLaunch(ctx context.Context, count int) error {
@@ -125,7 +124,6 @@ func newBlockingLauncher() *blockingLauncher {
 func (l *blockingLauncher) Launch(
 	ctx context.Context,
 	_ string,
-	_ approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	close(l.started)
 	<-ctx.Done()
@@ -135,7 +133,6 @@ func (l *blockingLauncher) Launch(
 func (l *exitingLauncher) Launch(
 	_ context.Context,
 	_ string,
-	_ approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	l.launches.record()
 	expected := l.expected
@@ -150,12 +147,11 @@ func (l *exitingLauncher) waitForLaunch(ctx context.Context, count int) error {
 func (l *sequenceLauncher) Launch(
 	_ context.Context,
 	_ string,
-	payload approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.launched = append(l.launched, payload)
-	index := len(l.launched) - 1
+	l.count++
+	index := l.count - 1
 	if index >= len(l.expected) {
 		index = len(l.expected) - 1
 	}
@@ -170,7 +166,6 @@ func (l *sequenceLauncher) waitForLaunch(ctx context.Context, count int) error {
 func (l *contextObservingLauncher) Launch(
 	ctx context.Context,
 	_ string,
-	_ approval.ApprovalRequestPayload,
 ) (approval.ExpectedApprover, error) {
 	l.launches.record()
 	go func() {
