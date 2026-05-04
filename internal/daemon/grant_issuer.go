@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
@@ -21,9 +20,6 @@ type grantIssuer struct {
 	audit      AuditSink
 	fetchLimit int
 	stopped    func() bool
-
-	deliveryMu        sync.Mutex
-	pendingDeliveries map[string]grantDelivery
 }
 
 type ExecGrant struct {
@@ -59,29 +55,43 @@ func newGrantIssuer(
 	stopped func() bool,
 ) *grantIssuer {
 	issuer := &grantIssuer{
-		now:               now,
-		approver:          approver,
-		resolver:          resolver,
-		audit:             audit,
-		fetchLimit:        fetchLimit,
-		stopped:           stopped,
-		pendingDeliveries: make(map[string]grantDelivery),
+		now:        now,
+		approver:   approver,
+		resolver:   resolver,
+		audit:      audit,
+		fetchLimit: fetchLimit,
+		stopped:    stopped,
 	}
 	issuer.reusable = newReusableGrantManager(now, store, cache, stopped)
 	return issuer
 }
 
-func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
-	return grantDelivery{attempt: attempt}
+func (g *grantIssuer) issueAndDeliver(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.ExecRequest,
+	write func(protocol.ExecResponsePayload, time.Time) error,
+) (ExecGrant, error) {
+	issued, err := g.issue(ctx, correlation, req)
+	if err != nil {
+		return ExecGrant{}, err
+	}
+	payload := protocol.ExecResponsePayload{
+		Env:           issued.grant.Env,
+		SecretAliases: issued.grant.SecretAliases,
+	}
+	if err := write(payload, issued.grant.payloadExpiresAt); err != nil {
+		_ = g.completeDelivery(issued.delivery, policy.DeliveryPrePayloadFailure)
+		return ExecGrant{}, err
+	}
+	if err := g.completeDelivery(issued.delivery, policy.DeliveryPayloadDelivered); err != nil {
+		return ExecGrant{}, err
+	}
+	return issued.grant, nil
 }
 
-func (g *grantIssuer) completePayloadWrite(correlation protocol.Correlation, written bool) error {
-	delivery := g.takeDelivery(correlation)
-	if written {
-		return g.completeDelivery(delivery, policy.DeliveryPayloadDelivered)
-	}
-	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
-	return nil
+func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
+	return grantDelivery{attempt: attempt}
 }
 
 func (g *grantIssuer) completeDelivery(delivery grantDelivery, result policy.DeliveryResult) error {
@@ -104,34 +114,6 @@ func (g *grantIssuer) rollbackDelivery(delivery grantDelivery) {
 	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
 }
 
-func (g *grantIssuer) trackDelivery(correlation protocol.Correlation, delivery grantDelivery) {
-	key := deliveryKey(correlation)
-	if key == "" || delivery.attempt.approvalID == "" {
-		return
-	}
-	g.deliveryMu.Lock()
-	g.pendingDeliveries[key] = delivery
-	g.deliveryMu.Unlock()
-}
-
-func (g *grantIssuer) takeDelivery(correlation protocol.Correlation) grantDelivery {
-	key := deliveryKey(correlation)
-	if key == "" {
-		return grantDelivery{}
-	}
-	g.deliveryMu.Lock()
-	defer g.deliveryMu.Unlock()
-	delivery := g.pendingDeliveries[key]
-	delete(g.pendingDeliveries, key)
-	return delivery
-}
-
-func (g *grantIssuer) clearPendingDeliveries() {
-	g.deliveryMu.Lock()
-	g.pendingDeliveries = make(map[string]grantDelivery)
-	g.deliveryMu.Unlock()
-}
-
 func (d grantDelivery) approvalID() string {
 	return d.attempt.approvalID
 }
@@ -140,50 +122,42 @@ func (d grantDelivery) expiresAt() time.Time {
 	return d.attempt.expiresAt
 }
 
-func deliveryKey(correlation protocol.Correlation) string {
-	if correlation.RequestID == "" || correlation.Nonce == "" {
-		return ""
-	}
-	return correlation.RequestID + "\x00" + correlation.Nonce
-}
-
 func (g *grantIssuer) issue(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-) (ExecGrant, error) {
+) (issuedGrant, error) {
 	if err := g.ensureRequestActive(ctx, req); err != nil {
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 
 	issued, err := g.issueReusableGrant(ctx, req)
 	if err != nil {
-		return ExecGrant{}, g.requestError(ctx, req, err)
+		return issuedGrant{}, g.requestError(ctx, req, err)
 	}
 	if issued.grant.Env == nil {
 		issued, err = g.freshGrant(ctx, correlation, req)
 		if err != nil {
-			return ExecGrant{}, g.requestError(ctx, req, err)
+			return issuedGrant{}, g.requestError(ctx, req, err)
 		}
 	}
 	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID(), issued.delivery.expiresAt()); err != nil {
 		g.rollbackDelivery(issued.delivery)
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	issued.grant.payloadExpiresAt = grantPayloadExpiresAt(req, issued.delivery.expiresAt())
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, correlation.RequestID, req)
 	if err := g.recordRequiredAudit(ctx, event); err != nil {
 		g.rollbackDelivery(issued.delivery)
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
 	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID(), issued.delivery.expiresAt()); err != nil {
 		g.rollbackDelivery(issued.delivery)
-		return ExecGrant{}, err
+		return issuedGrant{}, err
 	}
-	g.trackDelivery(correlation, issued.delivery)
 
-	return issued.grant, nil
+	return issued, nil
 }
 
 func (g *grantIssuer) ensureRequestActive(ctx context.Context, req request.ExecRequest) error {
@@ -218,7 +192,6 @@ func (g *grantIssuer) ensureGrantStillActive(
 }
 
 func (g *grantIssuer) clearReusableGrants() {
-	g.clearPendingDeliveries()
 	g.reusable.clear()
 }
 

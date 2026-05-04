@@ -26,12 +26,39 @@ func testCorrelation(requestID string, nonce string) protocol.Correlation {
 	return protocol.Correlation{RequestID: requestID, Nonce: nonce}
 }
 
-func markGrantPayloadDelivered(b *Broker, correlation protocol.Correlation) error {
-	if err := b.grants.completePayloadWrite(correlation, true); err != nil {
-		b.removeActiveExec(correlation.RequestID)
-		return err
+func deliverExecForTest(
+	ctx context.Context,
+	b *Broker,
+	correlation protocol.Correlation,
+	req request.ExecRequest,
+) (ExecGrant, error) {
+	return deliverExecWithWriteForTest(ctx, b, correlation, req, func(protocol.ExecResponsePayload, time.Time) error {
+		return nil
+	})
+}
+
+func deliverExecWithWriteForTest(
+	ctx context.Context,
+	b *Broker,
+	correlation protocol.Correlation,
+	req request.ExecRequest,
+	write func(protocol.ExecResponsePayload, time.Time) error,
+) (ExecGrant, error) {
+	return b.handleExecDelivery(ctx, correlation, req, write)
+}
+
+func requireActiveRequest(t *testing.T, b *Broker, correlation protocol.Correlation) {
+	t.Helper()
+	if _, err := b.activeRequest(correlation); err != nil {
+		t.Fatalf("active request %q returned error: %v", correlation.RequestID, err)
 	}
-	return b.markPayloadDelivered(correlation.RequestID)
+}
+
+func requireNoActiveRequest(t *testing.T, b *Broker, correlation protocol.Correlation, want error) {
+	t.Helper()
+	if _, err := b.activeRequest(correlation); !errors.Is(err, want) {
+		t.Fatalf("active request %q = %v, want %v", correlation.RequestID, err, want)
+	}
 }
 
 type mockApprover struct {
@@ -360,9 +387,9 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 		Audit: aud,
 	})
 
-	grant, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	grant, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
 	if got := grant.Env["TOKEN"]; got != canarySecretValue {
 		t.Fatalf("env TOKEN = %q", got)
@@ -462,7 +489,7 @@ func assertDeadlineApprovalFailureAudited(t *testing.T, tc deadlineApprovalFailu
 		t.Fatalf("NewBroker returned error: %v", err)
 	}
 
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, tc.err) {
 		t.Fatalf("expected %s, got %v", tc.err, err)
 	}
@@ -499,7 +526,7 @@ func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
 		Audit:    aud,
 	})
 
-	_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	}))
 	if !errors.Is(err, tc.err) {
@@ -530,12 +557,12 @@ func TestBrokerDeduplicatesRefsAndPreservesEmptyValues(t *testing.T) {
 		Audit:    &memoryAudit{},
 	})
 
-	grant, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	grant, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: ref},
 		{Alias: "TOKEN_COPY", Ref: ref},
 	}))
 	if err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
 	if len(resolver.Calls()) != 1 {
 		t.Fatalf("duplicate ref was fetched %d times: %v", len(resolver.Calls()), resolver.Calls())
@@ -562,12 +589,12 @@ func TestBrokerSeparatesSameRefAcrossAccounts(t *testing.T) {
 		Audit:    &memoryAudit{},
 	})
 
-	grant, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	grant, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "PERSONAL_TOKEN", Ref: ref, Account: "Personal"},
 		{Alias: "WORK_TOKEN", Ref: ref, Account: "Work"},
 	}))
 	if err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
 	if grant.Env["PERSONAL_TOKEN"] != "personal-value" || grant.Env["WORK_TOKEN"] != "work-value" {
 		t.Fatalf("same ref across accounts was not resolved separately: %+v", grant.Env)
@@ -591,7 +618,7 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 		Audit: aud,
 	})
 
-	_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 		{Alias: "FAIL", Ref: failingRef},
 	}))
@@ -616,9 +643,7 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
 	}
 	assertAuditEventsValueFree(t, events)
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("request should not become active after failed fetch, got %v", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrUnknownRequest)
 }
 
 func TestBrokerCancelsOutstandingFetchesAfterFirstFailure(t *testing.T) {
@@ -642,7 +667,7 @@ func TestBrokerCancelsOutstandingFetchesAfterFirstFailure(t *testing.T) {
 		FetchLimit: 2,
 	})
 
-	_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "FAIL", Ref: failRef},
 		{Alias: "SLOW", Ref: slowRef},
 	}))
@@ -688,7 +713,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 		t.Fatalf("NewBroker returned error: %v", err)
 	}
 
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected request expiry while resolving, got %v", err)
 	}
@@ -709,9 +734,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
 		t.Fatal("command_starting was audited after request deadline expired during fetch")
 	}
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("request should not become active after fetch deadline expiry, got %v", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrUnknownRequest)
 }
 
 func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.T) {
@@ -740,7 +763,7 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	receiveBrokerSignal(t, resolver.started, "secret resolution did not start before request deadline")
@@ -748,10 +771,10 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, ErrRequestExpired) {
-			t.Fatalf("HandleExec error = %v, want request expired", err)
+			t.Fatalf("deliverExec error = %v, want request expired", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("HandleExec did not return after request deadline when resolver ignored cancellation")
+		t.Fatal("deliverExec did not return after request deadline when resolver ignored cancellation")
 	}
 
 	events := aud.Events()
@@ -774,9 +797,7 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 	if containsAuditEvent(events, audit.EventCommandStarting) {
 		t.Fatal("command_starting was audited after hung resolver crossed request deadline")
 	}
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("request should not become active after hung resolver deadline, got %v", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrUnknownRequest)
 }
 
 func TestBrokerRejectsApprovalThatReturnsAfterRequestExpiry(t *testing.T) {
@@ -803,7 +824,7 @@ func TestBrokerRejectsApprovalThatReturnsAfterRequestExpiry(t *testing.T) {
 		t.Fatalf("NewBroker returned error: %v", err)
 	}
 
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected request expiry after slow approval, got %v", err)
 	}
@@ -851,7 +872,7 @@ func TestBrokerStopsBeforePayloadWhenRequestExpiresAfterResolution(t *testing.T)
 		t.Fatalf("NewBroker returned error: %v", err)
 	}
 
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected request expiry after resolution, got %v", err)
 	}
@@ -861,37 +882,34 @@ func TestBrokerStopsBeforePayloadWhenRequestExpiresAfterResolution(t *testing.T)
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
 		t.Fatal("command_starting was audited after request expired post-resolution")
 	}
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("request should not become active after post-resolution expiry, got %v", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrUnknownRequest)
 }
 
 func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 4}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	aud := &memoryAudit{}
 	cache := secretcache.NewSecretCache()
 	broker := newTestBroker(t, BrokerOptions{Approver: approver, Resolver: resolver, Audit: aud, Cache: cache})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+	req.ReusableUses = 4
 
-	first, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
+		t.Fatalf("first deliverExec returned error: %v", err)
 	}
 	if first.approvalID == "" {
 		t.Fatal("expected reusable approval id")
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_1", "nonce_1")); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 
 	resolver.values[ref] = "second"
-	second, err := broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
+	second, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), req)
 	if err != nil {
-		t.Fatalf("second HandleExec returned error: %v", err)
+		t.Fatalf("second deliverExec returned error: %v", err)
 	}
 	if second.Env["TOKEN"] != "first" {
 		t.Fatalf("reusable approval did not use cached value: %+v", second.Env)
@@ -902,15 +920,13 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if reuses := aud.Reuses(); len(reuses) != 1 {
 		t.Fatalf("expected approval_reused audit metadata, got %+v", reuses)
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_2", "nonce_2")); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
 
 	force := req
 	force.ForceRefresh = true
-	third, err := broker.handleExec(context.Background(), testCorrelation("req_3", "nonce_3"), force)
+	third, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_3", "nonce_3"), force)
 	if err != nil {
-		t.Fatalf("force-refresh HandleExec returned error: %v", err)
+		t.Fatalf("force-refresh deliverExec returned error: %v", err)
 	}
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("force refresh did not update cached value: %+v", third.Env)
@@ -943,35 +959,31 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 	req.ReusableUses = 2
 
-	first, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
+		t.Fatalf("first deliverExec returned error: %v", err)
 	}
 	if first.approvalID == "" {
 		t.Fatal("expected reusable approval id")
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_1", "nonce_1")); err != nil {
-		t.Fatalf("first markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 
 	resolver.values[ref] = "second"
-	second, err := broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
+	second, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), req)
 	if err != nil {
-		t.Fatalf("second HandleExec returned error: %v", err)
+		t.Fatalf("second deliverExec returned error: %v", err)
 	}
 	if second.Env["TOKEN"] != "first" {
 		t.Fatalf("second delivery did not reuse cached first value: %+v", second.Env)
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_2", "nonce_2")); err != nil {
-		t.Fatalf("second markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
 	if _, ok := cache.Get(first.approvalID, ref, ""); ok {
 		t.Fatal("two-use approval cache scope remained after two deliveries")
 	}
 
-	third, err := broker.handleExec(context.Background(), testCorrelation("req_3", "nonce_3"), req)
+	third, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_3", "nonce_3"), req)
 	if err != nil {
-		t.Fatalf("third HandleExec returned error: %v", err)
+		t.Fatalf("third deliverExec returned error: %v", err)
 	}
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("fresh approval after exhaustion used stale value: %+v", third.Env)
@@ -999,17 +1011,15 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 	req.ReusableUses = 2
 
-	first, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
+		t.Fatalf("first deliverExec returned error: %v", err)
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_1", "nonce_1")); err != nil {
-		t.Fatalf("first markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 
-	second, err := broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
+	second, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), req)
 	if err != nil {
-		t.Fatalf("second HandleExec returned error: %v", err)
+		t.Fatalf("second deliverExec returned error: %v", err)
 	}
 	if second.approvalID != first.approvalID {
 		t.Fatalf(
@@ -1023,17 +1033,15 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 	}
 
 	approver.decision = ApprovalDecision{Approved: false}
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_3", "nonce_3"), req)
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_3", "nonce_3"), req)
 	if !errors.Is(err, ErrApprovalDenied) {
-		t.Fatalf("third HandleExec reused a reserved one-use approval; got %v", err)
+		t.Fatalf("third deliverExec reused a reserved one-use approval; got %v", err)
 	}
 	if approver.calls != 2 {
 		t.Fatalf("approver calls = %d, want fresh approval after reserved use exhausted cache availability", approver.calls)
 	}
 
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_2", "nonce_2")); err != nil {
-		t.Fatalf("second markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
 }
 
 func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
@@ -1056,13 +1064,11 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	}
 	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
-	first, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
+		t.Fatalf("first deliverExec returned error: %v", err)
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_1", "nonce_1")); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 	if _, ok := cache.Get(first.approvalID, ref, ""); !ok {
 		t.Fatal("expected first reusable value in cache")
 	}
@@ -1070,9 +1076,9 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	now = req.ExpiresAt.Add(time.Second)
 	resolver.values[ref] = "second"
 	next := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-	second, err := broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), next)
+	second, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), next)
 	if err != nil {
-		t.Fatalf("second HandleExec returned error: %v", err)
+		t.Fatalf("second deliverExec returned error: %v", err)
 	}
 	if second.Env["TOKEN"] != "second" {
 		t.Fatalf("fresh approval after expiry used stale value: %+v", second.Env)
@@ -1104,13 +1110,11 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	}
 	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
-	first, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
+		t.Fatalf("first deliverExec returned error: %v", err)
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_1", "nonce_1")); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 	if _, ok := cache.Get(first.approvalID, ref, ""); !ok {
 		t.Fatal("expected reusable value in cache before force refresh")
 	}
@@ -1125,7 +1129,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	force := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 	force.ForceRefresh = true
 
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), force)
+	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), force)
 	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected expired reusable approval during refresh, got %v", err)
 	}
@@ -1155,31 +1159,31 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 	}
 	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
-	first, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("first HandleExec returned error: %v", err)
+		t.Fatalf("first deliverExec returned error: %v", err)
 	}
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_1", "nonce_1")); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 
 	now = req.ExpiresAt.Add(-time.Millisecond)
 	reuse := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-	_, err = broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), reuse)
-	if err != nil {
-		t.Fatalf("reuse HandleExec returned error before payload delivery: %v", err)
-	}
-
-	now = req.ExpiresAt.Add(time.Second)
-	if err := markGrantPayloadDelivered(broker, testCorrelation("req_2", "nonce_2")); !errors.Is(err, ErrRequestExpired) {
+	_, err = deliverExecWithWriteForTest(
+		context.Background(),
+		broker,
+		testCorrelation("req_2", "nonce_2"),
+		reuse,
+		func(protocol.ExecResponsePayload, time.Time) error {
+			now = req.ExpiresAt.Add(time.Second)
+			return nil
+		},
+	)
+	if !errors.Is(err, ErrRequestExpired) {
 		t.Fatalf("expected reusable approval expiry before payload delivery, got %v", err)
 	}
 	if _, ok := cache.Get(first.approvalID, ref, ""); ok {
 		t.Fatal("expired reusable approval cache scope remained before payload delivery")
 	}
-	if err := broker.markPayloadDelivered("req_2"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("expired request should no longer accept payload delivery, got %v", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_2", ""), ErrUnknownRequest)
 }
 
 func TestBrokerStopClearsReusableCache(t *testing.T) {
@@ -1195,9 +1199,9 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
-	grant, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	grant, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
 	if _, ok := cache.Get(grant.approvalID, ref, ""); !ok {
 		t.Fatal("expected reusable value in cache")
@@ -1224,7 +1228,7 @@ func TestBrokerStopCancelsPendingApproval(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	receiveBrokerSignal(t, approver.started, "approval was not requested before stop")
@@ -1235,10 +1239,10 @@ func TestBrokerStopCancelsPendingApproval(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, ErrDaemonStopped) {
-			t.Fatalf("HandleExec error = %v, want daemon stopped", err)
+			t.Fatalf("deliverExec error = %v, want daemon stopped", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("HandleExec did not return after daemon stop")
+		t.Fatal("deliverExec did not return after daemon stop")
 	}
 	if calls := resolver.Calls(); len(calls) != 0 {
 		t.Fatalf("resolver called after stopped pending approval: %v", calls)
@@ -1251,9 +1255,7 @@ func TestBrokerStopCancelsPendingApproval(t *testing.T) {
 		containsAuditEvent(events, audit.EventCommandStarting) {
 		t.Fatalf("stopped approval reached post-approval audit events: %+v", events)
 	}
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrDaemonStopped) {
-		t.Fatalf("markPayloadDelivered after stop = %v, want daemon stopped", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrDaemonStopped)
 }
 
 func TestBrokerStopCancelsSecretResolution(t *testing.T) {
@@ -1271,7 +1273,7 @@ func TestBrokerStopCancelsSecretResolution(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 		errCh <- err
 	}()
 	receiveBrokerSignal(t, resolver.started, "secret resolution did not start before stop")
@@ -1282,17 +1284,15 @@ func TestBrokerStopCancelsSecretResolution(t *testing.T) {
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, ErrDaemonStopped) {
-			t.Fatalf("HandleExec error = %v, want daemon stopped", err)
+			t.Fatalf("deliverExec error = %v, want daemon stopped", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("HandleExec did not return after daemon stop")
+		t.Fatal("deliverExec did not return after daemon stop")
 	}
 	if containsAuditEvent(aud.Events(), audit.EventCommandStarting) {
 		t.Fatalf("stopped resolution reached command_starting audit: %+v", aud.Events())
 	}
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrDaemonStopped) {
-		t.Fatalf("markPayloadDelivered after stop = %v, want daemon stopped", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrDaemonStopped)
 }
 
 func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
@@ -1311,7 +1311,7 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	})
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
 
-	_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if err == nil {
 		t.Fatal("expected cache insertion failure")
 	}
@@ -1325,7 +1325,7 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 		t.Fatalf("approver calls after failed insert = %d, want 1", approver.calls)
 	}
 
-	grant, err := broker.handleExec(context.Background(), testCorrelation("req_2", "nonce_2"), req)
+	grant, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), req)
 	if err != nil {
 		t.Fatalf("fresh retry after cache failure returned error: %v", err)
 	}
@@ -1358,7 +1358,7 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 		}},
 	})
 
-	_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
 	if !errors.Is(err, ErrAuditRequired) {
 		t.Fatalf("expected command_starting audit failure, got %v", err)
 	}
@@ -1371,9 +1371,7 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, policy.ErrMismatch) {
 		t.Fatalf("reusable approval survived command_starting audit failure: %v", err)
 	}
-	if err := broker.markPayloadDelivered("req_1"); !errors.Is(err, ErrUnknownRequest) {
-		t.Fatalf("request should not become active after command_starting audit failure, got %v", err)
-	}
+	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrUnknownRequest)
 }
 
 func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
@@ -1386,12 +1384,10 @@ func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
-	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req); err != nil {
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
-	if err := broker.markPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 	if err := broker.ReportStarted(context.Background(), testCorrelation("req_1", "wrong"), 1234); !errors.Is(err, ErrInvalidNonce) {
 		t.Fatalf("expected nonce mismatch, got %v", err)
 	}
@@ -1428,14 +1424,12 @@ func TestBrokerClientDisconnectAfterPayloadAuditsWithoutKillingProcess(t *testin
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
-	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	})); err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
-	if err := broker.markPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 	broker.ClientDisconnected(context.Background(), "req_1")
 
 	events := aud.Events()
@@ -1457,14 +1451,12 @@ func TestBrokerClientDisconnectAuditFailureIsBestEffort(t *testing.T) {
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
-	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	})); err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
-	if err := broker.markPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 
 	broker.ClientDisconnected(context.Background(), "req_1")
 
@@ -1482,14 +1474,12 @@ func TestBrokerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": canarySecretValue}},
 		Audit:    aud,
 	})
-	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	})); err != nil {
-		t.Fatalf("HandleExec returned error: %v", err)
+		t.Fatalf("deliverExec returned error: %v", err)
 	}
-	if err := broker.markPayloadDelivered("req_1"); err != nil {
-		t.Fatalf("markPayloadDelivered returned error: %v", err)
-	}
+	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
 	if err := broker.ReportStarted(context.Background(), testCorrelation("req_1", "nonce_1"), 1234); err != nil {
 		t.Fatalf("ReportStarted returned error: %v", err)
 	}
@@ -1529,7 +1519,7 @@ func TestBrokerStopAuditFailureIsBestEffort(t *testing.T) {
 
 	broker.Stop(context.Background())
 
-	if _, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	})); !errors.Is(err, ErrDaemonStopped) {
 		t.Fatalf("stop audit failure left broker running, handleExec = %v", err)
@@ -1546,7 +1536,7 @@ func TestBrokerAuditFailureStopsBeforePayload(t *testing.T) {
 		Resolver: resolver,
 		Audit:    &memoryAudit{err: errors.New("disk full")},
 	})
-	_, err := broker.handleExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	}))
 	if !errors.Is(err, ErrAuditRequired) {

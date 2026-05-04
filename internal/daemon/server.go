@@ -327,14 +327,9 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
-	delivery, err := s.broker.handleExecDelivery(ctx, env.Correlation(), req)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return ""
-	}
-	if err := delivery.deliver(func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
+	wroteResponse := false
+	_, err = s.broker.handleExecDelivery(ctx, env.Correlation(), req, func(payload protocol.ExecResponsePayload, expiresAt time.Time) error {
 		if s.stopped() {
-			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrDaemonStopped), ErrDaemonStopped)
 			return ErrDaemonStopped
 		}
 		if s.beforeExecResponseWrite != nil {
@@ -342,12 +337,16 @@ func (s *Server) handleRequestExec(
 		}
 		clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, expiresAt)
 		if err != nil {
-			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 			return err
 		}
 		defer clearWriteDeadline()
+		wroteResponse = true
 		return writeOK(encoder, env.Correlation(), payload)
-	}); err != nil {
+	})
+	if err != nil {
+		if !wroteResponse {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		}
 		return ""
 	}
 	return env.RequestID

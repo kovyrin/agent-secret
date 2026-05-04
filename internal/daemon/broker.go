@@ -65,19 +65,11 @@ type Broker struct {
 	stop     chan struct{}
 }
 
-type execDelivery struct {
-	broker      *Broker
-	correlation protocol.Correlation
-	payload     protocol.ExecResponsePayload
-	expiresAt   time.Time
-}
-
 type activeExec struct {
-	nonce            string
-	req              request.ExecRequest
-	payloadDelivered bool
-	started          bool
-	childPID         *int
+	nonce    string
+	req      request.ExecRequest
+	started  bool
+	childPID *int
 }
 
 type BrokerOptions struct {
@@ -139,36 +131,8 @@ func (b *Broker) handleExecDelivery(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-) (execDelivery, error) {
-	grant, err := b.handleExec(ctx, correlation, req)
-	if err != nil {
-		return execDelivery{}, err
-	}
-	return execDelivery{
-		broker:      b,
-		correlation: correlation,
-		payload: protocol.ExecResponsePayload{
-			Env:           grant.Env,
-			SecretAliases: grant.SecretAliases,
-		},
-		expiresAt: grant.payloadExpiresAt,
-	}, nil
-}
-
-func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time) error) error {
-	writeErr := write(d.payload, d.expiresAt)
-	if err := d.broker.grants.completePayloadWrite(d.correlation, writeErr == nil); err != nil {
-		d.broker.removeActiveExec(d.correlation.RequestID)
-		return err
-	}
-	if writeErr != nil {
-		d.broker.removeActiveExec(d.correlation.RequestID)
-		return writeErr
-	}
-	return d.broker.markPayloadDelivered(d.correlation.RequestID)
-}
-
-func (b *Broker) handleExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (ExecGrant, error) {
+	write func(protocol.ExecResponsePayload, time.Time) error,
+) (ExecGrant, error) {
 	if correlation.RequestID == "" || correlation.Nonce == "" {
 		return ExecGrant{}, ErrInvalidNonce
 	}
@@ -183,18 +147,13 @@ func (b *Broker) handleExec(ctx context.Context, correlation protocol.Correlatio
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()
-	grant, err := b.grants.issue(execCtx, correlation, req)
+	grant, err := b.grants.issueAndDeliver(execCtx, correlation, req, write)
 	if err != nil {
 		return ExecGrant{}, err
 	}
-
-	b.mu.Lock()
-	b.active[correlation.RequestID] = &activeExec{
-		nonce: correlation.Nonce,
-		req:   req,
+	if err := b.activateExec(correlation, req); err != nil {
+		return ExecGrant{}, err
 	}
-	b.mu.Unlock()
-
 	return grant, nil
 }
 
@@ -219,30 +178,20 @@ func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (c
 	}
 }
 
-func (b *Broker) markPayloadDelivered(requestID string) error {
+func (b *Broker) activateExec(correlation protocol.Correlation, req request.ExecRequest) error {
 	if b.stopped() {
 		return ErrDaemonStopped
 	}
-	if !b.markActivePayloadDelivered(requestID) {
-		return ErrUnknownRequest
-	}
-	return nil
-}
-
-func (b *Broker) removeActiveExec(requestID string) {
-	b.mu.Lock()
-	delete(b.active, requestID)
-	b.mu.Unlock()
-}
-
-func (b *Broker) markActivePayloadDelivered(requestID string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if current := b.active[requestID]; current != nil {
-		current.payloadDelivered = true
-		return true
+	if b.stopped() {
+		return ErrDaemonStopped
 	}
-	return false
+	b.active[correlation.RequestID] = &activeExec{
+		nonce: correlation.Nonce,
+		req:   req,
+	}
+	return nil
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
@@ -293,7 +242,7 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 		delete(b.active, requestID)
 	}
 	b.mu.Unlock()
-	if !ok || !active.payloadDelivered {
+	if !ok {
 		return
 	}
 
