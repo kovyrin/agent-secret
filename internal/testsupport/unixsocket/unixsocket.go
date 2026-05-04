@@ -22,6 +22,9 @@ func SkipIfBindUnavailable(tb testing.TB, err error) {
 }
 
 func IsBindUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
 	if errors.Is(err, syscall.EPERM) ||
 		errors.Is(err, syscall.EACCES) ||
 		errors.Is(err, syscall.EAFNOSUPPORT) ||
