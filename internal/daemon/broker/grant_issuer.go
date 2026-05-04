@@ -222,7 +222,7 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 	return issuedGrant{
 		grant: Grant{
 			Env:           values,
-			SecretAliases: aliases(req.Secrets),
+			SecretAliases: request.SecretAliases(req.Secrets),
 			approvalID:    approval.ID,
 		},
 		delivery: delivery,
@@ -335,7 +335,7 @@ func (g *grantIssuer) freshGrant(
 	return issuedGrant{
 		grant: Grant{
 			Env:           values,
-			SecretAliases: aliases(req.Secrets),
+			SecretAliases: request.SecretAliases(req.Secrets),
 			approvalID:    approvalID,
 		},
 		delivery: delivery,

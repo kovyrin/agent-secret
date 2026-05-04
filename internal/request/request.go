@@ -90,6 +90,15 @@ type ExecRequest struct {
 	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 }
 
+func SecretAliases(secrets []Secret) []string {
+	aliases := make([]string, 0, len(secrets))
+	for _, secret := range secrets {
+		aliases = append(aliases, secret.Alias)
+	}
+	slices.Sort(aliases)
+	return aliases
+}
+
 func (r ExecRequest) Expired(at time.Time) bool {
 	return !at.Before(r.ExpiresAt)
 }

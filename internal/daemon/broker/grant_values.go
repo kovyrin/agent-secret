@@ -59,15 +59,6 @@ func fanoutValues(secrets []request.Secret, refValues map[secretIdentity]string)
 	return values
 }
 
-func aliases(secrets []request.Secret) []string {
-	aliases := make([]string, 0, len(secrets))
-	for _, secret := range secrets {
-		aliases = append(aliases, secret.Alias)
-	}
-	slices.Sort(aliases)
-	return aliases
-}
-
 func auditRefsForIdentity(secrets []request.Secret, identity secretIdentity) []audit.SecretRef {
 	refs := []audit.SecretRef{}
 	for _, secret := range secrets {

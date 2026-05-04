@@ -68,6 +68,21 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	}
 }
 
+func TestSecretAliasesReturnsSortedRequestAliases(t *testing.T) {
+	t.Parallel()
+
+	secrets := []Secret{
+		{Alias: "Z_TOKEN"},
+		{Alias: "A_TOKEN"},
+		{Alias: "M_TOKEN"},
+	}
+	got := SecretAliases(secrets)
+	want := []string{"A_TOKEN", "M_TOKEN", "Z_TOKEN"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("SecretAliases = %v, want %v", got, want)
+	}
+}
+
 func TestNewExecLeavesReceiptTimesUnsetByDefault(t *testing.T) {
 	t.Parallel()
 

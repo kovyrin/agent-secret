@@ -257,7 +257,7 @@ func validateStatusPayload(messageType protocol.MessageType, payload protocol.St
 }
 
 func validateExecResponsePayload(payload protocol.ExecResponsePayload, req request.ExecRequest) error {
-	expectedAliases := secretAliases(req.Secrets)
+	expectedAliases := request.SecretAliases(req.Secrets)
 	if !slices.Equal(payload.SecretAliases, expectedAliases) {
 		return fmt.Errorf("%w: request.exec response secret aliases do not match request", protocol.ErrMalformedEnvelope)
 	}
@@ -268,15 +268,6 @@ func validateExecResponsePayload(payload protocol.ExecResponsePayload, req reque
 		return fmt.Errorf("%w: request.exec response env aliases do not match request", protocol.ErrMalformedEnvelope)
 	}
 	return nil
-}
-
-func secretAliases(secrets []request.Secret) []string {
-	aliases := make([]string, 0, len(secrets))
-	for _, secret := range secrets {
-		aliases = append(aliases, secret.Alias)
-	}
-	slices.Sort(aliases)
-	return aliases
 }
 
 func envAliases(env map[string]string) []string {
