@@ -32,7 +32,13 @@ agent-secret/
     secretmem/                   # In-memory secret value handling
   approver/
     Sources/
-      AgentSecretApprover/       # Swift approval models, UI, logging, transport
+      AgentSecretApprover/
+        Models/                  # Approval request/decision value models
+        Protocol/                # Daemon socket envelopes and payload shells
+        DaemonClient/            # Socket client and line transport adapters
+        Trust/                   # Daemon peer and code-signature validation
+        Presentation/            # View models and SwiftUI/AppKit view pieces
+        Runtime/                 # Controller, presenter, modal, logging runtime
       AgentSecretApproverApp/    # Shipped macOS approver/setup app executable
       AgentSecretApproverSmoke/  # Non-secret smoke executable
     Tests/                       # Swift unit and contract tests
@@ -106,23 +112,13 @@ a non-secret smoke executable. The approver receives approval metadata from the
 daemon socket, renders a native prompt, logs value-free lifecycle events, and
 submits a decision containing the request ID and nonce.
 
+The `AgentSecretApprover` target is organized by runtime boundary: `Models`,
+`Protocol`, `DaemonClient`, `Trust`, `Presentation`, and `Runtime`. SwiftPM
+keeps those folders in one module; the folders are ownership boundaries, not
+compatibility layers.
+
 The approver is not a secret resolver. It must not fetch, store, print, or log
 secret values.
-
-## Superseded Scaffold Names
-
-The original scaffold proposed package names that no longer exist:
-
-- `internal/approval` is represented by request models in `internal/request`,
-  policy state in `internal/policy`, daemon approval IPC in `internal/daemon`,
-  and Swift approval models in `approver/Sources/AgentSecretApprover`.
-- `internal/op` is now `internal/opresolver`.
-- `internal/socket` is folded into `internal/daemon` for protocol handling and
-  `internal/peercred` for OS peer metadata.
-- `internal/supervisor` is now `internal/execwrap`.
-
-Those names should be treated as historical planning terms, not active package
-boundaries.
 
 ## Repository Boundary
 
