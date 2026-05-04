@@ -55,10 +55,10 @@ final class ApprovalReusableUsesTests: XCTestCase {
             request: request,
             now: Date(timeIntervalSince1970: Self.viewModelNow)
         )
-        let client = MockDaemonClient(request: request)
+        let client = RecordingDaemonClient(request: request)
         let controller = ApprovalController(
             client: client,
-            presenter: StaticDecisionPresenter(decision: .approveReusable),
+            presenter: FixedDecisionPresenter(decision: .approveReusable),
             logger: NoopApprovalLogger()
         )
 

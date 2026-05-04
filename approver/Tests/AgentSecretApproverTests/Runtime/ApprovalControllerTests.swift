@@ -99,10 +99,10 @@ final class ApprovalControllerTests: XCTestCase {
     @MainActor
     func testReusableDecisionCarriesThreeUseLimit() async throws {
         let request: ApprovalRequest = Self.sampleRequest
-        let client = MockDaemonClient(request: request)
+        let client = RecordingDaemonClient(request: request)
         let controller = ApprovalController(
             client: client,
-            presenter: StaticDecisionPresenter(decision: .approveReusable),
+            presenter: FixedDecisionPresenter(decision: .approveReusable),
             logger: RecordingLogger()
         )
 
@@ -114,7 +114,7 @@ final class ApprovalControllerTests: XCTestCase {
 
     @MainActor
     func testPresenterContractIsMainActorAccessible() {
-        let presenter: ApprovalPresenter = StaticDecisionPresenter(decision: .deny)
+        let presenter: ApprovalPresenter = FixedDecisionPresenter(decision: .deny)
 
         XCTAssertEqual(presenter.decide(for: Self.sampleRequest), .deny)
     }
@@ -149,11 +149,11 @@ final class ApprovalControllerTests: XCTestCase {
     @MainActor
     func testSubmitsApproveOnceDecisionWithoutSecretValues() async throws {
         let request: ApprovalRequest = Self.sampleRequest
-        let client = MockDaemonClient(request: request)
+        let client = RecordingDaemonClient(request: request)
         let logger = RecordingLogger()
         let controller = ApprovalController(
             client: client,
-            presenter: StaticDecisionPresenter(decision: .approveOnce),
+            presenter: FixedDecisionPresenter(decision: .approveOnce),
             logger: logger
         )
 

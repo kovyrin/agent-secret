@@ -9,11 +9,11 @@ private func runSmoke() async throws {
     let options = try options(from: arguments)
 
     let request: ApprovalRequest = try request(from: options.requestPath)
-    let client: MockDaemonClient = .init(request: request)
+    let client: SmokeDaemonClient = .init(request: request)
     let logger: RecordingLogger = .init()
     let controller: ApprovalController = .init(
         client: client,
-        presenter: StaticDecisionPresenter(decision: options.decision),
+        presenter: SmokeDecisionPresenter(decision: options.decision),
         logger: logger
     )
     let decision: ApprovalDecision = try await controller.run()
