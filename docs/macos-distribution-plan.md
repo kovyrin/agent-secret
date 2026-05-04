@@ -280,15 +280,16 @@ The app should expose a small setup screen:
 
 The setup UI must not require any 1Password access.
 
-### CLI Install Command
+### CLI And Skill Install Commands
 
-Add an unattended command for scripts:
+The CLI exposes unattended symlink installers for scripts and setup UI actions:
 
 ```bash
 agent-secret install-cli
+agent-secret skill-install
 ```
 
-Behavior:
+`agent-secret install-cli`:
 
 - Create parent directory for the target symlink.
 - Replace an existing Agent Secret symlink.
@@ -301,17 +302,7 @@ Behavior:
   agent-secret install-cli --force
   ```
 
-The app button should call the same internal implementation.
-
-### Skill Install Command
-
-Add an unattended command for installing the bundled coding-agent skill:
-
-```bash
-agent-secret skill-install
-```
-
-Behavior:
+`agent-secret skill-install`:
 
 - Create parent directory for the target symlink.
 - Link the bundled skill into `~/.agents/skills/agent-secret`.
@@ -325,11 +316,12 @@ Behavior:
   agent-secret skill-install --force
   ```
 
+Any app setup button must use the same installer implementation as
+`agent-secret install-cli`.
+
 ### Installer Script
 
-Add `install.sh` at repo root.
-
-Responsibilities:
+The root `install.sh` is the supported unattended installer. It:
 
 - Download release metadata from GitHub.
 - Select the artifact for the local architecture.
@@ -340,8 +332,7 @@ Responsibilities:
 - Run the bundled CLI's `skill-install`.
 - Run `agent-secret doctor`.
 
-The installer must not depend on Homebrew, 1Password CLI, or repo checkout
-state.
+It does not depend on Homebrew, 1Password CLI, or repo checkout state.
 
 ## Signing and Notarization
 
