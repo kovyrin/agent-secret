@@ -152,8 +152,7 @@ func TestClientRoundTripHonorsContextDeadlineWaitingForResponse(t *testing.T) {
 	client, requests, cleanup := startStallingDaemonClient(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
-	defer cancel()
+	ctx := newManualDoneContext(context.DeadlineExceeded)
 	errc := make(chan error, 1)
 	go func() {
 		_, err := client.Status(ctx)
@@ -165,33 +164,27 @@ func TestClientRoundTripHonorsContextDeadlineWaitingForResponse(t *testing.T) {
 		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeDaemonStatus)
 	}
 
+	ctx.finish()
 	err := receiveRoundTripError(t, errc)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected context deadline exceeded error, got %v", err)
 	}
 }
 
-func TestClientRoundTripUsesDefaultDeadlineWithoutCallerDeadline(t *testing.T) {
+func TestClientContextWithDefaultDeadlineUsesDefaultTimeout(t *testing.T) {
 	t.Parallel()
 
-	client, requests, cleanup := startStallingDaemonClient(t)
-	defer cleanup()
-	client.DefaultTimeout = 25 * time.Millisecond
+	client := &Client{DefaultTimeout: time.Minute}
+	startedAt := time.Now()
+	ctx, cancel := client.contextWithDefaultDeadline(context.Background(), protocol.TypeDaemonStatus, nil)
+	defer cancel()
 
-	errc := make(chan error, 1)
-	go func() {
-		_, err := client.Status(context.Background())
-		errc <- err
-	}()
-
-	env := receiveStalledRequest(t, requests)
-	if env.Type != protocol.TypeDaemonStatus {
-		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeDaemonStatus)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("contextWithDefaultDeadline did not set a deadline")
 	}
-
-	err := receiveRoundTripError(t, errc)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("expected default deadline exceeded error, got %v", err)
+	if deadline.Before(startedAt.Add(time.Minute)) || deadline.After(time.Now().Add(time.Minute+time.Second)) {
+		t.Fatalf("default deadline = %s, want about one minute from now", deadline)
 	}
 }
 
@@ -651,4 +644,43 @@ func receiveRoundTripError(t *testing.T, errc <-chan error) error {
 		t.Fatal("daemon client did not return after context cancellation")
 	}
 	return nil
+}
+
+type manualDoneContext struct {
+	done     chan struct{}
+	err      error
+	deadline time.Time
+}
+
+func newManualDoneContext(err error) *manualDoneContext {
+	return &manualDoneContext{
+		done:     make(chan struct{}),
+		err:      err,
+		deadline: time.Now().Add(time.Hour),
+	}
+}
+
+func (c *manualDoneContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *manualDoneContext) Err() error {
+	select {
+	case <-c.done:
+		return c.err
+	default:
+		return nil
+	}
+}
+
+func (c *manualDoneContext) Deadline() (time.Time, bool) {
+	return c.deadline, true
+}
+
+func (c *manualDoneContext) Value(any) any {
+	return nil
+}
+
+func (c *manualDoneContext) finish() {
+	close(c.done)
 }

@@ -71,6 +71,19 @@ func (f failingLifecycle) CommandCompleted(context.Context, Result) error {
 	return nil
 }
 
+type cancelingLifecycle struct {
+	cancel context.CancelFunc
+}
+
+func (c cancelingLifecycle) CommandStarted(context.Context, int) error {
+	c.cancel()
+	return nil
+}
+
+func (c cancelingLifecycle) CommandCompleted(context.Context, Result) error {
+	return nil
+}
+
 type signalTestOutput struct {
 	mu              sync.Mutex
 	buffer          bytes.Buffer
@@ -472,10 +485,6 @@ func TestRunTerminatesChildOnContextCancel(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		cancel()
-	}()
 
 	started := time.Now()
 	result, err := Run(ctx, Spec{
@@ -484,6 +493,7 @@ func TestRunTerminatesChildOnContextCancel(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
 		Env:                    helperEnv(),
+		Lifecycle:              cancelingLifecycle{cancel: cancel},
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)

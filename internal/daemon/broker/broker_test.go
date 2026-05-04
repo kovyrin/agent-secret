@@ -116,20 +116,22 @@ func (m *mockApprover) ApproveExec(
 	return m.decision, m.err
 }
 
-type sleepingApprover struct {
-	delay    time.Duration
+type afterApprovalApprover struct {
+	after    func()
 	decision approval.Decision
 	calls    int
 }
 
-func (s *sleepingApprover) ApproveExec(
+func (a *afterApprovalApprover) ApproveExec(
 	_ context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
 ) (approval.Decision, error) {
-	s.calls++
-	time.Sleep(s.delay)
-	return s.decision, nil
+	a.calls++
+	if a.after != nil {
+		a.after()
+	}
+	return a.decision, nil
 }
 
 type contextExpiringApprover struct {
@@ -800,18 +802,20 @@ func TestBrokerRejectsApprovalThatReturnsAfterRequestExpiry(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	now := time.Now()
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
-	req.TTL = 25 * time.Millisecond
+	req.TTL = time.Minute
 	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
-	approver := &sleepingApprover{
-		delay:    50 * time.Millisecond,
+	approver := &afterApprovalApprover{
+		after: func() {
+			now = req.ExpiresAt.Add(time.Second)
+		},
 		decision: approval.Decision{Approved: true, Reusable: true},
 	}
 	resolver := &mockResolver{values: map[string]string{ref: "value"}}
 	aud := &memoryAudit{}
 	broker, err := New(Options{
-		Now:      time.Now,
+		Now:      func() time.Time { return now },
 		Approver: approver,
 		Resolver: resolver,
 		Audit:    aud,
