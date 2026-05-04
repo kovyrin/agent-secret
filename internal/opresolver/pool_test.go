@@ -120,6 +120,67 @@ func TestDesktopPoolCoalescesConcurrentSameAccountInitialization(t *testing.T) {
 	}
 }
 
+func TestDesktopPoolResolveReturnsSecretValue(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeSecretsAPI{value: "synthetic-secret-value"}
+	var gotOptions ClientOptions
+	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
+		Account:            "default-account",
+		IntegrationName:    "test integration",
+		IntegrationVersion: "test version",
+		Factory: func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+			gotOptions = opts
+			return NewResolver(fake)
+		},
+	})
+
+	value, err := pool.Resolve(context.Background(), "op://Example Vault/Item/password", "override-account")
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if value != "synthetic-secret-value" {
+		t.Fatalf("value = %q, want synthetic-secret-value", value)
+	}
+	if fake.ref != "op://Example Vault/Item/password" {
+		t.Fatalf("resolved ref = %q, want input ref", fake.ref)
+	}
+	if gotOptions.Account != "override-account" {
+		t.Fatalf("account = %q, want override-account", gotOptions.Account)
+	}
+	if gotOptions.IntegrationName != "test integration" || gotOptions.IntegrationVersion != "test version" {
+		t.Fatalf("integration options were not preserved: %+v", gotOptions)
+	}
+}
+
+func TestWaitForDesktopPoolInitReturnsCompletedResult(t *testing.T) {
+	t.Parallel()
+
+	want := testDesktopResolver(t)
+	init := &desktopPoolInit{done: make(chan struct{}), resolver: want}
+	close(init.done)
+
+	got, err := waitForDesktopPoolInit(context.Background(), init)
+	if err != nil {
+		t.Fatalf("waitForDesktopPoolInit returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("resolver = %p, want %p", got, want)
+	}
+}
+
+func TestWaitForDesktopPoolInitReturnsContextError(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	init := &desktopPoolInit{done: make(chan struct{})}
+
+	if _, err := waitForDesktopPoolInit(ctx, init); err == nil {
+		t.Fatal("expected canceled context error")
+	}
+}
+
 type clientResult struct {
 	resolver *Resolver
 	err      error
