@@ -506,6 +506,8 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
+	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
+	req.ReusableUses = 1
 	var hookOnce sync.Once
 	var approvalMu sync.Mutex
 	var approvalID string
@@ -515,13 +517,15 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 		ExecValidator: NewTrustedExecutableValidator(CurrentExecutableTrustedClientPaths()),
 		beforeExecResponseWrite: func() {
 			hookOnce.Do(func() {
-				broker.mu.Lock()
-				if active := broker.active["req_1"]; active != nil {
+				if approval, err := broker.grants.reusable.store.MatchReusableForReuseAudit(
+					context.Background(),
+					req,
+					nil,
+				); approval.ID != "" || err != nil {
 					approvalMu.Lock()
-					approvalID = active.delivery.approvalID()
+					approvalID = approval.ID
 					approvalMu.Unlock()
 				}
-				broker.mu.Unlock()
 				now = daemonNow.Add(request.DefaultExecTTL + time.Second)
 			})
 		},
@@ -534,7 +538,6 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	}
 	client := NewClient(conn)
 	defer func() { _ = client.Close() }()
-	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 
 	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !IsProtocolError(err, protocol.ErrorCodeRequestExpired) {
 		t.Fatalf("RequestExec error = %v, want request_expired", err)

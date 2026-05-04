@@ -68,6 +68,7 @@ type Broker struct {
 type execDelivery struct {
 	broker    *Broker
 	requestID string
+	delivery  grantDelivery
 	payload   protocol.ExecResponsePayload
 	expiresAt time.Time
 }
@@ -75,7 +76,6 @@ type execDelivery struct {
 type activeExec struct {
 	nonce            string
 	req              request.ExecRequest
-	delivery         grantDelivery
 	payloadDelivered bool
 	started          bool
 	childPID         *int
@@ -148,6 +148,7 @@ func (b *Broker) handleExecDelivery(
 	return execDelivery{
 		broker:    b,
 		requestID: correlation.RequestID,
+		delivery:  grant.delivery,
 		payload: protocol.ExecResponsePayload{
 			Env:           grant.Env,
 			SecretAliases: grant.SecretAliases,
@@ -159,6 +160,11 @@ func (b *Broker) handleExecDelivery(
 func (d execDelivery) deliver(write func(protocol.ExecResponsePayload, time.Time) error) error {
 	if err := write(d.payload, d.expiresAt); err != nil {
 		d.broker.markPayloadDeliveryFailed(d.requestID)
+		d.delivery.markPrePayloadFailure()
+		return err
+	}
+	if err := d.delivery.markPayloadDelivered(); err != nil {
+		d.broker.removeActiveExec(d.requestID)
 		return err
 	}
 	return d.broker.markPayloadDelivered(d.requestID)
@@ -186,9 +192,8 @@ func (b *Broker) handleExec(ctx context.Context, correlation protocol.Correlatio
 
 	b.mu.Lock()
 	b.active[correlation.RequestID] = &activeExec{
-		nonce:    correlation.Nonce,
-		req:      req,
-		delivery: grant.delivery,
+		nonce: correlation.Nonce,
+		req:   req,
 	}
 	b.mu.Unlock()
 
@@ -220,17 +225,13 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 	if b.stopped() {
 		return ErrDaemonStopped
 	}
-	active, ok := b.lookupActiveExec(requestID)
+	_, ok := b.lookupActiveExec(requestID)
 	if !ok {
 		return ErrUnknownRequest
 	}
 	if b.stopped() {
 		b.removeActiveExec(requestID)
 		return ErrDaemonStopped
-	}
-	if err := active.delivery.markPayloadDelivered(); err != nil {
-		b.removeActiveExec(requestID)
-		return err
 	}
 	if b.stopped() {
 		b.removeActiveExec(requestID)
@@ -271,8 +272,6 @@ func (b *Broker) markPayloadDeliveryFailed(requestID string) {
 	if !ok || active.payloadDelivered {
 		return
 	}
-
-	active.delivery.markPrePayloadFailure()
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
