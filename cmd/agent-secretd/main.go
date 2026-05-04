@@ -53,7 +53,7 @@ func run() int {
 
 	broker, err := daemonbroker.New(daemonbroker.Options{
 		Approver: approver,
-		Resolver: newResolver(config.accountName),
+		Resolver: opresolver.NewDesktopPool(config.accountName),
 		Audit:    auditWriter,
 	})
 	if err != nil {
@@ -108,8 +108,4 @@ func parseDaemonConfig(args []string) (daemonConfig, error) {
 
 func stderrf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, args...)
-}
-
-func newResolver(account string) daemonbroker.Resolver {
-	return opresolver.NewDesktopPool(account)
 }
