@@ -271,6 +271,43 @@ func TestProcessApproverLauncherHealthCheckRejectsUnexpectedOutput(t *testing.T)
 	}
 }
 
+func TestProcessApproverLauncherHealthCheckPreservesContextErrors(t *testing.T) {
+	t.Parallel()
+
+	helper := writeHealthCheckHelper(t)
+	tests := []struct {
+		name    string
+		makeCtx func(*testing.T) context.Context
+		want    error
+	}{
+		{
+			name:    "canceled",
+			makeCtx: canceledContext,
+			want:    context.Canceled,
+		},
+		{
+			name:    "deadline",
+			makeCtx: expiredDeadlineContext,
+			want:    context.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := (ProcessApproverLauncher{
+				AppPath:        helper,
+				IdentityPolicy: allowApproverIdentityPolicy{},
+			}).CheckHealth(tt.makeCtx(t))
+			if !errors.Is(err, ErrApproverLaunchFailed) {
+				t.Fatalf("CheckHealth error = %v, want ErrApproverLaunchFailed", err)
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("CheckHealth error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
 	t.Parallel()
 
@@ -287,6 +324,32 @@ func TestProcessApproverLauncherRejectsBareBinaryByDefault(t *testing.T) {
 	if !errors.Is(err, ErrApproverIdentity) {
 		t.Fatalf("expected approver identity error, got %v", err)
 	}
+}
+
+func writeHealthCheckHelper(t *testing.T) string {
+	t.Helper()
+
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nif [ \"$1\" = \"--health-check\" ]; then echo 'Agent Secret: ok'; exit 0; fi\nexit 64\n"), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
+		t.Fatalf("write helper: %v", err)
+	}
+	return helper
+}
+
+func canceledContext(t *testing.T) context.Context {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func expiredDeadlineContext(t *testing.T) context.Context {
+	t.Helper()
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+	return ctx
 }
 
 func TestProcessApproverLauncherWrapsStartFailure(t *testing.T) {

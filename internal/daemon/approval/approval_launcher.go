@@ -44,8 +44,11 @@ func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("%w: health check timed out", ErrApproverLaunchFailed)
+		if ctxErr := checkCtx.Err(); ctxErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				return fmt.Errorf("%w: health check timed out: %w", ErrApproverLaunchFailed, ctxErr)
+			}
+			return fmt.Errorf("%w: health check canceled: %w", ErrApproverLaunchFailed, ctxErr)
 		}
 		return fmt.Errorf("%w: health check failed: %w", ErrApproverLaunchFailed, err)
 	}
