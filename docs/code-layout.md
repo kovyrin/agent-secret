@@ -45,7 +45,15 @@ agent-secret/
         Runtime/                 # Controller, presenter, modal, logging runtime
       AgentSecretApproverApp/    # Shipped macOS approver/setup app executable
       AgentSecretApproverSmoke/  # Non-secret smoke executable
-    Tests/                       # Swift unit and contract tests
+    Tests/
+      AgentSecretApproverTests/  # Swift unit and contract tests
+        Models/                  # Approval value model tests
+        Protocol/                # Daemon wire contract tests
+        DaemonClient/            # Socket client and transport tests
+        Trust/                   # Peer and code-signature validation tests
+        Presentation/            # Native approval rendering/view model tests
+        Runtime/                 # Controller, presenter, and modal tests
+        Fixtures/                # Shared fixture loading helpers
     scripts/                     # Approver app bundle build helpers
   docs/                          # Product, architecture, release, and user docs
   scripts/                       # Project build, lint, install, and release tools
@@ -122,6 +130,11 @@ keeps those folders in one module; the folders are ownership boundaries, not
 compatibility layers. `Presentation` is split into `ViewModels`, `Views`,
 `Style`, and `Inspection` so panel state, rendering, styling, and test-only text
 projection stay visibly separate.
+
+Swift tests mirror those production ownership boundaries under
+`approver/Tests/AgentSecretApproverTests`. Cross-boundary fixtures live in
+`Fixtures`; feature tests stay under the boundary that owns the behavior they
+primarily validate.
 
 The approver is not a secret resolver. It must not fetch, store, print, or log
 secret values.

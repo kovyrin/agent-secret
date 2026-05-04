@@ -2,8 +2,9 @@ import Foundation
 
 enum ApprovalProtocolFixture {
     static func data(_ name: String) throws -> Data {
-        let testDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        let repositoryRoot = testDirectory
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
