@@ -188,8 +188,15 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 	if !errors.Is(err, ErrUseExhausted) {
 		t.Fatalf("expected reservation to exhaust available delivery slots, got %v", err)
 	}
-	if blocked.ID != approval.ID {
-		t.Fatalf("blocked approval id = %q, want %q", blocked.ID, approval.ID)
+	if blocked.ID != "" {
+		t.Fatalf("ReserveReusable returned normal approval on exhausted error: %+v", blocked)
+	}
+	blockedSnapshot, ok := ReusableApprovalFromError(err)
+	if !ok {
+		t.Fatalf("exhausted reservation error did not carry approval snapshot: %v", err)
+	}
+	if blockedSnapshot.ID != approval.ID {
+		t.Fatalf("blocked approval id = %q, want %q", blockedSnapshot.ID, approval.ID)
 	}
 
 	afterFailure, err := store.FinishReusableAttempt(approval.ID, DeliveryPrePayloadFailure)
@@ -248,8 +255,15 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	if !errors.Is(err, ErrExpired) {
 		t.Fatalf("expected expired approval, got %v", err)
 	}
-	if expired.ID != "expired" {
-		t.Fatalf("expired approval id = %q, want expired", expired.ID)
+	if expired.ID != "" {
+		t.Fatalf("MatchReusableForReuseAudit returned normal approval on expired error: %+v", expired)
+	}
+	expiredSnapshot, ok := ReusableApprovalFromError(err)
+	if !ok {
+		t.Fatalf("expired reusable error did not carry approval snapshot: %v", err)
+	}
+	if expiredSnapshot.ID != "expired" {
+		t.Fatalf("expired approval id = %q, want expired", expiredSnapshot.ID)
 	}
 	if _, err := expiredStore.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected expired approval to be removed, got %v", err)
@@ -272,8 +286,15 @@ func TestFinishReusableAttemptRejectsExpiredApproval(t *testing.T) {
 	if !errors.Is(err, ErrExpired) {
 		t.Fatalf("expected expired approval at payload delivery, got %v", err)
 	}
-	if expired.Uses != 0 {
-		t.Fatalf("expired approval consumed use: %d", expired.Uses)
+	if expired.ID != "" {
+		t.Fatalf("FinishReusableAttempt returned normal approval on expired error: %+v", expired)
+	}
+	expiredSnapshot, ok := ReusableApprovalFromError(err)
+	if !ok {
+		t.Fatalf("expired finish error did not carry approval snapshot: %v", err)
+	}
+	if expiredSnapshot.Uses != 0 {
+		t.Fatalf("expired approval consumed use: %d", expiredSnapshot.Uses)
 	}
 	if _, err := store.MatchReusableForReuseAudit(context.Background(), req, nil); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected expired approval to be removed, got %v", err)

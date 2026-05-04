@@ -51,6 +51,30 @@ type ReusableApproval struct {
 	ReservedUses int
 }
 
+// ReusableApprovalError wraps ErrExpired or ErrUseExhausted with the stale
+// approval snapshot that caused the failure.
+type ReusableApprovalError struct {
+	Approval ReusableApproval
+	Err      error
+}
+
+func (e *ReusableApprovalError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *ReusableApprovalError) Unwrap() error {
+	return e.Err
+}
+
+// ReusableApprovalFromError extracts a stale reusable approval snapshot from err.
+func ReusableApprovalFromError(err error) (ReusableApproval, bool) {
+	var approvalErr *ReusableApprovalError
+	if errors.As(err, &approvalErr) {
+		return approvalErr.Approval, true
+	}
+	return ReusableApproval{}, false
+}
+
 type ReusableApprovalSpec struct {
 	Request      request.ExecRequest
 	ID           string
@@ -150,6 +174,10 @@ func (s *Store) AddReusable(spec ReusableApprovalSpec) (ReusableApproval, error)
 
 // MatchReusableForReuseAudit finds a reusable approval, prunes stale matches,
 // and records approval reuse when a live match is found.
+//
+// Expired or exhausted matches are reported as ErrExpired or ErrUseExhausted
+// wrapped in ReusableApprovalError so callers can inspect the stale approval
+// snapshot without treating a non-zero normal return as successful.
 func (s *Store) MatchReusableForReuseAudit(
 	ctx context.Context,
 	req request.ExecRequest,
@@ -160,24 +188,23 @@ func (s *Store) MatchReusableForReuseAudit(
 
 	approval, err := s.findReusableLocked(ctx, req, sink)
 	if err != nil {
-		if approval != nil {
-			return *approval, err
-		}
-		return ReusableApproval{}, err
+		return ReusableApproval{}, reusableApprovalError(approval, err)
 	}
 	return *approval, nil
 }
 
+// ReserveReusable reserves one use from a live reusable approval.
+//
+// Expired or exhausted matches are reported as ErrExpired or ErrUseExhausted
+// wrapped in ReusableApprovalError so callers can inspect the stale approval
+// snapshot without treating a non-zero normal return as successful.
 func (s *Store) ReserveReusable(ctx context.Context, req request.ExecRequest, sink ReuseAuditSink) (ReusableApproval, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	approval, err := s.findReusableLocked(ctx, req, sink)
 	if err != nil {
-		if approval != nil {
-			return *approval, err
-		}
-		return ReusableApproval{}, err
+		return ReusableApproval{}, reusableApprovalError(approval, err)
 	}
 	approval.ReservedUses++
 	return *approval, nil
@@ -248,8 +275,9 @@ func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (Reusabl
 		return ReusableApproval{}, ErrMismatch
 	}
 	if !s.now().Before(approval.ExpiresAt) {
+		snapshot := *approval
 		delete(s.approvals, id)
-		return *approval, ErrExpired
+		return ReusableApproval{}, reusableApprovalError(&snapshot, ErrExpired)
 	}
 	if consumesUse(result) {
 		if approval.ReservedUses > 0 {
@@ -264,6 +292,13 @@ func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (Reusabl
 	}
 
 	return *approval, nil
+}
+
+func reusableApprovalError(approval *ReusableApproval, err error) error {
+	if approval == nil {
+		return err
+	}
+	return &ReusableApprovalError{Approval: *approval, Err: err}
 }
 
 func (s *Store) RemoveReusable(id string) bool {

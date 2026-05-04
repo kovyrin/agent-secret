@@ -61,14 +61,8 @@ func (m *reusableGrantManager) reserve(
 		if errors.Is(err, policy.ErrAuditFailed) {
 			return policy.ReusableApproval{}, err
 		}
-		if approval.ID != "" && errors.Is(err, policy.ErrExpired) {
-			m.clearScope(approval.ID)
-		}
-		if approval.ID != "" &&
-			errors.Is(err, policy.ErrUseExhausted) &&
-			approval.Uses >= approval.MaxUses &&
-			approval.ReservedUses == 0 {
-			m.clearScope(approval.ID)
+		if snapshot, ok := policy.ReusableApprovalFromError(err); ok {
+			m.clearScopeForReusableError(snapshot, err)
 		}
 		return policy.ReusableApproval{}, nil
 	}
@@ -81,22 +75,48 @@ func (m *reusableGrantManager) finishDelivery(approvalID string, result policy.D
 	}
 	reusableApproval, err := m.store.FinishReusableAttempt(approvalID, result)
 	if err != nil {
-		if result == policy.DeliveryPayloadDelivered {
-			m.clearScope(approvalID)
-			if errors.Is(err, policy.ErrExpired) {
-				return approval.ErrRequestExpired
-			}
-			return err
-		}
-		if errors.Is(err, policy.ErrExpired) || errors.Is(err, policy.ErrUseExhausted) {
-			m.clearScope(approvalID)
-		}
-		return nil
+		return m.finishDeliveryError(approvalID, result, err)
 	}
 	if reusableApproval.Uses >= reusableApproval.MaxUses {
 		m.clearScope(reusableApproval.ID)
 	}
 	return nil
+}
+
+func (m *reusableGrantManager) finishDeliveryError(
+	approvalID string,
+	result policy.DeliveryResult,
+	err error,
+) error {
+	snapshot, hasSnapshot := policy.ReusableApprovalFromError(err)
+	clearID := approvalID
+	if hasSnapshot && snapshot.ID != "" {
+		clearID = snapshot.ID
+	}
+	if result == policy.DeliveryPayloadDelivered {
+		m.clearScope(clearID)
+		if errors.Is(err, policy.ErrExpired) {
+			return approval.ErrRequestExpired
+		}
+		return err
+	}
+	if hasSnapshot {
+		m.clearScopeForReusableError(snapshot, err)
+	}
+	return nil
+}
+
+func (m *reusableGrantManager) clearScopeForReusableError(approval policy.ReusableApproval, err error) {
+	if approval.ID == "" {
+		return
+	}
+	if errors.Is(err, policy.ErrExpired) {
+		m.clearScope(approval.ID)
+		return
+	}
+	if errors.Is(err, policy.ErrUseExhausted) && approval.Uses >= approval.MaxUses && approval.ReservedUses == 0 {
+		m.clearScope(approval.ID)
+	}
 }
 
 func (m *reusableGrantManager) rollbackApproval(approvalID string) {
