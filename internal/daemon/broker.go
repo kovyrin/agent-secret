@@ -225,27 +225,10 @@ func (b *Broker) markPayloadDelivered(requestID string) error {
 	if b.stopped() {
 		return ErrDaemonStopped
 	}
-	_, ok := b.lookupActiveExec(requestID)
-	if !ok {
+	if !b.markActivePayloadDelivered(requestID) {
 		return ErrUnknownRequest
 	}
-	if b.stopped() {
-		b.removeActiveExec(requestID)
-		return ErrDaemonStopped
-	}
-	if b.stopped() {
-		b.removeActiveExec(requestID)
-		return ErrDaemonStopped
-	}
-	b.markActivePayloadDelivered(requestID)
 	return nil
-}
-
-func (b *Broker) lookupActiveExec(requestID string) (*activeExec, bool) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	active, ok := b.active[requestID]
-	return active, ok
 }
 
 func (b *Broker) removeActiveExec(requestID string) {
@@ -254,24 +237,18 @@ func (b *Broker) removeActiveExec(requestID string) {
 	b.mu.Unlock()
 }
 
-func (b *Broker) markActivePayloadDelivered(requestID string) {
+func (b *Broker) markActivePayloadDelivered(requestID string) bool {
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	if current := b.active[requestID]; current != nil {
 		current.payloadDelivered = true
+		return true
 	}
-	b.mu.Unlock()
+	return false
 }
 
 func (b *Broker) markPayloadDeliveryFailed(requestID string) {
-	b.mu.Lock()
-	active, ok := b.active[requestID]
-	if ok {
-		delete(b.active, requestID)
-	}
-	b.mu.Unlock()
-	if !ok || active.payloadDelivered {
-		return
-	}
+	b.removeActiveExec(requestID)
 }
 
 func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
