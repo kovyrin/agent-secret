@@ -2,6 +2,7 @@ package trust
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -21,6 +22,8 @@ type CodeSignatureVerifier interface {
 }
 
 type CodesignSignatureVerifier struct{}
+
+type codesignCommandRunner func(context.Context, ...string) ([]byte, error)
 
 func (CodesignSignatureVerifier) VerifyPath(path string) (string, error) {
 	return VerifyCodeSignature(path)
@@ -89,20 +92,45 @@ func VerifyProcessCodeSignature(pid int) (string, error) {
 func verifyCodeSignatureTarget(target string, description string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	//nolint:gosec // G204: codesign path is fixed; targets are canonicalized paths or codesign +PID selectors.
-	if err := exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--strict", "--deep", target).Run(); err != nil {
+	return verifyCodeSignatureTargetWithRunner(ctx, target, description, runCodesign)
+}
+
+func verifyCodeSignatureTargetWithRunner(
+	ctx context.Context,
+	target string,
+	description string,
+	run codesignCommandRunner,
+) (string, error) {
+	if _, err := run(ctx, "--verify", "--strict", "--deep", target); err != nil {
 		return "", fmt.Errorf("verify %s: %w", description, err)
 	}
-	//nolint:gosec // G204: codesign path is fixed; targets are canonicalized paths or codesign +PID selectors.
-	output, err := exec.CommandContext(ctx, "/usr/bin/codesign", "-dv", "--verbose=4", target).CombinedOutput()
+	output, err := run(ctx, "-dv", "--verbose=4", target)
 	if err != nil {
 		return "", fmt.Errorf("inspect %s: %w", description, err)
 	}
+	teamID, err := teamIDFromCodesignOutput(output)
+	if err != nil {
+		return "", fmt.Errorf("inspect %s: %w", description, err)
+	}
+	return teamID, nil
+}
+
+func runCodesign(ctx context.Context, args ...string) ([]byte, error) {
+	//nolint:gosec // G204: codesign path is fixed; targets are canonicalized paths or codesign +PID selectors.
+	cmd := exec.CommandContext(ctx, "/usr/bin/codesign", args...)
+	return cmd.CombinedOutput()
+}
+
+func teamIDFromCodesignOutput(output []byte) (string, error) {
 	for line := range strings.SplitSeq(string(output), "\n") {
 		teamID, ok := strings.CutPrefix(strings.TrimSpace(line), "TeamIdentifier=")
 		if ok {
+			teamID = strings.TrimSpace(teamID)
+			if teamID == "" {
+				return "", errors.New("codesign output has empty TeamIdentifier")
+			}
 			return teamID, nil
 		}
 	}
-	return "", nil
+	return "", errors.New("codesign output missing TeamIdentifier")
 }
