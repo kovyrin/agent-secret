@@ -57,7 +57,7 @@ import XCTest
 
             XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("expected Developer ID Team ID is required for daemon signature validation")
                 )
             }
@@ -68,8 +68,8 @@ import XCTest
         func testAllowsDevelopmentTeamIDSentinelForBundledDaemon() throws {
             let executable = try Self.makeAppBundleExecutable(testCase: self)
             let checker = FakeSignatureChecker()
-            checker.staticTeamIDResult = .failure(SocketDaemonClientError.untrustedDaemon("static check called"))
-            checker.processTeamIDResult = .failure(SocketDaemonClientError.untrustedDaemon("process check called"))
+            checker.staticTeamIDResult = .failure(DaemonTrustError.untrustedDaemon("static check called"))
+            checker.processTeamIDResult = .failure(DaemonTrustError.untrustedDaemon("process check called"))
             let validator = TrustedDaemonPeerValidator(
                 expectedExecutablePaths: [executable],
                 expectedTeamID: "-",

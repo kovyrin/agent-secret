@@ -77,7 +77,7 @@ import Foundation
             do {
                 try process.run()
             } catch {
-                throw SocketDaemonClientError.untrustedDaemon(
+                throw DaemonTrustError.untrustedDaemon(
                     "launch daemon process code signature validation failed: \(error)"
                 )
             }
@@ -86,7 +86,7 @@ import Foundation
             guard termination.wait(timeout: Self.deadline(after: timeout)) == .success else {
                 Self.stopTimedOutProcess(process, termination: termination)
                 _ = outputReader.done.wait(timeout: Self.deadline(after: Self.outputDrainTimeout))
-                throw SocketDaemonClientError.untrustedDaemon("daemon process code signature validation timed out")
+                throw DaemonTrustError.untrustedDaemon("daemon process code signature validation timed out")
             }
 
             _ = outputReader.done.wait(timeout: Self.deadline(after: Self.outputDrainTimeout))

@@ -23,15 +23,15 @@ import Foundation
                 &information
             )
             guard copyStatus == errSecSuccess, let dictionary = information as? [String: Any] else {
-                throw SocketDaemonClientError.untrustedDaemon(
+                throw DaemonTrustError.untrustedDaemon(
                     "read daemon code signature failed with status \(copyStatus)"
                 )
             }
             guard let teamID = dictionary[kSecCodeInfoTeamIdentifier as String] as? String else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
+                throw DaemonTrustError.untrustedDaemon("daemon code signature has no Team ID")
             }
             guard !teamID.isEmpty else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
+                throw DaemonTrustError.untrustedDaemon("daemon code signature has no Team ID")
             }
             return teamID
         }
@@ -43,7 +43,7 @@ import Foundation
                 timeout: codesignTimeout
             )
             guard result.terminationStatus == 0 else {
-                throw SocketDaemonClientError.untrustedDaemon(
+                throw DaemonTrustError.untrustedDaemon(
                     "daemon process code signature validation failed with status \(result.terminationStatus)"
                 )
             }
@@ -58,7 +58,7 @@ import Foundation
                 &staticCode
             )
             guard createStatus == errSecSuccess, let code = staticCode else {
-                throw SocketDaemonClientError.untrustedDaemon(
+                throw DaemonTrustError.untrustedDaemon(
                     "load daemon code signature failed with status \(createStatus)"
                 )
             }
@@ -69,7 +69,7 @@ import Foundation
                 nil
             )
             guard checkStatus == errSecSuccess else {
-                throw SocketDaemonClientError.untrustedDaemon(
+                throw DaemonTrustError.untrustedDaemon(
                     "daemon code signature validation failed with status \(checkStatus)"
                 )
             }
@@ -86,12 +86,12 @@ import Foundation
                 if trimmedLine.hasPrefix("TeamIdentifier=") {
                     let teamID = String(trimmedLine.dropFirst("TeamIdentifier=".count))
                     guard !teamID.isEmpty else {
-                        throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
+                        throw DaemonTrustError.untrustedDaemon("daemon code signature has no Team ID")
                     }
                     return teamID
                 }
             }
-            throw SocketDaemonClientError.untrustedDaemon("daemon code signature has no Team ID")
+            throw DaemonTrustError.untrustedDaemon("daemon code signature has no Team ID")
         }
     }
 #endif

@@ -11,7 +11,7 @@ import Foundation
             func validateCurrentFile() throws {
                 let current = try FileIdentity(path: path)
                 guard current == fileIdentity else {
-                    throw SocketDaemonClientError.untrustedDaemon(
+                    throw DaemonTrustError.untrustedDaemon(
                         "daemon executable changed since trust snapshot"
                     )
                 }
@@ -25,17 +25,17 @@ import Foundation
             init(path: String) throws {
                 var statBuffer = stat()
                 guard stat(path, &statBuffer) == 0 else {
-                    throw SocketDaemonClientError.untrustedDaemon(
+                    throw DaemonTrustError.untrustedDaemon(
                         "stat trusted daemon executable failed with errno \(errno)"
                     )
                 }
                 guard (statBuffer.st_mode & S_IFMT) == S_IFREG else {
-                    throw SocketDaemonClientError.untrustedDaemon(
+                    throw DaemonTrustError.untrustedDaemon(
                         "trusted daemon path is not a regular file"
                     )
                 }
                 guard (statBuffer.st_mode & S_IXUSR) != 0 else {
-                    throw SocketDaemonClientError.untrustedDaemon(
+                    throw DaemonTrustError.untrustedDaemon(
                         "trusted daemon path is not executable"
                     )
                 }
@@ -159,13 +159,13 @@ import Foundation
 
         private static func validatePeerCredentials(_ info: DaemonPeerInfo) throws {
             guard info.uid == getuid() else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon uid does not match current user")
+                throw DaemonTrustError.untrustedDaemon("daemon uid does not match current user")
             }
             guard info.gid == getgid() else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon gid does not match current user")
+                throw DaemonTrustError.untrustedDaemon("daemon gid does not match current user")
             }
             guard info.pid > 0 else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon pid is unavailable")
+                throw DaemonTrustError.untrustedDaemon("daemon pid is unavailable")
             }
         }
 
@@ -173,29 +173,29 @@ import Foundation
             try Self.validatePeerCredentials(info)
             let got = Self.comparablePath(info.executablePath)
             guard !got.isEmpty else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon executable path is unavailable")
+                throw DaemonTrustError.untrustedDaemon("daemon executable path is unavailable")
             }
             guard !trustedExecutables.isEmpty else {
-                throw SocketDaemonClientError.untrustedDaemon("no trusted daemon executables configured")
+                throw DaemonTrustError.untrustedDaemon("no trusted daemon executables configured")
             }
             guard let trusted = trustedExecutables.first(where: { $0.path == got }) else {
-                throw SocketDaemonClientError.untrustedDaemon("daemon executable is not trusted")
+                throw DaemonTrustError.untrustedDaemon("daemon executable is not trusted")
             }
 
             try trusted.validateCurrentFile()
             if expectedTeamID.isEmpty, Self.isInsideAppBundle(trusted.path) {
-                throw SocketDaemonClientError.untrustedDaemon(
+                throw DaemonTrustError.untrustedDaemon(
                     "expected Developer ID Team ID is required for daemon signature validation"
                 )
             }
             if !expectedTeamID.isEmpty, expectedTeamID != Self.developmentExpectedTeamID {
                 let staticTeamID = try signatureChecker.staticCodeTeamID(for: trusted.path)
                 guard staticTeamID == expectedTeamID else {
-                    throw SocketDaemonClientError.untrustedDaemon("daemon Team ID does not match")
+                    throw DaemonTrustError.untrustedDaemon("daemon Team ID does not match")
                 }
                 let processTeamID = try signatureChecker.processTeamID(for: info.pid)
                 guard processTeamID == expectedTeamID else {
-                    throw SocketDaemonClientError.untrustedDaemon("daemon process Team ID does not match")
+                    throw DaemonTrustError.untrustedDaemon("daemon process Team ID does not match")
                 }
             }
         }

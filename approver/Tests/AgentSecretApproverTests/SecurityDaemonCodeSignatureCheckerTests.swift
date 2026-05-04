@@ -67,7 +67,7 @@ import XCTest
 
             XCTAssertThrowsError(try checker.processTeamID(for: 123)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon process code signature validation failed with status 1")
                 )
             }
@@ -124,7 +124,7 @@ import XCTest
                 )
             ) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon process code signature validation timed out")
                 )
             }

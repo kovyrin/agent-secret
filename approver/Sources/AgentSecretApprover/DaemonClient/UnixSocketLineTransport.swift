@@ -40,7 +40,7 @@ final class UnixSocketLineTransport: LineTransport {
                     for: descriptor,
                     ioTimeout: ioTimeout
                 )
-                try DaemonPeerInspector.validate(
+                try Self.validatePeer(
                     socketFileDescriptor: descriptor,
                     using: peerValidator
                 )
@@ -94,7 +94,7 @@ final class UnixSocketLineTransport: LineTransport {
                     for: descriptor,
                     ioTimeout: ioTimeout
                 )
-                try DaemonPeerInspector.validate(
+                try Self.validatePeer(
                     socketFileDescriptor: descriptor,
                     using: peerValidator
                 )
@@ -117,6 +117,20 @@ final class UnixSocketLineTransport: LineTransport {
         private static func validate(maxFrameBytes: Int) throws {
             guard maxFrameBytes > 0 else {
                 throw SocketDaemonClientError.invalidResponse("invalid maximum frame size")
+            }
+        }
+
+        private static func validatePeer(
+            socketFileDescriptor descriptor: Int32,
+            using peerValidator: DaemonPeerValidator?
+        ) throws {
+            do {
+                try DaemonPeerInspector.validate(
+                    socketFileDescriptor: descriptor,
+                    using: peerValidator
+                )
+            } catch let error as DaemonTrustError {
+                throw SocketDaemonClientError.untrustedDaemon(error.message)
             }
         }
 

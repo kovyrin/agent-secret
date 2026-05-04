@@ -130,7 +130,7 @@ import XCTest
 
             XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon uid does not match current user")
                 )
             }
@@ -145,7 +145,7 @@ import XCTest
 
             XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon gid does not match current user")
                 )
             }
@@ -160,7 +160,7 @@ import XCTest
 
             XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon pid is unavailable")
                 )
             }
@@ -179,7 +179,7 @@ import XCTest
 
             XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon executable is not trusted")
                 )
             }
@@ -210,7 +210,7 @@ import XCTest
 
             XCTAssertThrowsError(try validator.validateDaemonPeer(info)) { error in
                 XCTAssertEqual(
-                    error as? SocketDaemonClientError,
+                    error as? DaemonTrustError,
                     .untrustedDaemon("daemon process Team ID does not match")
                 )
             }
