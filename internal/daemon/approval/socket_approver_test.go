@@ -447,10 +447,15 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
+	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
-		errCh <- err
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- decision
 	}()
 	fetchPendingErrorForTest(t, launcher, approver, peerInfoForTest(t, os.Getpid()+1, exe), approval.ErrApproverPeerMismatch)
 	fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
@@ -470,8 +475,15 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitDecision deny returned error: %v", err)
 	}
-	if err := <-errCh; !errors.Is(err, approval.ErrApprovalDenied) {
-		t.Fatalf("ApproveExec error = %v, want denial", err)
+	select {
+	case decision := <-resultCh:
+		if decision.Approved {
+			t.Fatalf("ApproveExec decision = %+v, want denial", decision)
+		}
+	case err := <-errCh:
+		t.Fatalf("ApproveExec returned error for denial: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for denial result")
 	}
 }
 
@@ -965,7 +977,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 func TestSocketApproverTreatsExpiredApprovalAsTimeout(t *testing.T) {
 	t.Parallel()
 
-	if err := submitExpiredDecisionForTest(t, approval.ApprovalDecisionApproveOnce); !errors.Is(err, approval.ErrRequestExpired) {
+	if _, err := submitExpiredDecisionForTest(t, approval.ApprovalDecisionApproveOnce); !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("ApproveExec error = %v, want expired", err)
 	}
 }
@@ -973,12 +985,16 @@ func TestSocketApproverTreatsExpiredApprovalAsTimeout(t *testing.T) {
 func TestSocketApproverPreservesExpiredDenial(t *testing.T) {
 	t.Parallel()
 
-	if err := submitExpiredDecisionForTest(t, approval.ApprovalDecisionDeny); !errors.Is(err, approval.ErrApprovalDenied) {
-		t.Fatalf("ApproveExec error = %v, want denied", err)
+	decision, err := submitExpiredDecisionForTest(t, approval.ApprovalDecisionDeny)
+	if err != nil {
+		t.Fatalf("ApproveExec returned error for denial: %v", err)
+	}
+	if decision.Approved {
+		t.Fatalf("ApproveExec decision = %+v, want denied", decision)
 	}
 }
 
-func submitExpiredDecisionForTest(t *testing.T, decision approval.ApprovalDecisionKind) error {
+func submitExpiredDecisionForTest(t *testing.T, decision approval.ApprovalDecisionKind) (approval.Decision, error) {
 	t.Helper()
 
 	exe := currentExecutable(t)
@@ -997,10 +1013,15 @@ func submitExpiredDecisionForTest(t *testing.T, decision approval.ApprovalDecisi
 	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
 	approver := newSocketApproverForTest(t, launcher, nowFn)
 	req := approvalTestRequest(t, now.Add(time.Minute))
+	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
-		errCh <- err
+		decision, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- decision
 	}()
 	fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
 
@@ -1013,7 +1034,15 @@ func submitExpiredDecisionForTest(t *testing.T, decision approval.ApprovalDecisi
 	if err != nil {
 		t.Fatalf("expired %s decision returned error: %v", decision, err)
 	}
-	return <-errCh
+	select {
+	case decision := <-resultCh:
+		return decision, nil
+	case err := <-errCh:
+		return approval.Decision{}, err
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for expired approval result")
+		return approval.Decision{}, nil
+	}
 }
 
 func newSocketApproverForTest(t *testing.T, launcher approval.ApproverLauncher, now func() time.Time) *approval.SocketApprover {

@@ -476,8 +476,6 @@ func (g *grantIssuer) recordApprovalError(
 	err error,
 ) error {
 	switch {
-	case errors.Is(err, approval.ErrApprovalDenied):
-		return g.recordApprovalDenied(ctx, requestID, req)
 	case errors.Is(err, approval.ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
 		event.ErrorCode = auditErrorCode(protocol.ErrorCodeRequestExpired)

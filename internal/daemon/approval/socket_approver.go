@@ -153,7 +153,7 @@ func (a *SocketApprover) SubmitDecision(
 			ReusableUses: job.payload.ReusableUses,
 		}})
 	case ApprovalDecisionDeny:
-		a.complete(job, approvalResult{err: ErrApprovalDenied})
+		a.complete(job, approvalResult{decision: Decision{Approved: false}})
 	case ApprovalDecisionTimeout:
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 	default:

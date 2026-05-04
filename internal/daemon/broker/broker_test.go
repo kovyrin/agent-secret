@@ -157,7 +157,7 @@ func (a *contextDenyingApprover) ApproveExec(
 ) (approval.Decision, error) {
 	<-ctx.Done()
 	close(a.done)
-	return approval.Decision{}, approval.ErrApprovalDenied
+	return approval.Decision{Approved: false}, nil
 }
 
 type blockingApprover struct {
@@ -406,10 +406,11 @@ func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 
 	assertApprovalFailureAudited(t, approvalFailureAuditCase{
-		name:      "denial",
-		err:       approval.ErrApprovalDenied,
-		eventType: audit.EventApprovalDenied,
-		errorCode: protocol.ErrorCodeApprovalDenied,
+		name:             "denial",
+		approverDecision: approval.Decision{Approved: false},
+		wantErr:          approval.ErrApprovalDenied,
+		eventType:        audit.EventApprovalDenied,
+		errorCode:        protocol.ErrorCodeApprovalDenied,
 	})
 }
 
@@ -417,10 +418,11 @@ func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testi
 	t.Parallel()
 
 	assertApprovalFailureAudited(t, approvalFailureAuditCase{
-		name:      "timeout",
-		err:       approval.ErrRequestExpired,
-		eventType: audit.EventApprovalTimedOut,
-		errorCode: protocol.ErrorCodeRequestExpired,
+		name:        "timeout",
+		approverErr: approval.ErrRequestExpired,
+		wantErr:     approval.ErrRequestExpired,
+		eventType:   audit.EventApprovalTimedOut,
+		errorCode:   protocol.ErrorCodeRequestExpired,
 	})
 }
 
@@ -501,10 +503,12 @@ func assertDeadlineApprovalFailureAudited(t *testing.T, tc deadlineApprovalFailu
 }
 
 type approvalFailureAuditCase struct {
-	name      string
-	err       error
-	eventType audit.EventType
-	errorCode protocol.ErrorCode
+	name             string
+	approverDecision approval.Decision
+	approverErr      error
+	wantErr          error
+	eventType        audit.EventType
+	errorCode        protocol.ErrorCode
 }
 
 func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
@@ -513,7 +517,7 @@ func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": canarySecretValue}}
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, Options{
-		Approver: &mockApprover{err: tc.err},
+		Approver: &mockApprover{decision: tc.approverDecision, err: tc.approverErr},
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -521,7 +525,7 @@ func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
 	_, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token"},
 	}))
-	if !errors.Is(err, tc.err) {
+	if !errors.Is(err, tc.wantErr) {
 		t.Fatalf("expected approval %s, got %v", tc.name, err)
 	}
 	if len(resolver.Calls()) != 0 {

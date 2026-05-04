@@ -10,6 +10,9 @@ import (
 )
 
 type Approver interface {
+	// ApproveExec returns Decision{Approved: false}, nil for user denial.
+	// Errors are reserved for approval failures such as timeout, launch failure,
+	// cancellation, or malformed approval traffic.
 	ApproveExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (Decision, error)
 }
 
