@@ -34,7 +34,7 @@ func TestReusableApprovalMatchesExactRequestAndAuditsBeforeUse(t *testing.T) {
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
 
-	approval, err := store.AddReusable(req, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
-	if _, err := store.AddReusable(req, "appr_1", "nonce_1"); err != nil {
+	if _, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"}); err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
 
@@ -117,9 +117,9 @@ func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
 	req := testRequest(t, now)
 	req.ReusableUses = 2
 
-	approval, err := store.AddReusableWithLimit(req, 2, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1", MaxUses: 2})
 	if err != nil {
-		t.Fatalf("AddReusableWithLimit returned error: %v", err)
+		t.Fatalf("AddReusable returned error: %v", err)
 	}
 	if approval.MaxUses != 2 {
 		t.Fatalf("max uses = %d, want 2", approval.MaxUses)
@@ -149,7 +149,7 @@ func TestReusableApprovalDoesNotConsumeUseBeforePayload(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
-	approval, err := store.AddReusable(req, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -170,9 +170,15 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
 	req.ReusableUses = 1
-	approval, err := store.AddReusableWithReservedUse(req, 1, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{
+		Request:      req,
+		ID:           "appr_1",
+		Nonce:        "nonce_1",
+		MaxUses:      1,
+		ReservedUses: 1,
+	})
 	if err != nil {
-		t.Fatalf("AddReusableWithReservedUse returned error: %v", err)
+		t.Fatalf("AddReusable returned error: %v", err)
 	}
 	if approval.ReservedUses != 1 {
 		t.Fatalf("reserved uses = %d, want 1", approval.ReservedUses)
@@ -232,7 +238,11 @@ func TestReusableApprovalConsumesUseForAllPostPayloadOutcomes(t *testing.T) {
 
 			now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 			store := NewStore(func() time.Time { return now })
-			approval, err := store.AddReusable(testRequest(t, now), "appr_1", "nonce_1")
+			approval, err := store.AddReusable(ReusableApprovalSpec{
+				Request: testRequest(t, now),
+				ID:      "appr_1",
+				Nonce:   "nonce_1",
+			})
 			if err != nil {
 				t.Fatalf("AddReusable returned error: %v", err)
 			}
@@ -254,7 +264,7 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
-	approval, err := store.AddReusable(req, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -269,7 +279,7 @@ func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	}
 
 	expiredStore := NewStore(func() time.Time { return now.Add(11 * time.Minute) })
-	if _, err := expiredStore.AddReusable(req, "expired", "nonce"); err != nil {
+	if _, err := expiredStore.AddReusable(ReusableApprovalSpec{Request: req, ID: "expired", Nonce: "nonce"}); err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
 	expired, err := expiredStore.MatchReusableForReuseAudit(context.Background(), req, nil)
@@ -290,7 +300,7 @@ func TestFinishReusableAttemptRejectsExpiredApproval(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
-	approval, err := store.AddReusable(req, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -314,7 +324,7 @@ func TestReusableApprovalAuditFailureFailsClosed(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
-	if _, err := store.AddReusable(req, "appr_1", "nonce_1"); err != nil {
+	if _, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"}); err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
 
@@ -330,7 +340,7 @@ func TestPolicyObjectsAreValueFree(t *testing.T) {
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
 	req := testRequest(t, now)
-	approval, err := store.AddReusable(req, "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -349,7 +359,11 @@ func TestUnknownDeliveryResultDoesNotConsumeReusableUse(t *testing.T) {
 
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
-	approval, err := store.AddReusable(testRequest(t, now), "appr_1", "nonce_1")
+	approval, err := store.AddReusable(ReusableApprovalSpec{
+		Request: testRequest(t, now),
+		ID:      "appr_1",
+		Nonce:   "nonce_1",
+	})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -368,7 +382,7 @@ func TestAddReusableGeneratesIdentifiers(t *testing.T) {
 
 	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	store := NewStore(func() time.Time { return now })
-	approval, err := store.AddReusable(testRequest(t, now), "", "")
+	approval, err := store.AddReusable(ReusableApprovalSpec{Request: testRequest(t, now)})
 	if err != nil {
 		t.Fatalf("AddReusable returned error: %v", err)
 	}
@@ -394,7 +408,7 @@ func TestStoreRandomIDFailuresReturnErrors(t *testing.T) {
 			name: "reusable approval id",
 			run: func(t *testing.T, store *Store) error {
 				t.Helper()
-				_, err := store.AddReusable(testRequest(t, now), "", "nonce_1")
+				_, err := store.AddReusable(ReusableApprovalSpec{Request: testRequest(t, now), Nonce: "nonce_1"})
 				return err
 			},
 			want: "generate reusable approval id",
@@ -403,7 +417,7 @@ func TestStoreRandomIDFailuresReturnErrors(t *testing.T) {
 			name: "reusable approval nonce",
 			run: func(t *testing.T, store *Store) error {
 				t.Helper()
-				_, err := store.AddReusable(testRequest(t, now), "appr_1", "")
+				_, err := store.AddReusable(ReusableApprovalSpec{Request: testRequest(t, now), ID: "appr_1"})
 				return err
 			},
 			want: "generate reusable approval nonce",

@@ -192,7 +192,11 @@ func (m *reusableGrantManager) createGrant(
 	if !decision.Reusable {
 		return "", time.Time{}, nil
 	}
-	approval, err := m.store.AddReusableWithReservedUse(req, decision.ReusableUses, "", "")
+	approval, err := m.store.AddReusable(policy.ReusableApprovalSpec{
+		Request:      req,
+		MaxUses:      decision.ReusableUses,
+		ReservedUses: 1,
+	})
 	if err != nil {
 		return "", time.Time{}, err
 	}

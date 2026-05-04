@@ -51,6 +51,14 @@ type ReusableApproval struct {
 	ReservedUses int
 }
 
+type ReusableApprovalSpec struct {
+	Request      request.ExecRequest
+	ID           string
+	Nonce        string
+	MaxUses      int
+	ReservedUses int
+}
+
 type ReuseKey struct {
 	Reason                 string
 	Command                []string
@@ -96,47 +104,26 @@ func NewStore(now func() time.Time) *Store {
 	}
 }
 
-func (s *Store) AddReusable(req request.ExecRequest, id string, nonce string) (ReusableApproval, error) {
-	return s.AddReusableWithLimit(req, request.ReusableUsesOrDefault(req.ReusableUses), id, nonce)
-}
-
-func (s *Store) AddReusableWithLimit(
-	req request.ExecRequest,
-	maxUses int,
-	id string,
-	nonce string,
-) (ReusableApproval, error) {
-	return s.addReusableWithLimit(req, maxUses, id, nonce, 0)
-}
-
-func (s *Store) AddReusableWithReservedUse(
-	req request.ExecRequest,
-	maxUses int,
-	id string,
-	nonce string,
-) (ReusableApproval, error) {
-	return s.addReusableWithLimit(req, maxUses, id, nonce, 1)
-}
-
-func (s *Store) addReusableWithLimit(
-	req request.ExecRequest,
-	maxUses int,
-	id string,
-	nonce string,
-	reservedUses int,
-) (ReusableApproval, error) {
+func (s *Store) AddReusable(spec ReusableApprovalSpec) (ReusableApproval, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	req := spec.Request
+	maxUses := spec.MaxUses
+	if maxUses == 0 {
+		maxUses = req.ReusableUses
+	}
 	maxUses = request.ReusableUsesOrDefault(maxUses)
 	if maxUses < 1 || maxUses > request.MaxReusableUses {
 		return ReusableApproval{}, fmt.Errorf("%w: must be between 1 and %d", request.ErrInvalidReusableUses, request.MaxReusableUses)
 	}
+	reservedUses := spec.ReservedUses
 	if reservedUses < 0 || reservedUses > maxUses {
 		return ReusableApproval{}, fmt.Errorf("%w: reserved uses must be between 0 and %d", ErrUseExhausted, maxUses)
 	}
 	req.ReusableUses = maxUses
 
+	id := spec.ID
 	if id == "" {
 		var err error
 		id, err = s.randomID("appr")
@@ -144,6 +131,7 @@ func (s *Store) addReusableWithLimit(
 			return ReusableApproval{}, fmt.Errorf("generate reusable approval id: %w", err)
 		}
 	}
+	nonce := spec.Nonce
 	if nonce == "" {
 		var err error
 		nonce, err = s.randomID("nonce")
