@@ -16,7 +16,7 @@ extension ApprovalRequestViewModel {
         for request: ApprovalRequest,
         highScopeWarning: Bool
     ) -> WarningPresentation {
-        let printsEnvironment: Bool = environmentWarning(for: request)
+        let printsEnvironment: Bool = printsEnvironment(for: request)
         let override: String? = overrideWarning(for: request)
         let mutableExecutable: String? = mutableExecutableWarning(for: request)
         return WarningPresentation(
@@ -66,11 +66,11 @@ extension ApprovalRequestViewModel {
         return messages
     }
 
-    private static func environmentWarning(for request: ApprovalRequest) -> Bool {
-        environmentPrinter(resolvedExecutable: request.resolvedExecutable)
+    private static func printsEnvironment(for request: ApprovalRequest) -> Bool {
+        isEnvironmentPrinter(resolvedExecutable: request.resolvedExecutable)
     }
 
-    private static func environmentPrinter(resolvedExecutable: String) -> Bool {
+    private static func isEnvironmentPrinter(resolvedExecutable: String) -> Bool {
         let executableName: String = URL(fileURLWithPath: resolvedExecutable).lastPathComponent
         return executableName == "env" || executableName == "printenv"
     }
