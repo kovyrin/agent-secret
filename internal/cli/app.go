@@ -390,36 +390,14 @@ func isFatalCommandStartedAuditFailure(err error) bool {
 	if !errors.As(err, &protocolErr) {
 		return false
 	}
-	switch protocolErr.Code {
-	case protocol.ErrorCodeBadCommandStarted,
-		protocol.ErrorCodeBadEnvelope,
-		protocol.ErrorCodeBadType,
-		protocol.ErrorCodeInvalidNonce,
-		protocol.ErrorCodeRequestActive,
-		protocol.ErrorCodeRequestExpired,
-		protocol.ErrorCodeStaleApproval,
-		protocol.ErrorCodeUntrustedClient:
-		return true
-	case protocol.ErrorCodeApprovalDenied,
-		protocol.ErrorCodeApprovalUnavailable,
-		protocol.ErrorCodeApproverIdentityMismatch,
-		protocol.ErrorCodeApproverPeerMismatch,
-		protocol.ErrorCodeAuditFailed,
-		protocol.ErrorCodeBadApprovalDecision,
-		protocol.ErrorCodeBadCommandCompleted,
-		protocol.ErrorCodeBadRequest,
-		protocol.ErrorCodeContextCanceled,
-		protocol.ErrorCodeContextDeadlineExceeded,
-		protocol.ErrorCodeDaemonStopped,
-		protocol.ErrorCodeFrameTooLarge,
-		protocol.ErrorCodeNoPendingApproval,
-		protocol.ErrorCodePeerRejected,
-		protocol.ErrorCodeRequestFailed,
-		protocol.ErrorCodeResolveFailed:
-		return false
-	default:
-		return false
-	}
+	return protocolErr.Code == protocol.ErrorCodeBadCommandStarted ||
+		protocolErr.Code == protocol.ErrorCodeBadEnvelope ||
+		protocolErr.Code == protocol.ErrorCodeBadType ||
+		protocolErr.Code == protocol.ErrorCodeInvalidNonce ||
+		protocolErr.Code == protocol.ErrorCodeRequestActive ||
+		protocolErr.Code == protocol.ErrorCodeRequestExpired ||
+		protocolErr.Code == protocol.ErrorCodeStaleApproval ||
+		protocolErr.Code == protocol.ErrorCodeUntrustedClient
 }
 
 func (a App) randomID(prefix string) (string, error) {
