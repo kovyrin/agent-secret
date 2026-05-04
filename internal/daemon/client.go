@@ -12,6 +12,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -39,7 +40,7 @@ func Connect(ctx context.Context, path string) (*Client, error) {
 }
 
 func ConnectWithPeerValidator(ctx context.Context, path string, validator DaemonPeerValidator) (*Client, error) {
-	conn, err := Dial(ctx, path)
+	conn, err := socket.Dial(ctx, path)
 	if err != nil {
 		return nil, err
 	}

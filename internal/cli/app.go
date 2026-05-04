@@ -15,6 +15,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
@@ -207,7 +208,7 @@ func (a App) runDoctor(ctx context.Context) int {
 		healthy = false
 		a.stdoutf("daemon: failed (%v)\n", err)
 	}
-	if err := daemon.ValidateSocketDirectory(a.Manager.SocketPath); err != nil {
+	if err := socket.ValidateDirectory(a.Manager.SocketPath); err != nil {
 		healthy = false
 		a.stdoutf("socket directory: failed (%v)\n", err)
 	} else {

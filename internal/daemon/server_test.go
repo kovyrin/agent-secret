@@ -16,6 +16,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -145,7 +146,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -184,14 +185,14 @@ func TestServerRejectsLifecycleReportsFromDifferentConnection(t *testing.T) {
 	})
 	defer stop()
 
-	ownerConn, err := Dial(context.Background(), path)
+	ownerConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("owner Dial returned error: %v", err)
 	}
 	owner := NewClient(ownerConn)
 	defer func() { _ = owner.Close() }()
 
-	otherConn, err := Dial(context.Background(), path)
+	otherConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("other Dial returned error: %v", err)
 	}
@@ -227,7 +228,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 	})
 	defer cleanup()
 
-	raw, err := Dial(context.Background(), testSocketPath(t))
+	raw, err := socket.Dial(context.Background(), testSocketPath(t))
 	if err == nil {
 		_ = raw.Close()
 		t.Fatal("unexpectedly connected to unrelated test socket path")
@@ -253,7 +254,7 @@ func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -290,7 +291,7 @@ func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -328,7 +329,7 @@ func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -364,7 +365,7 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -458,7 +459,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	path, stop := startRawServerWithBroker(t, broker, nil, allowPeerValidator{})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -469,7 +470,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	waitForAuditEvent(t, &aud.memoryAudit, audit.EventCommandStarting, "req_1")
 	waitForInactiveRequest(t, broker, "req_1")
 
-	secondConn, err := Dial(context.Background(), path)
+	secondConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("second Dial returned error: %v", err)
 	}
@@ -533,7 +534,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -580,7 +581,7 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -682,7 +683,7 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	)
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -718,7 +719,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	path := filepath.Join(dir, "d.sock")
-	listener, err := ListenUnix(path)
+	listener, err := socket.ListenUnix(path)
 	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
@@ -747,7 +748,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 		}
 	}()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -788,7 +789,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	)
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -840,7 +841,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	}()
 	waitForPendingOrExecError(t, approver, execErr)
 
-	appConn, err := Dial(context.Background(), client.SocketPath)
+	appConn, err := socket.Dial(context.Background(), client.SocketPath)
 	if err != nil {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
@@ -896,7 +897,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial exec client returned error: %v", err)
 	}
@@ -915,7 +916,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	}()
 	waitForPendingOrExecError(t, approver, execErr)
 
-	appConn, err := Dial(context.Background(), path)
+	appConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
@@ -981,7 +982,7 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -1039,7 +1040,7 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 	})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -1151,7 +1152,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 	)
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -1192,7 +1193,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 	)
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -1249,7 +1250,7 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 	path, stop := startRawServerWithBroker(t, broker, approver, staticPeerValidator{info: peer})
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -1291,7 +1292,7 @@ func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
 	)
 	defer stop()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
@@ -1365,7 +1366,7 @@ func waitForPendingOrExecError(t *testing.T, approver *SocketApprover, execErr <
 func startTestServer(t *testing.T, opts BrokerOptions) (*Client, func()) {
 	t.Helper()
 	path, stop := startRawTestServer(t, opts)
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		stop()
 		t.Fatalf("Dial returned error: %v", err)
@@ -1385,7 +1386,7 @@ func startTestServerWithBroker(
 ) (appTestClient, func()) {
 	t.Helper()
 	path, stop := startRawServerWithBroker(t, broker, approvals, validator)
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		stop()
 		t.Fatalf("Dial returned error: %v", err)
@@ -1448,7 +1449,7 @@ func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()
 		t.Fatalf("MkdirTemp returned error: %v", err)
 	}
 	path := filepath.Join(dir, "d.sock")
-	listener, err := ListenUnix(path)
+	listener, err := socket.ListenUnix(path)
 	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)

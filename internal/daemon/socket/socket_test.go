@@ -1,4 +1,4 @@
-package daemon
+package socket
 
 import (
 	"errors"
@@ -7,17 +7,18 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
-func TestDefaultSocketPathIgnoresEnvironmentOverrides(t *testing.T) {
+func TestDefaultPathIgnoresEnvironmentOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("AGENT_SECRET_SOCKET_PATH", "/tmp/evil.sock")
 
-	path, err := DefaultSocketPath()
+	path, err := DefaultPath()
 	if err != nil {
-		t.Fatalf("DefaultSocketPath returned error: %v", err)
+		t.Fatalf("DefaultPath returned error: %v", err)
 	}
 	want := filepath.Join(home, "Library", "Application Support", "agent-secret", "agent-secretd.sock")
 	if path != want {
@@ -33,11 +34,11 @@ func listenUnixForTest(t *testing.T, path string) (*net.UnixListener, error) {
 }
 
 func TestListenUnixCreatesDefaultSocketDirectoryPrivate(t *testing.T) {
-	home := shortTempDir(t, "agent-secret-home-")
+	home := testfs.ShortTempDir(t, "agent-secret-home-")
 	t.Setenv("HOME", home)
-	path, err := DefaultSocketPath()
+	path, err := DefaultPath()
 	if err != nil {
-		t.Fatalf("DefaultSocketPath returned error: %v", err)
+		t.Fatalf("DefaultPath returned error: %v", err)
 	}
 
 	listener, err := listenUnixForTest(t, path)
@@ -46,24 +47,24 @@ func TestListenUnixCreatesDefaultSocketDirectoryPrivate(t *testing.T) {
 	}
 	defer func() { _ = listener.Close() }()
 
-	dirMode := statMode(t, filepath.Dir(path))
+	dirMode := testfs.StatMode(t, filepath.Dir(path))
 	if dirMode != 0o700 {
 		t.Fatalf("default socket dir mode = %s, want 0700", dirMode)
 	}
-	socketMode := statMode(t, path)
+	socketMode := testfs.StatMode(t, path)
 	if socketMode != 0o600 {
 		t.Fatalf("socket mode = %s, want 0600", socketMode)
 	}
 }
 
 func TestListenUnixRejectsSymlinkDefaultSocketDirectoryWithoutChmodTarget(t *testing.T) {
-	home := shortTempDir(t, "agent-secret-home-")
+	home := testfs.ShortTempDir(t, "agent-secret-home-")
 	t.Setenv("HOME", home)
-	path, err := DefaultSocketPath()
+	path, err := DefaultPath()
 	if err != nil {
-		t.Fatalf("DefaultSocketPath returned error: %v", err)
+		t.Fatalf("DefaultPath returned error: %v", err)
 	}
-	target := shortTempDir(t, "agent-secret-socket-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
 	if err := os.Chmod(target, 0o755); err != nil { //nolint:gosec // G302: test target is intentionally permissive to prove chmod does not follow the symlink.
 		t.Fatalf("chmod target: %v", err)
 	}
@@ -81,19 +82,19 @@ func TestListenUnixRejectsSymlinkDefaultSocketDirectoryWithoutChmodTarget(t *tes
 	if !errors.Is(err, ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
-	if got := statMode(t, target); got != 0o755 {
+	if got := testfs.StatMode(t, target); got != 0o755 {
 		t.Fatalf("symlink target mode = %s, want unchanged 0755", got)
 	}
 }
 
 func TestListenUnixRejectsSymlinkDefaultSocketAncestorBeforeMkdirAll(t *testing.T) {
-	home := shortTempDir(t, "agent-secret-home-")
+	home := testfs.ShortTempDir(t, "agent-secret-home-")
 	t.Setenv("HOME", home)
-	path, err := DefaultSocketPath()
+	path, err := DefaultPath()
 	if err != nil {
-		t.Fatalf("DefaultSocketPath returned error: %v", err)
+		t.Fatalf("DefaultPath returned error: %v", err)
 	}
-	target := shortTempDir(t, "agent-secret-socket-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
 	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: test target is intentionally private.
 		t.Fatalf("chmod target: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestListenUnixRejectsSymlinkDefaultSocketAncestorBeforeMkdirAll(t *testing.
 func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 	t.Parallel()
 
-	dir := shortTempDir(t, "agent-secret-socket-")
+	dir := testfs.ShortTempDir(t, "agent-secret-socket-")
 	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: custom socket directories must be owner-searchable and private.
 		t.Fatalf("chmod custom dir: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 		t.Fatalf("ListenUnix returned error: %v", err)
 	}
 	defer func() { _ = listener.Close() }()
-	if got := statMode(t, dir); got != 0o700 {
+	if got := testfs.StatMode(t, dir); got != 0o700 {
 		t.Fatalf("custom socket dir mode changed to %s", got)
 	}
 }
@@ -135,11 +136,11 @@ func TestListenUnixAcceptsPrivateCustomSocketParent(t *testing.T) {
 func TestListenUnixRejectsSymlinkCustomSocketParent(t *testing.T) {
 	t.Parallel()
 
-	target := shortTempDir(t, "agent-secret-socket-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
 	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: custom socket targets are private in this test.
 		t.Fatalf("chmod target: %v", err)
 	}
-	link := filepath.Join(shortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
+	link := filepath.Join(testfs.ShortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("symlink custom socket dir: %v", err)
 	}
@@ -160,11 +161,11 @@ func TestListenUnixRejectsSymlinkCustomSocketParent(t *testing.T) {
 func TestListenUnixRejectsSymlinkCustomSocketAncestorBeforeMkdirAll(t *testing.T) {
 	t.Parallel()
 
-	target := shortTempDir(t, "agent-secret-socket-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
 	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: custom socket targets are private in this test.
 		t.Fatalf("chmod target: %v", err)
 	}
-	link := filepath.Join(shortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
+	link := filepath.Join(testfs.ShortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("symlink custom socket ancestor: %v", err)
 	}
@@ -182,37 +183,37 @@ func TestListenUnixRejectsSymlinkCustomSocketAncestorBeforeMkdirAll(t *testing.T
 	}
 }
 
-func TestValidateSocketDirectoryRejectsSymlinkParent(t *testing.T) {
+func TestValidateDirectoryRejectsSymlinkParent(t *testing.T) {
 	t.Parallel()
 
-	target := shortTempDir(t, "agent-secret-socket-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
 	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: custom socket targets are private in this test.
 		t.Fatalf("chmod target: %v", err)
 	}
-	link := filepath.Join(shortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
+	link := filepath.Join(testfs.ShortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("symlink socket dir: %v", err)
 	}
 
-	err := ValidateSocketDirectory(filepath.Join(link, "agent-secretd.sock"))
+	err := ValidateDirectory(filepath.Join(link, "agent-secretd.sock"))
 	if !errors.Is(err, ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
 }
 
-func TestValidateSocketDirectoryRejectsSymlinkAncestor(t *testing.T) {
+func TestValidateDirectoryRejectsSymlinkAncestor(t *testing.T) {
 	t.Parallel()
 
-	target := shortTempDir(t, "agent-secret-socket-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-socket-target-")
 	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: custom socket targets are private in this test.
 		t.Fatalf("chmod target: %v", err)
 	}
-	link := filepath.Join(shortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
+	link := filepath.Join(testfs.ShortTempDir(t, "agent-secret-socket-parent-"), "socket-link")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("symlink socket ancestor: %v", err)
 	}
 
-	err := ValidateSocketDirectory(filepath.Join(link, "nested", "agent-secretd.sock"))
+	err := ValidateDirectory(filepath.Join(link, "nested", "agent-secretd.sock"))
 	if !errors.Is(err, ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
@@ -221,7 +222,7 @@ func TestValidateSocketDirectoryRejectsSymlinkAncestor(t *testing.T) {
 func TestListenUnixRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 	t.Parallel()
 
-	dir := shortTempDir(t, "agent-secret-socket-")
+	dir := testfs.ShortTempDir(t, "agent-secret-socket-")
 	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: this test intentionally creates a permissive custom socket directory.
 		t.Fatalf("chmod custom dir: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestListenUnixRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T)
 	if !errors.Is(err, ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
-	if got := statMode(t, dir); got != 0o755 {
+	if got := testfs.StatMode(t, dir); got != 0o755 {
 		t.Fatalf("custom socket dir mode changed to %s", got)
 	}
 }
@@ -277,28 +278,9 @@ func TestCleanupStaleSocketRefusesLiveDaemon(t *testing.T) {
 		close(done)
 	}()
 
-	err = cleanupStaleSocket(path)
+	err = CleanupStale(path)
 	if err == nil {
 		t.Fatal("expected live daemon socket rejection")
 	}
 	<-done
-}
-
-func statMode(t *testing.T, path string) os.FileMode {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat %s: %v", path, err)
-	}
-	return info.Mode().Perm()
-}
-
-func shortTempDir(t *testing.T, pattern string) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", pattern)
-	if err != nil {
-		t.Fatalf("MkdirTemp returned error: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
 }

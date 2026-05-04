@@ -14,6 +14,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -453,7 +454,7 @@ func startRespondingDaemonClient(t *testing.T, response func(protocol.Envelope) 
 		t.Fatalf("secure socket test directory: %v", err)
 	}
 	path := filepath.Join(dir, "daemon.sock")
-	listener, err := ListenUnix(path)
+	listener, err := socket.ListenUnix(path)
 	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		_ = os.RemoveAll(dir)
@@ -478,7 +479,7 @@ func startRespondingDaemonClient(t *testing.T, response func(protocol.Envelope) 
 		serverDone <- err
 	}()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		_ = listener.Close()
 		t.Fatalf("Dial returned error: %v", err)
@@ -512,7 +513,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan protocol.Envelope,
 		t.Fatalf("secure socket test directory: %v", err)
 	}
 	path := filepath.Join(dir, "daemon.sock")
-	listener, err := ListenUnix(path)
+	listener, err := socket.ListenUnix(path)
 	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		_ = os.RemoveAll(dir)
@@ -540,7 +541,7 @@ func startStallingDaemonClient(t *testing.T) (*Client, <-chan protocol.Envelope,
 		serverDone <- nil
 	}()
 
-	conn, err := Dial(context.Background(), path)
+	conn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		_ = listener.Close()
 		t.Fatalf("Dial returned error: %v", err)

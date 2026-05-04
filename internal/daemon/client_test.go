@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -123,7 +124,7 @@ func startFakeExecDaemon(t *testing.T) (string, func()) {
 		t.Fatalf("MkdirTemp returned error: %v", err)
 	}
 	path := filepath.Join(dir, "d.sock")
-	listener, err := ListenUnix(path)
+	listener, err := socket.ListenUnix(path)
 	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)

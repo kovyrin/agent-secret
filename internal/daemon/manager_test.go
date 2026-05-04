@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
 
@@ -222,10 +224,10 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 	}
 
 	err := manager.Start(context.Background())
-	if !errors.Is(err, ErrInsecureSocketDirectory) {
+	if !errors.Is(err, socket.ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
-	if got := statMode(t, dir); got != 0o755 {
+	if got := testfs.StatMode(t, dir); got != 0o755 {
 		t.Fatalf("manager changed custom socket dir mode to %s", got)
 	}
 }
@@ -233,11 +235,11 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 func TestManagerRejectsSymlinkedCustomSocketAncestorBeforeMkdirAll(t *testing.T) {
 	t.Parallel()
 
-	target := shortTempDir(t, "agent-secret-manager-target-")
+	target := testfs.ShortTempDir(t, "agent-secret-manager-target-")
 	if err := os.Chmod(target, 0o700); err != nil { //nolint:gosec // G302: manager socket target is private in this test.
 		t.Fatalf("chmod target: %v", err)
 	}
-	link := filepath.Join(shortTempDir(t, "agent-secret-manager-parent-"), "socket-link")
+	link := filepath.Join(testfs.ShortTempDir(t, "agent-secret-manager-parent-"), "socket-link")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("symlink socket ancestor: %v", err)
 	}
@@ -248,7 +250,7 @@ func TestManagerRejectsSymlinkedCustomSocketAncestorBeforeMkdirAll(t *testing.T)
 	}
 
 	err := manager.Start(context.Background())
-	if !errors.Is(err, ErrInsecureSocketDirectory) {
+	if !errors.Is(err, socket.ErrInsecureSocketDirectory) {
 		t.Fatalf("expected insecure socket directory error, got %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(target, "nested")); !errors.Is(err, os.ErrNotExist) {
@@ -276,7 +278,7 @@ func TestManagerStartRejectsUntrustedLiveSocket(t *testing.T) {
 func TestManagerStartPropagatesStaleSocketCleanupError(t *testing.T) {
 	t.Parallel()
 
-	dir := shortTempDir(t, "agent-secret-manager-")
+	dir := testfs.ShortTempDir(t, "agent-secret-manager-")
 	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: manager socket test needs a private custom directory.
 		t.Fatalf("chmod custom dir: %v", err)
 	}

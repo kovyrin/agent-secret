@@ -11,6 +11,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 )
@@ -79,7 +80,7 @@ type daemonConfig struct {
 }
 
 func parseDaemonConfig(args []string) (daemonConfig, error) {
-	socketPath, err := daemon.DefaultSocketPath()
+	socketPath, err := socket.DefaultPath()
 	if err != nil {
 		return daemonConfig{}, fmt.Errorf("resolve default socket path: %w", err)
 	}

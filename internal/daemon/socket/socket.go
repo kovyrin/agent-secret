@@ -1,4 +1,4 @@
-package daemon
+package socket
 
 import (
 	"context"
@@ -13,11 +13,10 @@ import (
 
 var (
 	ErrDaemonUnavailable       = errors.New("daemon unavailable")
-	ErrDaemonStillRunning      = errors.New("daemon still running")
 	ErrInsecureSocketDirectory = errors.New("insecure daemon socket directory")
 )
 
-func DefaultSocketPath() (string, error) {
+func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve user home: %w", err)
@@ -26,10 +25,10 @@ func DefaultSocketPath() (string, error) {
 }
 
 func ListenUnix(path string) (*net.UnixListener, error) {
-	if err := prepareSocketDirectory(path); err != nil {
+	if err := PrepareDirectory(path); err != nil {
 		return nil, err
 	}
-	if err := cleanupStaleSocket(path); err != nil {
+	if err := CleanupStale(path); err != nil {
 		return nil, err
 	}
 
@@ -38,7 +37,6 @@ func ListenUnix(path string) (*net.UnixListener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen on daemon socket: %w", err)
 	}
-	//nolint:gosec // G703: path is the Unix socket just created after directory validation.
 	if err := os.Chmod(path, 0o600); err != nil {
 		_ = listener.Close()
 		return nil, fmt.Errorf("secure daemon socket: %w", err)
@@ -46,15 +44,15 @@ func ListenUnix(path string) (*net.UnixListener, error) {
 	return listener, nil
 }
 
-func prepareSocketDirectory(path string) error {
-	defaultPath, err := DefaultSocketPath()
+func PrepareDirectory(path string) error {
+	defaultPath, err := DefaultPath()
 	if err == nil && filepath.Clean(path) == filepath.Clean(defaultPath) {
 		return prepareDefaultSocketDirectory(filepath.Dir(path))
 	}
 	return prepareCustomSocketDirectory(filepath.Dir(path))
 }
 
-func ValidateSocketDirectory(path string) error {
+func ValidateDirectory(path string) error {
 	return rejectInsecureSocketDirectory(filepath.Dir(path))
 }
 
@@ -65,7 +63,6 @@ func prepareDefaultSocketDirectory(dir string) error {
 	if err := rejectSocketDirectorySymlinkOrOwner(dir); err != nil {
 		return err
 	}
-	//nolint:gosec // G703: dir is the managed default socket directory under Application Support.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
@@ -86,7 +83,6 @@ func prepareCustomSocketDirectory(dir string) error {
 	if err := rejectSocketDirectoryAncestry(dir); err != nil {
 		return err
 	}
-	//nolint:gosec // G703: custom mkdir creates missing private parents but existing parents are validated, not chmodded.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
@@ -116,7 +112,6 @@ func rejectSocketDirectorySymlinkOrOwner(dir string) error {
 }
 
 func socketDirectoryInfo(dir string) (os.FileInfo, error) {
-	//nolint:gosec // G703: lstat validates the socket parent itself before use.
 	info, err := os.Lstat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("stat socket directory: %w", err)
@@ -190,8 +185,7 @@ func Dial(ctx context.Context, path string) (*net.UnixConn, error) {
 	return unixConn, nil
 }
 
-func cleanupStaleSocket(path string) error {
-	//nolint:gosec // G703: lstat checks whether the configured socket path is a stale Unix socket before removal.
+func CleanupStale(path string) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -210,7 +204,6 @@ func cleanupStaleSocket(path string) error {
 		_ = conn.Close()
 		return fmt.Errorf("daemon already listening on %s", path)
 	}
-	//nolint:gosec // G703: removal is limited to stale Unix socket paths after lstat and failed live-daemon dial.
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove stale daemon socket: %w", err)
 	}

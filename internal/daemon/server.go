@@ -14,6 +14,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -97,7 +98,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context, path string) error {
-	listener, err := ListenUnix(path)
+	listener, err := socket.ListenUnix(path)
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 )
+
+var ErrDaemonStillRunning = errors.New("daemon still running")
 
 type Manager struct {
 	SocketPath      string
@@ -26,7 +29,7 @@ type Manager struct {
 func NewManager(socketPath string) (Manager, error) {
 	if socketPath == "" {
 		var err error
-		socketPath, err = DefaultSocketPath()
+		socketPath, err = socket.DefaultPath()
 		if err != nil {
 			return Manager{}, err
 		}
@@ -45,7 +48,7 @@ func NewManager(socketPath string) (Manager, error) {
 func (m Manager) EnsureRunning(ctx context.Context) error {
 	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
-	} else if !errors.Is(err, ErrDaemonUnavailable) {
+	} else if !errors.Is(err, socket.ErrDaemonUnavailable) {
 		return err
 	}
 	if err := m.Start(ctx); err != nil {
@@ -57,16 +60,16 @@ func (m Manager) EnsureRunning(ctx context.Context) error {
 func (m Manager) Start(ctx context.Context) error {
 	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
-	} else if !errors.Is(err, ErrDaemonUnavailable) {
+	} else if !errors.Is(err, socket.ErrDaemonUnavailable) {
 		return err
 	}
 	if m.DaemonPath == "" {
 		return errors.New("daemon path is required")
 	}
-	if err := prepareSocketDirectory(m.SocketPath); err != nil {
+	if err := socket.PrepareDirectory(m.SocketPath); err != nil {
 		return err
 	}
-	if err := cleanupStaleSocket(m.SocketPath); err != nil {
+	if err := socket.CleanupStale(m.SocketPath); err != nil {
 		return err
 	}
 
@@ -166,12 +169,12 @@ func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) err
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, ErrDaemonUnavailable) {
+		if !errors.Is(err, socket.ErrDaemonUnavailable) {
 			return err
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%w: authenticated status timeout", ErrDaemonUnavailable)
+			return fmt.Errorf("%w: authenticated status timeout", socket.ErrDaemonUnavailable)
 		case <-ticker.C:
 		}
 	}
@@ -201,7 +204,7 @@ func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 	if err == nil {
 		return false, nil
 	}
-	if errors.Is(err, ErrDaemonUnavailable) || errors.Is(err, io.EOF) {
+	if errors.Is(err, socket.ErrDaemonUnavailable) || errors.Is(err, io.EOF) {
 		return true, nil
 	}
 	return false, err
