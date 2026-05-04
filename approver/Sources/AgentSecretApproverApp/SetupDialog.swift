@@ -4,9 +4,6 @@ import Foundation
     import AppKit
 #endif
 
-private let kSetupInstallButton: NSApplication.ModalResponse = .alertFirstButtonReturn
-private let kSetupDoctorButton: NSApplication.ModalResponse = .alertSecondButtonReturn
-
 @MainActor
 func runSetupDialog() {
     #if canImport(AppKit)
@@ -26,10 +23,10 @@ func runSetupDialog() {
             alert.addButton(withTitle: "Quit")
 
             switch alert.runModal() {
-            case kSetupInstallButton:
+            case .alertFirstButtonReturn:
                 message = runBundledAgentSecret(arguments: ["install-cli"])
 
-            case kSetupDoctorButton:
+            case .alertSecondButtonReturn:
                 message = runBundledAgentSecret(arguments: ["doctor"])
 
             default:

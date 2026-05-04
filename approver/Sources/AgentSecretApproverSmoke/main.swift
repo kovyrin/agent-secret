@@ -1,59 +1,71 @@
 import AgentSecretApprover
 import Foundation
 
-private let kArguments: [String] = Array(CommandLine.arguments.dropFirst())
-private let kSampleRequestJSON: String = """
-{
-    "requestID": "req_123",
-    "nonce": "nonce_456",
-    "reason": "Run Terraform plan for staging",
-    "command": ["/opt/homebrew/bin/terraform", "plan"],
-    "cwd": "/tmp/project",
-    "expiresAt": "2027-01-15T08:00:00Z",
-    "secrets": [
-        {
-            "alias": "EXAMPLE_TOKEN",
-            "ref": "op://Example Vault/Example Item/token",
-            "account": "Work"
-        }
-    ],
-    "resolvedExecutable": null,
-    "overrideEnv": false,
-    "allowMutableExecutable": false,
-    "overriddenAliases": [],
-    "reusableUses": 3
-}
-"""
-private let kOptions = try options(from: kArguments)
+try await runSmoke()
 
-private let kRequest: ApprovalRequest = try request(from: kOptions.requestPath)
-private let kClient: MockDaemonClient = .init(request: kRequest)
-private let kLogger: RecordingLogger = .init()
-private let kController: ApprovalController = .init(
-    client: kClient,
-    presenter: StaticDecisionPresenter(decision: kOptions.decision),
-    logger: kLogger
-)
-private let kDecision: ApprovalDecision = try await kController.run()
+@MainActor
+private func runSmoke() async throws {
+    let arguments: [String] = Array(CommandLine.arguments.dropFirst())
+    let options = try options(from: arguments)
 
-try assert(kDecision.requestID == kRequest.requestID, "decision request ID mismatch")
-try assert(kDecision.nonce == kRequest.nonce, "decision nonce mismatch")
-try assert(kDecision.decision == kOptions.decision, "decision kind mismatch")
-if kOptions.decision == .approveReusable {
-    try assert(kDecision.reusableUses == kRequest.reusableUses, "reusable use limit mismatch")
-} else {
-    try assert(kDecision.reusableUses == nil, "non-reusable decision carried use limit")
+    let request: ApprovalRequest = try request(from: options.requestPath)
+    let client: MockDaemonClient = .init(request: request)
+    let logger: RecordingLogger = .init()
+    let controller: ApprovalController = .init(
+        client: client,
+        presenter: StaticDecisionPresenter(decision: options.decision),
+        logger: logger
+    )
+    let decision: ApprovalDecision = try await controller.run()
+
+    try assert(decision.requestID == request.requestID, "decision request ID mismatch")
+    try assert(decision.nonce == request.nonce, "decision nonce mismatch")
+    try assert(decision.decision == options.decision, "decision kind mismatch")
+    if options.decision == .approveReusable {
+        try assert(decision.reusableUses == request.reusableUses, "reusable use limit mismatch")
+    } else {
+        try assert(decision.reusableUses == nil, "non-reusable decision carried use limit")
+    }
+
+    try assert(client.submittedDecision == decision, "decision was not submitted")
+
+    let encodedDecision: String = try String(data: JSONEncoder().encode(decision), encoding: .utf8) ?? ""
+
+    try assert(!encodedDecision.contains("op://"), "decision encoded secret references")
+    try assert(!encodedDecision.contains("EXAMPLE_TOKEN"), "decision encoded aliases")
+    try assert(
+        !logger.events.contains { event -> Bool in event.contains("op://") },
+        "logger recorded secret references"
+    )
+
+    print("approver-smoke-ok")
 }
 
-try assert(kClient.submittedDecision == kDecision, "decision was not submitted")
-
-private let kEncodedDecision: String = try String(data: JSONEncoder().encode(kDecision), encoding: .utf8) ?? ""
-
-try assert(!kEncodedDecision.contains("op://"), "decision encoded secret references")
-try assert(!kEncodedDecision.contains("EXAMPLE_TOKEN"), "decision encoded aliases")
-try assert(!kLogger.events.contains { event -> Bool in event.contains("op://") }, "logger recorded secret references")
-
-print("approver-smoke-ok")
+private func sampleRequestData() -> Data {
+    let sampleRequestJSON = """
+    {
+        "requestID": "req_123",
+        "nonce": "nonce_456",
+        "reason": "Run Terraform plan for staging",
+        "command": ["/opt/homebrew/bin/terraform", "plan"],
+        "cwd": "/tmp/project",
+        "expiresAt": "2027-01-15T08:00:00Z",
+        "secrets": [
+            {
+                "alias": "EXAMPLE_TOKEN",
+                "ref": "op://Example Vault/Example Item/token",
+                "account": "Work"
+            }
+        ],
+        "resolvedExecutable": null,
+        "overrideEnv": false,
+        "allowMutableExecutable": false,
+        "overriddenAliases": [],
+        "reusableUses": 3
+    }
+    """
+    return Data(sampleRequestJSON.utf8)
+}
 
 private func assert(_ condition: @autoclosure () -> Bool, _ message: String) throws {
     if !condition() {
@@ -121,7 +133,7 @@ private func decisionKind(from raw: String) throws -> ApprovalDecisionKind {
 
 private func request(from path: String?) throws -> ApprovalRequest {
     guard let path else {
-        return try decodeRequest(from: Data(kSampleRequestJSON.utf8))
+        return try decodeRequest(from: sampleRequestData())
     }
 
     let data: Data = if path == "-" {
