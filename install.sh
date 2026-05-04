@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+caller_path="${PATH-}"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 
@@ -446,7 +447,7 @@ rm -rf "$target_app"
 mv "$tmp_app" "$target_app"
 
 echo "Installing command symlink into $bin_dir"
-"$target_app/Contents/Resources/bin/agent-secret" install-cli --bin-dir "$bin_dir"
+PATH="$caller_path" "$target_app/Contents/Resources/bin/agent-secret" install-cli --bin-dir "$bin_dir"
 
 echo "Installing Agent Secret skill"
 "$target_app/Contents/Resources/bin/agent-secret" skill-install --skills-dir "$skills_dir" --force

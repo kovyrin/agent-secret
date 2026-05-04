@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- markdownlint-disable MD024 -->
+
 All notable changes to Agent Secret are recorded here.
 
 This file follows the spirit of
@@ -17,6 +19,19 @@ version numbers for public releases.
   date in `YYYY-MM-DD` form as part of the release commit.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
+
+## [0.0.2] - 2026-05-04
+
+Follow-up macOS install UX release for clean-machine CLI setup.
+
+### Fixed
+
+- The setup app now finishes command-line tool installation with a one-button
+  confirmation instead of returning to the original setup dialog.
+- `agent-secret install-cli` now warns when the installed command directory is
+  not on `PATH` and shows a zsh one-liner for a clean macOS shell.
+- The unattended installer now bases that warning on the caller's original
+  `PATH`, not on the installer's sanitized tool `PATH`.
 
 ## [0.0.1] - 2026-05-04
 

@@ -581,8 +581,8 @@ brew upgrade agent-secret
 
 - `/Applications` may require admin permissions on some managed machines. The
   installer should support `~/Applications` as a fallback.
-- Shell PATH setup is not solved by installing the symlink. The app and
-  installer should warn if the selected bin directory is not on PATH.
+- Shell PATH setup is not changed automatically. The app and installer warn if
+  the selected bin directory is not on PATH.
 - Signing requires careful GitHub Actions secret management, certificate
   import, and keychain cleanup.
 - Nested helper signing order matters. Release automation should make signing
