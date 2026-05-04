@@ -93,7 +93,10 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
                 invalidMessage: "malformed daemon error response"
             )
             try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
-            throw daemonError(from: response)
+            guard let payload: DaemonErrorPayload = response.payload else {
+                throw SocketDaemonClientError.invalidResponse("missing daemon error payload")
+            }
+            throw daemonError(from: payload)
         }
         guard header.type == .okResponse else {
             throw SocketDaemonClientError.invalidResponse("unexpected response type")
@@ -162,9 +165,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         try validateCorrelation(response, requestID: requestID, nonce: nonce)
     }
 
-    private func daemonError(from response: DaemonEnvelope<DaemonErrorPayload>) -> SocketDaemonClientError {
-        let payload: DaemonErrorPayload? = response.payload
-        let code: DaemonErrorCode = DaemonErrorMessage.displayCode(payload?.code)
+    private func daemonError(from payload: DaemonErrorPayload) -> SocketDaemonClientError {
+        let code: DaemonErrorCode = DaemonErrorMessage.displayCode(payload.code)
         return .daemonError(code)
     }
 
