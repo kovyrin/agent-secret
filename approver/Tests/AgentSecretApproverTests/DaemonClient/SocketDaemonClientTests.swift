@@ -45,7 +45,7 @@ final class SocketDaemonClientTests: XCTestCase {
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
             secrets: [
-                RequestedSecret(alias: "EXAMPLE_TOKEN", ref: "op://Example Vault/Example Item/token")
+                RequestedSecret(alias: "EXAMPLE_TOKEN", ref: "op://Example Vault/Example Item/token", account: "Work")
             ],
             resolvedExecutable: "/opt/homebrew/bin/terraform"
         )

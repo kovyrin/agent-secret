@@ -24,7 +24,7 @@ extension ApprovalRequestViewModel {
         let reason: String
         let commandArgumentRows: [String]
         let cwd: String
-        let resolvedExecutable: String?
+        let resolvedExecutable: String
         let overrideEnv: Bool
         let overriddenAliases: [String]
         let secretRows: [String]
@@ -39,7 +39,7 @@ extension ApprovalRequestViewModel {
         ]
         lines.append(contentsOf: input.commandArgumentRows)
         lines.append("Working directory: \(input.cwd)")
-        lines.append("Resolved binary: \(input.resolvedExecutable ?? "not resolved")")
+        lines.append("Resolved binary: \(input.resolvedExecutable)")
         lines.append("Override existing environment: \(input.overrideEnv ? "yes" : "no")")
         if input.overriddenAliases.isEmpty {
             lines.append("Overridden aliases: none")

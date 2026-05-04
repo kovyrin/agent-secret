@@ -145,7 +145,7 @@ import Foundation
                 VStack(alignment: .leading, spacing: Metric.detailSpacing) {
                     ApprovalPanelDetailLine(
                         label: "Resolved binary",
-                        value: viewModel.resolvedExecutable ?? viewModel.executable
+                        value: viewModel.resolvedExecutable
                     )
                     ApprovalPanelDetailLine(label: "Working directory", value: viewModel.cwd)
                     if let overrideWarning: String = viewModel.overrideWarning {

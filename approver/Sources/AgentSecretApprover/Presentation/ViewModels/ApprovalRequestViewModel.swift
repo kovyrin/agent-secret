@@ -17,7 +17,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let commandArgumentRows: [String]
         let cwd: String
         let scopeSummary: String
-        let resolvedExecutable: String?
+        let resolvedExecutable: String
         let secretRows: [String]
         let timeRemaining: String
         let cautionMessages: [String]
@@ -36,7 +36,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let executable: String
     public let cwd: String
     public let projectFolder: String
-    public let resolvedExecutable: String?
+    public let resolvedExecutable: String
     public let requestedSecrets: [RequestedSecretRowViewModel]
     public let secretRows: [String]
     public let secretCount: Int
@@ -64,14 +64,14 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public init(request: ApprovalRequest, now: Date = Date()) {
         title = "Secret Access Request"
         reason = Self.sanitizedDisplayText(request.reason)
-        executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable ?? request.command.first))
+        executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable))
         commandArguments = Self.commandArguments(request.command)
         command = Self.commandDisplay(commandArguments)
         commandNeedsInspector = Self.commandNeedsInspector(command, arguments: commandArguments)
         commandInspectionText = Self.commandInspectionText(commandArguments)
         cwd = Self.sanitizedDisplayText(request.cwd)
         projectFolder = Self.sanitizedDisplayText(Self.displayPath(request.cwd))
-        resolvedExecutable = request.resolvedExecutable.map(Self.sanitizedDisplayText)
+        resolvedExecutable = Self.sanitizedDisplayText(request.resolvedExecutable)
         let secretPresentation: SecretPresentation = Self.secretPresentation(for: request.secrets)
         requestedSecrets = secretPresentation.rows
         secretRows = secretPresentation.rowText
@@ -148,10 +148,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     }
 
     private static func secretRowText(_ secret: RequestedSecretRowViewModel) -> String {
-        if let accountLabel: String = secret.accountLabel {
-            return "\(secret.alias) [\(accountLabel)] -> \(secret.ref)"
-        }
-        return "\(secret.alias) -> \(secret.ref)"
+        "\(secret.alias) [\(secret.accountLabel)] -> \(secret.ref)"
     }
 
     private static func renderedText(
@@ -169,9 +166,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             "Working directory: \(viewModel.cwd)",
             "Scope: \(viewModel.scopeSummary)"
         ])
-        if let resolvedExecutable: String = viewModel.resolvedExecutable, !resolvedExecutable.isEmpty {
-            lines.append("Resolved binary: \(resolvedExecutable)")
-        }
+        lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
         lines.append("Secrets:")
         lines.append(contentsOf: viewModel.secretRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
@@ -204,11 +199,8 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         command.count > commandInspectorThreshold || arguments.contains(where: \.needsInspector)
     }
 
-    private static func executableName(_ path: String?) -> String {
-        guard let path, !path.isEmpty else {
-            return "unknown command"
-        }
-        return URL(fileURLWithPath: path).lastPathComponent
+    private static func executableName(_ path: String) -> String {
+        URL(fileURLWithPath: path).lastPathComponent
     }
 
     private static func displayPath(_ path: String) -> String {

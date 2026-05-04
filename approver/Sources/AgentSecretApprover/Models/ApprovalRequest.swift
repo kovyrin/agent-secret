@@ -27,7 +27,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var reason: String
     public var command: [String]
     public var cwd: String
-    public var resolvedExecutable: String?
+    public var resolvedExecutable: String
     public var expiresAt: Date
     public var secrets: [RequestedSecret]
     public var overrideEnv: Bool
@@ -43,7 +43,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         cwd: String,
         expiresAt: Date,
         secrets: [RequestedSecret],
-        resolvedExecutable: String? = nil,
+        resolvedExecutable: String,
         overrideEnv: Bool = false,
         allowMutableExecutable: Bool = false,
         overriddenAliases: [String] = [],
@@ -71,7 +71,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         reason = try container.decode(String.self, forKey: .reason)
         command = try container.decode([String].self, forKey: .command)
         cwd = try container.decode(String.self, forKey: .cwd)
-        resolvedExecutable = try container.decodeIfPresent(String.self, forKey: .resolvedExecutable)
+        resolvedExecutable = try container.decode(String.self, forKey: .resolvedExecutable)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
         overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)

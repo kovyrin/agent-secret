@@ -57,7 +57,7 @@ private func sampleRequestData() -> Data {
                 "account": "Work"
             }
         ],
-        "resolved_executable": null,
+        "resolved_executable": "/opt/homebrew/bin/terraform",
         "override_env": false,
         "allow_mutable_executable": false,
         "overridden_aliases": [],

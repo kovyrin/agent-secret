@@ -8,7 +8,7 @@ final class ApprovalCommandRenderingTests: XCTestCase {
 
     private static func viewModel(
         command: [String],
-        resolvedExecutable: String? = nil
+        resolvedExecutable: String = "/bin/echo"
     ) -> ApprovalRequestViewModel {
         let request = ApprovalRequest(
             requestID: "req_command",
@@ -18,7 +18,7 @@ final class ApprovalCommandRenderingTests: XCTestCase {
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
             secrets: [
-                RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token")
+                RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
             ],
             resolvedExecutable: resolvedExecutable
         )

@@ -67,12 +67,11 @@ extension ApprovalRequestViewModel {
     }
 
     private static func environmentWarning(for request: ApprovalRequest) -> Bool {
-        environmentPrinter(command: request.command, resolvedExecutable: request.resolvedExecutable)
+        environmentPrinter(resolvedExecutable: request.resolvedExecutable)
     }
 
-    private static func environmentPrinter(command: [String], resolvedExecutable: String?) -> Bool {
-        let executableName: String = URL(fileURLWithPath: resolvedExecutable ?? command.first ?? "")
-            .lastPathComponent
+    private static func environmentPrinter(resolvedExecutable: String) -> Bool {
+        let executableName: String = URL(fileURLWithPath: resolvedExecutable).lastPathComponent
         return executableName == "env" || executableName == "printenv"
     }
 }

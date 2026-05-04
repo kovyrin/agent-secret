@@ -21,12 +21,10 @@ import Foundation
                         .foregroundStyle(.secondary)
                         .lineLimit(Metric.singleLineLimit)
                         .truncationMode(.middle)
-                    if let accountLabel: String = secret.accountLabel {
-                        Text(accountLabel)
-                            .font(.system(size: Metric.secretListRefFontSize))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(Metric.singleLineLimit)
-                    }
+                    Text(secret.accountLabel)
+                        .font(.system(size: Metric.secretListRefFontSize))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(Metric.singleLineLimit)
                 }
                 .layoutPriority(Metric.refLayoutPriority)
             }

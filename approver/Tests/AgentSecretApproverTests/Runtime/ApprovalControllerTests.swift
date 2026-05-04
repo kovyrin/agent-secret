@@ -50,16 +50,16 @@ final class ApprovalControllerTests: XCTestCase {
 
     private static var multiSecrets: [RequestedSecret] {
         [
-            RequestedSecret(alias: "LOGIN", ref: "op://Private/Github/username"),
-            RequestedSecret(alias: "GITHUB_TOKEN", ref: "op://Private/Github/token"),
-            RequestedSecret(alias: "GITHUB_EMAIL", ref: "op://Private/Github/email"),
-            RequestedSecret(alias: "DB_HOST", ref: "op://Database/App/host"),
-            RequestedSecret(alias: "DB_USER", ref: "op://Database/App/user"),
-            RequestedSecret(alias: "DB_PASSWORD", ref: "op://Database/App/password"),
-            RequestedSecret(alias: "DB_NAME", ref: "op://Database/App/name"),
-            RequestedSecret(alias: "OPENAI_API_KEY", ref: "op://OpenAI/Platform/api_key"),
-            RequestedSecret(alias: "OPENAI_ORG_ID", ref: "op://OpenAI/Platform/org_id"),
-            RequestedSecret(alias: "OPENAI_PROJECT_ID", ref: "op://OpenAI/Platform/project_id")
+            RequestedSecret(alias: "LOGIN", ref: "op://Private/Github/username", account: "Work"),
+            RequestedSecret(alias: "GITHUB_TOKEN", ref: "op://Private/Github/token", account: "Work"),
+            RequestedSecret(alias: "GITHUB_EMAIL", ref: "op://Private/Github/email", account: "Work"),
+            RequestedSecret(alias: "DB_HOST", ref: "op://Database/App/host", account: "Work"),
+            RequestedSecret(alias: "DB_USER", ref: "op://Database/App/user", account: "Work"),
+            RequestedSecret(alias: "DB_PASSWORD", ref: "op://Database/App/password", account: "Work"),
+            RequestedSecret(alias: "DB_NAME", ref: "op://Database/App/name", account: "Work"),
+            RequestedSecret(alias: "OPENAI_API_KEY", ref: "op://OpenAI/Platform/api_key", account: "Work"),
+            RequestedSecret(alias: "OPENAI_ORG_ID", ref: "op://OpenAI/Platform/org_id", account: "Work"),
+            RequestedSecret(alias: "OPENAI_PROJECT_ID", ref: "op://OpenAI/Platform/project_id", account: "Work")
         ]
     }
 
@@ -221,7 +221,7 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
         XCTAssertTrue(viewModel.highScopeWarning)
         XCTAssertTrue(viewModel.printsEnvironmentWarning)
-        XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Private", "Database", "OpenAI"])
+        XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Work / Private", "Work / Database", "Work / OpenAI"])
         XCTAssertEqual(viewModel.vaultGroups.first?.countLabel, "3 secrets")
         XCTAssertEqual(viewModel.vaultGroups.first?.aliasSummary, "LOGIN, GITHUB_TOKEN, GITHUB_EMAIL")
         XCTAssertEqual(viewModel.requestedSecrets.first?.fieldName, "username")

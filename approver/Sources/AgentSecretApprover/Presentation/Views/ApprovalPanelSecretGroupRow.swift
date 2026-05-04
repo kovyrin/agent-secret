@@ -107,11 +107,9 @@ import Foundation
                         .foregroundStyle(.secondary)
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let accountLabel: String = secret.accountLabel {
-                        Text(accountLabel)
-                            .font(.system(size: Metric.groupExpandedRefFontSize))
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(secret.accountLabel)
+                        .font(.system(size: Metric.groupExpandedRefFontSize))
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

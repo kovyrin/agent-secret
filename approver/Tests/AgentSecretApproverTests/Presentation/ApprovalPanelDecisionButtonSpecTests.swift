@@ -18,7 +18,7 @@ import XCTest
                 cwd: "/tmp/project",
                 expiresAt: Date(timeIntervalSince1970: sampleExpiration),
                 secrets: [
-                    RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token")
+                    RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
                 ],
                 resolvedExecutable: "/usr/bin/env"
             )

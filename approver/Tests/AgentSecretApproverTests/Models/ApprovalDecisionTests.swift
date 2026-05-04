@@ -90,6 +90,7 @@ final class ApprovalDecisionTests: XCTestCase {
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
             secrets: [],
+            resolvedExecutable: "/usr/bin/true",
             reusableUses: reusableUses
         )
     }

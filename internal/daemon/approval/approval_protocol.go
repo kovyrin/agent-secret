@@ -15,7 +15,7 @@ type ApprovalRequestPayload struct {
 	Reason                 string                    `json:"reason"`
 	Command                []string                  `json:"command"`
 	CWD                    string                    `json:"cwd"`
-	ResolvedExecutable     string                    `json:"resolved_executable,omitempty"`
+	ResolvedExecutable     string                    `json:"resolved_executable"`
 	ExpiresAt              time.Time                 `json:"expires_at"`
 	Secrets                []ApprovalRequestedSecret `json:"secrets"`
 	OverrideEnv            bool                      `json:"override_env"`
@@ -27,7 +27,7 @@ type ApprovalRequestPayload struct {
 type ApprovalRequestedSecret struct {
 	Alias   string `json:"alias"`
 	Ref     string `json:"ref"`
-	Account string `json:"account,omitempty"`
+	Account string `json:"account"`
 }
 
 type ApprovalDecisionKind string
