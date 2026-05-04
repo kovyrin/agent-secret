@@ -69,19 +69,9 @@ jobs:
         run: mise run test:smoke
 
   draft-release-artifacts:
-    name: Build Release Artifact (${{ matrix.arch }})
+    name: Build Release Artifact (arm64)
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-latest
-            mise_sha256: f0f5fa48643a00442c8cc066f8350285896561f2491bcbbee93b1a9a8249816d
-          - arch: x86_64
-            runner: macos-15-intel
-            mise_sha256: 43c02a612949a37ba53bb4e1e89859da2b198b6e7dad753f31cf66db5af36b19
+    runs-on: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -96,7 +86,7 @@ jobs:
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
         with:
           version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ matrix.mise_sha256 }}
+          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
           install: true
           cache: true
 
@@ -135,16 +125,16 @@ jobs:
 
       - name: Verify release artifact architecture
         run: |
-          test "$(uname -m)" = "${{ matrix.arch }}"
-          test -f "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-${{ matrix.arch }}.dmg"
+          test "$(uname -m)" = "arm64"
+          test -f "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: release-${{ matrix.arch }}
+          name: release-arm64
           if-no-files-found: error
           path: |
-            dist/Agent-Secret-${{ github.ref_name }}-macos-${{ matrix.arch }}.dmg
+            dist/Agent-Secret-${{ github.ref_name }}-macos-arm64.dmg
             dist/checksums.txt
 
       - name: Delete temporary signing keychain
@@ -176,11 +166,7 @@ jobs:
         run: |
           mkdir -p dist
           cp "dist/release-artifacts/release-arm64/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" dist/
-          cp "dist/release-artifacts/release-x86_64/Agent-Secret-${GITHUB_REF_NAME}-macos-x86_64.dmg" dist/
-          cat \
-            dist/release-artifacts/release-arm64/checksums.txt \
-            dist/release-artifacts/release-x86_64/checksums.txt \
-            >dist/checksums.txt
+          cp "dist/release-artifacts/release-arm64/checksums.txt" dist/checksums.txt
 
       - name: Extract changelog release notes
         run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" dist/release-notes.md
@@ -192,5 +178,4 @@ jobs:
         run: |
           scripts/release/publish-draft-release.sh "$GITHUB_REF_NAME" \
             "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \
-            "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-x86_64.dmg" \
             "dist/checksums.txt"

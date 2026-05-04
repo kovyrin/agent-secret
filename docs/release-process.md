@@ -75,7 +75,6 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
    ```text
    Agent-Secret-vX.Y.Z-macos-arm64.dmg
-   Agent-Secret-vX.Y.Z-macos-x86_64.dmg
    checksums.txt
    ```
 
@@ -169,15 +168,12 @@ in `.github/workflows/ci.yml`:
 
 - `AGENT_SECRET_MISE_VERSION`
 - `AGENT_SECRET_MISE_SHA256_MACOS_ARM64`
-- each release matrix `mise_sha256` value
-
-Resolve checksums from the official `jdx/mise` release archive for every GitHub
+Resolve checksums from the official `jdx/mise` release archive for the GitHub
 runner architecture:
 
 ```bash
 version=2026.4.28
 shasum -a 256 "mise-v${version}-macos-arm64.tar.gz"
-shasum -a 256 "mise-v${version}-macos-x64.tar.gz"
 ```
 
 Run the workflow pin smoke test after any workflow change:

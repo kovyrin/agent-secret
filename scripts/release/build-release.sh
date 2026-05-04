@@ -141,11 +141,8 @@ case "$("$tool_uname" -m)" in
   arm64)
     arch="arm64"
     ;;
-  x86_64)
-    arch="x86_64"
-    ;;
   *)
-    echo "build-release: unsupported architecture: $("$tool_uname" -m)" >&2
+    echo "build-release: unsupported architecture: $("$tool_uname" -m); Agent Secret releases currently support macOS arm64 only" >&2
     exit 1
     ;;
 esac

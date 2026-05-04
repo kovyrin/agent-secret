@@ -84,10 +84,9 @@ BASH
 chmod +x "$stub_dir/gh"
 
 artifact_arm="$tmp_dir/Agent-Secret-v1.0.0-macos-arm64.dmg"
-artifact_intel="$tmp_dir/Agent-Secret-v1.0.0-macos-x86_64.dmg"
 checksums="$tmp_dir/checksums.txt"
 notes_file="$tmp_dir/release-notes.md"
-touch "$artifact_arm" "$artifact_intel" "$checksums"
+touch "$artifact_arm" "$checksums"
 printf 'Release notes from changelog.\n' >"$notes_file"
 
 run_publish() {
@@ -98,19 +97,19 @@ run_publish() {
     AGENT_SECRET_RELEASE_NOTES_FILE="$notes_file" \
     GITHUB_SHA=abc123 \
     PATH="$stub_dir:$PATH" \
-    "$publish_script" v1.0.0 "$artifact_arm" "$artifact_intel" "$checksums"
+    "$publish_script" v1.0.0 "$artifact_arm" "$checksums"
 }
 
 : >"$tmp_dir/gh.log"
 run_publish missing
 expect_log "release view v1.0.0"
-expect_log "release create v1.0.0 $artifact_arm $artifact_intel $checksums --draft --verify-tag --title v1.0.0 --notes-file $notes_file"
+expect_log "release create v1.0.0 $artifact_arm $checksums --draft --verify-tag --title v1.0.0 --notes-file $notes_file"
 
 : >"$tmp_dir/gh.log"
 run_publish draft
 expect_log "release view v1.0.0 --json isDraft --jq .isDraft"
 expect_log "release edit v1.0.0 --title v1.0.0 --notes-file $notes_file"
-expect_log "release upload v1.0.0 $artifact_arm $artifact_intel $checksums --clobber"
+expect_log "release upload v1.0.0 $artifact_arm $checksums --clobber"
 
 expect_failure "release v1.0.0 is already published; refusing to replace assets" run_publish published
 if grep -F -- "release upload" "$tmp_dir/gh.log" >/dev/null; then
@@ -121,7 +120,7 @@ expect_failure "release notes file is required for tag releases" env \
   GH_STUB_LOG="$tmp_dir/gh.log" \
   GH_STUB_RELEASE_STATE=missing \
   PATH="$stub_dir:$PATH" \
-  "$publish_script" v1.0.0 "$artifact_arm" "$artifact_intel" "$checksums"
+  "$publish_script" v1.0.0 "$artifact_arm" "$checksums"
 
 if ! grep -F -- "scripts/release/publish-draft-release.sh" "$workflow" >/dev/null; then
   fail "workflow does not use scripts/release/publish-draft-release.sh"

@@ -235,7 +235,8 @@ AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
 AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1
 ```
 
-The unattended installer verifies the DMG checksum, DMG code signature,
+Agent Secret releases currently support Apple Silicon Macs only. The unattended
+installer verifies the DMG checksum, DMG code signature,
 Developer ID Team ID, Gatekeeper assessment, notarization ticket, mounted app
 bundle ID, daemon helper bundle ID, and bundled CLI signature before copying
 anything into place. Maintainer releases are expected to use Team ID

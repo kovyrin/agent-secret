@@ -93,7 +93,7 @@ curl -fsSL "$base_url/${version}/install.sh" |
 
 The installer should:
 
-1. Detect `arm64` or `x86_64`.
+1. Detect `arm64` and reject other macOS architectures.
 2. Resolve the latest release unless `AGENT_SECRET_VERSION` is set.
 3. Download the matching release artifact.
 4. Verify the checksum, DMG signature, Developer ID Team ID, Gatekeeper
@@ -215,13 +215,10 @@ Each GitHub release should publish:
 
 ```text
 Agent-Secret-vX.Y.Z-macos-arm64.dmg
-Agent-Secret-vX.Y.Z-macos-x86_64.dmg
 checksums.txt
 ```
 
-Initial implementation can publish only `arm64` if that matches the first team
-rollout. The release workflow should make the missing architecture explicit in
-the README instead of silently pretending it exists.
+Agent Secret releases currently support Apple Silicon Macs only.
 
 The DMG should contain:
 

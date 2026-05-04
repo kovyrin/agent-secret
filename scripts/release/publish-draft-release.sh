@@ -14,7 +14,7 @@ tag="$1"
 shift
 artifacts=("$@")
 notes_file="${AGENT_SECRET_RELEASE_NOTES_FILE:-}"
-notes="${AGENT_SECRET_RELEASE_NOTES:-macOS arm64 and x86_64 artifacts built from ${GITHUB_SHA:-unknown}.}"
+notes="${AGENT_SECRET_RELEASE_NOTES:-macOS arm64 artifact built from ${GITHUB_SHA:-unknown}.}"
 
 release_note_args=(--notes "$notes")
 if [[ "$tag" == v* ]]; then

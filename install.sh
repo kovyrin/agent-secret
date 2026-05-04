@@ -250,11 +250,8 @@ detect_arch() {
     arm64)
       printf '%s\n' "arm64"
       ;;
-    x86_64)
-      printf '%s\n' "x86_64"
-      ;;
     *)
-      die "unsupported architecture: $(uname -m)"
+      die "unsupported architecture: $(uname -m); Agent Secret releases currently support macOS arm64 only"
       ;;
   esac
 }

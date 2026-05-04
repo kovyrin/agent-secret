@@ -46,6 +46,7 @@ local app, CLI, daemon, and bundled coding-agent skill.
 - Local and CI release artifact builder for macOS DMGs plus `checksums.txt`.
 - Developer ID signing, App Store Connect notarization, stapling, and
   Gatekeeper verification for release DMGs and the app bundle inside them.
+- Apple Silicon-only release artifacts for the initial public macOS release.
 - Release process documentation that uses this changelog as the source for
   GitHub release notes.
 
