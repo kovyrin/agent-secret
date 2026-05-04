@@ -79,6 +79,41 @@ func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	}
 }
 
+func TestConnectReportsMissingSocketAfterDefaultTrustSetup(t *testing.T) {
+	t.Parallel()
+
+	_, err := Connect(context.Background(), filepath.Join(t.TempDir(), "missing.sock"))
+	if !errors.Is(err, socket.ErrDaemonUnavailable) {
+		t.Fatalf("Connect error = %v, want %v", err, socket.ErrDaemonUnavailable)
+	}
+}
+
+func TestClientSetContextDeadlineHandlesInactiveContexts(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+	called := false
+	if err := client.setContextDeadline(context.Background(), func(time.Time) error {
+		called = true
+		return nil
+	}); err != nil {
+		t.Fatalf("setContextDeadline without deadline returned error: %v", err)
+	}
+	if called {
+		t.Fatal("setContextDeadline called setter without a context deadline")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := client.setContextDeadline(ctx, func(time.Time) error {
+		t.Fatal("setContextDeadline called setter after context cancellation")
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("setContextDeadline error = %v, want %v", err, context.Canceled)
+	}
+}
+
 func TestClientRoundTripHonorsContextCancellationWaitingForResponse(t *testing.T) {
 	t.Parallel()
 

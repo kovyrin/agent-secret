@@ -32,8 +32,8 @@ if [ "${#packages[@]}" -eq 0 ]; then
   exit 1
 fi
 
-echo "Running Go coverage gate: explicit package floors, total >= ${min_total}%"
-go test -p="$test_parallelism" -covermode=atomic -coverprofile="$coverage_profile" "${packages[@]}" | tee "$test_output"
+echo "Running fresh Go coverage gate: explicit package floors, total >= ${min_total}%"
+go test -count=1 -p="$test_parallelism" -covermode=atomic -coverprofile="$coverage_profile" "${packages[@]}" | tee "$test_output"
 
 is_less_than() {
   local value="$1"

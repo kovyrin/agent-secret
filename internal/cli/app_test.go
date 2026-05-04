@@ -68,6 +68,57 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 	}
 }
 
+func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	client := &appFakeDaemonClient{
+		execPayload: protocol.ExecResponsePayload{
+			Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+			SecretAliases: []string{"TOKEN"},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(control.Manager{}, &stdout, &stderr)
+	app.manager = manager
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--reason", "Run helper",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--allow-mutable-executable",
+		"--",
+		os.Args[0], "-test.run=TestAppExecUsesManagerClientWithoutSocket", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "env-ok" {
+		t.Fatalf("stdout = %q, want env-ok", stdout.String())
+	}
+	if manager.ensureCalls != 1 || manager.connectCalls != 1 {
+		t.Fatalf("manager calls: ensure=%d connect=%d", manager.ensureCalls, manager.connectCalls)
+	}
+	if client.requestExecCalls != 1 || client.closeCalls != 1 {
+		t.Fatalf("client calls: request=%d close=%d", client.requestExecCalls, client.closeCalls)
+	}
+	if len(client.startedPIDs) != 1 || len(client.completedExitCodes) != 1 {
+		t.Fatalf("audit calls: started=%v completed=%v", client.startedPIDs, client.completedExitCodes)
+	}
+	if strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("stderr leaked secret: %q", stderr.String())
+	}
+}
+
 func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
 		runAppExecHelper()
@@ -297,6 +348,46 @@ func TestAppDaemonStartAndStopCommands(t *testing.T) {
 	}
 }
 
+func TestAppDaemonCommandsUseManagerWithoutSocket(t *testing.T) {
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		status:     protocol.StatusPayload{PID: 4321},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(control.Manager{}, &stdout, &stderr)
+	app.manager = manager
+
+	if code := app.Run(context.Background(), []string{"daemon", "status"}); code != 0 {
+		t.Fatalf("daemon status exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "running pid=4321") {
+		t.Fatalf("daemon status output = %q", stdout.String())
+	}
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"daemon", "start"}); code != 0 {
+		t.Fatalf("daemon start exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "running pid=4321") {
+		t.Fatalf("daemon start output = %q", stdout.String())
+	}
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"daemon", "stop"}); code != 0 {
+		t.Fatalf("daemon stop exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "agent-secretd: stopped" {
+		t.Fatalf("daemon stop output = %q", stdout.String())
+	}
+	if manager.statusCalls != 2 || manager.startCalls != 1 || manager.stopCalls != 1 {
+		t.Fatalf(
+			"manager calls: status=%d start=%d stop=%d",
+			manager.statusCalls,
+			manager.startCalls,
+			manager.stopCalls,
+		)
+	}
+}
+
 func TestAppInstallCommands(t *testing.T) {
 	t.Run("cli", func(t *testing.T) {
 		var gotOptions install.CLIOptions
@@ -369,6 +460,42 @@ func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stopped daemon status wrote stderr: %q", stderr.String())
+	}
+}
+
+func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		status:     protocol.StatusPayload{PID: 5678},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(control.Manager{}, &stdout, &stderr)
+	app.manager = manager
+	app.DoctorApproverCheck = nil
+	app.DoctorOnePasswordCheck = nil
+
+	code := app.Run(context.Background(), []string{"doctor"})
+	if code != 0 {
+		t.Fatalf("doctor exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"daemon startup: ok",
+		"daemon: running pid=5678",
+		"socket directory: private",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("doctor output = %q, want %q", stdout.String(), want)
+		}
+	}
+	if manager.ensureCalls != 1 || manager.statusCalls != 1 {
+		t.Fatalf("manager calls: ensure=%d status=%d", manager.ensureCalls, manager.statusCalls)
 	}
 }
 
@@ -521,6 +648,102 @@ func runAppExecHelper() {
 
 type appTestClient struct {
 	SocketPath string
+}
+
+type appFakeDaemonManager struct {
+	socketPath string
+	client     daemonClient
+	status     protocol.StatusPayload
+
+	ensureErr  error
+	connectErr error
+	statusErr  error
+	startErr   error
+	stopErr    error
+
+	ensureCalls  int
+	connectCalls int
+	statusCalls  int
+	startCalls   int
+	stopCalls    int
+}
+
+func (m *appFakeDaemonManager) EnsureRunning(context.Context) error {
+	m.ensureCalls++
+	return m.ensureErr
+}
+
+func (m *appFakeDaemonManager) Connect(context.Context) (daemonClient, error) {
+	m.connectCalls++
+	if m.connectErr != nil {
+		return nil, m.connectErr
+	}
+	if m.client == nil {
+		return nil, errors.New("fake daemon client missing")
+	}
+	return m.client, nil
+}
+
+func (m *appFakeDaemonManager) Status(context.Context) (protocol.StatusPayload, error) {
+	m.statusCalls++
+	return m.status, m.statusErr
+}
+
+func (m *appFakeDaemonManager) Start(context.Context) error {
+	m.startCalls++
+	return m.startErr
+}
+
+func (m *appFakeDaemonManager) Stop(context.Context) error {
+	m.stopCalls++
+	return m.stopErr
+}
+
+func (m *appFakeDaemonManager) SocketPath() string {
+	return m.socketPath
+}
+
+type appFakeDaemonClient struct {
+	execPayload protocol.ExecResponsePayload
+
+	requestErr         error
+	reportStartedErr   error
+	reportCompletedErr error
+	closeErr           error
+
+	requestExecCalls   int
+	closeCalls         int
+	startedPIDs        []int
+	completedExitCodes []int
+}
+
+func (c *appFakeDaemonClient) Close() error {
+	c.closeCalls++
+	return c.closeErr
+}
+
+func (c *appFakeDaemonClient) RequestExec(
+	_ context.Context,
+	_ protocol.Correlation,
+	_ request.ExecRequest,
+) (protocol.ExecResponsePayload, error) {
+	c.requestExecCalls++
+	return c.execPayload, c.requestErr
+}
+
+func (c *appFakeDaemonClient) ReportStarted(_ context.Context, _ protocol.Correlation, childPID int) error {
+	c.startedPIDs = append(c.startedPIDs, childPID)
+	return c.reportStartedErr
+}
+
+func (c *appFakeDaemonClient) ReportCompleted(
+	_ context.Context,
+	_ protocol.Correlation,
+	exitCode int,
+	_ string,
+) error {
+	c.completedExitCodes = append(c.completedExitCodes, exitCode)
+	return c.reportCompletedErr
 }
 
 type lockedBuffer struct {

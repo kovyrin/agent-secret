@@ -273,6 +273,22 @@ func TestNewManagerIgnoresDaemonPathEnvironmentOverride(t *testing.T) {
 	}
 }
 
+func TestNewManagerUsesExplicitSocketPath(t *testing.T) {
+	t.Parallel()
+
+	socketPath := filepath.Join(t.TempDir(), "custom.sock")
+	manager, err := NewManager(socketPath)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+	if manager.SocketPath != socketPath {
+		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath, socketPath)
+	}
+	if manager.DaemonPath == "" {
+		t.Fatal("DaemonPath is empty")
+	}
+}
+
 func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 	t.Parallel()
 
@@ -286,6 +302,16 @@ func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 	want := []string{"--listen", "/tmp/agent-secret.sock", "--verbose"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("custom daemon args = %v, want %v", got, want)
+	}
+}
+
+func TestManagerWriterPrefersConfiguredWriter(t *testing.T) {
+	t.Parallel()
+
+	fallback := &strings.Builder{}
+	configured := &strings.Builder{}
+	if got := managerWriter(fallback, configured); got != configured {
+		t.Fatalf("managerWriter returned %T, want configured writer", got)
 	}
 }
 

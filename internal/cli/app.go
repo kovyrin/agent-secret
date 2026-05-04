@@ -20,11 +20,11 @@ import (
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/randid"
+	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type App struct {
 	Parser                 Parser
-	Manager                control.Manager
 	InstallCLI             func(install.CLIOptions) (install.CLIResult, error)
 	InstallSkill           func(install.SkillOptions) (install.SkillResult, error)
 	RandomReader           io.Reader
@@ -32,6 +32,55 @@ type App struct {
 	DoctorOnePasswordCheck func(context.Context) error
 	Stdout                 io.Writer
 	Stderr                 io.Writer
+	manager                daemonManager
+}
+
+type daemonManager interface {
+	EnsureRunning(ctx context.Context) error
+	Connect(ctx context.Context) (daemonClient, error)
+	Status(ctx context.Context) (protocol.StatusPayload, error)
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	SocketPath() string
+}
+
+type daemonClient interface {
+	Close() error
+	RequestExec(
+		ctx context.Context,
+		correlation protocol.Correlation,
+		req request.ExecRequest,
+	) (protocol.ExecResponsePayload, error)
+	ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error
+	ReportCompleted(ctx context.Context, correlation protocol.Correlation, exitCode int, signal string) error
+}
+
+type daemonControlManager struct {
+	manager control.Manager
+}
+
+func (m daemonControlManager) EnsureRunning(ctx context.Context) error {
+	return m.manager.EnsureRunning(ctx)
+}
+
+func (m daemonControlManager) Connect(ctx context.Context) (daemonClient, error) {
+	return m.manager.Connect(ctx)
+}
+
+func (m daemonControlManager) Status(ctx context.Context) (protocol.StatusPayload, error) {
+	return m.manager.Status(ctx)
+}
+
+func (m daemonControlManager) Start(ctx context.Context) error {
+	return m.manager.Start(ctx)
+}
+
+func (m daemonControlManager) Stop(ctx context.Context) error {
+	return m.manager.Stop(ctx)
+}
+
+func (m daemonControlManager) SocketPath() string {
+	return m.manager.SocketPath
 }
 
 func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
@@ -43,7 +92,6 @@ func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
 	}
 	return App{
 		Parser:                 NewParser(),
-		Manager:                manager,
 		InstallCLI:             install.InstallCLI,
 		InstallSkill:           install.InstallSkill,
 		RandomReader:           rand.Reader,
@@ -51,7 +99,15 @@ func NewApp(manager control.Manager, stdout io.Writer, stderr io.Writer) App {
 		DoctorOnePasswordCheck: checkOnePasswordDesktopIntegration,
 		Stdout:                 stdout,
 		Stderr:                 stderr,
+		manager:                daemonControlManager{manager: manager},
 	}
+}
+
+func (a App) daemonManager() daemonManager {
+	if a.manager != nil {
+		return a.manager
+	}
+	return daemonControlManager{}
 }
 
 func (a App) Run(ctx context.Context, args []string) int {
@@ -90,11 +146,12 @@ func (a App) Run(ctx context.Context, args []string) int {
 }
 
 func (a App) runExec(ctx context.Context, command Command) int {
-	if err := a.Manager.EnsureRunning(ctx); err != nil {
+	manager := a.daemonManager()
+	if err := manager.EnsureRunning(ctx); err != nil {
 		a.stderrf("agent-secret: start daemon: %v\n", err)
 		return 1
 	}
-	client, err := a.Manager.Connect(ctx)
+	client, err := manager.Connect(ctx)
 	if err != nil {
 		a.stderrf("agent-secret: connect daemon: %v\n", err)
 		return 1
@@ -149,7 +206,7 @@ func (a App) runExec(ctx context.Context, command Command) int {
 }
 
 func (a App) runDaemonStatus(ctx context.Context) int {
-	status, err := a.Manager.Status(ctx)
+	status, err := a.daemonManager().Status(ctx)
 	if err != nil {
 		a.stdoutf("agent-secretd: stopped (%v)\n", err)
 		return 1
@@ -159,11 +216,12 @@ func (a App) runDaemonStatus(ctx context.Context) int {
 }
 
 func (a App) runDaemonStart(ctx context.Context) int {
-	if err := a.Manager.Start(ctx); err != nil {
+	manager := a.daemonManager()
+	if err := manager.Start(ctx); err != nil {
 		a.stderrf("agent-secret: start daemon: %v\n", err)
 		return 1
 	}
-	status, err := a.Manager.Status(ctx)
+	status, err := manager.Status(ctx)
 	if err != nil {
 		a.stderrf("agent-secret: daemon started but status failed: %v\n", err)
 		return 1
@@ -173,7 +231,7 @@ func (a App) runDaemonStart(ctx context.Context) int {
 }
 
 func (a App) runDaemonStop(ctx context.Context) int {
-	if err := a.Manager.Stop(ctx); err != nil {
+	if err := a.daemonManager().Stop(ctx); err != nil {
 		a.stderrf("agent-secret: stop daemon: %v\n", err)
 		return 1
 	}
@@ -182,10 +240,11 @@ func (a App) runDaemonStop(ctx context.Context) int {
 }
 
 func (a App) runDoctor(ctx context.Context) int {
+	manager := a.daemonManager()
 	healthy := true
 	a.stdoutln("agent-secret doctor")
 	a.stdoutf("platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	a.stdoutf("daemon socket: %s\n", a.Manager.SocketPath)
+	a.stdoutf("daemon socket: %s\n", manager.SocketPath())
 	if auditPath, err := checkAuditLogWritable(ctx); err != nil {
 		healthy = false
 		if auditPath == "" {
@@ -196,19 +255,19 @@ func (a App) runDoctor(ctx context.Context) int {
 	} else {
 		a.stdoutf("audit log: writable %s\n", auditPath)
 	}
-	if err := a.Manager.EnsureRunning(ctx); err != nil {
+	if err := manager.EnsureRunning(ctx); err != nil {
 		healthy = false
 		a.stdoutf("daemon startup: failed (%v)\n", err)
 	} else {
 		a.stdoutln("daemon startup: ok")
 	}
-	if status, err := a.Manager.Status(ctx); err == nil {
+	if status, err := manager.Status(ctx); err == nil {
 		a.stdoutf("daemon: running pid=%d\n", status.PID)
 	} else {
 		healthy = false
 		a.stdoutf("daemon: failed (%v)\n", err)
 	}
-	if err := socket.ValidateSocketDirectoryForPath(a.Manager.SocketPath); err != nil {
+	if err := socket.ValidateSocketDirectoryForPath(manager.SocketPath()); err != nil {
 		healthy = false
 		a.stdoutf("socket directory: failed (%v)\n", err)
 	} else {
@@ -306,7 +365,7 @@ func (a App) stderrf(format string, args ...any) {
 }
 
 type daemonAuditReporter struct {
-	client      *control.Client
+	client      daemonClient
 	correlation protocol.Correlation
 	stderr      io.Writer
 }
