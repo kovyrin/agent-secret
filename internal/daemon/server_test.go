@@ -365,7 +365,7 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
 		MaxFrameBytes: 4096,
 		ReadTimeout:   time.Second,
 	})
@@ -762,7 +762,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
 	)
 	defer stop()
 
@@ -1130,7 +1130,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
 	)
 	defer stop()
 
@@ -1171,7 +1171,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 		}),
 		nil,
 		staticPeerValidator{info: peer},
-		peertrust.NewExecutableValidator([]string{writeExecutableAt(t, t.TempDir(), "agent-secret")}),
+		peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
 	)
 	defer stop()
 
@@ -1576,9 +1576,9 @@ func waitForReadTimeoutLongerThan(t *testing.T, timeouts <-chan time.Duration, f
 	}
 }
 
-func writeExecutableAt(t *testing.T, dir string, name string) string {
+func writeClientExecutableAt(t *testing.T, dir string) string {
 	t.Helper()
-	path := filepath.Join(dir, name)
+	path := filepath.Join(dir, "agent-secret")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon tests need runnable fixture executables.
 		t.Fatalf("write executable: %v", err)
 	}

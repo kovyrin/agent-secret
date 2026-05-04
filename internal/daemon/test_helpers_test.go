@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -55,6 +57,72 @@ func (r *recordingApprover) ApproveExec(
 ) (approval.Decision, error) {
 	r.seen <- req
 	return r.decision, nil
+}
+
+type recordingLauncher struct {
+	launches launchWatcher
+	mu       sync.Mutex
+	launched []approval.ApprovalRequestPayload
+	expected approval.ExpectedApprover
+}
+
+func (l *recordingLauncher) Launch(
+	_ context.Context,
+	_ string,
+	payload approval.ApprovalRequestPayload,
+) (approval.ExpectedApprover, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.launched = append(l.launched, payload)
+	l.launches.record()
+	return l.expected, nil
+}
+
+func (l *recordingLauncher) waitForLaunch(ctx context.Context, count int) error {
+	return l.launches.wait(ctx, count)
+}
+
+type launchWaiter interface {
+	waitForLaunch(ctx context.Context, count int) error
+}
+
+type launchWatcher struct {
+	mu    sync.Mutex
+	cond  *sync.Cond
+	count int
+}
+
+func (w *launchWatcher) record() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.initLocked()
+	w.count++
+	w.cond.Broadcast()
+}
+
+func (w *launchWatcher) wait(ctx context.Context, count int) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.initLocked()
+	stop := context.AfterFunc(ctx, func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.cond.Broadcast()
+	})
+	defer stop()
+	for w.count < count {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		w.cond.Wait()
+	}
+	return ctx.Err()
+}
+
+func (w *launchWatcher) initLocked() {
+	if w.cond == nil {
+		w.cond = sync.NewCond(&w.mu)
+	}
 }
 
 type mockResolver struct {
@@ -194,6 +262,15 @@ func newTestBroker(t *testing.T, opts daemonbroker.Options) *daemonbroker.Broker
 	return broker
 }
 
+func newSocketApproverForTest(t *testing.T, launcher approval.ApproverLauncher, now func() time.Time) *approval.SocketApprover {
+	t.Helper()
+	approver, err := approval.NewSocketApprover("/tmp/agent-secret-test.sock", launcher, now)
+	if err != nil {
+		t.Fatalf("approval.NewSocketApprover returned error: %v", err)
+	}
+	return approver
+}
+
 func testExecRequest(t *testing.T, secrets []request.SecretSpec) request.ExecRequest {
 	t.Helper()
 
@@ -226,6 +303,32 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 		TTL:        request.DefaultExecTTL,
 		ReceivedAt: now,
 		ExpiresAt:  now.Add(request.DefaultExecTTL),
+	}
+}
+
+func approvalTestRequest(t *testing.T, expiresAt time.Time) request.ExecRequest {
+	t.Helper()
+	return testExecRequestAt(t, expiresAt.Add(-request.DefaultExecTTL), []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+	})
+}
+
+func currentExecutable(t *testing.T) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	return exe
+}
+
+func peerInfoForTest(t *testing.T, pid int, exe string) peercred.Info {
+	t.Helper()
+	return peercred.Info{
+		UID:            os.Getuid(),
+		GID:            os.Getgid(),
+		PID:            pid,
+		ExecutablePath: exe,
 	}
 }
 

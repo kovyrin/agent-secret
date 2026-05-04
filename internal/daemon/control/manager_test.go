@@ -224,7 +224,7 @@ func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	defer stop()
 	manager := Manager{
 		SocketPath: path,
-		DaemonPath: writeExecutableAt(t, t.TempDir(), "agent-secretd"),
+		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
 	}
 
 	unavailable, err := manager.statusUnavailable(context.Background())
@@ -243,7 +243,7 @@ func TestManagerStatusRejectsUntrustedDaemonPeer(t *testing.T) {
 	defer stop()
 	manager := Manager{
 		SocketPath: path,
-		DaemonPath: writeExecutableAt(t, t.TempDir(), "agent-secretd"),
+		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
 	}
 
 	_, err := manager.Status(context.Background())
@@ -356,7 +356,7 @@ func TestManagerStartRejectsUntrustedLiveSocket(t *testing.T) {
 	defer stop()
 	manager := Manager{
 		SocketPath:     path,
-		DaemonPath:     writeExecutableAt(t, t.TempDir(), "agent-secretd"),
+		DaemonPath:     writeDaemonExecutableAt(t, t.TempDir()),
 		StartupTimeout: time.Millisecond,
 	}
 
@@ -497,9 +497,9 @@ func serveFakeExecPayload(conn *net.UnixConn) {
 	}
 }
 
-func writeExecutableAt(t *testing.T, dir string, name string) string {
+func writeDaemonExecutableAt(t *testing.T, dir string) string {
 	t.Helper()
-	path := filepath.Join(dir, name)
+	path := filepath.Join(dir, "agent-secretd")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon control tests need runnable fixture executables.
 		t.Fatalf("write executable: %v", err)
 	}

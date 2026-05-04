@@ -1,4 +1,4 @@
-package daemon
+package approval_test
 
 import (
 	"context"
@@ -18,6 +18,10 @@ import (
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
+
+func testCorrelation(requestID string, nonce string) protocol.Correlation {
+	return protocol.Correlation{RequestID: requestID, Nonce: nonce}
+}
 
 type recordingLauncher struct {
 	launches launchWatcher
@@ -962,6 +966,7 @@ func readFixture(t *testing.T, name string) []byte {
 	}
 	path := filepath.Join(
 		filepath.Dir(file),
+		"..",
 		"..",
 		"..",
 		"approver",
