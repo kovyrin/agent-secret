@@ -37,7 +37,11 @@ agent-secret/
         Protocol/                # Daemon socket envelopes and payload shells
         DaemonClient/            # Socket client and line transport adapters
         Trust/                   # Daemon peer and code-signature validation
-        Presentation/            # View models and SwiftUI/AppKit view pieces
+        Presentation/            # Native approval presentation surface
+          ViewModels/            # Approval panel view models and sanitizers
+          Views/                 # SwiftUI/AppKit panel views and controls
+          Style/                 # Presentation-local styling constants
+          Inspection/            # Text inspection helpers used by tests
         Runtime/                 # Controller, presenter, modal, logging runtime
       AgentSecretApproverApp/    # Shipped macOS approver/setup app executable
       AgentSecretApproverSmoke/  # Non-secret smoke executable
@@ -115,7 +119,9 @@ submits a decision containing the request ID and nonce.
 The `AgentSecretApprover` target is organized by runtime boundary: `Models`,
 `Protocol`, `DaemonClient`, `Trust`, `Presentation`, and `Runtime`. SwiftPM
 keeps those folders in one module; the folders are ownership boundaries, not
-compatibility layers.
+compatibility layers. `Presentation` is split into `ViewModels`, `Views`,
+`Style`, and `Inspection` so panel state, rendering, styling, and test-only text
+projection stay visibly separate.
 
 The approver is not a secret resolver. It must not fetch, store, print, or log
 secret values.
