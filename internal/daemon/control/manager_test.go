@@ -237,6 +237,22 @@ func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {
 	}
 }
 
+func TestManagerWaitUntilReadyPreservesStartupDeadline(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err := manager.waitUntilReady(ctx, time.Hour)
+	if !errors.Is(err, socket.ErrDaemonUnavailable) {
+		t.Fatalf("waitUntilReady error = %v, want daemon unavailable", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waitUntilReady error = %v, want context deadline exceeded", err)
+	}
+}
+
 func TestManagerStartRequiresDaemonPathAfterSocketPreparation(t *testing.T) {
 	t.Parallel()
 

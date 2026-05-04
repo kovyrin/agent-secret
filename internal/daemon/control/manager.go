@@ -188,7 +188,11 @@ func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) err
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%w: authenticated status timeout", socket.ErrDaemonUnavailable)
+			ctxErr := ctx.Err()
+			if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, ctxErr) {
+				ctxErr = errors.Join(ctxErr, cause)
+			}
+			return fmt.Errorf("%w: authenticated status timeout: %w", socket.ErrDaemonUnavailable, ctxErr)
 		case <-ticker.C:
 		}
 	}
