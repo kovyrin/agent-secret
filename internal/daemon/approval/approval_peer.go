@@ -10,6 +10,16 @@ import (
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
+func ValidateExpectedApprover(expected ExpectedApprover) error {
+	if expected.PID <= 0 {
+		return fmt.Errorf("%w: launcher returned invalid approver pid %d", ErrApproverLaunchFailed, expected.PID)
+	}
+	if strings.TrimSpace(expected.ExecutablePath) == "" {
+		return fmt.Errorf("%w: launcher returned empty approver executable path", ErrApproverLaunchFailed)
+	}
+	return nil
+}
+
 func ValidateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	if expected.PID != 0 && got.PID != expected.PID {
 		return fmt.Errorf("%w: pid %d != %d", ErrApproverPeerMismatch, got.PID, expected.PID)

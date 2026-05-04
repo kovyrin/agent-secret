@@ -195,6 +195,10 @@ func (a *SocketApprover) promoteNext() {
 		a.complete(job, approvalResult{err: fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)})
 		return
 	}
+	if err := ValidateExpectedApprover(expected); err != nil {
+		a.complete(job, approvalResult{err: err})
+		return
+	}
 
 	a.mu.Lock()
 	if a.active == job {

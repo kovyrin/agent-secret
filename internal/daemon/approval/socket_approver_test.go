@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -471,6 +472,59 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	}
 	if err := <-errCh; !errors.Is(err, approval.ErrApprovalDenied) {
 		t.Fatalf("ApproveExec error = %v, want denial", err)
+	}
+}
+
+func TestSocketApproverRejectsIncompleteExpectedApprover(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	tests := []struct {
+		name     string
+		expected approval.ExpectedApprover
+		wantText string
+	}{
+		{
+			name:     "missing pid",
+			expected: approval.ExpectedApprover{ExecutablePath: exe},
+			wantText: "invalid approver pid",
+		},
+		{
+			name:     "missing executable path",
+			expected: approval.ExpectedApprover{PID: os.Getpid()},
+			wantText: "empty approver executable path",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			launcher := &recordingLauncher{expected: tc.expected}
+			approver := newSocketApproverForTest(t, launcher, time.Now)
+			req := approvalTestRequest(t, time.Now().Add(time.Minute))
+			errCh := make(chan error, 1)
+			go func() {
+				_, err := approver.ApproveExec(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+				errCh <- err
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := launcher.waitForLaunch(ctx, 1); err != nil {
+				t.Fatalf("approver launch was not observed: %v", err)
+			}
+
+			err := receiveApprovalError(t, errCh, "ApproveExec did not reject incomplete expected approver")
+			if !errors.Is(err, approval.ErrApproverLaunchFailed) {
+				t.Fatalf("ApproveExec error = %v, want approver launch failure", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantText) {
+				t.Fatalf("ApproveExec error = %q, want %q", err.Error(), tc.wantText)
+			}
+			if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); !errors.Is(err, approval.ErrNoPendingApproval) {
+				t.Fatalf("FetchPending after invalid launch = %v, want no pending approval", err)
+			}
+		})
 	}
 }
 
