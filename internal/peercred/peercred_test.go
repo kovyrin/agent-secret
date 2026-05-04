@@ -149,6 +149,32 @@ func TestComparablePathResolvesSymlinks(t *testing.T) {
 	}
 }
 
+func TestPeerCredRejectsBrokenSymlinkEvenWhenPathsMatch(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "broken")
+	if err := os.Symlink(filepath.Join(dir, "missing"), broken); err != nil {
+		t.Fatalf("create broken symlink: %v", err)
+	}
+	expected := Expected{
+		UID:            os.Getuid(),
+		GID:            os.Getgid(),
+		PID:            os.Getpid(),
+		ExecutablePath: broken,
+		CWD:            t.TempDir(),
+	}
+	info := Info(expected)
+
+	err := Validate(info, expected)
+	if !errors.Is(err, ErrPolicyMismatch) {
+		t.Fatalf("Validate error = %v, want ErrPolicyMismatch", err)
+	}
+	if !strings.Contains(err.Error(), "normalize peer executable") {
+		t.Fatalf("Validate error = %q, want executable normalization context", err.Error())
+	}
+}
+
 func TestCurrentExpectedWrapsOSErrors(t *testing.T) {
 	t.Parallel()
 

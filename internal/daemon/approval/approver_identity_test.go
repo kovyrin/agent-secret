@@ -67,7 +67,7 @@ func TestAppBundleForExecutableFindsContainingBundle(t *testing.T) {
 
 	executable := appbundle.WriteApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
 	bundlePath := filepath.Clean(filepath.Join(filepath.Dir(executable), "..", ".."))
-	bundlePath, err := comparableApproverPath(bundlePath)
+	bundlePath, err := comparableApproverPath(bundlePath, ErrApproverIdentity)
 	if err != nil {
 		t.Fatalf("canonicalize bundle path: %v", err)
 	}

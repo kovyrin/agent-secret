@@ -14,6 +14,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/opref"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 const (
@@ -293,19 +294,19 @@ func normalizeCWD(cwd string) (string, error) {
 		}
 	}
 
-	abs, err := filepath.Abs(cwd)
+	resolved, err := pathresolve.Strict(cwd)
 	if err != nil {
 		return "", fmt.Errorf("resolve cwd: %w", err)
 	}
-	info, err := os.Stat(abs)
+	info, err := os.Stat(resolved)
 	if err != nil {
-		return "", fmt.Errorf("stat cwd %q: %w", abs, err)
+		return "", fmt.Errorf("stat cwd %q: %w", resolved, err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("cwd %q is not a directory", abs)
+		return "", fmt.Errorf("cwd %q is not a directory", resolved)
 	}
 
-	return evalPath(abs), nil
+	return resolved, nil
 }
 
 func resolveCommand(cwd string, env []string, command []string) ([]string, string, error) {
@@ -349,18 +350,18 @@ func resolveCommand(cwd string, env []string, command []string) ([]string, strin
 }
 
 func validateExecutable(path string) (string, error) {
-	abs, err := filepath.Abs(path)
+	resolved, err := pathresolve.Strict(path)
 	if err != nil {
 		return "", fmt.Errorf("%w: resolve executable %q: %w", ErrInvalidCommand, path, err)
 	}
-	info, err := os.Stat(abs)
+	info, err := os.Stat(resolved)
 	if err != nil {
-		return "", fmt.Errorf("%w: stat executable %q: %w", ErrInvalidCommand, abs, err)
+		return "", fmt.Errorf("%w: stat executable %q: %w", ErrInvalidCommand, resolved, err)
 	}
 	if info.IsDir() || info.Mode().Perm()&0111 == 0 {
-		return "", fmt.Errorf("%w: %q is not executable", ErrInvalidCommand, abs)
+		return "", fmt.Errorf("%w: %q is not executable", ErrInvalidCommand, resolved)
 	}
-	return evalPath(abs), nil
+	return resolved, nil
 }
 
 func validateDaemonPath(name string, path string, executable bool) error {
@@ -375,6 +376,13 @@ func validateDaemonPath(name string, path string, executable bool) error {
 	}
 	if executable && strings.HasSuffix(path, string(os.PathSeparator)) {
 		return fmt.Errorf("%w: %s must name a file", ErrInvalidCommand, name)
+	}
+	resolved, err := pathresolve.Strict(path)
+	if err != nil {
+		return fmt.Errorf("%w: %s must resolve without symlink errors: %w", ErrInvalidRequest, name, err)
+	}
+	if resolved != path {
+		return fmt.Errorf("%w: %s must be canonical", ErrInvalidRequest, name)
 	}
 	return nil
 }
@@ -538,12 +546,4 @@ func canonicalEnv(env []string) []string {
 		out = append(out, "malformed:"+entry)
 	}
 	return out
-}
-
-func evalPath(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-	return resolved
 }

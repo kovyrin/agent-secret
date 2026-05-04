@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 func ConfigureDaemonProcess(cmd *exec.Cmd) {
@@ -74,7 +76,7 @@ func DefaultDaemonAppPath() (string, bool) {
 
 func daemonAppPathForExecutable(executable string) (string, bool) {
 	candidates := []string{executable}
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil && resolved != executable {
+	if resolved := pathresolve.BestEffort(executable); resolved != executable {
 		candidates = append(candidates, resolved)
 	}
 	for _, candidate := range candidates {

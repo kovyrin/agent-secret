@@ -372,6 +372,54 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	}
 }
 
+func TestExecRequestValidateForDaemonRejectsSymlinkMetadata(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir)
+	req, err := NewExec(baseOptions(dir, "reason"))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+	req = req.WithReceiptTime(time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
+	req.Secrets[0].Account = "Work"
+
+	cwdLink := filepath.Join(t.TempDir(), "cwd-link")
+	if err := os.Symlink(req.CWD, cwdLink); err != nil {
+		t.Fatalf("create cwd symlink: %v", err)
+	}
+	executableLink := filepath.Join(t.TempDir(), "tool-link")
+	if err := os.Symlink(req.ResolvedExecutable, executableLink); err != nil {
+		t.Fatalf("create executable symlink: %v", err)
+	}
+	brokenLink := filepath.Join(t.TempDir(), "broken-link")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), brokenLink); err != nil {
+		t.Fatalf("create broken symlink: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ExecRequest)
+	}{
+		{name: "cwd symlink", mutate: func(r *ExecRequest) { r.CWD = cwdLink }},
+		{name: "executable symlink", mutate: func(r *ExecRequest) { r.ResolvedExecutable = executableLink }},
+		{name: "broken cwd symlink", mutate: func(r *ExecRequest) { r.CWD = brokenLink }},
+		{name: "broken executable symlink", mutate: func(r *ExecRequest) { r.ResolvedExecutable = brokenLink }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := cloneRequest(req)
+			tt.mutate(&got)
+			if err := got.ValidateForDaemon(); !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("ValidateForDaemon error = %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
 func TestExecRequestExpiryUsesDaemonReceiptTTL(t *testing.T) {
 	t.Parallel()
 

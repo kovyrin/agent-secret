@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 const CommandName = "agent-secret"
@@ -69,9 +71,11 @@ func InstallCLI(options CLIOptions) (CLIResult, error) {
 		}
 		targetPath = executable
 	}
-	if resolved, err := filepath.EvalSymlinks(targetPath); err == nil {
-		targetPath = resolved
+	resolvedTargetPath, err := canonicalInstallPath("executable", targetPath)
+	if err != nil {
+		return CLIResult{}, err
 	}
+	targetPath = resolvedTargetPath
 	if err := validateExecutable(targetPath); err != nil {
 		return CLIResult{}, err
 	}
@@ -104,9 +108,11 @@ func InstallSkill(options SkillOptions) (SkillResult, error) {
 			return SkillResult{}, err
 		}
 	}
-	if resolved, err := filepath.EvalSymlinks(sourcePath); err == nil {
-		sourcePath = resolved
+	resolvedSourcePath, err := canonicalInstallPath("skill source", sourcePath)
+	if err != nil {
+		return SkillResult{}, err
 	}
+	sourcePath = resolvedSourcePath
 	if err := validateSkillDir(sourcePath); err != nil {
 		return SkillResult{}, err
 	}
@@ -132,6 +138,14 @@ func validateExecutable(path string) error {
 	return nil
 }
 
+func canonicalInstallPath(name string, path string) (string, error) {
+	resolved, err := pathresolve.Strict(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s %s: %w", name, path, err)
+	}
+	return resolved, nil
+}
+
 func bundledSkillPath(executablePath string) (string, error) {
 	if executablePath == "" {
 		executable, err := os.Executable()
@@ -140,9 +154,11 @@ func bundledSkillPath(executablePath string) (string, error) {
 		}
 		executablePath = executable
 	}
-	if resolved, err := filepath.EvalSymlinks(executablePath); err == nil {
-		executablePath = resolved
+	resolvedExecutablePath, err := canonicalInstallPath("executable", executablePath)
+	if err != nil {
+		return "", err
 	}
+	executablePath = resolvedExecutablePath
 	path := filepath.Clean(filepath.Join(filepath.Dir(executablePath), "..", "skills", SkillName))
 	if err := validateSkillDir(path); err != nil {
 		return "", fmt.Errorf("find bundled skill relative to %s: %w", executablePath, err)

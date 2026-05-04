@@ -389,7 +389,7 @@ func TestBundleApproverIdentityPolicyValidatesBundleMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateApproverExecutable returned error: %v", err)
 	}
-	wantExecutable, err := comparableApproverPath(executable)
+	wantExecutable, err := comparableApproverPath(executable, ErrApproverIdentity)
 	if err != nil {
 		t.Fatalf("comparableApproverPath returned error: %v", err)
 	}

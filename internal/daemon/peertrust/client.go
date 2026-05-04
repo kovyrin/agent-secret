@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
@@ -73,7 +74,12 @@ func newExecutableSetWithVerifier(
 		if path == "" {
 			continue
 		}
-		path = comparablePath(path)
+		rawPath := path
+		path, err := pathresolve.Strict(rawPath)
+		if err != nil {
+			candidateErrs = append(candidateErrs, fmt.Errorf("canonicalize trusted executable %q: %w", rawPath, err))
+			continue
+		}
 		if _, ok := seen[path]; ok {
 			continue
 		}
@@ -213,7 +219,10 @@ func (v executableSet) validatePeer(info peercred.Info) error {
 		}
 		return fmt.Errorf("%w: no trusted executables configured", v.err)
 	}
-	got := comparablePath(info.ExecutablePath)
+	got, err := pathresolve.Strict(info.ExecutablePath)
+	if err != nil {
+		return fmt.Errorf("%w: normalize peer executable %q: %w", v.err, info.ExecutablePath, err)
+	}
 	for _, entry := range v.entries {
 		if entry.path != got {
 			continue
@@ -265,15 +274,4 @@ func (e executable) isBundledPath(path string) bool {
 	}
 	_, ok := containingAppBundlePath(path)
 	return ok
-}
-
-func comparablePath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return path
-	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
-	}
-	return abs
 }

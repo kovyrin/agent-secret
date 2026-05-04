@@ -137,6 +137,23 @@ func TestInstallCLIRejectsDirectoryTarget(t *testing.T) {
 	}
 }
 
+func TestInstallCLIRejectsBrokenExecutableSymlink(t *testing.T) {
+	t.Parallel()
+
+	target := filepath.Join(t.TempDir(), "agent-secret")
+	if err := os.Symlink("missing", target); err != nil {
+		t.Fatalf("create broken executable symlink: %v", err)
+	}
+
+	_, err := InstallCLI(CLIOptions{BinDir: filepath.Join(t.TempDir(), "bin"), ExecutablePath: target})
+	if err == nil {
+		t.Fatal("InstallCLI succeeded with broken executable symlink")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("InstallCLI error = %v, want os.ErrNotExist", err)
+	}
+}
+
 func TestInstallCLIKeepsExistingMatchingSymlink(t *testing.T) {
 	t.Parallel()
 
@@ -386,6 +403,23 @@ func TestInstallSkillRejectsFileSource(t *testing.T) {
 	_, err := InstallSkill(SkillOptions{SkillsDir: filepath.Join(t.TempDir(), "skills"), SourcePath: source})
 	if err == nil {
 		t.Fatal("InstallSkill succeeded with file source")
+	}
+}
+
+func TestInstallSkillRejectsBrokenSourceSymlink(t *testing.T) {
+	t.Parallel()
+
+	source := filepath.Join(t.TempDir(), SkillName)
+	if err := os.Symlink("missing", source); err != nil {
+		t.Fatalf("create broken source symlink: %v", err)
+	}
+
+	_, err := InstallSkill(SkillOptions{SkillsDir: filepath.Join(t.TempDir(), "skills"), SourcePath: source})
+	if err == nil {
+		t.Fatal("InstallSkill succeeded with broken source symlink")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("InstallSkill error = %v, want os.ErrNotExist", err)
 	}
 }
 

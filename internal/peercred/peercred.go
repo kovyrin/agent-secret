@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
+
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 var (
@@ -75,11 +76,11 @@ func Validate(info Info, expected Expected) error {
 
 	exe, err := comparablePath(info.ExecutablePath)
 	if err != nil {
-		return fmt.Errorf("normalize peer executable: %w", err)
+		return fmt.Errorf("%w: normalize peer executable: %w", ErrPolicyMismatch, err)
 	}
 	wantExe, err := comparablePath(expected.ExecutablePath)
 	if err != nil {
-		return fmt.Errorf("normalize expected executable: %w", err)
+		return fmt.Errorf("%w: normalize expected executable: %w", ErrPolicyMismatch, err)
 	}
 	if exe != wantExe {
 		return fmt.Errorf("%w: executable %q != %q", ErrPolicyMismatch, exe, wantExe)
@@ -87,11 +88,11 @@ func Validate(info Info, expected Expected) error {
 
 	cwd, err := comparablePath(info.CWD)
 	if err != nil {
-		return fmt.Errorf("normalize peer cwd: %w", err)
+		return fmt.Errorf("%w: normalize peer cwd: %w", ErrPolicyMismatch, err)
 	}
 	wantCWD, err := comparablePath(expected.CWD)
 	if err != nil {
-		return fmt.Errorf("normalize expected cwd: %w", err)
+		return fmt.Errorf("%w: normalize expected cwd: %w", ErrPolicyMismatch, err)
 	}
 	if cwd != wantCWD {
 		return fmt.Errorf("%w: cwd %q != %q", ErrPolicyMismatch, cwd, wantCWD)
@@ -133,14 +134,5 @@ func requireComplete(info Info) error {
 }
 
 func comparablePath(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved, nil
-	}
-
-	return abs, nil
+	return pathresolve.Strict(path)
 }

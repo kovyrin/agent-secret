@@ -11,6 +11,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
@@ -89,6 +90,46 @@ func TestExecutableValidatorRejectsUnlistedExecutable(t *testing.T) {
 	}
 }
 
+func TestExecutableValidatorRejectsBrokenPeerExecutablePath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	broken := filepath.Join(dir, "broken")
+	if err := os.Symlink(filepath.Join(dir, "missing"), broken); err != nil {
+		t.Fatalf("create broken symlink: %v", err)
+	}
+
+	validator := NewExecutableValidator([]string{trusted})
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: broken})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("ValidateExecPeer error = %v, want ErrUntrustedClient", err)
+	}
+	if !strings.Contains(err.Error(), "normalize peer executable") {
+		t.Fatalf("ValidateExecPeer error = %q, want normalization context", err.Error())
+	}
+}
+
+func TestExecutableValidatorRejectsBrokenTrustedExecutablePath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	trusted := writeExecutableAt(t, dir, "agent-secret")
+	broken := filepath.Join(dir, "broken")
+	if err := os.Symlink(filepath.Join(dir, "missing"), broken); err != nil {
+		t.Fatalf("create broken symlink: %v", err)
+	}
+
+	validator := NewExecutableValidator([]string{broken})
+	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	if !errors.Is(err, ErrUntrustedClient) {
+		t.Fatalf("ValidateExecPeer error = %v, want ErrUntrustedClient", err)
+	}
+	if !strings.Contains(err.Error(), "canonicalize trusted executable") {
+		t.Fatalf("ValidateExecPeer error = %q, want trusted executable context", err.Error())
+	}
+}
+
 func TestExecutableValidatorRejectsExecutableReplacedAfterStartup(t *testing.T) {
 	t.Parallel()
 
@@ -151,7 +192,10 @@ func TestExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
 	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
 		t.Fatalf("ValidateExecPeer returned error: %v", err)
 	}
-	wantPath := comparablePath(trusted)
+	wantPath, err := pathresolve.Strict(trusted)
+	if err != nil {
+		t.Fatalf("resolve trusted path: %v", err)
+	}
 	if !slices.Equal(verifier.paths, []string{wantPath}) {
 		t.Fatalf("verified paths = %v, want [%s]", verifier.paths, wantPath)
 	}
@@ -175,7 +219,10 @@ func TestExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testing.T) {
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
-	wantPath := comparablePath(trusted)
+	wantPath, resolveErr := pathresolve.Strict(trusted)
+	if resolveErr != nil {
+		t.Fatalf("resolve trusted path: %v", resolveErr)
+	}
 	if !slices.Equal(verifier.paths, []string{wantPath}) {
 		t.Fatalf("verified paths = %v, want [%s]", verifier.paths, wantPath)
 	}
