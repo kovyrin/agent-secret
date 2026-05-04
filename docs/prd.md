@@ -206,7 +206,7 @@ agent / Codex
       -> agent-secretd local broker daemon
           -> Agent Secret.app
           -> 1Password official SDK
-          -> in-memory approval/session/secret cache
+          -> in-memory approval/secret cache
           -> Unix domain socket API
           -> metadata-only audit log
       -> wrapped child command in exec mode
@@ -233,12 +233,12 @@ agent / Codex
 
 - Own all security policy and enforcement.
 - Own all communication with the 1Password SDK.
-- Store reusable approval and session secret values in memory only.
+- Store reusable approval secret values in memory only.
 - Return approved secret payloads to trusted CLI wrappers over the single
   per-user daemon socket.
 - Never spawn, supervise, signal, or wait for `exec` child processes.
-- Enforce TTL, refs, command, cwd, peer UID, strict macOS peer/process checks
-  for session/socket reads, and max reads only for session/socket reads.
+- Enforce TTL, refs, command, cwd, request nonces, reusable use counts, and
+  trusted CLI/approver peer checks.
 - Expose a local Unix domain socket API.
 - Emit metadata-only audit events.
 - Request decisions from the macOS approver app.
@@ -326,9 +326,9 @@ daemon to the trusted CLI wrapper over the single per-user daemon socket and
 must never be printed to the console. Later versions may allow controlled reads
 through ephemeral Unix sockets, but still must not print secrets to the console.
 
-Each approved request or session should bind these fields:
+Each approved request should bind these fields:
 
-- request ID and optional session ID
+- request ID
 - requester UID, PID, process name, executable path, and parent PID when known
   for audit/debug metadata only
 - cwd, with `--cwd` defaulting to the caller's current cwd for `exec`
@@ -336,16 +336,16 @@ Each approved request or session should bind these fields:
 - exact command argv and resolved executable path when applicable
 - exact requested secret refs and aliases
 - TTL and expiration time
-- max reads per secret for session/socket reads when applicable
 - delivery mode, implicit env-mode `exec` for MVP
 - approval timestamp and nonce
 - reuse policy: one-shot by default, or same-command reuse with a short TTL and
   max-use count
 
-The broker rejects access if the session is expired, the requested handle is not
-approved, the read count is exhausted, the peer UID mismatches, the command or
-cwd policy mismatches, the nonce is invalid, or the request was denied or
-canceled.
+The broker rejects access if the request is expired, the requested ref/alias is
+not approved, the reusable use count is exhausted, the command or cwd policy
+mismatches, the nonce is invalid, or the request was denied or canceled. Future
+session/socket modes must add session IDs, per-secret read counts, and strict
+peer-policy checks.
 
 For `agent-secret exec`, `--cwd` is operational. It sets the child process
 working directory, defaults to the caller's current cwd when omitted, and is part
@@ -408,25 +408,23 @@ daemon. `--force-refresh` on a matching reusable approval also bypasses the
 approval queue, but still refetches only after the reusable approval and audit
 checks pass.
 
-For reusable approvals and sessions, the daemon should keep approved secret
-values in memory for the approval/session lifetime so repeated command
-invocations do not require repeated 1Password or Touch ID authorization. For
-one-shot approvals, TTL bounds the approval/fetch/secret-delivery/spawn window
-before the child starts. After the child is spawned, one-shot values clear from
-daemon and CLI wrapper memory when the wrapped command exits. Reusable approvals
-clear values when the TTL expires, the 3-use limit is exhausted, or the daemon
-is stopped. V1 has no reusable approval list/destroy command; `agent-secret
-daemon stop` is the manual way to clear reusable approvals early. Sessions may
-have explicit destroy when session commands are implemented.
+For reusable approvals, the daemon should keep approved secret values in memory
+for the approval lifetime so repeated command invocations do not require repeated
+1Password or Touch ID authorization. For one-shot approvals, TTL bounds the
+approval/fetch/secret-delivery/spawn window before the child starts. After the
+child is spawned, one-shot values clear from daemon and CLI wrapper memory when
+the wrapped command exits. Reusable approvals clear values when the TTL expires,
+the 3-use limit is exhausted, or the daemon is stopped. V1 has no reusable
+approval list/destroy command; `agent-secret daemon stop` is the manual way to
+clear reusable approvals early.
 
-Policy/session objects must remain value-free. They may store request IDs,
-session IDs, refs, aliases, TTL, use counts, read counts, delivery mode,
-approval metadata, and cache keys, but never raw secret values. Reusable and
-session secret values live only in a daemon-owned in-memory `SecretCache` keyed
-by approval/session ID plus unique `op://` ref. One-shot exec values may pass
-through `agent-secret exec` memory only long enough to create and supervise the
-child environment. Audit writers, approval view models, and policy serializers
-must consume value-free policy objects, not cache entries.
+Policy objects must remain value-free. They may store request IDs, refs, aliases,
+TTL, use counts, delivery mode, approval metadata, and cache keys, but never raw
+secret values. Reusable secret values live only in a daemon-owned in-memory
+`SecretCache` keyed by approval ID plus unique `op://` ref. One-shot exec values
+may pass through `agent-secret exec` memory only long enough to create and
+supervise the child environment. Audit writers, approval view models, and policy
+serializers must consume value-free policy objects, not cache entries.
 
 While reusable values are cached and valid, the daemon must not call the
 1Password SDK again for those refs.
@@ -474,8 +472,7 @@ After approval, the daemon should fetch approved refs with bounded concurrency.
 Fetch ordering must not affect policy: the command receives secrets only after
 every approved ref resolves successfully. If any fetch fails, the daemon drops
 the successful values from that attempt, records metadata-only failure details,
-does not update reusable/session caches, and returns no values to the CLI
-wrapper.
+does not update reusable caches, and returns no values to the CLI wrapper.
 An empty string returned by 1Password for an approved ref is a successful
 resolution, not a fetch failure. For env-mode `exec`, it is delivered as an
 environment variable set to the empty string. Missing, unreadable, unauthorized,
@@ -504,14 +501,13 @@ Duplicate aliases are invalid. Duplicate refs are allowed when different aliases
 need the same value. Duplicate refs are deduplicated for fetch and cache
 purposes, then expanded back to the approved alias set for delivery.
 
-Peer PID and executable checks are mandatory for session/socket reads on
-supported macOS versions. A local probe on macOS 26.3 with the macOS 26.2 SDK
-confirmed that a Unix socket server can obtain peer UID/GID, peer PID,
-executable path, and cwd using public Darwin APIs (`getpeereid`,
-`LOCAL_PEERPID`, `LOCAL_PEERCRED`, `proc_pidpath`, and
-`PROC_PIDVNODEPATHINFO`). If those fields cannot be obtained or do not match
-the approved session policy, the daemon must fail closed rather than silently
-falling back to weaker checks.
+Future session/socket reads require peer PID and executable checks on supported
+macOS versions. A local probe on macOS 26.3 with the macOS 26.2 SDK confirmed
+that a Unix socket server can obtain peer UID/GID, peer PID, executable path, and
+cwd using public Darwin APIs (`getpeereid`, `LOCAL_PEERPID`, `LOCAL_PEERCRED`,
+`proc_pidpath`, and `PROC_PIDVNODEPATHINFO`). If those fields cannot be obtained
+or do not match the approved session policy, the daemon must fail closed rather
+than silently falling back to weaker checks.
 
 `agent-secret exec` remains the strongest initial mode because the trusted CLI
 wrapper controls environment injection and child lifecycle while the daemon owns
@@ -520,20 +516,17 @@ also be strict on macOS now that the required peer metadata is available.
 
 ## Secret Storage Rules
 
-- Store reusable approval and session secret values only in daemon memory by
-  default.
+- Store reusable approval secret values only in daemon memory by default.
 - Let `agent-secret exec` hold approved values transiently in memory only while
   preparing and supervising the child process.
-- Keep policy/session objects value-free; only `SecretCache` and transient
-  `agent-secret exec` env assembly may hold raw values.
+- Keep policy objects value-free; only `SecretCache` and transient
+  `agent-secret exec` environment assembly may hold raw values.
 - Never write secret values to disk.
 - Never include secret values in console output, logs, UI, or audit events.
 - Clear one-shot secret values from daemon and CLI wrapper memory when the
   command exits or the request fails.
 - Clear reusable approval values when TTL expires, max uses are exhausted, or
   the daemon stops.
-- Clear session values when TTL expires, read counts are exhausted, the daemon
-  stops, or the session is destroyed.
 
 ## Audit Log Requirements
 
@@ -541,20 +534,21 @@ Audit logs should include:
 
 - timestamp
 - event type
-- request ID and session ID
+- request ID
 - requester metadata
 - validated trimmed reason
 - refs and aliases
 - approval or denial, without an operator note field in v1
 - approval reuse, including remaining TTL and remaining use count
-- TTL and session/socket max reads when applicable
+- TTL and reusable approval remaining uses
 - delivery mode
 - `command_starting` before child spawn
 - `exec_client_disconnected_after_payload` when approved values were delivered
   to `agent-secret exec` but it disconnects before reporting a child PID
 - `command_started` after successful child spawn, including child PID
 - command completion, including exit code or signal
-- read counts
+- session IDs, read counts, and session/socket max reads for deferred session
+  modes
 - expiration and cleanup events
 - errors
 
@@ -674,6 +668,8 @@ approved workflow needs, subject to TTL, max-read, peer, and destroy policy.
 On macOS, session/socket reads must fail closed unless the daemon can validate
 same UID, peer PID, executable path, cwd, session/capability nonce, TTL, and
 read count against the approved session.
+Session values must clear when TTL expires, read counts are exhausted, the daemon
+stops, or the session is destroyed.
 
 ### Mode 3: `with-session`
 
@@ -1131,8 +1127,6 @@ Exit criteria:
 - The daemon clears reusable approval values when the TTL expires, max uses are
   exhausted, or the daemon stops. V1 has no explicit reusable approval
   list/destroy command.
-- The daemon clears session values when the TTL expires, read counts are
-  exhausted, the daemon stops, or the session is destroyed.
 - For env-mode `exec`, TTL expiry does not kill an already-running child
   process.
 
