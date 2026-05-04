@@ -166,7 +166,7 @@ func waitForDesktopPoolInit(ctx context.Context, init *desktopPoolInit) (*Resolv
 	case <-init.done:
 		return init.resolver, init.err
 	case <-ctx.Done():
-		return nil, fmt.Errorf("create 1Password resolver: %w", ctx.Err())
+		return nil, ctx.Err()
 	}
 }
 

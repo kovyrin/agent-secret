@@ -2,7 +2,9 @@ package opresolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -153,6 +155,52 @@ func TestDesktopPoolResolveReturnsSecretValue(t *testing.T) {
 	}
 }
 
+func TestDesktopPoolResolveWrapsWaiterCancellationOnce(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	resolver := testDesktopResolver(t)
+	var calls atomic.Int32
+	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "shared" {
+			return nil, fmt.Errorf("unexpected account %q", opts.Account)
+		}
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		select {
+		case <-release:
+			return resolver, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+
+	ownerDone := make(chan error, 1)
+	go func() {
+		_, err := pool.Resolve(context.Background(), "op://Example Vault/Item/password", "shared")
+		ownerDone <- err
+	}()
+	receiveSignal(t, started, "shared resolver initialization did not start")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := pool.Resolve(ctx, "op://Example Vault/Item/password", "shared")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Resolve error = %v, want context canceled", err)
+	}
+	if got := strings.Count(err.Error(), "create 1Password resolver"); got != 1 {
+		t.Fatalf("resolver creation context count = %d in %q, want 1", got, err)
+	}
+
+	close(release)
+	receiveNoError(t, ownerDone, "owner resolver initialization failed")
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("factory calls = %d, want 1", got)
+	}
+}
+
 func TestWaitForDesktopPoolInitReturnsCompletedResult(t *testing.T) {
 	t.Parallel()
 
@@ -176,8 +224,8 @@ func TestWaitForDesktopPoolInitReturnsContextError(t *testing.T) {
 	cancel()
 	init := &desktopPoolInit{done: make(chan struct{})}
 
-	if _, err := waitForDesktopPoolInit(ctx, init); err == nil {
-		t.Fatal("expected canceled context error")
+	if _, err := waitForDesktopPoolInit(ctx, init); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitForDesktopPoolInit error = %v, want context canceled", err)
 	}
 }
 
