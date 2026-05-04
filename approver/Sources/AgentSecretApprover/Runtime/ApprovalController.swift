@@ -5,25 +5,29 @@ public final class ApprovalController {
     private let client: ApprovalDaemonClientWorker
     private let presenter: ApprovalPresenter
     private let logger: ApprovalLogger
+    private let now: () -> Date
 
     /// Use for in-memory clients; socket clients should prefer the factory initializer.
     public convenience init(
         client: ApprovalDaemonClient,
         presenter: ApprovalPresenter,
-        logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions")
+        logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions"),
+        now: @escaping () -> Date = Date.init
     ) {
-        self.init(clientFactory: { client }, presenter: presenter, logger: logger)
+        self.init(clientFactory: { client }, presenter: presenter, logger: logger, now: now)
     }
 
     /// Creates a controller that builds the daemon client on the background worker queue.
     public init(
         clientFactory: @escaping () throws -> ApprovalDaemonClient,
         presenter: ApprovalPresenter,
-        logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions")
+        logger: ApprovalLogger = UnifiedApprovalLogger(category: "decisions"),
+        now: @escaping () -> Date = Date.init
     ) {
         client = ApprovalDaemonClientWorker(clientFactory: clientFactory)
         self.presenter = presenter
         self.logger = logger
+        self.now = now
     }
 
     /// Runs on the main actor because presenters may open AppKit UI.
@@ -34,7 +38,9 @@ public final class ApprovalController {
         let request: ApprovalRequest = try await client.fetchPendingRequest()
         logger.record("approval_request_loaded", requestID: request.requestID)
 
-        let decisionKind: ApprovalDecisionKind = presenter.decide(for: request)
+        let presentedDecisionKind: ApprovalDecisionKind = presenter.decide(for: request)
+        let decisionKind: ApprovalDecisionKind = ApprovalPromptExpiration(expiresAt: request.expiresAt)
+            .guardDecision(presentedDecisionKind, at: now())
         let decision: ApprovalDecision = decision(for: decisionKind, request: request)
 
         try await client.submit(decision)
