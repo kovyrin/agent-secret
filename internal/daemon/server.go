@@ -205,7 +205,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, approval.ErrUnavailable)
 				continue
 			}
-			payload, err := protocol.DecodePayload[approval.ApprovalDecisionPayload](env)
+			payload, err := protocol.DecodeRequiredPayload[approval.ApprovalDecisionPayload](env)
 			if err != nil {
 				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadApprovalDecision, err)
 				continue
@@ -323,7 +323,7 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
-	req, err := protocol.DecodePayload[request.ExecRequest](env)
+	req, err := protocol.DecodeRequiredPayload[request.ExecRequest](env)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
@@ -382,8 +382,13 @@ func (s *Server) handleCommandStarted(
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
-	payload, err := protocol.DecodePayload[protocol.CommandStartedPayload](env)
+	payload, err := protocol.DecodeRequiredPayload[protocol.CommandStartedPayload](env)
 	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadCommandStarted, err)
+		return false
+	}
+	if payload.ChildPID <= 0 {
+		err := fmt.Errorf("%w: command.started missing child pid", protocol.ErrMalformedEnvelope)
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadCommandStarted, err)
 		return false
 	}
@@ -405,7 +410,7 @@ func (s *Server) handleCommandCompleted(
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
 	}
-	payload, err := protocol.DecodePayload[protocol.CommandCompletedPayload](env)
+	payload, err := protocol.DecodeRequiredPayload[protocol.CommandCompletedPayload](env)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadCommandCompleted, err)
 		return false

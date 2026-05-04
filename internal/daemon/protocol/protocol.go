@@ -128,6 +128,15 @@ func DecodePayload[T any](env Envelope) (T, error) {
 	return out, nil
 }
 
+func DecodeRequiredPayload[T any](env Envelope) (T, error) {
+	var out T
+	payload := bytes.TrimSpace(env.Payload)
+	if len(payload) == 0 || bytes.Equal(payload, []byte("null")) {
+		return out, fmt.Errorf("%w: %s missing payload", ErrMalformedEnvelope, env.Type)
+	}
+	return DecodePayload[T](env)
+}
+
 func ValidateEnvelope(env Envelope) error {
 	if env.Version != ProtocolVersion {
 		return fmt.Errorf("%w: %d", ErrProtocolVersion, env.Version)

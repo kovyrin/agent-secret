@@ -247,7 +247,7 @@ func roundTripResponse[T any](
 		return zero, err
 	}
 	if resp.Type == protocol.TypeError {
-		payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
+		payload, err := protocol.DecodeRequiredPayload[protocol.ErrorPayload](resp)
 		if err != nil {
 			return zero, fmt.Errorf("decode daemon error response %s: %w", messageType, err)
 		}
@@ -262,11 +262,14 @@ func roundTripResponse[T any](
 		}
 		return zero, nil
 	}
-	var out T
-	if err := json.Unmarshal(resp.Payload, &out); err != nil {
-		return zero, fmt.Errorf("%w: %w", protocol.ErrMalformedEnvelope, err)
+	if requirePayload {
+		out, err := protocol.DecodeRequiredPayload[T](resp)
+		if err != nil {
+			return zero, err
+		}
+		return out, nil
 	}
-	return out, nil
+	return protocol.DecodePayload[T](resp)
 }
 
 func validateStatusPayload(messageType protocol.MessageType, payload protocol.StatusPayload) error {

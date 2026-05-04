@@ -20,6 +20,13 @@ func TestHelpersRejectMalformedPayloads(t *testing.T) {
 	if _, err := DecodePayload[StatusPayload](env); err != nil {
 		t.Fatalf("empty payload decode returned error: %v", err)
 	}
+	if _, err := DecodeRequiredPayload[StatusPayload](env); !errors.Is(err, ErrMalformedEnvelope) {
+		t.Fatalf("empty required payload decode error = %v, want malformed envelope", err)
+	}
+	env = Envelope{Version: ProtocolVersion, Type: TypeOK, Payload: json.RawMessage(`null`)}
+	if _, err := DecodeRequiredPayload[StatusPayload](env); !errors.Is(err, ErrMalformedEnvelope) {
+		t.Fatalf("null required payload decode error = %v, want malformed envelope", err)
+	}
 	env = Envelope{Version: ProtocolVersion, Type: TypeOK, Payload: json.RawMessage(`{`)}
 	if _, err := DecodePayload[StatusPayload](env); !errors.Is(err, ErrMalformedEnvelope) {
 		t.Fatalf("expected malformed payload error, got %v", err)

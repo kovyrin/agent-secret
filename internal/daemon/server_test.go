@@ -1031,8 +1031,20 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 		wantCode string
 	}{
 		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1"},
+			wantCode: "bad_command_started",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`{}`)},
+			wantCode: "bad_command_started",
+		},
+		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
 			wantCode: "bad_command_started",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1"},
+			wantCode: "bad_command_completed",
 		},
 		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandCompleted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
@@ -1226,25 +1238,26 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 		t.Fatalf("Dial returned error: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	if err := json.NewEncoder(conn).Encode(protocol.Envelope{
-		Version:   protocol.ProtocolVersion,
-		Type:      protocol.TypeApprovalDecision,
-		RequestID: "req_1",
-		Nonce:     "nonce_1",
-		Payload:   json.RawMessage(`[]`),
-	}); err != nil {
-		t.Fatalf("encode bad approval decision: %v", err)
-	}
-	var resp protocol.Envelope
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		t.Fatalf("decode bad approval decision response: %v", err)
-	}
-	payload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
-	if err != nil {
-		t.Fatalf("decode error payload: %v", err)
-	}
-	if payload.Code != "bad_approval_decision" {
-		t.Fatalf("bad approval decision code = %q", payload.Code)
+	encoder := json.NewEncoder(conn)
+	decoder := json.NewDecoder(conn)
+	for _, payload := range []json.RawMessage{nil, json.RawMessage(`[]`)} {
+		if err := encoder.Encode(protocol.Envelope{
+			Version:   protocol.ProtocolVersion,
+			Type:      protocol.TypeApprovalDecision,
+			RequestID: "req_1",
+			Nonce:     "nonce_1",
+			Payload:   payload,
+		}); err != nil {
+			t.Fatalf("encode bad approval decision: %v", err)
+		}
+		resp := readRawEnvelope(t, decoder)
+		errorPayload, err := protocol.DecodePayload[protocol.ErrorPayload](resp)
+		if err != nil {
+			t.Fatalf("decode error payload: %v", err)
+		}
+		if errorPayload.Code != "bad_approval_decision" {
+			t.Fatalf("bad approval decision code = %q", errorPayload.Code)
+		}
 	}
 }
 
