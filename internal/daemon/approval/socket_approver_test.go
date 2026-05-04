@@ -969,10 +969,8 @@ func readFixture(t *testing.T, name string) []byte {
 		"..",
 		"..",
 		"..",
-		"approver",
-		"Tests",
-		"AgentSecretApproverTests",
-		"Fixtures",
+		"testdata",
+		"approval_protocol",
 		name,
 	)
 	//nolint:gosec // G304: test fixture path is derived from runtime.Caller within this repository.

@@ -96,11 +96,6 @@ final class ApprovalControllerTests: XCTestCase {
         )
     }
 
-    private static func fixtureData(_ name: String) throws -> Data {
-        let url: URL = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json"))
-        return try Data(contentsOf: url)
-    }
-
     @MainActor
     func testReusableDecisionCarriesThreeUseLimit() async throws {
         let request: ApprovalRequest = Self.sampleRequest
@@ -130,7 +125,7 @@ final class ApprovalControllerTests: XCTestCase {
 
         let request: ApprovalRequest = try decoder.decode(
             ApprovalRequest.self,
-            from: Self.fixtureData("approval_request")
+            from: ApprovalProtocolFixture.data("approval_request")
         )
         XCTAssertEqual(request.requestID, "req_123")
         XCTAssertEqual(request.nonce, "nonce_456")
@@ -143,7 +138,7 @@ final class ApprovalControllerTests: XCTestCase {
 
         let decision: ApprovalDecision = try decoder.decode(
             ApprovalDecision.self,
-            from: Self.fixtureData("approval_decision")
+            from: ApprovalProtocolFixture.data("approval_decision")
         )
         XCTAssertEqual(decision.requestID, "req_123")
         XCTAssertEqual(decision.nonce, "nonce_456")

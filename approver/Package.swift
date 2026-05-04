@@ -34,8 +34,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AgentSecretApproverTests",
-            dependencies: ["AgentSecretApprover"],
-            resources: [.process("Fixtures")]
+            dependencies: ["AgentSecretApprover"]
         )
     ]
 )
