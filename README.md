@@ -2,7 +2,7 @@
 
 Agent Secret Broker is a local, macOS-first secret access broker for coding
 agents. It lets an agent request exact 1Password-backed secrets with a stated
-reason, a bounded command or session, and a short policy window. A trusted local
+reason, a bounded command, and a short approval window. A trusted local
 broker shows the user a native approval prompt, fetches only the approved
 secrets through the official 1Password SDK, and avoids returning raw values to
 the agent by default.

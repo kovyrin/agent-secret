@@ -36,12 +36,12 @@ Source: [Product Requirements](prd.md)
   follow-on dogfood workflow.
 - The first implementation accepts explicit `--secret ALIAS=op://...` mappings
   only. Config-file mapping support is deferred.
-- Delivery order is env-only `agent-secret exec` first, then ephemeral Unix
-  socket reads for tools or wrappers that cannot consume env vars cleanly.
+- Delivery is env-only `agent-secret exec`; session/socket delivery remains a
+  future Epic 6 concern for tools or wrappers that cannot consume env vars
+  cleanly.
 - V1 approval binds to command shape, cwd, delivery mode, TTL, and exact secret
-  refs. Max-read policy is session/socket-only, not part of env-mode `exec`.
-  `--repo`, repo-root binding, and git commit binding are out of scope for v1.
-  Delivery mode is implicit env-mode `exec` in MVP and is not shown in the
+  refs. `--repo`, repo-root binding, and git commit binding are out of scope for
+  v1. Delivery mode is implicit env-mode `exec` in MVP and is not shown in the
   approval UI, but it remains in the policy/reuse key so future delivery modes
   cannot reuse env approvals.
 - For `agent-secret exec`, `--cwd` sets the child working directory, defaults to
@@ -78,8 +78,8 @@ Source: [Product Requirements](prd.md)
   recreate the request, or transparently restart the daemon for that in-flight
   request.
 - The daemon does not spawn, supervise, signal, or wait for `exec` children.
-  It owns approval, 1Password access, reusable approval/session state, secret
-  cache, and audit. `agent-secret exec` owns child process spawning, waiting, and
+  It owns approval, 1Password access, reusable approval state, secret cache, and
+  audit. `agent-secret exec` owns child process spawning, waiting, and
   stdout/stderr passthrough.
 - MVP `exec` uses the single per-user daemon socket for request, approval result,
   approved environment payload delivery, and command lifecycle reporting. It does
@@ -96,8 +96,8 @@ Source: [Product Requirements](prd.md)
   automatic, but `agent-secret daemon status/start/stop` exists for
   troubleshooting.
 - No operational state persists beyond the append-only audit log. Approvals,
-  sessions, counters, nonces, sockets, and cached values are memory-only and are
-  cleared on daemon stop.
+  reusable approval counters, nonces, sockets, and cached values are memory-only
+  and are cleared on daemon stop.
 - `agent-secret daemon stop` does not track, signal, or manage already-spawned
   child processes; it stops daemon-owned state only.
 - `agent-secret daemon stop` attempts one best-effort `daemon_stop` audit event,
@@ -136,15 +136,14 @@ Source: [Product Requirements](prd.md)
   command binary, refs, and approval duration. Audit/debug metadata and implicit
   env-mode delivery details stay out of the prompt by default.
 - Reusable approvals keep approved secret values in daemon memory until TTL,
-  max-use exhaustion, or daemon stop. Sessions also clear on explicit destroy
-  when session commands are implemented.
+  max-use exhaustion, or daemon stop.
 - V1 has no reusable approval list/destroy commands. Manual early clearing of
   reusable approvals is done with `agent-secret daemon stop`.
-- Policy/session objects are value-free. Reusable approval and session raw
-  values live only in a separate daemon-owned in-memory `SecretCache` keyed by
-  approval/session ID plus unique ref; audit writers and approval view models
-  must never receive cache entries. `agent-secret exec` may hold approved values
-  transiently in memory only while preparing and supervising the child process.
+- Policy objects are value-free. Reusable approval raw values live only in a
+  separate daemon-owned in-memory `SecretCache` keyed by approval ID plus unique
+  ref; audit writers and approval view models must never receive cache entries.
+  `agent-secret exec` may hold approved values transiently in memory only while
+  preparing and supervising the child process.
 - While reusable values are cached and valid, the daemon must not call the SDK
   again for those refs.
 - `--force-refresh` refetches values for a matching reusable approval and
@@ -384,8 +383,7 @@ Status: Complete
   `op://` refs, executable resolution, cwd normalization, TTL bounds, delivery
   mode safety, env alias conflicts, and queued-request expiry checks.
 - Added memory-only policy primitives for reusable approvals, exact reuse keys,
-  use-count consumption semantics, session/socket capability handles, nonce
-  checks, max-read enforcement, explicit destroy, and a separate value-holding
+  use-count consumption semantics, nonce checks, and a separate value-holding
   `SecretCache`.
 - Added metadata-only JSONL audit writing with fixed macOS path
   `~/Library/Logs/agent-secret/audit.jsonl`, current-user-only file modes,
@@ -399,14 +397,14 @@ Status: Complete
   invalid `op://` ref syntax, TTLs outside 10 seconds through 10 minutes for
   `exec`, and unsafe delivery combinations.
 - Policy enforcement covers exact refs, TTL, delivery mode, request nonce, and
-  max reads only for session/socket handles.
+  reusable approval use counts.
 - Audit events are structured and never contain secret values.
 - The core packages can be tested without 1Password or Swift.
 
 ### Epic 3 Definition Of Done
 
-- Unit tests cover happy paths, denial paths, expiration, session/socket max
-  reads, and audit redaction.
+- Unit tests cover happy paths, denial paths, expiration, reusable-use
+  exhaustion, and audit redaction.
 - The package interfaces are small enough to keep SDK, UI, and process
   supervision swappable in tests.
 - `go test ./...` passes.
@@ -427,40 +425,34 @@ Status: Complete
   reason after trimming, over-240-character reason, duplicate aliases, missing
   aliases, invalid alias names, invalid `op://` ref syntax, missing TTL defaults,
   TTL below 10 seconds or above 10 minutes for `exec`, TTL starting at daemon
-  request receipt, queued request expiry before prompt display, rejection of
-  `--max-reads` for env-mode `exec`, and invalid session/socket max reads. Tests
-  also cover executable path resolution failure, successful `PATH`-based
-  resolution using the caller environment, slash path resolution relative to cwd,
-  and duplicate refs with different aliases as a valid request.
+  request receipt, and queued request expiry before prompt display. Tests also
+  cover executable path resolution failure, successful `PATH`-based resolution
+  using the caller environment, slash path resolution relative to cwd, and
+  duplicate refs with different aliases as a valid request.
 - Implementation:
   - add request structs
   - parse and validate `op://` refs without resolving them
   - resolve and normalize executable path from caller request-time context,
-    command shape, cwd, TTL, delivery mode, and session/socket max reads when
-    applicable
+    command shape, cwd, TTL, and delivery mode
   - leave repo root and git metadata out of the v1 request model
 - Verification:
   - `go test ./...`
 
-#### Task 2: Implement policy sessions and capabilities
+#### Task 2: Implement reusable approval policy
 
-- Goal: enforce TTL, max reads, approved refs, and nonce binding.
+- Goal: enforce TTL, approved refs, reusable use counts, and nonce binding.
 - Preconditions/inputs: request model exists.
-- Failing test/check: tests for expired sessions, exhausted reads, mismatched
-  handles, mismatched nonce, mismatched executable path, mismatched command shape
-  for reusable approval, mismatched `--override-env` state, mismatched overridden
-  aliases, max-use exhaustion, payload-delivery use consumption, CLI spawn
-  failure after payload delivery still consuming a use, immediate child exit
-  still consuming a use, non-zero child exit still consuming a use, post-spawn
-  `command_started` audit failure still consuming a use, CLI disconnect after
-  payload delivery still consuming a use, pre-payload failure not consuming a
-  use, approval reuse audit events, destroyed sessions, and value-free
-  policy/session serialization even when the
-  `SecretCache` contains canary values.
+- Failing test/check: tests for mismatched nonce, mismatched executable path,
+  mismatched command shape for reusable approval, mismatched `--override-env`
+  state, mismatched overridden aliases, max-use exhaustion,
+  payload-delivery use consumption, CLI spawn failure after payload delivery
+  still consuming a use, immediate child exit still consuming a use, non-zero
+  child exit still consuming a use, post-spawn `command_started` audit failure
+  still consuming a use, CLI disconnect after payload delivery still consuming a
+  use, pre-payload failure not consuming a use, approval reuse audit events, and
+  value-free policy serialization even when the `SecretCache` contains canary
+  values.
 - Implementation:
-  - add in-memory session store
-  - add capability handle generation
-  - track per-handle read counts
   - model one-shot approval as the default reuse policy
   - add optional same-command reuse keyed by stated reason, resolved executable
     path, exact argv array, cwd, exact aliases and refs, delivery mode,
@@ -473,8 +465,8 @@ Status: Complete
     delivery; fail closed if writing that audit event fails
   - bypass the single-active-approval queue for reusable approval matches,
     including `--force-refresh`, because no approval prompt is needed
-  - add a memory-only `SecretCache` for reusable approvals and sessions, keyed
-    by approval/session ID plus unique ref
+  - add a memory-only `SecretCache` for reusable approvals, keyed by approval ID
+    plus unique ref
   - keep secret values out of policy objects, audit event inputs, and approval
     view-model inputs
 - Verification:
@@ -483,7 +475,7 @@ Status: Complete
 #### Task 3: Implement metadata-only audit writer
 
 - Goal: produce useful audit events without leaking values.
-- Preconditions/inputs: request and session events.
+- Preconditions/inputs: request and approval-reuse events.
 - Failing test/check: tests fail if event JSON contains known synthetic secret
   values, if audit files have permissive modes, or if callers can override the
   audit path. Tests fail unless audit events store the same validated trimmed
@@ -543,8 +535,7 @@ Status: Complete
 
 ### Epic 4 Acceptance Criteria
 
-- `agent-secret exec` accepts reason, refs, TTL, and a command; `--max-reads` is
-  reserved for session/socket reads.
+- `agent-secret exec` accepts reason, refs, TTL, and a command.
 - The broker approval step occurs before any 1Password fetch.
 - The daemon never spawns the child process.
 - The child process receives approved secrets through `agent-secret exec`; the
@@ -610,7 +601,7 @@ Status: Complete
   reports a clear fail-closed error when startup fails. A lifecycle test proves
   the daemon remains alive after the wrapped command exits and can be stopped
   explicitly. Stop tests assert immediate shutdown clears active reusable
-  approval/session state without signaling already-spawned child processes.
+  approval state without signaling already-spawned child processes.
   Disconnect tests fail until an in-flight pre-payload request fails closed with
   a daemon-disconnected error and does not auto-reconnect or recreate the
   request.
@@ -667,8 +658,8 @@ Status: Complete
   - keep ref existence and metadata checks out of the normal pre-approval path
   - treat any approved-ref fetch failure as a fail-closed request with no values
     returned to the CLI wrapper and no child process spawn
-  - populate the reusable approval/session cache only after all approved refs
-    are fetched successfully
+  - populate the reusable approval cache only after all approved refs are fetched
+    successfully
   - implement `--force-refresh` as all-or-nothing refetch for matching reusable
     approvals, emit a refresh audit event, and consume one use when the daemon
     sends the approved environment payload to `agent-secret exec`

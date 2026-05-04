@@ -25,13 +25,13 @@ agent-secret/
     opaccount/                   # 1Password account selection defaults
     opresolver/                  # 1Password SDK desktop integration adapter
     peercred/                    # macOS Unix socket peer credential lookup
-    policy/                      # Request validation, reuse, TTL, sessions,
-                                  # nonces, and value-free policy state
+    policy/                      # Request validation, reuse, TTL, nonces,
+                                  # and value-free policy state
     processhardening/            # Process-level hardening hooks
     profileconfig/               # Project-local profile config loading
     randid/                      # Random request and approval identifiers
     request/                     # Exec request model and secret ref parsing
-    secretcache/                 # Reusable/session secret value cache
+    secretcache/                 # Reusable approval secret value cache
     secretmem/                   # In-memory secret value handling
     testsupport/                 # Shared Go test support helpers
   approver/
@@ -97,10 +97,9 @@ syntax but does not contact 1Password.
 CLI records identities before exec, and daemon/policy code uses the same shape
 when validating approved command reuse.
 
-`internal/policy` validates request rules and tracks reusable approvals,
-sessions, use counts, TTLs, and nonces without storing raw secret values.
-Reusable approval cache values live in `internal/secretcache`, keyed by the
-policy scope.
+`internal/policy` validates request rules and tracks reusable approvals, use
+counts, TTLs, and nonces without storing raw secret values. Reusable approval
+cache values live in `internal/secretcache`, keyed by the policy scope.
 
 `internal/opaccount` owns 1Password account defaulting and selection. The CLI
 and `internal/opresolver` both use it so account behavior has one source.
@@ -126,7 +125,7 @@ identifiers for CLI and policy code.
 values are unavoidable after approval. It is deliberately separate from policy
 objects and audit data.
 
-`internal/secretcache` owns the daemon-controlled reusable/session cache built
+`internal/secretcache` owns the daemon-controlled reusable approval cache built
 on `internal/secretmem`. It stores raw approved values only after approval and
 keeps that value-bearing surface out of policy objects, audit data, and approval
 view models.

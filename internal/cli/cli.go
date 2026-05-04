@@ -777,7 +777,7 @@ Usage:
   agent-secret daemon stop
 
 Normal agent-secret exec use starts the daemon automatically and does not print daemon lifecycle details unless something fails.
-Daemon stop clears daemon-owned in-memory approvals, sessions, counters, nonces, and cached values. It does not signal or manage already-running child processes.
+Daemon stop clears daemon-owned in-memory reusable approvals, use counters, nonces, and cached values. It does not signal or manage already-running child processes.
 `)
 }
 
