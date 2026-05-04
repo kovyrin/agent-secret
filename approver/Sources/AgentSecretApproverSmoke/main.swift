@@ -44,12 +44,12 @@ private func runSmoke() async throws {
 private func sampleRequestData() -> Data {
     let sampleRequestJSON = """
     {
-        "requestID": "req_123",
+        "request_id": "req_123",
         "nonce": "nonce_456",
         "reason": "Run Terraform plan for staging",
         "command": ["/opt/homebrew/bin/terraform", "plan"],
         "cwd": "/tmp/project",
-        "expiresAt": "2027-01-15T08:00:00Z",
+        "expires_at": "2027-01-15T08:00:00Z",
         "secrets": [
             {
                 "alias": "EXAMPLE_TOKEN",
@@ -57,11 +57,11 @@ private func sampleRequestData() -> Data {
                 "account": "Work"
             }
         ],
-        "resolvedExecutable": null,
-        "overrideEnv": false,
-        "allowMutableExecutable": false,
-        "overriddenAliases": [],
-        "reusableUses": 3
+        "resolved_executable": null,
+        "override_env": false,
+        "allow_mutable_executable": false,
+        "overridden_aliases": [],
+        "reusable_uses": 3
     }
     """
     return Data(sampleRequestJSON.utf8)

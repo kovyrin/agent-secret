@@ -36,10 +36,10 @@ final class ApprovalDecisionTests: XCTestCase {
         for reusableUses in [0, ApprovalRequest.maxReusableUses + 1] {
             let json = """
             {
-                "requestID": "req_1",
+                "request_id": "req_1",
                 "nonce": "nonce_1",
                 "decision": "approve_reusable",
-                "reusableUses": \(reusableUses)
+                "reusable_uses": \(reusableUses)
             }
             """
 
@@ -53,7 +53,7 @@ final class ApprovalDecisionTests: XCTestCase {
     func testDecodeRejectsReusableApprovalWithoutUseLimit() {
         let json = """
         {
-            "requestID": "req_1",
+            "request_id": "req_1",
             "nonce": "nonce_1",
             "decision": "approve_reusable"
         }
@@ -66,10 +66,10 @@ final class ApprovalDecisionTests: XCTestCase {
         for decision in ["approve_once", "deny", "timeout"] {
             let json = """
             {
-                "requestID": "req_1",
+                "request_id": "req_1",
                 "nonce": "nonce_1",
                 "decision": "\(decision)",
-                "reusableUses": 3
+                "reusable_uses": 3
             }
             """
 

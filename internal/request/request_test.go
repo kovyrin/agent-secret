@@ -256,6 +256,29 @@ func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
 	if !strings.Contains(string(raw), req.EnvironmentFingerprint) {
 		t.Fatalf("request JSON omitted environment fingerprint: %s", raw)
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("Unmarshal request JSON returned error: %v", err)
+	}
+	for _, field := range []string{
+		"resolved_executable",
+		"executable_identity",
+		"environment_fingerprint",
+		"received_at",
+		"expires_at",
+		"reusable_uses",
+		"override_env",
+		"overridden_aliases",
+		"force_refresh",
+		"allow_mutable_executable",
+	} {
+		if _, ok := fields[field]; !ok {
+			t.Fatalf("request JSON omitted snake_case field %q: %s", field, raw)
+		}
+	}
+	if _, ok := fields["ResolvedExecutable"]; ok {
+		t.Fatalf("request JSON included default Go field names: %s", raw)
+	}
 }
 
 func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T) {

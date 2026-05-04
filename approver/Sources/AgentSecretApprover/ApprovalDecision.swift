@@ -3,10 +3,10 @@ import Foundation
 /// Encodes only daemon decision metadata; reusable use limits are normalized before submission.
 public struct ApprovalDecision: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
-        case requestID
+        case requestID = "request_id"
         case nonce
         case decision
-        case reusableUses
+        case reusableUses = "reusable_uses"
     }
 
     public let requestID: String

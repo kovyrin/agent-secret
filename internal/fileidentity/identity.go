@@ -12,12 +12,12 @@ var (
 )
 
 type Identity struct {
-	Device             uint64
-	Inode              uint64
-	Mode               uint32
-	Size               int64
-	ModTimeUnixNano    int64
-	ChangeTimeUnixNano int64
+	Device             uint64 `json:"device"`
+	Inode              uint64 `json:"inode"`
+	Mode               uint32 `json:"mode"`
+	Size               int64  `json:"size"`
+	ModTimeUnixNano    int64  `json:"mod_time_unix_nano"`
+	ChangeTimeUnixNano int64  `json:"change_time_unix_nano"`
 }
 
 func (i Identity) IsZero() bool {

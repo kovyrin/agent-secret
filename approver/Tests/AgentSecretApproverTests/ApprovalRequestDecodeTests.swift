@@ -18,7 +18,7 @@ final class ApprovalRequestDecodeTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        for field in ["overrideEnv", "overriddenAliases", "allowMutableExecutable", "reusableUses"] {
+        for field in ["override_env", "overridden_aliases", "allow_mutable_executable", "reusable_uses"] {
             var payloadFields = fixtureFields
             payloadFields.removeValue(forKey: field)
             let payload: Data = try JSONSerialization.data(withJSONObject: payloadFields)

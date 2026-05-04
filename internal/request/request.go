@@ -38,23 +38,23 @@ var (
 var aliasPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 type SecretSpec struct {
-	Alias   string
-	Ref     string
-	Account string
+	Alias   string `json:"alias"`
+	Ref     string `json:"ref"`
+	Account string `json:"account,omitempty"`
 }
 
 type SecretRef struct {
-	Raw     string
-	Vault   string
-	Item    string
-	Section string
-	Field   string
+	Raw     string `json:"raw"`
+	Vault   string `json:"vault"`
+	Item    string `json:"item"`
+	Section string `json:"section,omitempty"`
+	Field   string `json:"field"`
 }
 
 type Secret struct {
-	Alias   string
-	Ref     SecretRef
-	Account string
+	Alias   string    `json:"alias"`
+	Ref     SecretRef `json:"ref"`
+	Account string    `json:"account,omitempty"`
 }
 
 type ExecOptions struct {
@@ -72,22 +72,22 @@ type ExecOptions struct {
 }
 
 type ExecRequest struct {
-	Reason                 string
-	Command                []string
-	ResolvedExecutable     string
-	ExecutableIdentity     fileidentity.Identity
-	CWD                    string
-	Env                    []string `json:"-"`
-	EnvironmentFingerprint string
-	Secrets                []Secret
-	TTL                    time.Duration
-	ReceivedAt             time.Time
-	ExpiresAt              time.Time
-	ReusableUses           int
-	OverrideEnv            bool
-	OverriddenAliases      []string
-	ForceRefresh           bool
-	AllowMutableExecutable bool
+	Reason                 string                `json:"reason"`
+	Command                []string              `json:"command"`
+	ResolvedExecutable     string                `json:"resolved_executable"`
+	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
+	CWD                    string                `json:"cwd"`
+	Env                    []string              `json:"-"`
+	EnvironmentFingerprint string                `json:"environment_fingerprint"`
+	Secrets                []Secret              `json:"secrets"`
+	TTL                    time.Duration         `json:"ttl"`
+	ReceivedAt             time.Time             `json:"received_at"`
+	ExpiresAt              time.Time             `json:"expires_at"`
+	ReusableUses           int                   `json:"reusable_uses"`
+	OverrideEnv            bool                  `json:"override_env"`
+	OverriddenAliases      []string              `json:"overridden_aliases"`
+	ForceRefresh           bool                  `json:"force_refresh"`
+	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 }
 
 func (r ExecRequest) Expired(at time.Time) bool {

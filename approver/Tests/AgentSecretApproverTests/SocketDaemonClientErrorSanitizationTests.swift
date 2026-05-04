@@ -43,11 +43,11 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
             "payload": [
                 "command": ["/usr/bin/env", "echo"],
                 "cwd": "/tmp/project",
-                "expiresAt": expiresAt,
+                "expires_at": expiresAt,
                 "nonce": "nonce_456",
                 "reason": "Run deployment",
-                "requestID": "req_123",
-                "resolvedExecutable": "/usr/bin/env",
+                "request_id": "req_123",
+                "resolved_executable": "/usr/bin/env",
                 "secrets": [
                     [
                         "account": "prod-account-123",

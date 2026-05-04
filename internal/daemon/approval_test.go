@@ -252,13 +252,13 @@ func TestApprovalPayloadEncodesCurrentProtocolFields(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatalf("decode approval payload object: %v", err)
 	}
-	for _, field := range []string{"overrideEnv", "overriddenAliases", "allowMutableExecutable", "reusableUses"} {
+	for _, field := range []string{"override_env", "overridden_aliases", "allow_mutable_executable", "reusable_uses"} {
 		if _, ok := fields[field]; !ok {
 			t.Fatalf("approval payload omitted current protocol field %q: %s", field, data)
 		}
 	}
-	if got := string(fields["overriddenAliases"]); got != "[]" {
-		t.Fatalf("overriddenAliases should encode as an empty array, got %s", got)
+	if got := string(fields["overridden_aliases"]); got != "[]" {
+		t.Fatalf("overridden_aliases should encode as an empty array, got %s", got)
 	}
 }
 

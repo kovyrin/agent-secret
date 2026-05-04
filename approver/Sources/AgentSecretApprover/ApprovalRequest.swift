@@ -5,15 +5,15 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case command
         case cwd
-        case expiresAt
+        case expiresAt = "expires_at"
         case nonce
-        case allowMutableExecutable
-        case overrideEnv
-        case overriddenAliases
+        case allowMutableExecutable = "allow_mutable_executable"
+        case overrideEnv = "override_env"
+        case overriddenAliases = "overridden_aliases"
         case reason
-        case requestID
-        case resolvedExecutable
-        case reusableUses
+        case requestID = "request_id"
+        case resolvedExecutable = "resolved_executable"
+        case reusableUses = "reusable_uses"
         case secrets
     }
 

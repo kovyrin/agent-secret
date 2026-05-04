@@ -1,6 +1,6 @@
 {
   "decision": "approve_reusable",
   "nonce": "nonce_456",
-  "requestID": "req_123",
-  "reusableUses": 3
+  "request_id": "req_123",
+  "reusable_uses": 3
 }
