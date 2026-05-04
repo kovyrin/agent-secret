@@ -10,6 +10,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 )
@@ -39,7 +40,7 @@ func run() int {
 
 	approver, err := daemon.NewSocketApprover(
 		config.socketPath,
-		daemon.ProcessApproverLauncher{},
+		approval.ProcessApproverLauncher{},
 		nil,
 	)
 	if err != nil {

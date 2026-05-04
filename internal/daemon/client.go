@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -98,18 +99,24 @@ func (c *Client) Stop(ctx context.Context) (protocol.StatusPayload, error) {
 	return payload, nil
 }
 
-func (c *Client) FetchPendingApproval(ctx context.Context) (ApprovalRequestPayload, error) {
-	payload, err := roundTripPayload[ApprovalRequestPayload](ctx, c, protocol.TypeApprovalPending, protocol.Correlation{}, nil)
+func (c *Client) FetchPendingApproval(ctx context.Context) (approval.ApprovalRequestPayload, error) {
+	payload, err := roundTripPayload[approval.ApprovalRequestPayload](
+		ctx,
+		c,
+		protocol.TypeApprovalPending,
+		protocol.Correlation{},
+		nil,
+	)
 	if err != nil {
-		return ApprovalRequestPayload{}, err
+		return approval.ApprovalRequestPayload{}, err
 	}
 	if err := validateApprovalRequestPayload(payload); err != nil {
-		return ApprovalRequestPayload{}, err
+		return approval.ApprovalRequestPayload{}, err
 	}
 	return payload, nil
 }
 
-func (c *Client) SubmitApprovalDecision(ctx context.Context, decision ApprovalDecisionPayload) error {
+func (c *Client) SubmitApprovalDecision(ctx context.Context, decision approval.ApprovalDecisionPayload) error {
 	correlation := protocol.Correlation{RequestID: decision.RequestID, Nonce: decision.Nonce}
 	return roundTripAck(ctx, c, protocol.TypeApprovalDecision, correlation, decision)
 }
@@ -254,7 +261,7 @@ func validateStatusPayload(messageType protocol.MessageType, payload protocol.St
 	return nil
 }
 
-func validateApprovalRequestPayload(payload ApprovalRequestPayload) error {
+func validateApprovalRequestPayload(payload approval.ApprovalRequestPayload) error {
 	if payload.RequestID == "" {
 		return fmt.Errorf("%w: approval.pending response missing request id", protocol.ErrMalformedEnvelope)
 	}

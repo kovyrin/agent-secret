@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -41,7 +42,7 @@ func (SameUIDValidator) Validate(conn *net.UnixConn) error {
 
 type Server struct {
 	broker                  *Broker
-	approvals               ApprovalEndpoint
+	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
 	execValidator           ExecPeerValidator
 	maxFrameBytes           int64
@@ -53,7 +54,7 @@ type Server struct {
 
 type ServerOptions struct {
 	Broker                  *Broker
-	Approvals               ApprovalEndpoint
+	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
 	ExecValidator           ExecPeerValidator
 	MaxFrameBytes           int64
@@ -197,7 +198,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
 				continue
 			}
-			payload, err := protocol.DecodePayload[ApprovalDecisionPayload](env)
+			payload, err := protocol.DecodePayload[approval.ApprovalDecisionPayload](env)
 			if err != nil {
 				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadApprovalDecision, err)
 				continue
@@ -262,24 +263,24 @@ func (s *Server) handleApprovalPending(
 	conn *net.UnixConn,
 	encoder *json.Encoder,
 	env protocol.Envelope,
-) (ApprovalRequestPayload, bool) {
+) (approval.ApprovalRequestPayload, bool) {
 	if s.approvals == nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, ErrApprovalUnavailable)
-		return ApprovalRequestPayload{}, false
+		return approval.ApprovalRequestPayload{}, false
 	}
 	peer, err := s.peerInfo(conn)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
-		return ApprovalRequestPayload{}, false
+		return approval.ApprovalRequestPayload{}, false
 	}
 	payload, err := s.approvals.FetchPending(ctx, peer)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return ApprovalRequestPayload{}, false
+		return approval.ApprovalRequestPayload{}, false
 	}
 	correlation := protocol.Correlation{RequestID: payload.RequestID, Nonce: payload.Nonce}
 	if err := writeOK(encoder, correlation, payload); err != nil {
-		return ApprovalRequestPayload{}, false
+		return approval.ApprovalRequestPayload{}, false
 	}
 	return payload, true
 }
@@ -488,11 +489,11 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeAuditFailed
 	case errors.Is(err, ErrInvalidNonce):
 		return protocol.ErrorCodeInvalidNonce
-	case errors.Is(err, ErrApproverPeerMismatch):
+	case errors.Is(err, approval.ErrApproverPeerMismatch):
 		return protocol.ErrorCodeApproverPeerMismatch
-	case errors.Is(err, ErrApproverIdentity):
+	case errors.Is(err, approval.ErrApproverIdentity):
 		return protocol.ErrorCodeApproverIdentityMismatch
-	case errors.Is(err, ErrNoPendingApproval):
+	case errors.Is(err, approval.ErrNoPendingApproval):
 		return protocol.ErrorCodeNoPendingApproval
 	case errors.Is(err, ErrRequestAlreadyActive):
 		return protocol.ErrorCodeRequestActive
@@ -500,7 +501,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeDaemonStopped
 	case errors.Is(err, ErrRequestExpired):
 		return protocol.ErrorCodeRequestExpired
-	case errors.Is(err, ErrStaleApproval):
+	case errors.Is(err, approval.ErrStaleApproval):
 		return protocol.ErrorCodeStaleApproval
 	case errors.Is(err, ErrUntrustedClient):
 		return protocol.ErrorCodeUntrustedClient

@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
 
 type recordingSignatureVerifier struct {
@@ -38,7 +41,7 @@ func (v *recordingSignatureVerifier) VerifyProcess(pid int) (string, error) {
 
 func newTestTrustedExecutableValidator(
 	paths []string,
-	verifier codeSignatureVerifier,
+	verifier trust.CodeSignatureVerifier,
 ) TrustedExecutableValidator {
 	return TrustedExecutableValidator{
 		set: newTrustedExecutableSetWithVerifier(paths, "TEAMID", ErrUntrustedClient, verifier, true),
@@ -166,7 +169,7 @@ func TestTrustedExecutableValidatorRejectsMissingPIDForSignatureValidation(t *te
 func TestTrustedExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *testing.T) {
 	t.Parallel()
 
-	trusted := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	trusted := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, approval.DefaultApproverExecutable)
 	verifier := &recordingSignatureVerifier{
 		pathTeamID:    "TEAMID",
 		processTeamID: "TEAMID",
@@ -190,7 +193,7 @@ func TestTrustedExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *
 func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDSentinel(t *testing.T) {
 	t.Parallel()
 
-	trusted := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	trusted := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, approval.DefaultApproverExecutable)
 	verifier := &recordingSignatureVerifier{
 		pathErr:    errors.New("static verifier should not be called"),
 		processErr: errors.New("process verifier should not be called"),
@@ -198,7 +201,7 @@ func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDS
 	validator := TrustedExecutableValidator{
 		set: newTrustedExecutableSetWithVerifier(
 			[]string{trusted},
-			developmentExpectedTeamID,
+			trust.DevelopmentExpectedTeamID,
 			ErrUntrustedClient,
 			verifier,
 			true,
@@ -216,7 +219,7 @@ func TestTrustedExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDS
 func TestTrustedExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
 	t.Parallel()
 
-	trusted := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	trusted := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, approval.DefaultApproverExecutable)
 	verifier := &recordingSignatureVerifier{
 		pathErr:    errors.New("static verifier should not be called"),
 		processErr: errors.New("process verifier should not be called"),

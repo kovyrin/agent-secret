@@ -1,4 +1,4 @@
-package daemon
+package approval
 
 import (
 	"fmt"
@@ -46,7 +46,7 @@ type ApprovalDecisionPayload struct {
 	ReusableUses *int                 `json:"reusableUses,omitempty"`
 }
 
-func validateReusableDecisionUses(decision ApprovalDecisionPayload, expected int) error {
+func ValidateReusableDecisionUses(decision ApprovalDecisionPayload, expected int) error {
 	if expected <= 0 {
 		return fmt.Errorf("%w: invalid pending reusable use count %d", protocol.ErrMalformedEnvelope, expected)
 	}
@@ -64,7 +64,7 @@ func validateReusableDecisionUses(decision ApprovalDecisionPayload, expected int
 	return nil
 }
 
-func approvalPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
+func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
 	secrets := make([]ApprovalRequestedSecret, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
 		secrets = append(secrets, ApprovalRequestedSecret{

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
@@ -21,7 +22,7 @@ type TrustedDaemonValidator struct {
 }
 
 func NewTrustedDaemonValidator(paths []string) TrustedDaemonValidator {
-	return newTrustedDaemonValidator(paths, defaultExpectedTeamID())
+	return newTrustedDaemonValidator(paths, trust.DefaultExpectedTeamID())
 }
 
 func newTrustedDaemonValidator(paths []string, expectedTeamID string) TrustedDaemonValidator {
@@ -55,7 +56,7 @@ func trustedDaemonPathsForPath(path string) []string {
 
 func bundleExecutablePath(bundlePath string) (string, error) {
 	infoPath := filepath.Join(bundlePath, "Contents", "Info.plist")
-	executableName, err := plistString(infoPath, "CFBundleExecutable")
+	executableName, err := trust.PlistString(infoPath, "CFBundleExecutable", ErrUntrustedDaemon)
 	if err != nil {
 		return "", err
 	}

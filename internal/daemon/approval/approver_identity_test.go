@@ -1,4 +1,4 @@
-package daemon
+package approval
 
 import (
 	"errors"
@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
+	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
 
 func TestExpectedTeamIDForSignatureValidation(t *testing.T) {
@@ -24,8 +27,8 @@ func TestExpectedTeamIDForSignatureValidation(t *testing.T) {
 		},
 		{
 			name:       "development sentinel",
-			teamID:     developmentExpectedTeamID,
-			wantTeamID: developmentExpectedTeamID,
+			teamID:     trust.DevelopmentExpectedTeamID,
+			wantTeamID: trust.DevelopmentExpectedTeamID,
 		},
 		{
 			name:        "developer id team",
@@ -62,7 +65,7 @@ func TestExpectedTeamIDForSignatureValidation(t *testing.T) {
 func TestAppBundleForExecutableFindsContainingBundle(t *testing.T) {
 	t.Parallel()
 
-	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	executable := appbundle.WriteApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
 	bundlePath := filepath.Clean(filepath.Join(filepath.Dir(executable), "..", ".."))
 	bundlePath, err := comparableApproverPath(bundlePath)
 	if err != nil {
@@ -90,10 +93,10 @@ func TestAppBundleForExecutableRejectsNonBundlePath(t *testing.T) {
 func TestPlistStringReadsBundleMetadata(t *testing.T) {
 	t.Parallel()
 
-	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	executable := appbundle.WriteApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
 	infoPath := filepath.Join(filepath.Dir(executable), "..", "Info.plist")
 
-	got, err := plistString(infoPath, "CFBundleIdentifier")
+	got, err := trust.PlistString(infoPath, "CFBundleIdentifier", ErrApproverIdentity)
 	if err != nil {
 		t.Fatalf("plistString returned error: %v", err)
 	}
@@ -105,10 +108,10 @@ func TestPlistStringReadsBundleMetadata(t *testing.T) {
 func TestPlistStringRejectsMissingKey(t *testing.T) {
 	t.Parallel()
 
-	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
+	executable := appbundle.WriteApproverBundle(t, t.TempDir(), DefaultApproverBundleID, DefaultApproverExecutable)
 	infoPath := filepath.Join(filepath.Dir(executable), "..", "Info.plist")
 
-	_, err := plistString(infoPath, "MissingKey")
+	_, err := trust.PlistString(infoPath, "MissingKey", ErrApproverIdentity)
 	if !errors.Is(err, ErrApproverIdentity) {
 		t.Fatalf("error = %v, want ErrApproverIdentity", err)
 	}
@@ -122,7 +125,7 @@ func TestPlistStringReportsMalformedPlist(t *testing.T) {
 		t.Fatalf("write Info.plist: %v", err)
 	}
 
-	_, err := plistString(infoPath, "CFBundleIdentifier")
+	_, err := trust.PlistString(infoPath, "CFBundleIdentifier", ErrApproverIdentity)
 	if !errors.Is(err, ErrApproverIdentity) {
 		t.Fatalf("error = %v, want ErrApproverIdentity", err)
 	}

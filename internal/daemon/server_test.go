@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -816,7 +817,7 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	ref := "op://Example/Item/token"
-	launcher := &recordingLauncher{expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
+	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	broker := newTestBroker(t, BrokerOptions{
 		Now:      time.Now,
@@ -852,10 +853,10 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 	if pending.RequestID != "req_1" || pending.Nonce != "nonce_1" {
 		t.Fatalf("unexpected pending approval payload: %+v", pending)
 	}
-	if err := appClient.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
+	if err := appClient.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
 		Nonce:     pending.Nonce,
-		Decision:  ApprovalDecisionApproveOnce,
+		Decision:  approval.ApprovalDecisionApproveOnce,
 	}); err != nil {
 		t.Fatalf("SubmitApprovalDecision returned error: %v", err)
 	}
@@ -878,7 +879,7 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	ref := "op://Example/Item/token"
-	launcher := &recordingLauncher{expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
+	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath}}
 	approver := newSocketApproverForTest(t, launcher, time.Now)
 	broker := newTestBroker(t, BrokerOptions{
 		Now:      time.Now,
@@ -927,10 +928,10 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 
 	time.Sleep(60 * time.Millisecond)
 
-	if err := appClient.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
+	if err := appClient.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: pending.RequestID,
 		Nonce:     pending.Nonce,
-		Decision:  ApprovalDecisionApproveOnce,
+		Decision:  approval.ApprovalDecisionApproveOnce,
 	}); err != nil {
 		t.Fatalf("SubmitApprovalDecision returned error after protocol read timeout: %v", err)
 	}
@@ -961,10 +962,10 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 	if !IsProtocolError(err, protocol.ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable protocol error, got %v", err)
 	}
-	if err := client.SubmitApprovalDecision(context.Background(), ApprovalDecisionPayload{
+	if err := client.SubmitApprovalDecision(context.Background(), approval.ApprovalDecisionPayload{
 		RequestID: "req_1",
 		Nonce:     "nonce_1",
-		Decision:  ApprovalDecisionApproveOnce,
+		Decision:  approval.ApprovalDecisionApproveOnce,
 	}); !IsProtocolError(err, protocol.ErrorCodeApprovalUnavailable) {
 		t.Fatalf("expected approval unavailable decision error, got %v", err)
 	}
@@ -1238,7 +1239,7 @@ func TestServerReportsBadApprovalDecisionPayload(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	approver := newSocketApproverForTest(t, &recordingLauncher{
-		expected: ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath},
+		expected: approval.ExpectedApprover{PID: peer.PID, ExecutablePath: peer.ExecutablePath},
 	}, time.Now)
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: approver,
@@ -1321,13 +1322,13 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: ErrApprovalDenied, want: protocol.ErrorCodeApprovalDenied},
 		{err: ErrAuditRequired, want: protocol.ErrorCodeAuditFailed},
 		{err: ErrInvalidNonce, want: protocol.ErrorCodeInvalidNonce},
-		{err: ErrApproverPeerMismatch, want: protocol.ErrorCodeApproverPeerMismatch},
-		{err: ErrApproverIdentity, want: protocol.ErrorCodeApproverIdentityMismatch},
-		{err: ErrNoPendingApproval, want: protocol.ErrorCodeNoPendingApproval},
+		{err: approval.ErrApproverPeerMismatch, want: protocol.ErrorCodeApproverPeerMismatch},
+		{err: approval.ErrApproverIdentity, want: protocol.ErrorCodeApproverIdentityMismatch},
+		{err: approval.ErrNoPendingApproval, want: protocol.ErrorCodeNoPendingApproval},
 		{err: ErrRequestAlreadyActive, want: protocol.ErrorCodeRequestActive},
 		{err: ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
 		{err: ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
-		{err: ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
+		{err: approval.ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
 		{err: ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
 		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
 		{err: context.DeadlineExceeded, want: protocol.ErrorCodeContextDeadlineExceeded},
@@ -1379,7 +1380,7 @@ func startTestServer(t *testing.T, opts BrokerOptions) (*Client, func()) {
 func startTestServerWithBroker(
 	t *testing.T,
 	broker *Broker,
-	approvals ApprovalEndpoint,
+	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
 ) (appTestClient, func()) {
 	t.Helper()
@@ -1411,7 +1412,7 @@ type appTestClient struct {
 func startRawServerWithBroker(
 	t *testing.T,
 	broker *Broker,
-	approvals ApprovalEndpoint,
+	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
 ) (string, func()) {
 	t.Helper()
@@ -1427,7 +1428,7 @@ func startRawServerWithBroker(
 func startRawServerWithBrokerAndExecValidator(
 	t *testing.T,
 	broker *Broker,
-	approvals ApprovalEndpoint,
+	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
 	execValidator ExecPeerValidator,
 ) (string, func()) {

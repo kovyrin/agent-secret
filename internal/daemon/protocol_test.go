@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -193,11 +194,11 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
-				return okResponseFrame(t, env, ApprovalRequestPayload{
+				return okResponseFrame(t, env, approval.ApprovalRequestPayload{
 					Nonce:     "nonce_1",
 					Command:   []string{"terraform", "plan"},
 					ExpiresAt: time.Now().Add(time.Minute),
-					Secrets: []ApprovalRequestedSecret{
+					Secrets: []approval.ApprovalRequestedSecret{
 						{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
 					},
 				})

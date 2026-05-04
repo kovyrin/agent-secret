@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
@@ -25,7 +26,7 @@ type trustedExecutableSet struct {
 	entries           []trustedExecutable
 	expectedTeamID    string
 	err               error
-	signatureVerifier codeSignatureVerifier
+	signatureVerifier trust.CodeSignatureVerifier
 	verifySignature   bool
 }
 
@@ -36,7 +37,7 @@ type trustedExecutable struct {
 }
 
 func NewTrustedExecutableValidator(paths []string) TrustedExecutableValidator {
-	return newTrustedExecutableValidator(paths, defaultExpectedTeamID())
+	return newTrustedExecutableValidator(paths, trust.DefaultExpectedTeamID())
 }
 
 func newTrustedExecutableValidator(paths []string, expectedTeamID string) TrustedExecutableValidator {
@@ -50,7 +51,7 @@ func newTrustedExecutableSet(paths []string, expectedTeamID string, err error) t
 		paths,
 		expectedTeamID,
 		err,
-		codesignSignatureVerifier{},
+		trust.CodesignSignatureVerifier{},
 		runtime.GOOS == "darwin",
 	)
 }
@@ -59,7 +60,7 @@ func newTrustedExecutableSetWithVerifier(
 	paths []string,
 	expectedTeamID string,
 	err error,
-	verifier codeSignatureVerifier,
+	verifier trust.CodeSignatureVerifier,
 	verifySignature bool,
 ) trustedExecutableSet {
 	seen := make(map[string]struct{}, len(paths))
@@ -204,7 +205,7 @@ func (e trustedExecutable) validatePeer(
 	info peercred.Info,
 	path string,
 	expectedTeamID string,
-	verifier codeSignatureVerifier,
+	verifier trust.CodeSignatureVerifier,
 	verifySignature bool,
 	errKind error,
 ) error {
@@ -227,12 +228,12 @@ func (e trustedExecutable) validatePeer(
 	if !verifySignature || (expectedTeamID == "" && !e.isBundledPath(path)) {
 		return nil
 	}
-	requiredTeamID, enforceTeamID, err := expectedTeamIDForSignatureValidation(expectedTeamID, errKind)
+	requiredTeamID, enforceTeamID, err := trust.ExpectedTeamIDForSignatureValidation(expectedTeamID, errKind)
 	if err != nil {
 		return err
 	}
 	if enforceTeamID {
-		return validatePeerSignature(info, path, requiredTeamID, verifier, errKind)
+		return trust.ValidatePeerSignature(info, path, requiredTeamID, verifier, errKind)
 	}
 	return nil
 }
@@ -243,36 +244,6 @@ func (e trustedExecutable) isBundledPath(path string) bool {
 	}
 	_, ok := containingAppBundlePath(path)
 	return ok
-}
-
-func validatePeerSignature(
-	info peercred.Info,
-	path string,
-	expectedTeamID string,
-	verifier codeSignatureVerifier,
-	errKind error,
-) error {
-	if verifier == nil {
-		verifier = codesignSignatureVerifier{}
-	}
-	if info.PID <= 0 {
-		return fmt.Errorf("%w: peer pid is unavailable for signature validation", errKind)
-	}
-	teamID, err := verifier.VerifyPath(path)
-	if err != nil {
-		return fmt.Errorf("%w: verify trusted executable signature: %w", errKind, err)
-	}
-	if teamID != expectedTeamID {
-		return fmt.Errorf("%w: trusted executable team id %q != %q", errKind, teamID, expectedTeamID)
-	}
-	teamID, err = verifier.VerifyProcess(info.PID)
-	if err != nil {
-		return fmt.Errorf("%w: verify peer process signature: %w", errKind, err)
-	}
-	if teamID != expectedTeamID {
-		return fmt.Errorf("%w: peer process team id %q != %q", errKind, teamID, expectedTeamID)
-	}
-	return nil
 }
 
 func comparablePath(path string) string {

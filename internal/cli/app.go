@@ -13,6 +13,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
@@ -251,7 +252,7 @@ func checkAuditLogWritable(ctx context.Context) (string, error) {
 }
 
 func checkApproverHealth(ctx context.Context) error {
-	return (daemon.ProcessApproverLauncher{}).CheckHealth(ctx)
+	return (approval.ProcessApproverLauncher{}).CheckHealth(ctx)
 }
 
 func checkOnePasswordDesktopIntegration(ctx context.Context) error {

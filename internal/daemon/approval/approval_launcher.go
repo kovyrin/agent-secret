@@ -1,4 +1,4 @@
-package daemon
+package approval
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 )
 
 type ProcessApproverLauncher struct {
@@ -92,10 +94,10 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string, 
 		ExecutablePath:    executable,
 		ExpectedTeamID:    identity.ExpectedTeamID,
 		VerifySignature:   identity.VerifySignature,
-		signatureVerifier: codesignSignatureVerifier{},
+		SignatureVerifier: trust.CodesignSignatureVerifier{},
 	}
 	exited := make(chan error, 1)
-	expected.exited = exited
+	expected.Exited = exited
 	go func() {
 		exited <- cmd.Wait()
 		close(exited)

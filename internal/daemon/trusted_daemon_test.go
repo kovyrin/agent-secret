@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
 
 func TestTrustedDaemonPathsForDirectExecutable(t *testing.T) {
@@ -31,7 +33,7 @@ func TestTrustedDaemonPathsRejectEmptyPath(t *testing.T) {
 func TestTrustedDaemonPathsForAppBundleUseBundleExecutable(t *testing.T) {
 	t.Parallel()
 
-	executable := writeApproverBundle(t, t.TempDir(), DefaultApproverBundleID, "AgentSecretDaemon")
+	executable := appbundle.WriteApproverBundle(t, t.TempDir(), approval.DefaultApproverBundleID, "AgentSecretDaemon")
 	bundlePath := filepath.Clean(filepath.Join(filepath.Dir(executable), "..", ".."))
 
 	got := trustedDaemonPathsForPath(bundlePath)

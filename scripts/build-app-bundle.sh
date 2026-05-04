@@ -245,7 +245,7 @@ if [[ "$codesign_identity" != "-" ]]; then
     exit 1
   }
 fi
-go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon.defaultDeveloperIDTeamID=$approver_team_id")
+go_build_flags+=(-ldflags "-X github.com/kovyrin/agent-secret/internal/daemon/trust.defaultDeveloperIDTeamID=$approver_team_id")
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
 

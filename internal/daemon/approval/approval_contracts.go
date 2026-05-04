@@ -1,8 +1,9 @@
-package daemon
+package approval
 
 import (
 	"context"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
@@ -33,6 +34,6 @@ type ExpectedApprover struct {
 	ExecutablePath    string
 	ExpectedTeamID    string
 	VerifySignature   bool
-	signatureVerifier codeSignatureVerifier
-	exited            <-chan error
+	Exited            <-chan error
+	SignatureVerifier trust.CodeSignatureVerifier
 }

@@ -1,4 +1,4 @@
-package daemon
+package approval
 
 import (
 	"fmt"
@@ -6,10 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
-func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
+func ValidateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	if expected.PID != 0 && got.PID != expected.PID {
 		return fmt.Errorf("%w: pid %d != %d", ErrApproverPeerMismatch, got.PID, expected.PID)
 	}
@@ -17,7 +18,7 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 	enforceTeamID := false
 	if expected.VerifySignature {
 		var err error
-		expectedTeamID, enforceTeamID, err = expectedTeamIDForSignatureValidation(
+		expectedTeamID, enforceTeamID, err = trust.ExpectedTeamIDForSignatureValidation(
 			expectedTeamID,
 			ErrApproverPeerMismatch,
 		)
@@ -43,11 +44,11 @@ func validateApproverPeer(expected ExpectedApprover, got peercred.Info) error {
 		return fmt.Errorf("%w: executable %q != %q", ErrApproverPeerMismatch, gotPath, expectedPath)
 	}
 	if enforceTeamID {
-		if err := validatePeerSignature(
+		if err := trust.ValidatePeerSignature(
 			got,
 			expectedPath,
 			expectedTeamID,
-			expected.signatureVerifier,
+			expected.SignatureVerifier,
 			ErrApproverPeerMismatch,
 		); err != nil {
 			return err
