@@ -49,8 +49,8 @@ type AuditSink interface {
 }
 
 type SecretCache interface {
-	Put(scopeID string, ref string, account string, value string) error
-	Get(scopeID string, ref string, account string) (string, bool)
+	Put(key secretcache.CacheKey, value string) error
+	Get(key secretcache.CacheKey) (string, bool)
 	ClearScope(scopeID string)
 	Clear()
 }

@@ -552,7 +552,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	if gotApprovalID == "" {
 		t.Fatal("server did not create a reusable approval before payload delivery")
 	}
-	if _, ok := cache.Get(gotApprovalID, ref, "Work"); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: gotApprovalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("expired reusable approval cache scope remained after failed payload delivery")
 	}
 

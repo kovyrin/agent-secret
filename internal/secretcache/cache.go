@@ -21,7 +21,7 @@ func NewSecretCache() *SecretCache {
 	return &SecretCache{values: make(map[CacheKey]*secretmem.Value)}
 }
 
-func (c *SecretCache) Put(scopeID string, ref string, account string, value string) error {
+func (c *SecretCache) Put(key CacheKey, value string) error {
 	lockedValue, err := secretmem.New(value)
 	if err != nil {
 		return err
@@ -29,7 +29,6 @@ func (c *SecretCache) Put(scopeID string, ref string, account string, value stri
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := CacheKey{ScopeID: scopeID, Ref: ref, Account: account}
 	if oldValue := c.values[key]; oldValue != nil {
 		_ = oldValue.Destroy()
 	}
@@ -37,10 +36,10 @@ func (c *SecretCache) Put(scopeID string, ref string, account string, value stri
 	return nil
 }
 
-func (c *SecretCache) Get(scopeID string, ref string, account string) (string, bool) {
+func (c *SecretCache) Get(key CacheKey) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	value, ok := c.values[CacheKey{ScopeID: scopeID, Ref: ref, Account: account}]
+	value, ok := c.values[key]
 	if !ok {
 		return "", false
 	}

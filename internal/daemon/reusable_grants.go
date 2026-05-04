@@ -9,6 +9,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
 
 type reusableGrantManager struct {
@@ -159,7 +160,8 @@ func (m *reusableGrantManager) cacheResolvedValues(
 		if err := m.ensureApprovalActive(approvalID, expiresAt); err != nil {
 			return err
 		}
-		if err := m.cache.Put(approvalID, identity.ref, identity.account, value); err != nil {
+		key := secretcache.CacheKey{ScopeID: approvalID, Ref: identity.ref, Account: identity.account}
+		if err := m.cache.Put(key, value); err != nil {
 			return fmt.Errorf("cache approved secret in locked memory: %w", err)
 		}
 	}
@@ -175,7 +177,8 @@ func (m *reusableGrantManager) cachedValues(
 ) (map[string]string, error) {
 	env := make(map[string]string, len(secrets))
 	for _, secret := range secrets {
-		value, ok := m.cache.Get(approvalID, secret.Ref.Raw, secret.Account)
+		key := secretcache.CacheKey{ScopeID: approvalID, Ref: secret.Ref.Raw, Account: secret.Account}
+		value, ok := m.cache.Get(key)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrMissingCache, secret.Ref.Raw)
 		}
