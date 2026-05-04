@@ -164,7 +164,8 @@ case "$1" in
     cat >"$bin_dir/agent-secret" <<'BIN'
 #!/bin/sh
 if [ "${1:-}" = "doctor" ]; then
-  exit 0
+  printf 'installed-agent-secret doctor\n' >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+  exit "${AGENT_SECRET_INSTALL_TEST_DOCTOR_STATUS:-0}"
 fi
 exit 0
 BIN
@@ -475,6 +476,17 @@ test_install_cli_receives_original_path_before_sanitization() {
   assert_log_contains "$tmp_dir/$name/tools.log" "bundled-agent-secret install-cli PATH=$original_path"
 }
 
+test_diagnostics_failure_does_not_fail_install() {
+  local name="doctor-warning"
+
+  run_installer "$name" AGENT_SECRET_INSTALL_TEST_DOCTOR_STATUS=9
+
+  assert_log_contains "$tmp_dir/$name/tools.log" "installed-agent-secret doctor"
+  if [ ! -d "$tmp_dir/$name/apps/Agent Secret.app" ]; then
+    fail "installer did not leave app installed after diagnostics failure"
+  fi
+}
+
 test_identity_checks_run
 test_installer_has_no_developer_tool_dependency
 test_identity_failure_stops_install
@@ -490,5 +502,6 @@ test_destination_validation_rejects_symlinked_parent_dirs
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 test_untrusted_existing_cli_is_not_used_for_daemon_stop
 test_install_cli_receives_original_path_before_sanitization
+test_diagnostics_failure_does_not_fail_install
 
 echo "test-install: ok"
