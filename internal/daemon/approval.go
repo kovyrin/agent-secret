@@ -137,14 +137,12 @@ func (a *SocketApprover) SubmitDecision(
 	}
 	switch decision.Decision {
 	case approval.ApprovalDecisionApproveOnce:
-		if !a.now().Before(job.payload.ExpiresAt) {
-			a.complete(job, approvalResult{err: ErrRequestExpired})
+		if a.completeIfExpired(job) {
 			return nil
 		}
 		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true}})
 	case approval.ApprovalDecisionApproveReusable:
-		if !a.now().Before(job.payload.ExpiresAt) {
-			a.complete(job, approvalResult{err: ErrRequestExpired})
+		if a.completeIfExpired(job) {
 			return nil
 		}
 		if err := approval.ValidateReusableDecisionUses(decision, job.payload.ReusableUses); err != nil {
@@ -163,6 +161,14 @@ func (a *SocketApprover) SubmitDecision(
 		return fmt.Errorf("%w: invalid approval decision %q", protocol.ErrMalformedEnvelope, decision.Decision)
 	}
 	return nil
+}
+
+func (a *SocketApprover) completeIfExpired(job *approvalJob) bool {
+	if a.now().Before(job.payload.ExpiresAt) {
+		return false
+	}
+	a.complete(job, approvalResult{err: ErrRequestExpired})
+	return true
 }
 
 func (a *SocketApprover) promoteNext() {
