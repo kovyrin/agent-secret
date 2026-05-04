@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -14,7 +15,6 @@ import (
 )
 
 var (
-	ErrApprovalDenied       = errors.New("approval denied")
 	ErrApprovalUnavailable  = errors.New("approval unavailable")
 	ErrAuditRequired        = errors.New("audit required")
 	ErrInvalidNonce         = errors.New("invalid request nonce")
@@ -23,19 +23,8 @@ var (
 	ErrSecretResolveFailed  = errors.New("secret resolve failed")
 	ErrRequestAlreadyActive = errors.New("connection already has an active exec request")
 	ErrDaemonStopped        = errors.New("daemon stopped")
-	ErrRequestExpired       = errors.New("request expired")
 	ErrUnknownRequest       = errors.New("unknown request")
 )
-
-type Approver interface {
-	ApproveExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (ApprovalDecision, error)
-}
-
-type ApprovalDecision struct {
-	Approved     bool
-	Reusable     bool
-	ReusableUses int
-}
 
 type Resolver interface {
 	Resolve(ctx context.Context, ref string, account string) (string, error)
@@ -75,7 +64,7 @@ type BrokerOptions struct {
 	Now        func() time.Time
 	Store      *policy.Store
 	Cache      SecretCache
-	Approver   Approver
+	Approver   approval.Approver
 	Resolver   Resolver
 	Audit      AuditSink
 	FetchLimit int
@@ -142,7 +131,7 @@ func (b *Broker) handleExecDelivery(
 		return ExecGrant{}, err
 	}
 	if req.Expired(b.now()) {
-		return ExecGrant{}, ErrRequestExpired
+		return ExecGrant{}, approval.ErrRequestExpired
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
 	defer cancelExec()

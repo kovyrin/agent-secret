@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -99,7 +100,7 @@ func runDaemonManagerHelper(t *testing.T) {
 	}
 	aud := &memoryAudit{}
 	broker, err := NewBroker(BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})

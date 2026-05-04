@@ -40,7 +40,7 @@ func run() int {
 	}
 	defer func() { _ = auditWriter.Close() }()
 
-	approver, err := daemon.NewSocketApprover(
+	approver, err := approval.NewSocketApprover(
 		config.socketPath,
 		approval.ProcessApproverLauncher{},
 		nil,

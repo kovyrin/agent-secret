@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -78,12 +79,12 @@ func (m *reusableGrantManager) finishDelivery(approvalID string, result policy.D
 	if approvalID == "" {
 		return nil
 	}
-	approval, err := m.store.FinishReusableAttempt(approvalID, result)
+	reusableApproval, err := m.store.FinishReusableAttempt(approvalID, result)
 	if err != nil {
 		if result == policy.DeliveryPayloadDelivered {
 			m.clearScope(approvalID)
 			if errors.Is(err, policy.ErrExpired) {
-				return ErrRequestExpired
+				return approval.ErrRequestExpired
 			}
 			return err
 		}
@@ -92,8 +93,8 @@ func (m *reusableGrantManager) finishDelivery(approvalID string, result policy.D
 		}
 		return nil
 	}
-	if approval.Uses >= approval.MaxUses {
-		m.clearScope(approval.ID)
+	if reusableApproval.Uses >= reusableApproval.MaxUses {
+		m.clearScope(reusableApproval.ID)
 	}
 	return nil
 }
@@ -118,7 +119,7 @@ func (m *reusableGrantManager) ensureApprovalActive(approvalID string, expiresAt
 		return nil
 	}
 	m.rollbackApproval(approvalID)
-	return ErrRequestExpired
+	return approval.ErrRequestExpired
 }
 
 func (m *reusableGrantManager) scheduleExpiry(approvalID string, expiresAt time.Time) {
@@ -189,13 +190,13 @@ func (m *reusableGrantManager) cachedValues(
 
 func (m *reusableGrantManager) createGrant(
 	req request.ExecRequest,
-	decision ApprovalDecision,
+	decision approval.Decision,
 	refValues map[secretIdentity]string,
 ) (string, time.Time, error) {
 	if !decision.Reusable {
 		return "", time.Time{}, nil
 	}
-	approval, err := m.store.AddReusable(policy.ReusableApprovalSpec{
+	reusableApproval, err := m.store.AddReusable(policy.ReusableApprovalSpec{
 		Request:      req,
 		MaxUses:      decision.ReusableUses,
 		ReservedUses: 1,
@@ -203,10 +204,10 @@ func (m *reusableGrantManager) createGrant(
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if err := m.cacheResolvedValues(approval.ID, approval.ExpiresAt, refValues); err != nil {
-		m.rollbackApproval(approval.ID)
+	if err := m.cacheResolvedValues(reusableApproval.ID, reusableApproval.ExpiresAt, refValues); err != nil {
+		m.rollbackApproval(reusableApproval.ID)
 		return "", time.Time{}, err
 	}
-	m.scheduleExpiry(approval.ID, approval.ExpiresAt)
-	return approval.ID, approval.ExpiresAt, nil
+	m.scheduleExpiry(reusableApproval.ID, reusableApproval.ExpiresAt)
+	return reusableApproval.ID, reusableApproval.ExpiresAt, nil
 }

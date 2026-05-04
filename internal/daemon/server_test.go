@@ -56,7 +56,7 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
 	client, cleanup := startTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
@@ -97,7 +97,7 @@ func TestServerStampsExecRequestTimeWithDaemonClock(t *testing.T) {
 	daemonNow := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
 	approver := &recordingApprover{
-		decision: ApprovalDecision{Approved: true},
+		decision: approval.Decision{Approved: true},
 		seen:     make(chan request.ExecRequest, 1),
 	}
 	client, cleanup := startTestServer(t, BrokerOptions{
@@ -135,7 +135,7 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
@@ -180,7 +180,7 @@ func TestServerRejectsLifecycleReportsFromDifferentConnection(t *testing.T) {
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
 	path, stop := startRawTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
@@ -223,7 +223,7 @@ func TestServerRejectsBadProtocolVersionAndNonceMismatch(t *testing.T) {
 	t.Parallel()
 
 	client, cleanup := startTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey("op://Example/Item/token", "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
@@ -249,7 +249,7 @@ func TestServerMalformedEnvelopeReturnsProtocolError(t *testing.T) {
 	t.Parallel()
 
 	path, stop := startRawTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
 	})
@@ -401,7 +401,7 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
 	client, cleanup := startTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
 	})
@@ -432,7 +432,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	ref := "op://Example/Item/token"
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.ReusableUses = 1
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 1}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
 	aud := &callbackAudit{}
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: approver,
@@ -501,7 +501,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	now := daemonNow
 	ref := "op://Example/Item/token"
 	cache := secretcache.NewSecretCache()
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 1}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
 	broker := newTestBroker(t, BrokerOptions{
 		Now:      func() time.Time { return now },
 		Cache:    cache,
@@ -573,7 +573,7 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
 	path, stop := startRawTestServer(t, BrokerOptions{
 		Approver: approver,
@@ -633,7 +633,7 @@ func TestServerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 	ref := "op://Example/Item/token"
 	aud := &memoryAudit{}
 	client, cleanup := startTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): canarySecretValue}},
 		Audit:    aud,
 	})
@@ -674,7 +674,7 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
 		newTestBroker(t, BrokerOptions{
-			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
@@ -710,7 +710,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	ref := "op://Example/Item/token"
 	resolver := &mockResolver{values: map[string]string{ref: "value"}}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
 	})
@@ -780,7 +780,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
 		newTestBroker(t, BrokerOptions{
-			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
@@ -840,18 +840,13 @@ func TestServerApprovalProtocolOverSingleSocket(t *testing.T) {
 		}
 		execDone <- payload
 	}()
-	waitForPendingOrExecError(t, approver, execErr)
-
 	appConn, err := socket.Dial(context.Background(), client.SocketPath)
 	if err != nil {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
 	appClient := NewClient(appConn)
 	defer func() { _ = appClient.Close() }()
-	pending, err := appClient.FetchPendingApproval(context.Background())
-	if err != nil {
-		t.Fatalf("FetchPendingApproval returned error: %v", err)
-	}
+	pending := fetchPendingApprovalOrExecError(t, appClient, execErr)
 	if pending.RequestID != "req_1" || pending.Nonce != "nonce_1" {
 		t.Fatalf("unexpected pending approval payload: %+v", pending)
 	}
@@ -915,18 +910,13 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 		}
 		execDone <- payload
 	}()
-	waitForPendingOrExecError(t, approver, execErr)
-
 	appConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Dial app client returned error: %v", err)
 	}
 	appClient := NewClient(appConn)
 	defer func() { _ = appClient.Close() }()
-	pending, err := appClient.FetchPendingApproval(context.Background())
-	if err != nil {
-		t.Fatalf("FetchPendingApproval returned error: %v", err)
-	}
+	pending := fetchPendingApprovalOrExecError(t, appClient, execErr)
 
 	time.Sleep(60 * time.Millisecond)
 
@@ -954,7 +944,7 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 	t.Parallel()
 
 	client, cleanup := startTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
 	})
@@ -977,7 +967,7 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	t.Parallel()
 
 	path, stop := startRawTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &memoryAudit{},
 	})
@@ -1035,7 +1025,7 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	path, stop := startRawTestServer(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    &memoryAudit{},
 	})
@@ -1087,7 +1077,7 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	t.Parallel()
 
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: approver,
@@ -1112,7 +1102,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
 	t.Parallel()
 
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
 	client, cleanup := startTestServer(t, BrokerOptions{
 		Approver: approver,
@@ -1138,7 +1128,7 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
 	path, stop := startRawServerWithBrokerAndExecValidator(
 		t,
@@ -1176,7 +1166,7 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{
 		values: map[string]string{"op://Example/Item/token": canarySecretValue},
 	}
@@ -1284,7 +1274,7 @@ func TestServerRejectsPeerBeforeDecodingRequest(t *testing.T) {
 	path, stop := startRawServerWithBroker(
 		t,
 		newTestBroker(t, BrokerOptions{
-			Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
@@ -1321,7 +1311,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		err  error
 		want protocol.ErrorCode
 	}{
-		{err: ErrApprovalDenied, want: protocol.ErrorCodeApprovalDenied},
+		{err: approval.ErrApprovalDenied, want: protocol.ErrorCodeApprovalDenied},
 		{err: ErrAuditRequired, want: protocol.ErrorCodeAuditFailed},
 		{err: ErrInvalidNonce, want: protocol.ErrorCodeInvalidNonce},
 		{err: approval.ErrApproverPeerMismatch, want: protocol.ErrorCodeApproverPeerMismatch},
@@ -1329,7 +1319,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: approval.ErrNoPendingApproval, want: protocol.ErrorCodeNoPendingApproval},
 		{err: ErrRequestAlreadyActive, want: protocol.ErrorCodeRequestActive},
 		{err: ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
-		{err: ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
+		{err: approval.ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
 		{err: approval.ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
 		{err: peertrust.ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
 		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
@@ -1344,7 +1334,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 	}
 }
 
-func waitForPendingOrExecError(t *testing.T, approver *SocketApprover, execErr <-chan error) {
+func fetchPendingApprovalOrExecError(t *testing.T, client *Client, execErr <-chan error) approval.ApprovalRequestPayload {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
@@ -1353,15 +1343,23 @@ func waitForPendingOrExecError(t *testing.T, approver *SocketApprover, execErr <
 			t.Fatalf("RequestExec returned before pending approval: %v", err)
 		default:
 		}
-		approver.mu.Lock()
-		ready := approver.active != nil && approver.active.expectedReady
-		approver.mu.Unlock()
-		if ready {
-			return
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		pending, err := client.FetchPendingApproval(ctx)
+		cancel()
+		if err == nil {
+			return pending
+		}
+		if !pendingApprovalFetchRetryable(err) {
+			t.Fatalf("FetchPendingApproval returned error: %v", err)
 		}
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("timed out waiting for pending approval")
+	return approval.ApprovalRequestPayload{}
+}
+
+func pendingApprovalFetchRetryable(err error) bool {
+	return IsProtocolError(err, protocol.ErrorCodeNoPendingApproval) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func startTestServer(t *testing.T, opts BrokerOptions) (*Client, func()) {

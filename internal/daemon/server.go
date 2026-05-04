@@ -359,7 +359,7 @@ func (s *Server) setExecResponseWriteDeadline(conn *net.UnixConn, expiresAt time
 	}
 	remaining := expiresAt.Sub(s.broker.now())
 	if remaining <= 0 {
-		return func() {}, ErrRequestExpired
+		return func() {}, approval.ErrRequestExpired
 	}
 	if err := conn.SetWriteDeadline(time.Now().Add(remaining)); err != nil {
 		return func() {}, fmt.Errorf("set exec response write deadline: %w", err)
@@ -484,7 +484,7 @@ func writeErrorEncoder(encoder *json.Encoder, correlation protocol.Correlation, 
 
 func codeForError(err error) protocol.ErrorCode {
 	switch {
-	case errors.Is(err, ErrApprovalDenied):
+	case errors.Is(err, approval.ErrApprovalDenied):
 		return protocol.ErrorCodeApprovalDenied
 	case errors.Is(err, ErrAuditRequired):
 		return protocol.ErrorCodeAuditFailed
@@ -500,7 +500,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeRequestActive
 	case errors.Is(err, ErrDaemonStopped):
 		return protocol.ErrorCodeDaemonStopped
-	case errors.Is(err, ErrRequestExpired):
+	case errors.Is(err, approval.ErrRequestExpired):
 		return protocol.ErrorCodeRequestExpired
 	case errors.Is(err, approval.ErrStaleApproval):
 		return protocol.ErrorCodeStaleApproval

@@ -17,6 +17,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -36,7 +37,7 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
 		Audit:    &appAudit{},
 	})
@@ -73,7 +74,7 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 
 	ref := "op://Example/Item/token"
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
 		Audit:    &appAudit{},
 	})
@@ -115,7 +116,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 	}
 
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: false}},
+		Approver: &appApprover{decision: approval.Decision{Approved: false}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
 		Audit:    &appAudit{},
 	})
@@ -179,7 +180,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &appAudit{},
 	})
@@ -243,7 +244,7 @@ func TestAppDaemonStatusUsesDefaultProtocolDeadline(t *testing.T) {
 func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
 		Audit:    &appAudit{},
 	})
@@ -270,7 +271,7 @@ func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 
 func TestAppDaemonStartAndStopCommands(t *testing.T) {
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    &appAudit{},
 	})
@@ -398,7 +399,7 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 	ref := "op://Example/Item/token"
 	client, cleanup := startAppTestServer(t, daemon.BrokerOptions{
-		Approver: &appApprover{decision: daemon.ApprovalDecision{Approved: true}},
+		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{ref: "synthetic-secret-value"}},
 		Audit:    &appAudit{},
 	})
@@ -542,14 +543,14 @@ func appTestManager(client appTestClient) daemon.Manager {
 }
 
 type appApprover struct {
-	decision daemon.ApprovalDecision
+	decision approval.Decision
 }
 
 func (a *appApprover) ApproveExec(
 	_ context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
-) (daemon.ApprovalDecision, error) {
+) (approval.Decision, error) {
 	return a.decision, nil
 }
 

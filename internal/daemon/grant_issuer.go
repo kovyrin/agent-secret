@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -15,7 +16,7 @@ import (
 type grantIssuer struct {
 	now        func() time.Time
 	reusable   *reusableGrantManager
-	approver   Approver
+	approver   approval.Approver
 	resolver   Resolver
 	audit      AuditSink
 	fetchLimit int
@@ -48,7 +49,7 @@ func newGrantIssuer(
 	now func() time.Time,
 	store *policy.Store,
 	cache SecretCache,
-	approver Approver,
+	approver approval.Approver,
 	resolver Resolver,
 	audit AuditSink,
 	fetchLimit int,
@@ -166,7 +167,7 @@ func (g *grantIssuer) ensureRequestActive(ctx context.Context, req request.ExecR
 			return ErrDaemonStopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) && req.Expired(g.now()) {
-			return ErrRequestExpired
+			return approval.ErrRequestExpired
 		}
 		return err
 	}
@@ -174,7 +175,7 @@ func (g *grantIssuer) ensureRequestActive(ctx context.Context, req request.ExecR
 		return ErrDaemonStopped
 	}
 	if req.Expired(g.now()) {
-		return ErrRequestExpired
+		return approval.ErrRequestExpired
 	}
 	return nil
 }
@@ -199,11 +200,11 @@ func (g *grantIssuer) requestError(ctx context.Context, req request.ExecRequest,
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, ErrApprovalDenied) || errors.Is(err, ErrRequestExpired) {
+	if errors.Is(err, approval.ErrApprovalDenied) || errors.Is(err, approval.ErrRequestExpired) {
 		return err
 	}
 	if activeErr := g.ensureRequestActive(ctx, req); activeErr != nil {
-		if errors.Is(activeErr, ErrDaemonStopped) || errors.Is(activeErr, ErrRequestExpired) {
+		if errors.Is(activeErr, ErrDaemonStopped) || errors.Is(activeErr, approval.ErrRequestExpired) {
 			return activeErr
 		}
 	}
@@ -336,7 +337,7 @@ func (g *grantIssuer) freshGrant(
 		if err := g.recordApprovalDenied(ctx, correlation.RequestID, req); err != nil {
 			return issuedGrant{}, err
 		}
-		return issuedGrant{}, ErrApprovalDenied
+		return issuedGrant{}, approval.ErrApprovalDenied
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
 		return issuedGrant{}, err
@@ -481,9 +482,9 @@ func (g *grantIssuer) recordApprovalError(
 	err error,
 ) error {
 	switch {
-	case errors.Is(err, ErrApprovalDenied):
+	case errors.Is(err, approval.ErrApprovalDenied):
 		return g.recordApprovalDenied(ctx, requestID, req)
-	case errors.Is(err, ErrRequestExpired):
+	case errors.Is(err, approval.ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
 		event.ErrorCode = auditErrorCode(protocol.ErrorCodeRequestExpired)
 		auditCtx, cancel := terminalAuditContext(ctx)

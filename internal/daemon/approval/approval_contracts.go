@@ -3,9 +3,21 @@ package approval
 import (
 	"context"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/request"
 )
+
+type Approver interface {
+	ApproveExec(ctx context.Context, correlation protocol.Correlation, req request.ExecRequest) (Decision, error)
+}
+
+type Decision struct {
+	Approved     bool
+	Reusable     bool
+	ReusableUses int
+}
 
 type ApprovalEndpoint interface {
 	FetchPending(ctx context.Context, peer peercred.Info) (ApprovalRequestPayload, error)

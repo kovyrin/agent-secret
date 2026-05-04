@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/policy"
@@ -62,7 +63,7 @@ func requireNoActiveRequest(t *testing.T, b *Broker, correlation protocol.Correl
 }
 
 type mockApprover struct {
-	decision ApprovalDecision
+	decision approval.Decision
 	err      error
 	calls    int
 	order    *[]string
@@ -72,7 +73,7 @@ func (m *mockApprover) ApproveExec(
 	_ context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
-) (ApprovalDecision, error) {
+) (approval.Decision, error) {
 	m.calls++
 	if m.order != nil {
 		*m.order = append(*m.order, "approve")
@@ -81,7 +82,7 @@ func (m *mockApprover) ApproveExec(
 }
 
 type recordingApprover struct {
-	decision ApprovalDecision
+	decision approval.Decision
 	seen     chan request.ExecRequest
 }
 
@@ -89,14 +90,14 @@ func (r *recordingApprover) ApproveExec(
 	_ context.Context,
 	_ protocol.Correlation,
 	req request.ExecRequest,
-) (ApprovalDecision, error) {
+) (approval.Decision, error) {
 	r.seen <- req
 	return r.decision, nil
 }
 
 type sleepingApprover struct {
 	delay    time.Duration
-	decision ApprovalDecision
+	decision approval.Decision
 	calls    int
 }
 
@@ -104,7 +105,7 @@ func (s *sleepingApprover) ApproveExec(
 	_ context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
-) (ApprovalDecision, error) {
+) (approval.Decision, error) {
 	s.calls++
 	time.Sleep(s.delay)
 	return s.decision, nil
@@ -118,10 +119,10 @@ func (a *contextExpiringApprover) ApproveExec(
 	ctx context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
-) (ApprovalDecision, error) {
+) (approval.Decision, error) {
 	<-ctx.Done()
 	close(a.done)
-	return ApprovalDecision{}, ErrRequestExpired
+	return approval.Decision{}, approval.ErrRequestExpired
 }
 
 type contextDenyingApprover struct {
@@ -132,10 +133,10 @@ func (a *contextDenyingApprover) ApproveExec(
 	ctx context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
-) (ApprovalDecision, error) {
+) (approval.Decision, error) {
 	<-ctx.Done()
 	close(a.done)
-	return ApprovalDecision{}, ErrApprovalDenied
+	return approval.Decision{}, approval.ErrApprovalDenied
 }
 
 type blockingApprover struct {
@@ -147,11 +148,11 @@ func (a *blockingApprover) ApproveExec(
 	ctx context.Context,
 	_ protocol.Correlation,
 	_ request.ExecRequest,
-) (ApprovalDecision, error) {
+) (approval.Decision, error) {
 	close(a.started)
 	<-ctx.Done()
 	close(a.canceled)
-	return ApprovalDecision{}, ctx.Err()
+	return approval.Decision{}, ctx.Err()
 }
 
 type mockResolver struct {
@@ -380,7 +381,7 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	order := []string{}
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}, order: &order},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}, order: &order},
 		Resolver: &mockResolver{values: map[string]string{
 			"op://Example/Item/token": canarySecretValue,
 		}, order: &order},
@@ -415,7 +416,7 @@ func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 
 	assertApprovalFailureAudited(t, approvalFailureAuditCase{
 		name:      "denial",
-		err:       ErrApprovalDenied,
+		err:       approval.ErrApprovalDenied,
 		eventType: audit.EventApprovalDenied,
 		errorCode: protocol.ErrorCodeApprovalDenied,
 	})
@@ -426,7 +427,7 @@ func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testi
 
 	assertApprovalFailureAudited(t, approvalFailureAuditCase{
 		name:      "timeout",
-		err:       ErrRequestExpired,
+		err:       approval.ErrRequestExpired,
 		eventType: audit.EventApprovalTimedOut,
 		errorCode: protocol.ErrorCodeRequestExpired,
 	})
@@ -439,7 +440,7 @@ func TestBrokerApprovalTimeoutAuditIgnoresExpiredRequestContext(t *testing.T) {
 	assertDeadlineApprovalFailureAudited(t, deadlineApprovalFailureCase{
 		approver:  &contextExpiringApprover{done: done},
 		done:      done,
-		err:       ErrRequestExpired,
+		err:       approval.ErrRequestExpired,
 		eventType: audit.EventApprovalTimedOut,
 		errorCode: protocol.ErrorCodeRequestExpired,
 		name:      "approval timeout",
@@ -453,7 +454,7 @@ func TestBrokerLateDenialAuditsDenialWithoutResolveOrCommandStart(t *testing.T) 
 	assertDeadlineApprovalFailureAudited(t, deadlineApprovalFailureCase{
 		approver:  &contextDenyingApprover{done: done},
 		done:      done,
-		err:       ErrApprovalDenied,
+		err:       approval.ErrApprovalDenied,
 		eventType: audit.EventApprovalDenied,
 		errorCode: protocol.ErrorCodeApprovalDenied,
 		name:      "late denial",
@@ -461,7 +462,7 @@ func TestBrokerLateDenialAuditsDenialWithoutResolveOrCommandStart(t *testing.T) 
 }
 
 type deadlineApprovalFailureCase struct {
-	approver  Approver
+	approver  approval.Approver
 	done      <-chan struct{}
 	err       error
 	eventType audit.EventType
@@ -552,7 +553,7 @@ func TestBrokerDeduplicatesRefsAndPreservesEmptyValues(t *testing.T) {
 	ref := "op://Example/Item/token"
 	resolver := &mockResolver{values: map[string]string{ref: ""}}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
 	})
@@ -584,7 +585,7 @@ func TestBrokerSeparatesSameRefAcrossAccounts(t *testing.T) {
 		resolverCallKey(ref, "Work"):     "work-value",
 	}}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: resolver,
 		Audit:    &memoryAudit{},
 	})
@@ -610,7 +611,7 @@ func TestBrokerPartialFetchFailureReturnsNoPayload(t *testing.T) {
 	failingRef := "op://Example/Item/failing"
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{
 			values: map[string]string{"op://Example/Item/token": canarySecretValue},
 			errs:   map[string]error{failingRef: fmt.Errorf("unreadable %s", canarySecretValue)},
@@ -661,7 +662,7 @@ func TestBrokerCancelsOutstandingFetchesAfterFirstFailure(t *testing.T) {
 	}
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver:   &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver:   &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver:   resolver,
 		Audit:      aud,
 		FetchLimit: 2,
@@ -704,7 +705,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	aud := &contextCheckingAudit{}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      time.Now,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}},
 		Resolver: resolver,
 		Audit:    aud,
 		Cache:    secretcache.NewSecretCache(),
@@ -714,7 +715,7 @@ func TestBrokerRequestDeadlineCancelsSlowSecretFetch(t *testing.T) {
 	}
 
 	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
-	if !errors.Is(err, ErrRequestExpired) {
+	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected request expiry while resolving, got %v", err)
 	}
 	receiveBrokerSignal(t, resolver.done, "resolver did not observe request deadline")
@@ -753,7 +754,7 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 	aud := &contextCheckingAudit{}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      time.Now,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -770,7 +771,7 @@ func TestBrokerRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.
 
 	select {
 	case err := <-errCh:
-		if !errors.Is(err, ErrRequestExpired) {
+		if !errors.Is(err, approval.ErrRequestExpired) {
 			t.Fatalf("deliverExec error = %v, want request expired", err)
 		}
 	case <-time.After(time.Second):
@@ -810,7 +811,7 @@ func TestBrokerRejectsApprovalThatReturnsAfterRequestExpiry(t *testing.T) {
 	req.ExpiresAt = req.ReceivedAt.Add(req.TTL)
 	approver := &sleepingApprover{
 		delay:    50 * time.Millisecond,
-		decision: ApprovalDecision{Approved: true, Reusable: true},
+		decision: approval.Decision{Approved: true, Reusable: true},
 	}
 	resolver := &mockResolver{values: map[string]string{ref: "value"}}
 	aud := &memoryAudit{}
@@ -825,7 +826,7 @@ func TestBrokerRejectsApprovalThatReturnsAfterRequestExpiry(t *testing.T) {
 	}
 
 	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
-	if !errors.Is(err, ErrRequestExpired) {
+	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected request expiry after slow approval, got %v", err)
 	}
 	if approver.calls != 1 {
@@ -864,7 +865,7 @@ func TestBrokerStopsBeforePayloadWhenRequestExpiresAfterResolution(t *testing.T)
 	broker, err := NewBroker(BrokerOptions{
 		Now:      nowFn,
 		Cache:    cache,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}},
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -873,7 +874,7 @@ func TestBrokerStopsBeforePayloadWhenRequestExpiresAfterResolution(t *testing.T)
 	}
 
 	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), req)
-	if !errors.Is(err, ErrRequestExpired) {
+	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected request expiry after resolution, got %v", err)
 	}
 	if cache.puts != 0 {
@@ -889,7 +890,7 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 4}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 4}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	aud := &memoryAudit{}
 	cache := secretcache.NewSecretCache()
@@ -947,7 +948,7 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 2}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 2}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	cache := secretcache.NewSecretCache()
 	broker := newTestBroker(t, BrokerOptions{
@@ -1000,7 +1001,7 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true, ReusableUses: 2}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 2}}
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: approver,
@@ -1032,9 +1033,9 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 		t.Fatalf("second delivery did not reuse cached first value: %+v", second.Env)
 	}
 
-	approver.decision = ApprovalDecision{Approved: false}
+	approver.decision = approval.Decision{Approved: false}
 	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_3", "nonce_3"), req)
-	if !errors.Is(err, ErrApprovalDenied) {
+	if !errors.Is(err, approval.ErrApprovalDenied) {
 		t.Fatalf("third deliverExec reused a reserved one-use approval; got %v", err)
 	}
 	if approver.calls != 2 {
@@ -1051,7 +1052,7 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	ref := "op://Example/Item/token"
 	cache := secretcache.NewSecretCache()
 	resolver := &mockResolver{values: map[string]string{ref: "first"}}
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      func() time.Time { return now },
 		Cache:    cache,
@@ -1097,7 +1098,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
 	cache := secretcache.NewSecretCache()
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}}
 	broker, err := NewBroker(BrokerOptions{
 		Now:      func() time.Time { return now },
 		Cache:    cache,
@@ -1130,7 +1131,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	force.ForceRefresh = true
 
 	_, err = deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), force)
-	if !errors.Is(err, ErrRequestExpired) {
+	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected expired reusable approval during refresh, got %v", err)
 	}
 	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
@@ -1150,7 +1151,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 	broker, err := NewBroker(BrokerOptions{
 		Now:      func() time.Time { return now },
 		Cache:    cache,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}},
 		Resolver: &mockResolver{values: map[string]string{ref: "first"}},
 		Audit:    &memoryAudit{},
 	})
@@ -1177,7 +1178,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 			return nil
 		},
 	)
-	if !errors.Is(err, ErrRequestExpired) {
+	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected reusable approval expiry before payload delivery, got %v", err)
 	}
 	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
@@ -1192,7 +1193,7 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	ref := "op://Example/Item/token"
 	cache := secretcache.NewSecretCache()
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}},
 		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
 		Audit:    &memoryAudit{},
 		Cache:    cache,
@@ -1265,7 +1266,7 @@ func TestBrokerStopCancelsSecretResolution(t *testing.T) {
 	resolver := &blockingResolver{started: make(chan struct{}), canceled: make(chan struct{})}
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: resolver,
 		Audit:    aud,
 	})
@@ -1301,7 +1302,7 @@ func TestBrokerRollsBackReusableApprovalWhenCacheInsertFails(t *testing.T) {
 	ref := "op://Example/Item/token"
 	store := policy.NewStore(func() time.Time { return time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC) })
 	cache := newFailingSecretCache(errors.New("mlock failed"), 1)
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}}
 	broker := newTestBroker(t, BrokerOptions{
 		Store:    store,
 		Cache:    cache,
@@ -1351,7 +1352,7 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 	broker := newTestBroker(t, BrokerOptions{
 		Store:    store,
 		Cache:    cache,
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true, Reusable: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true, Reusable: true}},
 		Resolver: &mockResolver{values: map[string]string{ref: "value"}},
 		Audit: &memoryAudit{errByType: map[audit.EventType]error{
 			audit.EventCommandStarting: errors.New("disk full"),
@@ -1380,7 +1381,7 @@ func TestBrokerReportLifecycleValidatesNonceAndAudits(t *testing.T) {
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
@@ -1420,7 +1421,7 @@ func TestBrokerClientDisconnectAfterPayloadAuditsWithoutKillingProcess(t *testin
 
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
@@ -1447,7 +1448,7 @@ func TestBrokerClientDisconnectAuditFailureIsBestEffort(t *testing.T) {
 		},
 	}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit:    aud,
 	})
@@ -1470,7 +1471,7 @@ func TestBrokerClientDisconnectAfterStartAuditsIncompleteLifecycle(t *testing.T)
 
 	aud := &memoryAudit{}
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": canarySecretValue}},
 		Audit:    aud,
 	})
@@ -1508,7 +1509,7 @@ func TestBrokerStopAuditFailureIsBestEffort(t *testing.T) {
 	t.Parallel()
 
 	broker := newTestBroker(t, BrokerOptions{
-		Approver: &mockApprover{decision: ApprovalDecision{Approved: true}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 		Audit: &memoryAudit{
 			errByType: map[audit.EventType]error{
@@ -1529,7 +1530,7 @@ func TestBrokerStopAuditFailureIsBestEffort(t *testing.T) {
 func TestBrokerAuditFailureStopsBeforePayload(t *testing.T) {
 	t.Parallel()
 
-	approver := &mockApprover{decision: ApprovalDecision{Approved: true}}
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}}
 	broker := newTestBroker(t, BrokerOptions{
 		Approver: approver,

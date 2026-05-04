@@ -1,4 +1,4 @@
-package daemon
+package approval
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -18,32 +17,32 @@ type SocketApprover struct {
 	cond       *sync.Cond
 	now        func() time.Time
 	socketPath string
-	launcher   approval.ApproverLauncher
+	launcher   ApproverLauncher
 	queue      []*approvalJob
 	active     *approvalJob
 }
 
 type approvalJob struct {
-	payload       approval.ApprovalRequestPayload
+	payload       ApprovalRequestPayload
 	done          chan struct{}
 	doneOnce      sync.Once
-	expected      approval.ExpectedApprover
+	expected      ExpectedApprover
 	expectedReady bool
 	expectedUsed  bool
 	result        chan approvalResult
 }
 
 type approvalResult struct {
-	decision ApprovalDecision
+	decision Decision
 	err      error
 }
 
-func NewSocketApprover(socketPath string, launcher approval.ApproverLauncher, now func() time.Time) (*SocketApprover, error) {
+func NewSocketApprover(socketPath string, launcher ApproverLauncher, now func() time.Time) (*SocketApprover, error) {
 	if socketPath == "" {
 		return nil, errors.New("approver socket path is required")
 	}
 	if launcher == nil {
-		return nil, approval.ErrApproverLaunchFailed
+		return nil, ErrApproverLaunchFailed
 	}
 	if now == nil {
 		now = time.Now
@@ -61,9 +60,9 @@ func (a *SocketApprover) ApproveExec(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-) (ApprovalDecision, error) {
+) (Decision, error) {
 	job := &approvalJob{
-		payload: approval.NewRequestPayload(correlation, req),
+		payload: NewRequestPayload(correlation, req),
 		done:    make(chan struct{}),
 		result:  make(chan approvalResult, 1),
 	}
@@ -79,7 +78,7 @@ func (a *SocketApprover) ApproveExec(
 	timeout := job.payload.ExpiresAt.Sub(a.now())
 	if timeout <= 0 {
 		a.cancel(job, ErrRequestExpired)
-		return ApprovalDecision{}, ErrRequestExpired
+		return Decision{}, ErrRequestExpired
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -89,30 +88,30 @@ func (a *SocketApprover) ApproveExec(
 		return result.decision, result.err
 	case <-ctx.Done():
 		a.cancel(job, ctx.Err())
-		return ApprovalDecision{}, ctx.Err()
+		return Decision{}, ctx.Err()
 	case <-timer.C:
 		a.cancel(job, ErrRequestExpired)
-		return ApprovalDecision{}, ErrRequestExpired
+		return Decision{}, ErrRequestExpired
 	}
 }
 
-func (a *SocketApprover) FetchPending(ctx context.Context, peer peercred.Info) (approval.ApprovalRequestPayload, error) {
+func (a *SocketApprover) FetchPending(ctx context.Context, peer peercred.Info) (ApprovalRequestPayload, error) {
 	job, err := a.activeWhenExpectedReady(ctx)
 	if err != nil {
-		return approval.ApprovalRequestPayload{}, err
+		return ApprovalRequestPayload{}, err
 	}
 	if job == nil {
-		return approval.ApprovalRequestPayload{}, approval.ErrNoPendingApproval
+		return ApprovalRequestPayload{}, ErrNoPendingApproval
 	}
 	if !a.now().Before(job.payload.ExpiresAt) {
 		a.complete(job, approvalResult{err: ErrRequestExpired})
-		return approval.ApprovalRequestPayload{}, ErrRequestExpired
+		return ApprovalRequestPayload{}, ErrRequestExpired
 	}
-	if err := approval.ValidateApproverPeer(job.expected, peer); err != nil {
-		return approval.ApprovalRequestPayload{}, err
+	if err := ValidateApproverPeer(job.expected, peer); err != nil {
+		return ApprovalRequestPayload{}, err
 	}
 	if !a.markExpectedUsed(job) {
-		return approval.ApprovalRequestPayload{}, approval.ErrNoPendingApproval
+		return ApprovalRequestPayload{}, ErrNoPendingApproval
 	}
 	return job.payload, nil
 }
@@ -120,42 +119,42 @@ func (a *SocketApprover) FetchPending(ctx context.Context, peer peercred.Info) (
 func (a *SocketApprover) SubmitDecision(
 	ctx context.Context,
 	peer peercred.Info,
-	decision approval.ApprovalDecisionPayload,
+	decision ApprovalDecisionPayload,
 ) error {
 	job, err := a.activeWhenExpectedReady(ctx)
 	if err != nil {
 		return err
 	}
 	if job == nil {
-		return approval.ErrNoPendingApproval
+		return ErrNoPendingApproval
 	}
-	if err := approval.ValidateApproverPeer(job.expected, peer); err != nil {
+	if err := ValidateApproverPeer(job.expected, peer); err != nil {
 		return err
 	}
 	if decision.RequestID != job.payload.RequestID || decision.Nonce != job.payload.Nonce {
-		return approval.ErrStaleApproval
+		return ErrStaleApproval
 	}
 	switch decision.Decision {
-	case approval.ApprovalDecisionApproveOnce:
+	case ApprovalDecisionApproveOnce:
 		if a.completeIfExpired(job) {
 			return nil
 		}
-		a.complete(job, approvalResult{decision: ApprovalDecision{Approved: true}})
-	case approval.ApprovalDecisionApproveReusable:
+		a.complete(job, approvalResult{decision: Decision{Approved: true}})
+	case ApprovalDecisionApproveReusable:
 		if a.completeIfExpired(job) {
 			return nil
 		}
-		if err := approval.ValidateReusableDecisionUses(decision, job.payload.ReusableUses); err != nil {
+		if err := ValidateReusableDecisionUses(decision, job.payload.ReusableUses); err != nil {
 			return err
 		}
-		a.complete(job, approvalResult{decision: ApprovalDecision{
+		a.complete(job, approvalResult{decision: Decision{
 			Approved:     true,
 			Reusable:     true,
 			ReusableUses: job.payload.ReusableUses,
 		}})
-	case approval.ApprovalDecisionDeny:
+	case ApprovalDecisionDeny:
 		a.complete(job, approvalResult{err: ErrApprovalDenied})
-	case approval.ApprovalDecisionTimeout:
+	case ApprovalDecisionTimeout:
 		a.complete(job, approvalResult{err: ErrRequestExpired})
 	default:
 		return fmt.Errorf("%w: invalid approval decision %q", protocol.ErrMalformedEnvelope, decision.Decision)
@@ -193,7 +192,7 @@ func (a *SocketApprover) promoteNext() {
 			a.cancel(job, context.Canceled)
 			return
 		}
-		a.complete(job, approvalResult{err: fmt.Errorf("%w: %w", approval.ErrApproverLaunchFailed, err)})
+		a.complete(job, approvalResult{err: fmt.Errorf("%w: %w", ErrApproverLaunchFailed, err)})
 		return
 	}
 
@@ -292,7 +291,7 @@ func (a *SocketApprover) monitorExpectedApprover(job *approvalJob, exited <-chan
 		if err != nil {
 			message = fmt.Sprintf("%s: %v", message, err)
 		}
-		a.complete(job, approvalResult{err: fmt.Errorf("%w: %s", approval.ErrApproverLaunchFailed, message)})
+		a.complete(job, approvalResult{err: fmt.Errorf("%w: %s", ErrApproverLaunchFailed, message)})
 	case <-job.done:
 	}
 }
