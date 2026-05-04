@@ -60,3 +60,26 @@ func TestBestEffortFallsBackToAbsolutePath(t *testing.T) {
 		t.Fatalf("BestEffort path = %q, want unresolved absolute path %q", got, link)
 	}
 }
+
+func TestBestEffortResolvesSymlink(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	link := filepath.Join(dir, "link")
+	if err := os.WriteFile(target, []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	got := BestEffort(link)
+	want, err := Strict(target)
+	if err != nil {
+		t.Fatalf("Strict target returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("BestEffort path = %q, want %q", got, want)
+	}
+}
