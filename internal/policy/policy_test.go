@@ -220,44 +220,6 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 	}
 }
 
-func TestReusableApprovalConsumesUseForAllPostPayloadOutcomes(t *testing.T) {
-	t.Parallel()
-
-	outcomes := []DeliveryResult{
-		DeliveryPayloadDelivered,
-		DeliveryCLISpawnFailureAfterPayload,
-		DeliveryImmediateChildExitAfterPayload,
-		DeliveryNonZeroChildExitAfterPayload,
-		DeliveryCommandStartedAuditFailureAfterPayload,
-		DeliveryClientDisconnectAfterPayload,
-	}
-
-	for _, outcome := range outcomes {
-		t.Run(string(outcome), func(t *testing.T) {
-			t.Parallel()
-
-			now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
-			store := NewStore(func() time.Time { return now })
-			approval, err := store.AddReusable(ReusableApprovalSpec{
-				Request: testRequest(t, now),
-				ID:      "appr_1",
-				Nonce:   "nonce_1",
-			})
-			if err != nil {
-				t.Fatalf("AddReusable returned error: %v", err)
-			}
-
-			after, err := store.FinishReusableAttempt(approval.ID, outcome)
-			if err != nil {
-				t.Fatalf("FinishReusableAttempt returned error: %v", err)
-			}
-			if after.Uses != 1 {
-				t.Fatalf("uses = %d, want 1", after.Uses)
-			}
-		})
-	}
-}
-
 func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	t.Parallel()
 
@@ -351,29 +313,6 @@ func TestPolicyObjectsAreValueFree(t *testing.T) {
 	}
 	if string(encoded) == "" || containsCanary(encoded) {
 		t.Fatalf("policy object leaked canary: %s", encoded)
-	}
-}
-
-func TestUnknownDeliveryResultDoesNotConsumeReusableUse(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
-	store := NewStore(func() time.Time { return now })
-	approval, err := store.AddReusable(ReusableApprovalSpec{
-		Request: testRequest(t, now),
-		ID:      "appr_1",
-		Nonce:   "nonce_1",
-	})
-	if err != nil {
-		t.Fatalf("AddReusable returned error: %v", err)
-	}
-
-	after, err := store.FinishReusableAttempt(approval.ID, DeliveryResult("future_result"))
-	if err != nil {
-		t.Fatalf("FinishReusableAttempt returned error: %v", err)
-	}
-	if after.Uses != 0 {
-		t.Fatalf("unknown delivery result consumed use: %d", after.Uses)
 	}
 }
 

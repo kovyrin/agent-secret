@@ -83,13 +83,8 @@ type SecretGrant struct {
 type DeliveryResult string
 
 const (
-	DeliveryPrePayloadFailure                      DeliveryResult = "pre_payload_failure"
-	DeliveryPayloadDelivered                       DeliveryResult = "payload_delivered"
-	DeliveryCLISpawnFailureAfterPayload            DeliveryResult = "cli_spawn_failure_after_payload"
-	DeliveryImmediateChildExitAfterPayload         DeliveryResult = "immediate_child_exit_after_payload"
-	DeliveryNonZeroChildExitAfterPayload           DeliveryResult = "non_zero_child_exit_after_payload"
-	DeliveryCommandStartedAuditFailureAfterPayload DeliveryResult = "command_started_audit_failure_after_payload"
-	DeliveryClientDisconnectAfterPayload           DeliveryResult = "client_disconnect_after_payload"
+	DeliveryPrePayloadFailure DeliveryResult = "pre_payload_failure"
+	DeliveryPayloadDelivered  DeliveryResult = "payload_delivered"
 )
 
 func NewStore(now func() time.Time) *Store {
@@ -351,19 +346,7 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 }
 
 func consumesUse(result DeliveryResult) bool {
-	switch result {
-	case DeliveryPayloadDelivered,
-		DeliveryCLISpawnFailureAfterPayload,
-		DeliveryImmediateChildExitAfterPayload,
-		DeliveryNonZeroChildExitAfterPayload,
-		DeliveryCommandStartedAuditFailureAfterPayload,
-		DeliveryClientDisconnectAfterPayload:
-		return true
-	case DeliveryPrePayloadFailure:
-		return false
-	default:
-		return false
-	}
+	return result == DeliveryPayloadDelivered
 }
 
 func (s *Store) randomID(prefix string) (string, error) {
