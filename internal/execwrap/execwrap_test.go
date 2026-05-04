@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
@@ -45,7 +44,7 @@ func (m *memoryAudit) Events() []AuditEvent {
 }
 
 type failingAudit struct {
-	failType audit.EventType
+	failType EventType
 }
 
 func (f failingAudit) Record(_ context.Context, event AuditEvent) error {
@@ -365,7 +364,7 @@ func TestRunStopsBeforeSpawnWhenStartingAuditFails(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "check-env"},
 		Env:                    helperEnv("AGENT_SECRET_CANARY", syntheticSecret),
-		Audit:                  failingAudit{failType: audit.EventCommandStarting},
+		Audit:                  failingAudit{failType: EventCommandStarting},
 	}, nil)
 	if err == nil {
 		t.Fatal("expected command_starting audit failure")
@@ -381,7 +380,7 @@ func TestRunTerminatesChildWhenStartedAuditFails(t *testing.T) {
 		AllowMutableExecutable: true,
 		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
 		Env:                    helperEnv(),
-		Audit:                  failingAudit{failType: audit.EventCommandStarted},
+		Audit:                  failingAudit{failType: EventCommandStarted},
 	}, nil)
 	if err == nil {
 		t.Fatal("expected command_started audit failure")
@@ -504,7 +503,7 @@ func TestAuditEventShapeIsValueFree(t *testing.T) {
 	t.Parallel()
 
 	event := AuditEvent{
-		Type:          audit.EventCommandStarting,
+		Type:          EventCommandStarting,
 		Command:       []string{"/usr/bin/env"},
 		SecretAliases: []string{"AGENT_SECRET_CANARY"},
 	}

@@ -491,7 +491,7 @@ func TestDaemonAuditReporterWarnsOnDaemonStoppedAfterChildStart(t *testing.T) {
 		stderr: &stderr,
 	}
 	if err := reporter.Record(context.Background(), execwrap.AuditEvent{
-		Type:     audit.EventCommandStarted,
+		Type:     execwrap.EventCommandStarted,
 		ChildPID: os.Getpid(),
 	}); err != nil {
 		t.Fatalf("Record returned error: %v", err)

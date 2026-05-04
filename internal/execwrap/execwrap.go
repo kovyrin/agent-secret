@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
@@ -26,14 +25,22 @@ type AuditSink interface {
 	Record(ctx context.Context, event AuditEvent) error
 }
 
+type EventType string
+
+const (
+	EventCommandStarting  EventType = "command_starting"
+	EventCommandStarted   EventType = "command_started"
+	EventCommandCompleted EventType = "command_completed"
+)
+
 type AuditEvent struct {
-	Type          audit.EventType `json:"type"`
-	Command       []string        `json:"command,omitempty"`
-	CWD           string          `json:"cwd,omitempty"`
-	SecretAliases []string        `json:"secret_aliases,omitempty"`
-	ChildPID      int             `json:"child_pid,omitempty"`
-	ExitCode      int             `json:"exit_code,omitempty"`
-	Signal        string          `json:"signal,omitempty"`
+	Type          EventType `json:"type"`
+	Command       []string  `json:"command,omitempty"`
+	CWD           string    `json:"cwd,omitempty"`
+	SecretAliases []string  `json:"secret_aliases,omitempty"`
+	ChildPID      int       `json:"child_pid,omitempty"`
+	ExitCode      int       `json:"exit_code,omitempty"`
+	Signal        string    `json:"signal,omitempty"`
 }
 
 type Spec struct {
@@ -83,7 +90,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 
 	argv := append([]string{spec.Path}, spec.Args...)
 	if err := record(ctx, spec.Audit, AuditEvent{
-		Type:          audit.EventCommandStarting,
+		Type:          EventCommandStarting,
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
@@ -117,7 +124,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 	}
 
 	if err := record(ctx, spec.Audit, AuditEvent{
-		Type:          audit.EventCommandStarted,
+		Type:          EventCommandStarted,
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
@@ -143,7 +150,7 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 		childPID = cmd.ProcessState.Pid()
 	}
 	event := AuditEvent{
-		Type:          audit.EventCommandCompleted,
+		Type:          EventCommandCompleted,
 		Command:       argv,
 		CWD:           spec.Dir,
 		SecretAliases: sortedAliases(spec.SecretAliases),
