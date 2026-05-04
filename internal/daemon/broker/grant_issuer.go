@@ -36,10 +36,6 @@ type issuedGrant struct {
 }
 
 type grantDelivery struct {
-	attempt reusableGrantAttempt
-}
-
-type reusableGrantAttempt struct {
 	approvalID string
 	mutationID string
 	expiresAt  time.Time
@@ -67,36 +63,24 @@ func newGrantIssuer(
 	return issuer
 }
 
-func (g *grantIssuer) deliveryFor(attempt reusableGrantAttempt) grantDelivery {
-	return grantDelivery{attempt: attempt}
-}
-
 func (g *grantIssuer) completeDelivery(delivery grantDelivery, result policy.DeliveryResult) error {
-	if delivery.attempt.approvalID == "" {
+	if delivery.approvalID == "" {
 		return nil
 	}
 	if result == policy.DeliveryPayloadDelivered {
-		if err := g.reusable.ensureApprovalActive(delivery.attempt.approvalID, delivery.attempt.expiresAt); err != nil {
+		if err := g.reusable.ensureApprovalActive(delivery.approvalID, delivery.expiresAt); err != nil {
 			return err
 		}
 	}
-	return g.reusable.finishDelivery(delivery.attempt.approvalID, result)
+	return g.reusable.finishDelivery(delivery.approvalID, result)
 }
 
 func (g *grantIssuer) rollbackDelivery(delivery grantDelivery) {
-	if delivery.attempt.mutationID != "" {
-		g.reusable.rollbackApproval(delivery.attempt.mutationID)
+	if delivery.mutationID != "" {
+		g.reusable.rollbackApproval(delivery.mutationID)
 		return
 	}
 	_ = g.completeDelivery(delivery, policy.DeliveryPrePayloadFailure)
-}
-
-func (d grantDelivery) approvalID() string {
-	return d.attempt.approvalID
-}
-
-func (d grantDelivery) expiresAt() time.Time {
-	return d.attempt.expiresAt
 }
 
 func (g *grantIssuer) issue(
@@ -118,18 +102,18 @@ func (g *grantIssuer) issue(
 			return issuedGrant{}, g.requestError(ctx, req, err)
 		}
 	}
-	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID(), issued.delivery.expiresAt()); err != nil {
+	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID, issued.delivery.expiresAt); err != nil {
 		g.rollbackDelivery(issued.delivery)
 		return issuedGrant{}, err
 	}
-	issued.grant.payloadExpiresAt = grantPayloadExpiresAt(req, issued.delivery.expiresAt())
+	issued.grant.payloadExpiresAt = grantPayloadExpiresAt(req, issued.delivery.expiresAt)
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, correlation.RequestID, req)
 	if err := g.recordRequiredAudit(ctx, event); err != nil {
 		g.rollbackDelivery(issued.delivery)
 		return issuedGrant{}, err
 	}
-	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID(), issued.delivery.expiresAt()); err != nil {
+	if err := g.ensureGrantStillActive(ctx, req, issued.delivery.approvalID, issued.delivery.expiresAt); err != nil {
 		g.rollbackDelivery(issued.delivery)
 		return issuedGrant{}, err
 	}
@@ -195,11 +179,15 @@ func (g *grantIssuer) issueReusableGrant(ctx context.Context, req request.ExecRe
 	if approval.ID == "" {
 		return issuedGrant{}, nil
 	}
-	delivery := g.deliveryFor(reusableGrantAttempt{
+	mutationID := ""
+	if req.ForceRefresh {
+		mutationID = approval.ID
+	}
+	delivery := grantDelivery{
 		approvalID: approval.ID,
-		mutationID: reusableMutationID(req.ForceRefresh, approval.ID),
+		mutationID: mutationID,
 		expiresAt:  approval.ExpiresAt,
-	})
+	}
 	delivered := false
 	defer func() {
 		if !delivered {
@@ -339,11 +327,11 @@ func (g *grantIssuer) freshGrant(
 		return issuedGrant{}, err
 	}
 
-	delivery := g.deliveryFor(reusableGrantAttempt{
+	delivery := grantDelivery{
 		approvalID: approvalID,
 		mutationID: approvalID,
 		expiresAt:  approvalExpiresAt,
-	})
+	}
 	return issuedGrant{
 		grant: Grant{
 			Env:           values,
@@ -359,13 +347,6 @@ func grantPayloadExpiresAt(req request.ExecRequest, approvalExpiresAt time.Time)
 		return approvalExpiresAt
 	}
 	return req.ExpiresAt
-}
-
-func reusableMutationID(mutated bool, approvalID string) string {
-	if !mutated {
-		return ""
-	}
-	return approvalID
 }
 
 func (g *grantIssuer) resolveUniqueRefs(
