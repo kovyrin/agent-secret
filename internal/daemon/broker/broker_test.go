@@ -1046,6 +1046,34 @@ func TestBrokerReservesReusableUseBeforePayloadDelivery(t *testing.T) {
 	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
 }
 
+func TestReusableGrantManagerPropagatesInvalidDeliveryResult(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	store := policy.NewStore(func() time.Time { return now })
+	manager := newReusableGrantManager(
+		func() time.Time { return now },
+		store,
+		secretcache.NewSecretCache(),
+		nil,
+	)
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
+	approval, err := store.AddReusable(policy.ReusableApprovalSpec{
+		Request:      req,
+		ID:           "appr_1",
+		Nonce:        "nonce_1",
+		ReservedUses: 1,
+	})
+	if err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+
+	err = manager.finishDelivery(approval.ID, policy.DeliveryResult("unknown"))
+	if !errors.Is(err, policy.ErrInvalidDeliveryResult) {
+		t.Fatalf("finishDelivery invalid result error = %v, want invalid delivery result", err)
+	}
+}
+
 func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	t.Parallel()
 

@@ -88,6 +88,9 @@ func (m *reusableGrantManager) finishDeliveryError(
 	result policy.DeliveryResult,
 	err error,
 ) error {
+	if errors.Is(err, policy.ErrInvalidDeliveryResult) {
+		return err
+	}
 	snapshot, hasSnapshot := policy.ReusableApprovalFromError(err)
 	clearID := approvalID
 	if hasSnapshot && snapshot.ID != "" {

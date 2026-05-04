@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	ErrAuditFailed  = errors.New("audit failed")
-	ErrExpired      = errors.New("policy object expired")
-	ErrMismatch     = errors.New("policy mismatch")
-	ErrUseExhausted = errors.New("reusable approval use count exhausted")
+	ErrAuditFailed           = errors.New("audit failed")
+	ErrExpired               = errors.New("policy object expired")
+	ErrMismatch              = errors.New("policy mismatch")
+	ErrUseExhausted          = errors.New("reusable approval use count exhausted")
+	ErrInvalidDeliveryResult = errors.New("invalid reusable approval delivery result")
 )
 
 const DefaultReusableUses = request.DefaultReusableUses
@@ -279,13 +280,18 @@ func (s *Store) FinishReusableAttempt(id string, result DeliveryResult) (Reusabl
 		delete(s.approvals, id)
 		return ReusableApproval{}, reusableApprovalError(&snapshot, ErrExpired)
 	}
-	if consumesUse(result) {
+	switch result {
+	case DeliveryPayloadDelivered:
 		if approval.ReservedUses > 0 {
 			approval.ReservedUses--
 		}
 		approval.Uses++
-	} else if result == DeliveryPrePayloadFailure && approval.ReservedUses > 0 {
-		approval.ReservedUses--
+	case DeliveryPrePayloadFailure:
+		if approval.ReservedUses > 0 {
+			approval.ReservedUses--
+		}
+	default:
+		return ReusableApproval{}, fmt.Errorf("%w: %q", ErrInvalidDeliveryResult, result)
 	}
 	if approval.Uses >= approval.MaxUses && approval.ReservedUses == 0 {
 		delete(s.approvals, id)
@@ -378,10 +384,6 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 		k.OverrideEnv == other.OverrideEnv &&
 		k.AllowMutableExecutable == other.AllowMutableExecutable &&
 		slices.Equal(k.OverriddenAliases, other.OverriddenAliases)
-}
-
-func consumesUse(result DeliveryResult) bool {
-	return result == DeliveryPayloadDelivered
 }
 
 func (s *Store) randomID(prefix string) (string, error) {

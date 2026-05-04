@@ -227,6 +227,36 @@ func TestReusableApprovalReservationsBlockConcurrentDelivery(t *testing.T) {
 	}
 }
 
+func TestFinishReusableAttemptRejectsInvalidDeliveryResult(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	req := testRequest(t, now)
+	approval, err := store.AddReusable(ReusableApprovalSpec{
+		Request:      req,
+		ID:           "appr_1",
+		Nonce:        "nonce_1",
+		ReservedUses: 1,
+	})
+	if err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+
+	_, err = store.FinishReusableAttempt(approval.ID, DeliveryResult("unknown"))
+	if !errors.Is(err, ErrInvalidDeliveryResult) {
+		t.Fatalf("FinishReusableAttempt invalid result error = %v, want invalid delivery result", err)
+	}
+
+	afterFailure, err := store.FinishReusableAttempt(approval.ID, DeliveryPrePayloadFailure)
+	if err != nil {
+		t.Fatalf("FinishReusableAttempt after invalid result returned error: %v", err)
+	}
+	if afterFailure.Uses != 0 || afterFailure.ReservedUses != 0 {
+		t.Fatalf("after invalid result then release = uses:%d reserved:%d, want uses:0 reserved:0", afterFailure.Uses, afterFailure.ReservedUses)
+	}
+}
+
 func TestReusableApprovalExpiresAndExhaustsUses(t *testing.T) {
 	t.Parallel()
 
