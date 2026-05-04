@@ -388,7 +388,7 @@ func TestRunTerminatesChildWhenStartedLifecycleFails(t *testing.T) {
 		Path:                   os.Args[0],
 		PathIdentity:           currentExecutableIdentity(t),
 		AllowMutableExecutable: true,
-		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "block-forever"},
 		Env:                    helperEnv(),
 		Lifecycle:              failingLifecycle{},
 	}, nil)
@@ -486,20 +486,16 @@ func TestRunTerminatesChildOnContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	started := time.Now()
 	result, err := Run(ctx, Spec{
 		Path:                   os.Args[0],
 		PathIdentity:           currentExecutableIdentity(t),
 		AllowMutableExecutable: true,
-		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "sleep-long"},
+		Args:                   []string{"-test.run=TestExecHelperProcess", "--", "block-forever"},
 		Env:                    helperEnv(),
 		Lifecycle:              cancelingLifecycle{cancel: cancel},
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
-	}
-	if time.Since(started) > 3*time.Second {
-		t.Fatalf("context cancellation did not terminate the child promptly")
 	}
 	if result.ExitCode == 0 {
 		t.Fatalf("exit code = 0, want cancellation to terminate child")
@@ -584,9 +580,11 @@ func TestExecHelperProcess(t *testing.T) {
 		<-signals
 		fmt.Println("signal-2")
 		os.Exit(130)
-	case "sleep-long":
-		time.Sleep(10 * time.Second)
-		os.Exit(0)
+	case "block-forever":
+		signals := make(chan os.Signal, 1)
+		signalNotify(signals, syscall.SIGTERM)
+		<-signals
+		os.Exit(143)
 	default:
 		fmt.Printf("unknown helper mode %q\n", mode)
 		os.Exit(64)

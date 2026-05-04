@@ -260,24 +260,25 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	}
 }
 
-func TestAppDaemonStatusUsesDefaultProtocolDeadline(t *testing.T) {
-	client, cleanup := startStallingAppDaemon(t)
+func TestAppDaemonStatusReportsStoppedAfterRequestCancellation(t *testing.T) {
+	client, requestReceived, cleanup := startStallingAppDaemon(t)
 	defer cleanup()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	app := NewApp(control.Manager{
-		SocketPath:      client.SocketPath,
-		DaemonPath:      os.Args[0],
-		ProtocolTimeout: 25 * time.Millisecond,
-		StartupTimeout:  25 * time.Millisecond,
+		SocketPath: client.SocketPath,
+		DaemonPath: os.Args[0],
 	}, &stdout, &stderr)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {
-		done <- app.Run(context.Background(), []string{"daemon", "status"})
+		done <- app.Run(ctx, []string{"daemon", "status"})
 	}()
 
+	waitForAppDaemonRequest(t, requestReceived)
+	cancel()
 	select {
 	case code := <-done:
 		if code != 1 {
@@ -286,8 +287,8 @@ func TestAppDaemonStatusUsesDefaultProtocolDeadline(t *testing.T) {
 		if !strings.Contains(stdout.String(), "agent-secretd: stopped") {
 			t.Fatalf("daemon status stdout = %q", stdout.String())
 		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("daemon status did not return after default protocol deadline")
+	case <-time.After(time.Second):
+		t.Fatal("daemon status did not return after request cancellation")
 	}
 }
 
@@ -1011,7 +1012,7 @@ func writePostStartStoppedDaemonError(encoder *json.Encoder, requestID string, n
 	return encoder.Encode(env)
 }
 
-func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
+func startStallingAppDaemon(t *testing.T) (appTestClient, <-chan struct{}, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-stall-")
 	if err != nil {
@@ -1026,6 +1027,7 @@ func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
 	}
 
 	release := make(chan struct{})
+	requestReceived := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		conn, err := listener.AcceptUnix()
@@ -1035,11 +1037,12 @@ func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
 		}
 		defer func() { _ = conn.Close() }()
 		_, _ = fmt.Fscan(conn)
+		close(requestReceived)
 		<-release
 		done <- nil
 	}()
 
-	return appTestClient{SocketPath: path}, func() {
+	return appTestClient{SocketPath: path}, requestReceived, func() {
 		close(release)
 		_ = listener.Close()
 		defer func() { _ = os.RemoveAll(dir) }()
@@ -1051,5 +1054,15 @@ func startStallingAppDaemon(t *testing.T) (appTestClient, func()) {
 		case <-time.After(time.Second):
 			t.Fatal("stalling app daemon did not stop")
 		}
+	}
+}
+
+func waitForAppDaemonRequest(t *testing.T, requestReceived <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-requestReceived:
+	case <-time.After(time.Second):
+		t.Fatal("daemon status request did not reach stalling daemon")
 	}
 }

@@ -241,7 +241,7 @@ func TestManagerWaitUntilReadyPreservesStartupDeadline(t *testing.T) {
 	t.Parallel()
 
 	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 
 	err := manager.waitUntilReady(ctx, time.Hour)

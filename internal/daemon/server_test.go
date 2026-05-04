@@ -325,11 +325,15 @@ func TestServerRejectsOversizedProtocolFrame(t *testing.T) {
 func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 	t.Parallel()
 
+	expiredDeadlineClock := func() time.Time {
+		return time.Now().Add(-2 * time.Second)
+	}
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
 		Validator:     allowPeerValidator{},
-		ReadTimeout:   25 * time.Millisecond,
+		ReadTimeout:   time.Second,
 		MaxFrameBytes: 1024,
+		now:           expiredDeadlineClock,
 	})
 	defer stop()
 
@@ -337,7 +341,7 @@ func TestServerClosesSlowPartialProtocolFrame(t *testing.T) {
 	if _, err := conn.Write([]byte(`{"version":`)); err != nil {
 		t.Fatalf("write partial frame: %v", err)
 	}
-	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatalf("set read deadline: %v", err)
 	}
 	buf := make([]byte, 1)

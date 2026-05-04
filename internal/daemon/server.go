@@ -51,6 +51,7 @@ type Server struct {
 	onePasswordCheck        func(context.Context) error
 	maxFrameBytes           int64
 	readTimeout             time.Duration
+	now                     func() time.Time
 	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func()
 	stopOnce                sync.Once
@@ -65,6 +66,7 @@ type ServerOptions struct {
 	OnePasswordCheck        func(context.Context) error
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
+	now                     func() time.Time
 	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func()
 }
@@ -160,6 +162,10 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if readTimeout <= 0 {
 		readTimeout = DefaultProtocolReadTimeout
 	}
+	now := opts.now
+	if now == nil {
+		now = time.Now
+	}
 	return &Server{
 		broker:                  opts.Broker,
 		approvals:               opts.Approvals,
@@ -168,6 +174,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		onePasswordCheck:        onePasswordCheck,
 		maxFrameBytes:           maxFrameBytes,
 		readTimeout:             readTimeout,
+		now:                     now,
 		beforeRead:              opts.beforeRead,
 		beforeExecResponseWrite: opts.beforeExecResponseWrite,
 		stop:                    make(chan struct{}),
@@ -507,7 +514,7 @@ func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader, timeout 
 		s.beforeRead(timeout)
 	}
 	if timeout > 0 {
-		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		if err := conn.SetReadDeadline(s.now().Add(timeout)); err != nil {
 			return protocol.Envelope{}, fmt.Errorf("set daemon read deadline: %w", err)
 		}
 		defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
@@ -519,7 +526,7 @@ func (s *Server) approvalDecisionReadTimeout(expiresAt time.Time) time.Duration 
 	if s.readTimeout <= 0 {
 		return 0
 	}
-	remaining := time.Until(expiresAt)
+	remaining := expiresAt.Sub(s.now())
 	if remaining <= 0 {
 		return s.readTimeout
 	}
