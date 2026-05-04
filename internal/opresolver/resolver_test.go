@@ -179,6 +179,8 @@ func TestDesktopAccountUsesOPAccountEnvironment(t *testing.T) {
 }
 
 func TestDesktopAccountUsesSDKDefaultWhenUnset(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
 	account := opaccount.SelectDesktopAccount("", "")
 	if account != opaccount.DefaultDesktopAccount {
 		t.Fatalf("account = %q, want default account", account)

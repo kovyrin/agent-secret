@@ -42,8 +42,6 @@ func TestDaemonStartCommandUsesOpenForDarwinApp(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("darwin app launch is only used on macOS")
 	}
-	t.Setenv("OP_ACCOUNT", "DefaultFixture")
-	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
 
 	cmd := StartCommand(context.Background(), "/Applications/Agent Secret.app", []string{"--socket", "/tmp/d.sock"})
 	if cmd.Path != "/usr/bin/open" {
@@ -54,10 +52,6 @@ func TestDaemonStartCommandUsesOpenForDarwinApp(t *testing.T) {
 		"-g",
 		"-n",
 		"/Applications/Agent Secret.app",
-		"--env",
-		"OP_ACCOUNT=DefaultFixture",
-		"--env",
-		"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
 		"--args",
 		"--socket",
 		"/tmp/d.sock",
@@ -78,27 +72,6 @@ func TestDefaultDaemonPathReturnsDaemonCandidate(t *testing.T) {
 	case "agent-secretd", "AgentSecretDaemon.app":
 	default:
 		t.Fatalf("DefaultDaemonPath = %q, want daemon binary or app candidate", path)
-	}
-}
-
-func TestDaemonAppEnvironmentForwardsOnlyAccountSettings(t *testing.T) {
-	t.Setenv("OP_ACCOUNT", "DefaultFixture")
-	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
-	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/tmp/PoisonApprover.app")
-
-	env := daemonAppEnvironment()
-	for _, want := range []string{
-		"OP_ACCOUNT=DefaultFixture",
-		"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
-	} {
-		if !slices.Contains(env, want) {
-			t.Fatalf("env = %q, want %q", env, want)
-		}
-	}
-	for _, entry := range env {
-		if entry == "AGENT_SECRET_APPROVER_PATH="+os.Getenv("AGENT_SECRET_APPROVER_PATH") {
-			t.Fatalf("env forwarded approver override: %q", env)
-		}
 	}
 }
 

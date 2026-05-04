@@ -123,8 +123,9 @@ AGENT_SECRET_LIVE_REF="op://Test Vault/Test Item/token" \
 ```
 
 Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when you want to
-force a specific 1Password account instead of `my.1password.com`. Project
-config accounts override those defaults for the secrets that declare them.
+force a specific 1Password account instead of the detected single signed-in
+1Password CLI account. Project config accounts override those defaults for the
+secrets that declare them.
 
 Release artifact verification is separate from pull request CI. For a local
 release-candidate check, run:
@@ -300,14 +301,15 @@ Override the install locations with `--bin-dir`, `--app-dir`,
 one-off flags, run `./scripts/dev-install.sh` directly. The dev installer
 replaces the app bundle and recreates the command and skill symlinks.
 
-By default, `agent-secret` uses the personal 1Password sign-in address
-`my.1password.com`. Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` in the
-shell that will run `agent-secret exec` only when you want to force a specific
-account; the CLI binds that account into the approval request so already-running
-daemons resolve the same account the approver sees. Project config can also set
-`account` globally, per profile, or per secret, and those config values take
-precedence for the affected secret refs. On macOS, `agent-secret` starts the
-daemon through the nested `AgentSecretDaemon.app` inside `Agent Secret.app` so
+By default, `agent-secret` uses the single signed-in 1Password CLI account when
+it can detect one, then falls back to `my.1password.com`. Set `OP_ACCOUNT` or
+`AGENT_SECRET_1PASSWORD_ACCOUNT` in the shell that will run `agent-secret exec`
+only when you want to force a specific account; the CLI binds that account into
+the approval request so already-running daemons resolve the same account the
+approver sees. Project config can also set `account` globally, per profile, or
+per secret, and those config values take precedence for the affected secret
+refs. On macOS, `agent-secret` starts the daemon through the nested
+`AgentSecretDaemon.app` inside `Agent Secret.app` so
 1Password sees the SDK caller as Agent Secret instead of the terminal or agent
 desktop app that launched the CLI.
 
@@ -515,7 +517,8 @@ defined them unless the selected profile overrides that secret alias.
 
 `account` is optional. The precedence is per-secret `account`, then profile
 `account`, then top-level `account`, then CLI `--account`, then `OP_ACCOUNT` /
-`AGENT_SECRET_1PASSWORD_ACCOUNT`, then `my.1password.com`.
+`AGENT_SECRET_1PASSWORD_ACCOUNT`, then one detected signed-in 1Password CLI
+account, then `my.1password.com`.
 
 Run a profile with:
 

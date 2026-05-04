@@ -743,15 +743,20 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
 	checkErr := errors.New("desktop integration unavailable")
 	checkCalls := 0
+	var checkedAccount string
 	server, err := NewServer(ServerOptions{
 		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		Validator:        staticPeerValidator{info: peer},
-		ExecValidator:    peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
-		OnePasswordCheck: func(context.Context) error { checkCalls++; return checkErr },
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		OnePasswordCheck: func(_ context.Context, account string) error {
+			checkCalls++
+			checkedAccount = account
+			return checkErr
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -775,12 +780,15 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 
 	client := control.NewClient(clientConn)
 	defer func() { _ = client.Close() }()
-	err = client.CheckOnePassword(context.Background())
+	err = client.CheckOnePassword(context.Background(), "my.1password.ca")
 	if !control.IsProtocolError(err, protocol.ErrorCodeResolveFailed) {
 		t.Fatalf("CheckOnePassword error = %v, want resolve_failed", err)
 	}
 	if checkCalls != 1 {
 		t.Fatalf("one password check calls = %d, want 1", checkCalls)
+	}
+	if checkedAccount != "my.1password.ca" {
+		t.Fatalf("one password check account = %q, want my.1password.ca", checkedAccount)
 	}
 }
 

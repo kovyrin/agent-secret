@@ -10,24 +10,13 @@ import (
 	"time"
 )
 
-func TestNewDesktopPoolUsesDesktopResolverWithoutAccountOverride(t *testing.T) {
+func TestDesktopPoolResolveRequiresRequestAccount(t *testing.T) {
 	t.Parallel()
 
-	pool := NewDesktopPool(" \t ")
-	if pool.account != "" {
-		t.Fatalf("account = %q, want resolver-level default account", pool.account)
-	}
-}
-
-func TestDesktopPoolEffectiveAccountUsesPerSecretOverride(t *testing.T) {
-	t.Parallel()
-
-	pool := NewDesktopPool("Fixture")
-	if account := pool.effectiveAccount(" Preview "); account != "Preview" {
-		t.Fatalf("account = %q, want Preview", account)
-	}
-	if account := pool.effectiveAccount(" \t "); account != "Fixture" {
-		t.Fatalf("account = %q, want Fixture", account)
+	pool := NewDesktopPool()
+	_, err := pool.Resolve(context.Background(), "op://Example Vault/Item/password", " \t ")
+	if !errors.Is(err, ErrAccountRequired) {
+		t.Fatalf("Resolve error = %v, want ErrAccountRequired", err)
 	}
 }
 
@@ -128,7 +117,6 @@ func TestDesktopPoolResolveReturnsSecretValue(t *testing.T) {
 	fake := &fakeSecretsAPI{value: "synthetic-secret-value"}
 	var gotOptions ClientOptions
 	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
-		Account:            "default-account",
 		IntegrationName:    "test integration",
 		IntegrationVersion: "test version",
 		Factory: func(_ context.Context, opts ClientOptions) (*Resolver, error) {

@@ -2,6 +2,7 @@ package opresolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,10 +11,11 @@ import (
 
 const DefaultDesktopPoolInitTimeout = 30 * time.Second
 
+var ErrAccountRequired = errors.New("1Password account is required")
+
 type DesktopResolverFactory func(context.Context, ClientOptions) (*Resolver, error)
 
 type DesktopPoolOptions struct {
-	Account            string
 	IntegrationName    string
 	IntegrationVersion string
 	InitTimeout        time.Duration
@@ -22,7 +24,6 @@ type DesktopPoolOptions struct {
 
 type DesktopPool struct {
 	mu                 sync.Mutex
-	account            string
 	integrationName    string
 	integrationVersion string
 	initTimeout        time.Duration
@@ -42,8 +43,8 @@ type desktopPoolInit struct {
 	err      error
 }
 
-func NewDesktopPool(account string) *DesktopPool {
-	return NewDesktopPoolWithOptions(DesktopPoolOptions{Account: account})
+func NewDesktopPool() *DesktopPool {
+	return NewDesktopPoolWithOptions(DesktopPoolOptions{})
 }
 
 func NewDesktopPoolWithOptions(opts DesktopPoolOptions) *DesktopPool {
@@ -56,7 +57,6 @@ func NewDesktopPoolWithOptions(opts DesktopPoolOptions) *DesktopPool {
 		factory = NewDesktopResolver
 	}
 	return &DesktopPool{
-		account:            strings.TrimSpace(opts.Account),
 		integrationName:    strings.TrimSpace(opts.IntegrationName),
 		integrationVersion: strings.TrimSpace(opts.IntegrationVersion),
 		initTimeout:        initTimeout,
@@ -67,6 +67,10 @@ func NewDesktopPoolWithOptions(opts DesktopPoolOptions) *DesktopPool {
 }
 
 func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (string, error) {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return "", ErrAccountRequired
+	}
 	resolver, err := p.client(ctx, account)
 	if err != nil {
 		return "", fmt.Errorf("create 1Password resolver: %w", err)
@@ -79,7 +83,10 @@ func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (
 }
 
 func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*Resolver, error) {
-	account := p.effectiveAccount(accountOverride)
+	account := strings.TrimSpace(accountOverride)
+	if account == "" {
+		return nil, ErrAccountRequired
+	}
 	resolver, init, owner := p.startClientInit(account)
 	if resolver != nil {
 		return resolver, nil
@@ -168,11 +175,4 @@ func waitForDesktopPoolInit(ctx context.Context, init *desktopPoolInit) (*Resolv
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-}
-
-func (p *DesktopPool) effectiveAccount(accountOverride string) string {
-	if account := strings.TrimSpace(accountOverride); account != "" {
-		return account
-	}
-	return p.account
 }

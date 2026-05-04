@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -48,7 +50,7 @@ type Server struct {
 	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
 	execValidator           peertrust.ExecValidator
-	onePasswordCheck        func(context.Context) error
+	onePasswordCheck        func(context.Context, string) error
 	maxFrameBytes           int64
 	readTimeout             time.Duration
 	now                     func() time.Time
@@ -64,7 +66,7 @@ type ServerOptions struct {
 	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
 	ExecValidator           peertrust.ExecValidator
-	OnePasswordCheck        func(context.Context) error
+	OnePasswordCheck        func(context.Context, string) error
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
 	now                     func() time.Time
@@ -150,7 +152,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 	onePasswordCheck := opts.OnePasswordCheck
 	if onePasswordCheck == nil {
-		onePasswordCheck = func(context.Context) error { return ErrOnePasswordCheckUnavailable }
+		onePasswordCheck = func(context.Context, string) error { return ErrOnePasswordCheckUnavailable }
 	}
 	maxFrameBytes := opts.MaxFrameBytes
 	if maxFrameBytes <= 0 {
@@ -333,7 +335,16 @@ func (s *Server) handleStatusRequest(ctx context.Context, encoder *json.Encoder,
 		_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
 		return
 	}
-	if err := s.onePasswordCheck(ctx); err != nil {
+	payload, err := protocol.DecodeRequiredPayload[protocol.OnePasswordStatusPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(payload.Account) == "" {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, opresolver.ErrAccountRequired)
+		return
+	}
+	if err := s.onePasswordCheck(ctx, payload.Account); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeResolveFailed, err)
 		return
 	}

@@ -167,7 +167,7 @@ Safety rules:
   - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
   - --account sets a default 1Password account for CLI-provided refs when config does not already provide one.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
-  - By default, the daemon uses the personal 1Password sign-in address my.1password.com. Set AGENT_SECRET_1PASSWORD_ACCOUNT only to override it.
+  - With no account override, agent-secret detects one signed-in 1Password CLI account before falling back to my.1password.com.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - Commands from current-user-writable files or directories are rejected unless --allow-mutable-executable is set.
   - exec has no --json mode and never prints secret values.
@@ -257,7 +257,8 @@ Project profiles:
 	  default_profile unless --profile is provided.
 	  CLI --reason and --ttl override profile defaults.
 	  Account precedence is per-secret account, profile account, top-level account,
-  --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then my.1password.com.
+  --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, one detected signed-in
+  1Password CLI account, then my.1password.com.
   Included profiles are resolved in order. Later includes and the selected
   profile override earlier secrets with the same alias.
   1Password text file/document refs are resolved into the alias env value with
@@ -267,11 +268,12 @@ Project profiles:
 Environment:
 
   OP_ACCOUNT                      Optional 1Password account sign-in address, name, or UUID override.
-  AGENT_SECRET_1PASSWORD_ACCOUNT  Optional 1Password account sign-in address, name, or UUID override. Empty uses OP_ACCOUNT or my.1password.com.
+  AGENT_SECRET_1PASSWORD_ACCOUNT  Optional 1Password account sign-in address, name, or UUID override. Empty uses OP_ACCOUNT, then detection.
 
 Default account:
 
-  When no override is set, agent-secret asks 1Password Desktop for my.1password.com.
+  When no override is set, agent-secret uses the single signed-in 1Password CLI
+  account when one can be detected, then falls back to my.1password.com.
 
 Unsupported by design:
 
@@ -558,10 +560,7 @@ func execAccountFallback(cliAccount string) string {
 	if account := strings.TrimSpace(os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")); account != "" {
 		return account
 	}
-	if account := strings.TrimSpace(os.Getenv("OP_ACCOUNT")); account != "" {
-		return account
-	}
-	return opaccount.DefaultDesktopAccount
+	return opaccount.SelectDesktopAccount("", os.Getenv("OP_ACCOUNT"))
 }
 
 func newOnlySet(aliases []string) map[string]struct{} {

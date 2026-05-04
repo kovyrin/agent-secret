@@ -227,7 +227,7 @@ func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {
 	if _, err := manager.Status(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
 		t.Fatalf("Status error = %v, want daemon unavailable", err)
 	}
-	if err := manager.CheckOnePassword(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
+	if err := manager.CheckOnePassword(context.Background(), "my.1password.ca"); !errors.Is(err, socket.ErrDaemonUnavailable) {
 		t.Fatalf("CheckOnePassword error = %v, want daemon unavailable", err)
 	}
 	if err := manager.Stop(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
@@ -486,47 +486,43 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 		t.Fatalf("mkdir daemon app: %v", err)
 	}
 	t.Setenv("AGENT_SECRET_DAEMON_APP_PATH", "/tmp/PoisonDaemon.app")
-	t.Setenv("OP_ACCOUNT", "DefaultFixture")
-	t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", "Fixture")
 	t.Setenv("AGENT_SECRET_APPROVER_PATH", "/tmp/PoisonApprover.app")
 
 	appPath, ok := daemonprocess.DefaultDaemonAppPath()
-	if runtime.GOOS == "darwin" {
-		if !ok || appPath != daemonAppPath {
-			t.Fatalf("default daemon app path = %q, %v", appPath, ok)
+	if runtime.GOOS != "darwin" {
+		if ok || appPath != "" {
+			t.Fatalf("non-darwin daemon app path = %q, %v", appPath, ok)
 		}
-		cmd := daemonprocess.StartCommand(context.Background(), appPath, []string{"--socket", "/tmp/d.sock"})
-		if cmd.Path != "/usr/bin/open" {
-			t.Fatalf("darwin app command path = %q, want /usr/bin/open", cmd.Path)
-		}
-		for _, want := range []string{
-			"-g",
-			"-n",
-			appPath,
-			"--env",
-			"OP_ACCOUNT=DefaultFixture",
-			"--env",
-			"AGENT_SECRET_1PASSWORD_ACCOUNT=Fixture",
-			"--args",
-			"--socket",
-			"/tmp/d.sock",
-		} {
-			if !slices.Contains(cmd.Args, want) {
-				t.Fatalf("darwin app command args %v missing %q", cmd.Args, want)
-			}
-		}
-		if slices.Contains(cmd.Args, "AGENT_SECRET_APPROVER_PATH=/tmp/PoisonApprover.app") {
-			t.Fatalf("darwin app command args forwarded poisoned approver path: %v", cmd.Args)
+		cmd := daemonprocess.StartCommand(context.Background(), "/tmp/agent-secretd", []string{"--socket", "/tmp/d.sock"})
+		if cmd.Path != "/tmp/agent-secretd" {
+			t.Fatalf("daemon command path = %q, want direct binary", cmd.Path)
 		}
 		return
 	}
-
-	if ok || appPath != "" {
-		t.Fatalf("non-darwin daemon app path = %q, %v", appPath, ok)
+	if !ok || appPath != daemonAppPath {
+		t.Fatalf("default daemon app path = %q, %v", appPath, ok)
 	}
-	cmd := daemonprocess.StartCommand(context.Background(), "/tmp/agent-secretd", []string{"--socket", "/tmp/d.sock"})
-	if cmd.Path != "/tmp/agent-secretd" {
-		t.Fatalf("daemon command path = %q, want direct binary", cmd.Path)
+	cmd := daemonprocess.StartCommand(context.Background(), appPath, []string{"--socket", "/tmp/d.sock"})
+	if cmd.Path != "/usr/bin/open" {
+		t.Fatalf("darwin app command path = %q, want /usr/bin/open", cmd.Path)
+	}
+	for _, want := range []string{
+		"-g",
+		"-n",
+		appPath,
+		"--args",
+		"--socket",
+		"/tmp/d.sock",
+	} {
+		if !slices.Contains(cmd.Args, want) {
+			t.Fatalf("darwin app command args %v missing %q", cmd.Args, want)
+		}
+	}
+	if slices.Contains(cmd.Args, "AGENT_SECRET_APPROVER_PATH=/tmp/PoisonApprover.app") {
+		t.Fatalf("darwin app command args forwarded poisoned approver path: %v", cmd.Args)
+	}
+	if slices.Contains(cmd.Args, "--env") {
+		t.Fatalf("darwin app command args forwarded environment: %v", cmd.Args)
 	}
 }
 

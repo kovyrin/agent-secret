@@ -761,10 +761,10 @@ Status: Complete
 - Added Swift socket client support for the approver app. Approval IPC now uses
   daemon socket messages instead of stdin/stdout, argv/env payloads, or temp
   files in the product path.
-- Wired `agent-secretd` to use the official 1Password SDK lazily after approval
-  with `my.1password.com` as the built-in default account, plus `OP_ACCOUNT`,
-  `AGENT_SECRET_1PASSWORD_ACCOUNT`, or `--account` as optional account
-  overrides, preserving approval-before-fetch ordering.
+- Wired `agent-secretd` to use the official 1Password SDK lazily after approval,
+  with explicit account overrides plus single-account 1Password CLI detection
+  before the `my.1password.com` fallback, preserving approval-before-fetch
+  ordering.
 - Added a redacted Swift approval view model showing reason, command, cwd,
   resolved binary, refs, time remaining, override warning, reusable-use limit,
   and memory-caching note without request IDs, nonces, or secret values.

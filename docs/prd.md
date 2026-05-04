@@ -166,7 +166,7 @@ profiles:
 `account` is optional and may be set at the top level, profile level, or secret
 level. The precedence is per-secret `account`, then profile `account`, then
 top-level `account`, then `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`, then
-`my.1password.com`.
+one detected signed-in 1Password CLI account, then `my.1password.com`.
 
 Profiles may include other profiles. Includes are resolved in order; later
 includes and the selected profile override earlier secrets with the same alias.

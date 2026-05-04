@@ -20,9 +20,6 @@ func ConfigureDaemonProcess(cmd *exec.Cmd) {
 func StartCommand(ctx context.Context, path string, args []string) *exec.Cmd {
 	if runtime.GOOS == "darwin" && filepath.Ext(path) == ".app" {
 		openArgs := []string{"-g", "-n", path}
-		for _, env := range daemonAppEnvironment() {
-			openArgs = append(openArgs, "--env", env)
-		}
 		openArgs = append(openArgs, "--args")
 		openArgs = append(openArgs, args...)
 		//nolint:gosec // G204: open path is fixed; app path comes from control.NewManager defaults or explicit test Manager setup.
@@ -94,18 +91,4 @@ func daemonAppPathForExecutable(executable string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func daemonAppEnvironment() []string {
-	names := []string{
-		"OP_ACCOUNT",
-		"AGENT_SECRET_1PASSWORD_ACCOUNT",
-	}
-	env := make([]string, 0, len(names))
-	for _, name := range names {
-		if value, ok := os.LookupEnv(name); ok {
-			env = append(env, name+"="+value)
-		}
-	}
-	return env
 }

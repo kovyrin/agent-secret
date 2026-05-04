@@ -43,6 +43,35 @@ func newTestAppWithDaemonManager(manager daemonManager, stdout io.Writer, stderr
 	return app
 }
 
+func runConfigProfileExec(
+	t *testing.T,
+	app App,
+	client *appFakeDaemonClient,
+	stdout *bytes.Buffer,
+	stderr *bytes.Buffer,
+) request.ExecRequest {
+	t.Helper()
+
+	stdout.Reset()
+	stderr.Reset()
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--allow-mutable-executable",
+		"--",
+		os.Args[0], "-test.run=TestAppExecReReadsConfigAccountForRunningDaemon", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exec exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "env-ok" {
+		t.Fatalf("stdout = %q, want env-ok", stdout.String())
+	}
+	if len(client.requests) == 0 {
+		t.Fatal("fake daemon did not receive exec request")
+	}
+	return client.requests[len(client.requests)-1]
+}
+
 func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
 		runAppExecHelper()
@@ -127,6 +156,66 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "synthetic-secret-value") {
 		t.Fatalf("stderr leaked secret: %q", stderr.String())
+	}
+}
+
+func TestAppExecReReadsConfigAccountForRunningDaemon(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	root := t.TempDir()
+	t.Chdir(root)
+	writeExecutable(t, root, "unused-tool")
+	client := &appFakeDaemonClient{
+		execPayload: protocol.ExecResponsePayload{
+			Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+			SecretAliases: []string{"TOKEN"},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: deploy
+profiles:
+  deploy:
+    account: First Account
+    reason: Run helper
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+	first := runConfigProfileExec(t, app, client, &stdout, &stderr)
+
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: deploy
+profiles:
+  deploy:
+    account: Second Account
+    reason: Run helper
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+	second := runConfigProfileExec(t, app, client, &stdout, &stderr)
+
+	if first.Secrets[0].Account != "First Account" {
+		t.Fatalf("first request account = %q, want First Account", first.Secrets[0].Account)
+	}
+	if second.Secrets[0].Account != "Second Account" {
+		t.Fatalf("second request account = %q, want Second Account", second.Secrets[0].Account)
+	}
+	if manager.ensureCalls != 2 || manager.connectCalls != 2 {
+		t.Fatalf("manager calls: ensure=%d connect=%d, want 2 each", manager.ensureCalls, manager.connectCalls)
 	}
 }
 
@@ -243,6 +332,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 
 func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
 	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "value"}},
@@ -307,11 +397,12 @@ func TestAppDaemonStatusReportsStoppedAfterRequestCancellation(t *testing.T) {
 
 func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
 	client, cleanup := startAppTestServer(t, daemonbroker.Options{
 		Approver: &appApprover{decision: approval.Decision{Approved: true}},
 		Resolver: &appResolver{values: map[string]string{"op://Example/Item/token": "synthetic-secret-value"}},
 		Audit:    &appAudit{},
-	}, func(context.Context) error {
+	}, func(context.Context, string) error {
 		return errors.New("desktop integration unavailable")
 	})
 	defer cleanup()
@@ -795,7 +886,7 @@ func (m *appFakeDaemonManager) Stop(context.Context) error {
 	return m.stopErr
 }
 
-func (m *appFakeDaemonManager) CheckOnePassword(context.Context) error {
+func (m *appFakeDaemonManager) CheckOnePassword(context.Context, string) error {
 	m.checkCalls++
 	return m.checkErr
 }
@@ -813,6 +904,7 @@ type appFakeDaemonClient struct {
 	closeErr           error
 
 	requestExecCalls   int
+	requests           []request.ExecRequest
 	closeCalls         int
 	startedPIDs        []int
 	completedExitCodes []int
@@ -826,9 +918,10 @@ func (c *appFakeDaemonClient) Close() error {
 func (c *appFakeDaemonClient) RequestExec(
 	_ context.Context,
 	_ protocol.Correlation,
-	_ request.ExecRequest,
+	req request.ExecRequest,
 ) (protocol.ExecResponsePayload, error) {
 	c.requestExecCalls++
+	c.requests = append(c.requests, req)
 	return c.execPayload, c.requestErr
 }
 
@@ -918,7 +1011,7 @@ func (appAllowPeer) Validate(_ *net.UnixConn) error {
 func startAppTestServer(
 	t *testing.T,
 	opts daemonbroker.Options,
-	onePasswordChecks ...func(context.Context) error,
+	onePasswordChecks ...func(context.Context, string) error,
 ) (appTestClient, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-app-")
@@ -935,7 +1028,7 @@ func startAppTestServer(
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	onePasswordCheck := func(context.Context) error { return nil }
+	onePasswordCheck := func(context.Context, string) error { return nil }
 	if len(onePasswordChecks) > 0 {
 		onePasswordCheck = onePasswordChecks[0]
 	}

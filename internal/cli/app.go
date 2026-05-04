@@ -19,6 +19,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/install"
+	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/randid"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -44,7 +45,7 @@ type daemonManager interface {
 	Status(ctx context.Context) (protocol.StatusPayload, error)
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-	CheckOnePassword(ctx context.Context) error
+	CheckOnePassword(ctx context.Context, account string) error
 	SocketPath() string
 }
 
@@ -83,8 +84,8 @@ func (m daemonControlManager) Stop(ctx context.Context) error {
 	return m.manager.Stop(ctx)
 }
 
-func (m daemonControlManager) CheckOnePassword(ctx context.Context) error {
-	return m.manager.CheckOnePassword(ctx)
+func (m daemonControlManager) CheckOnePassword(ctx context.Context, account string) error {
+	return m.manager.CheckOnePassword(ctx, account)
 }
 
 func (m daemonControlManager) SocketPath() string {
@@ -326,7 +327,12 @@ func (a App) runDoctor(ctx context.Context) int {
 			a.stdoutln("native approver: ok")
 		}
 	}
-	if err := manager.CheckOnePassword(ctx); err != nil {
+	account := opaccount.SelectDesktopAccount(
+		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
+		os.Getenv("OP_ACCOUNT"),
+	)
+	a.stdoutf("1password account: %s\n", account)
+	if err := manager.CheckOnePassword(ctx, account); err != nil {
 		healthy = false
 		a.stdoutf("1password desktop integration: failed (%v)\n", err)
 	} else {

@@ -20,6 +20,19 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.6] - Pending
+
+### Fixed
+
+- Account selection is now bound into each `agent-secret exec` request, so
+  `--account`, project config changes, and account environment variables take
+  effect even when the per-user daemon is already running.
+- With no explicit account, `agent-secret` now detects the single signed-in
+  1Password CLI account before falling back to `my.1password.com`.
+- The unattended installer now runs post-install diagnostics with the caller's
+  original `PATH`, allowing diagnostics to see the same `op` command as the
+  user's shell.
+
 ## [0.0.5] - 2026-05-04
 
 ### Fixed
