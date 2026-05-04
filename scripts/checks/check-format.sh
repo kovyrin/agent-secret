@@ -148,7 +148,7 @@ case "$target" in
     ;;
   *)
     echo "check-format: unknown target: $target" >&2
-    echo "Usage: scripts/check-format.sh [go|shell|toml|swift|all] [paths...]" >&2
+    echo "Usage: scripts/checks/check-format.sh [go|shell|toml|swift|all] [paths...]" >&2
     exit 2
     ;;
 esac

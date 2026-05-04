@@ -158,7 +158,7 @@ for file in "${changed_files[@]}"; do
     *.md)
       markdown_files+=("$file")
       ;;
-    *.swift)
+    approver/Sources/*.swift | approver/Tests/*.swift)
       swift_files+=("$file")
       ;;
     package.json | package-lock.json)
@@ -216,7 +216,7 @@ fi
 
 if [ ${#go_files[@]} -gt 0 ]; then
   echo "Running gofmt on changed Go files..."
-  scripts/check-format.sh go "${go_files[@]}"
+  scripts/checks/check-format.sh go "${go_files[@]}"
 fi
 
 if [ ${#go_targets[@]} -gt 0 ]; then
@@ -246,27 +246,27 @@ if [ ${#shell_files[@]} -gt 0 ]; then
   echo "Running shellcheck on changed shell files..."
   shellcheck "${shell_files[@]}"
   echo "Running shfmt on changed shell files..."
-  scripts/check-format.sh shell "${shell_files[@]}"
+  scripts/checks/check-format.sh shell "${shell_files[@]}"
 fi
 
 if [ ${#workflow_files[@]} -gt 0 ]; then
   echo "Running actionlint on changed workflows..."
   actionlint "${workflow_files[@]}"
   echo "Checking changed workflow action pins..."
-  scripts/check-workflow-actions-pinned.sh "${workflow_files[@]}"
+  scripts/checks/check-workflow-actions-pinned.sh "${workflow_files[@]}"
 fi
 
 if [ ${#toml_files[@]} -gt 0 ]; then
   echo "Running taplo on changed TOML files..."
-  scripts/check-format.sh toml "${toml_files[@]}"
+  scripts/checks/check-format.sh toml "${toml_files[@]}"
 fi
 
 if [ "$swiftformat_config_changed" -eq 1 ]; then
   echo "Running SwiftFormat on all Swift files..."
-  scripts/check-format.sh swift
+  scripts/checks/check-format.sh swift
 elif [ ${#swift_files[@]} -gt 0 ]; then
   echo "Running SwiftFormat on changed Swift files..."
-  scripts/check-format.sh swift "${swift_files[@]}"
+  scripts/checks/check-format.sh swift "${swift_files[@]}"
 fi
 
 if [ "$swiftlint_config_changed" -eq 1 ]; then

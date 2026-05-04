@@ -2,8 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-project_root="$(cd -- "$script_dir/.." && pwd)"
-publish_script="$project_root/scripts/publish-draft-release.sh"
+project_root="$(cd -- "$script_dir/../.." && pwd)"
+publish_script="$project_root/scripts/release/publish-draft-release.sh"
 workflow="$project_root/.github/workflows/ci.yml"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-publish-test.XXXXXX")"
@@ -123,10 +123,10 @@ expect_failure "release notes file is required for tag releases" env \
   PATH="$stub_dir:$PATH" \
   "$publish_script" v1.0.0 "$artifact_arm" "$artifact_intel" "$checksums"
 
-if ! grep -F -- "scripts/publish-draft-release.sh" "$workflow" >/dev/null; then
-  fail "workflow does not use scripts/publish-draft-release.sh"
+if ! grep -F -- "scripts/release/publish-draft-release.sh" "$workflow" >/dev/null; then
+  fail "workflow does not use scripts/release/publish-draft-release.sh"
 fi
-if ! grep -F -- "scripts/extract-release-notes.sh" "$workflow" >/dev/null; then
+if ! grep -F -- "scripts/release/extract-release-notes.sh" "$workflow" >/dev/null; then
   fail "workflow does not extract changelog-backed release notes"
 fi
 if ! grep -F -- "AGENT_SECRET_RELEASE_NOTES_FILE" "$workflow" >/dev/null; then

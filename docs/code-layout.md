@@ -61,8 +61,11 @@ agent-secret/
         Fixtures/                # Shared fixture loading helpers
     scripts/                     # Approver app bundle build helpers
   docs/                          # Product, architecture, release, and user docs
-  scripts/                       # Project build, lint, install, and release entrypoints
+  scripts/                       # Stable project tool entrypoints
+    build/                       # App bundle build helpers
+    checks/                      # Lint, coverage, docs, and workflow checks
     lib/                         # Sourced shell helper libraries
+    release/                     # Release build, signing, notes, and publish tools
   .github/workflows/             # GitHub Actions CI and release artifact jobs
 ```
 

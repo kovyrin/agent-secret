@@ -128,7 +128,7 @@ trap cleanup EXIT
 stop_existing_daemon
 
 echo "Building Agent Secret.app..."
-"$project_root/scripts/build-app-bundle.sh" --output "$tmp_dir"
+"$project_root/scripts/build/build-app-bundle.sh" --output "$tmp_dir"
 
 source_app="$tmp_dir/Agent Secret.app"
 target_app="$app_dir/Agent Secret.app"

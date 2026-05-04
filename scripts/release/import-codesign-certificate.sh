@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/import-codesign-certificate.sh
+  scripts/release/import-codesign-certificate.sh
 
 Import a Developer ID .p12 certificate into a temporary macOS keychain for
 non-interactive release signing.

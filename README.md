@@ -70,10 +70,11 @@ mise run test:smoke
 scripts/lint.sh
 go test ./...
 go test -race ./...
-scripts/check-go-coverage.sh
+scripts/checks/check-go-coverage.sh
 govulncheck ./...
 gitleaks dir . --redact --no-banner
-shellcheck scripts/*.sh approver/scripts/*.sh
+shellcheck install.sh uninstall.sh \
+  $(find scripts approver/scripts -type f -name '*.sh' | sort)
 actionlint .github/workflows/*.yml
 swiftlint lint --strict --no-cache
 npx --no-install markdownlint '**/*.md'
@@ -83,7 +84,7 @@ cd approver && swift test
 `mise run build` runs the app bundle build:
 
 ```bash
-scripts/build-app-bundle.sh
+scripts/build/build-app-bundle.sh
 ```
 
 `mise run test:smoke` runs the non-secret install, uninstall, release
@@ -93,14 +94,14 @@ version, release docs, public docs, and approver smoke checks:
 ```bash
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-ancestry.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-notes.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-publish.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-public-docs.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-publish.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-version.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 cd approver && swift run agent-secret-app-smoke
 ```
 
@@ -127,7 +128,7 @@ Release artifact verification is separate from pull request CI. For a local
 release-candidate check, run:
 
 ```bash
-scripts/build-release.sh v0.0.0-dev
+scripts/release/build-release.sh v0.0.0-dev
 ```
 
 ## Development Toolchain
@@ -308,7 +309,7 @@ desktop app that launched the CLI.
 Local release artifact build:
 
 ```bash
-scripts/build-release.sh v0.0.0-dev
+scripts/release/build-release.sh v0.0.0-dev
 ```
 
 That produces a DMG and `checksums.txt` in `dist/`. Local builds are ad-hoc
@@ -317,8 +318,8 @@ makes the local command useful for layout, checksum, and installer smoke checks.
 
 Tag pushes matching `v*` run the GitHub release workflow and attach artifacts
 to a draft GitHub Release. Tag-triggered GitHub releases require production
-signing: CI runs `scripts/check-release-signing-env.sh`, imports the Developer
-ID certificate, and then calls `scripts/build-release.sh "$GITHUB_REF_NAME"
+signing: CI runs `scripts/release/check-release-signing-env.sh`, imports the Developer
+ID certificate, and then calls `scripts/release/build-release.sh "$GITHUB_REF_NAME"
 --require-production-signing`. Missing certificate, Developer ID identity,
 `AGENT_SECRET_NOTARIZE=1`, or notary credentials fail the tag workflow instead
 of publishing ad-hoc artifacts.
@@ -339,8 +340,8 @@ AGENT_SECRET_NOTARIZE=1
 AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
 AGENT_SECRET_NOTARY_KEY_ID=KEYID
 AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
-scripts/check-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/build-release.sh v0.3.1 --require-production-signing
+scripts/release/check-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.3.1 --require-production-signing
 ```
 
 `AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is

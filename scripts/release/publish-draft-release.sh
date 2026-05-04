@@ -7,7 +7,7 @@ fail() {
 }
 
 if [ "$#" -lt 2 ]; then
-  fail "usage: scripts/publish-draft-release.sh TAG ARTIFACT..."
+  fail "usage: scripts/release/publish-draft-release.sh TAG ARTIFACT..."
 fi
 
 tag="$1"

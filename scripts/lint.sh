@@ -17,7 +17,7 @@ fi
 scripts/lint-go.sh
 go test ./...
 go test -race ./...
-scripts/check-go-coverage.sh
+scripts/checks/check-go-coverage.sh
 govulncheck ./...
 gitleaks dir . --redact --no-banner
 
@@ -25,8 +25,12 @@ if [ ! -x node_modules/.bin/markdownlint ]; then
   npm ci --ignore-scripts --no-audit --no-fund
 fi
 
-shellcheck install.sh uninstall.sh scripts/*.sh scripts/lib/*.sh approver/scripts/*.sh
-scripts/check-format.sh shell
+shell_files=(install.sh uninstall.sh)
+while IFS= read -r -d '' file; do
+  shell_files+=("$file")
+done < <(find scripts approver/scripts -type f -name "*.sh" -print0 | sort -z)
+shellcheck "${shell_files[@]}"
+scripts/checks/check-format.sh shell
 if [ -d .github/workflows ]; then
   workflow_files=()
   while IFS= read -r -d '' file; do
@@ -35,14 +39,14 @@ if [ -d .github/workflows ]; then
 
   if [ ${#workflow_files[@]} -gt 0 ]; then
     actionlint "${workflow_files[@]}"
-    scripts/check-workflow-actions-pinned.sh "${workflow_files[@]}"
+    scripts/checks/check-workflow-actions-pinned.sh "${workflow_files[@]}"
   fi
 fi
-scripts/check-format.sh toml
-scripts/check-format.sh swift
+scripts/checks/check-format.sh toml
+scripts/checks/check-format.sh swift
 swiftlint lint --strict --no-cache
 npx --no-install markdownlint '**/*.md'
 
-scripts/test-workflow-actions-pinned.sh
+scripts/checks/test-workflow-actions-pinned.sh
 
 (cd approver && swift test)

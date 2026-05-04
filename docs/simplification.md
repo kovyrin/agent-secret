@@ -162,7 +162,7 @@ Docs:
 - Commit: `9c6f45c`.
 - Change: remove superseded planning and distribution history docs.
 - LOC delta: -3,134.
-- Verification: `scripts/test-release-docs.sh`, `mise run lint:shell`,
+- Verification: `scripts/release/test-release-docs.sh`, `mise run lint:shell`,
   `markdownlint`, `git diff --check`.
 
 2026-05-03:
@@ -213,7 +213,7 @@ Docs:
   `docs/macos-distribution-plan.md`, and `docs/epic-2-spikes.md`; these are
   project source-of-truth documents, not cleanup debris.
 - LOC delta: +3,147.
-- Verification: `scripts/test-release-docs.sh`, `markdownlint`,
+- Verification: `scripts/release/test-release-docs.sh`, `markdownlint`,
   `git diff --check`.
 
 2026-05-03:

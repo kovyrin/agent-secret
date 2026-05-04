@@ -463,7 +463,7 @@ Deliverables:
 Acceptance checks:
 
 ```bash
-scripts/build-release.sh v0.0.0-dev
+scripts/release/build-release.sh v0.0.0-dev
 shasum -a 256 dist/*
 hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
 ```
@@ -504,8 +504,8 @@ production signing input is missing.
 
 GitHub release signing imports a Developer ID certificate into a temporary
 keychain before building artifacts. Before import, the workflow runs
-`scripts/check-release-signing-env.sh`; artifact builds then call
-`scripts/build-release.sh "$GITHUB_REF_NAME" --require-production-signing`.
+`scripts/release/check-release-signing-env.sh`; artifact builds then call
+`scripts/release/build-release.sh "$GITHUB_REF_NAME" --require-production-signing`.
 Configure these repository secrets:
 
 ```text
@@ -532,9 +532,9 @@ step.
 Acceptance checks:
 
 ```bash
-scripts/build-release.sh v0.0.0-dev
-scripts/check-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/build-release.sh v0.0.0-dev --require-production-signing
+scripts/release/build-release.sh v0.0.0-dev
+scripts/release/check-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.0.0-dev --require-production-signing
 codesign --verify --deep --strict "/Applications/Agent Secret.app"
 spctl --assess --type execute --verbose "/Applications/Agent Secret.app"
 xcrun stapler validate "/Applications/Agent Secret.app"

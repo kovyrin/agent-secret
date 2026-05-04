@@ -7,7 +7,7 @@ fail() {
 }
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
-  fail "usage: scripts/extract-release-notes.sh TAG [OUTPUT] [CHANGELOG]"
+  fail "usage: scripts/release/extract-release-notes.sh TAG [OUTPUT] [CHANGELOG]"
 fi
 
 tag="$1"

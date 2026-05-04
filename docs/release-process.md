@@ -28,9 +28,9 @@ that heading to the release date:
 
 After publishing, create the next pending section when there is a concrete next
 release target. Do not publish a release whose changelog section is empty.
-The tag-triggered workflow runs `scripts/extract-release-notes.sh` to enforce
+The tag-triggered workflow runs `scripts/release/extract-release-notes.sh` to enforce
 this before publishing draft artifacts. Local smoke coverage for this contract
-lives in `AGENT_SECRET_IN_MISE=1 scripts/test-release-notes.sh`.
+lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
 ## Release Checklist
 
@@ -180,9 +180,14 @@ shasum -a 256 "mise-v${version}-macos-arm64.tar.gz"
 shasum -a 256 "mise-v${version}-macos-x64.tar.gz"
 ```
 
-Run `AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh` after any
-workflow change. That smoke test fails if a `jdx/mise-action` step does not set
-both `version` and `sha256`.
+Run the workflow pin smoke test after any workflow change:
+
+```bash
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
+```
+
+That smoke test fails if a `jdx/mise-action` step does not set both `version`
+and `sha256`.
 
 Signed release builds run through the pinned CI `mise` action and fixed macOS
 system tools for signing, notarization, and DMG assembly. Keep the workflow

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-project_root="$(cd -- "$script_dir/.." && pwd)"
-extract_script="$project_root/scripts/extract-release-notes.sh"
+project_root="$(cd -- "$script_dir/../.." && pwd)"
+extract_script="$project_root/scripts/release/extract-release-notes.sh"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-notes-test.XXXXXX")"
 cleanup() {

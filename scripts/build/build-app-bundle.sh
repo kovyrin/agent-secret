@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/build-app-bundle.sh [flags]
+  scripts/build/build-app-bundle.sh [flags]
 
 Build the macOS Agent Secret app bundle.
 
@@ -21,7 +21,7 @@ if [[ "$script_dir_part" == "$script_path" ]]; then
   script_dir_part="."
 fi
 script_dir="$(cd -- "$script_dir_part" && pwd)"
-project_root="$(cd -- "$script_dir/.." && pwd)"
+project_root="$(cd -- "$script_dir/../.." && pwd)"
 # shellcheck source=scripts/lib/bundle-metadata.sh
 # shellcheck disable=SC1091
 source "$project_root/scripts/lib/bundle-metadata.sh"
@@ -259,7 +259,7 @@ if [[ ! -x "$approver_binary" ]]; then
 fi
 
 echo "Creating app icon..."
-"$tool_swift" "$project_root/scripts/make-daemon-icon.swift" "$icon_png"
+"$tool_swift" "$project_root/scripts/build/make-daemon-icon.swift" "$icon_png"
 make_icon "$icon_png" "$iconset" "$tmp_dir/AppIcon.icns"
 
 echo "Creating daemon helper app..."
@@ -330,6 +330,6 @@ fi
 sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
 sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 sign_path "$app_bundle"
-"$project_root/scripts/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"
+"$project_root/scripts/build/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"
 
 echo "$app_bundle"

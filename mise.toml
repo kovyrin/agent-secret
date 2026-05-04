@@ -34,17 +34,17 @@ run = "AGENT_SECRET_IN_MISE=1 scripts/lint-go.sh"
 [tasks."lint:swift"]
 description = "Run SwiftLint and SwiftFormat"
 run = """
-AGENT_SECRET_IN_MISE=1 scripts/check-format.sh swift
+AGENT_SECRET_IN_MISE=1 scripts/checks/check-format.sh swift
 swiftlint lint --strict --no-cache
 """
 
 [tasks."lint:shell"]
 description = "Run shell syntax, style, and formatting checks"
-run = "shellcheck install.sh uninstall.sh scripts/*.sh scripts/lib/*.sh approver/scripts/*.sh && AGENT_SECRET_IN_MISE=1 scripts/check-format.sh shell"
+run = "shellcheck install.sh uninstall.sh $(find scripts approver/scripts -type f -name '*.sh' | sort) && AGENT_SECRET_IN_MISE=1 scripts/checks/check-format.sh shell"
 
 [tasks."lint:toml"]
 description = "Run TOML formatting checks"
-run = "AGENT_SECRET_IN_MISE=1 scripts/check-format.sh toml"
+run = "AGENT_SECRET_IN_MISE=1 scripts/checks/check-format.sh toml"
 
 [tasks."lint:secrets"]
 description = "Scan the working tree for committed secret values"
@@ -71,24 +71,24 @@ run = "go test -race ./..."
 
 [tasks."test:coverage"]
 description = "Run Go tests with coverage floors for internal packages"
-run = "scripts/check-go-coverage.sh"
+run = "scripts/checks/check-go-coverage.sh"
 
 [tasks."test:smoke"]
 description = "Run non-secret smoke tests"
 run = """
 AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
 AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-ancestry.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-notes.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-publish.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-version.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-release-docs.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-public-docs.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-workflow-actions-pinned.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-publish.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-version.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 cd approver && swift run agent-secret-app-smoke
 """
 
 [tasks.build]
 description = "Build the unified macOS Agent Secret app bundle"
-run = "AGENT_SECRET_IN_MISE=1 scripts/build-app-bundle.sh"
+run = "AGENT_SECRET_IN_MISE=1 scripts/build/build-app-bundle.sh"

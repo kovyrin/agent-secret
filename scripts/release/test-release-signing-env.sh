@@ -2,10 +2,10 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-project_root="$(cd -- "$script_dir/.." && pwd)"
-check_script="$project_root/scripts/check-release-signing-env.sh"
-build_release="$project_root/scripts/build-release.sh"
-import_certificate="$project_root/scripts/import-codesign-certificate.sh"
+project_root="$(cd -- "$script_dir/../.." && pwd)"
+check_script="$project_root/scripts/release/check-release-signing-env.sh"
+build_release="$project_root/scripts/release/build-release.sh"
+import_certificate="$project_root/scripts/release/import-codesign-certificate.sh"
 test_path="${PATH:-/usr/bin:/bin}"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-signing-test.XXXXXX")"

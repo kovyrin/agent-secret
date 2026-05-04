@@ -87,10 +87,10 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Verify release tag ancestry
-        run: scripts/check-release-ancestry.sh "$GITHUB_REF_NAME"
+        run: scripts/release/check-release-ancestry.sh "$GITHUB_REF_NAME"
 
       - name: Verify changelog release notes
-        run: scripts/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
+        run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
 
       - name: Install mise
         uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
@@ -115,13 +115,13 @@ jobs:
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
           AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
-        run: scripts/check-release-signing-env.sh
+        run: scripts/release/check-release-signing-env.sh
 
       - name: Import Developer ID certificate
         env:
           AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
           AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
-        run: scripts/import-codesign-certificate.sh
+        run: scripts/release/import-codesign-certificate.sh
 
       - name: Build release artifacts
         env:
@@ -132,7 +132,7 @@ jobs:
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
           AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
-        run: mise exec -- scripts/build-release.sh "$GITHUB_REF_NAME" --require-production-signing
+        run: mise exec -- scripts/release/build-release.sh "$GITHUB_REF_NAME" --require-production-signing
 
       - name: Verify release artifact architecture
         run: |
@@ -184,14 +184,14 @@ jobs:
             >dist/checksums.txt
 
       - name: Extract changelog release notes
-        run: scripts/extract-release-notes.sh "$GITHUB_REF_NAME" dist/release-notes.md
+        run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" dist/release-notes.md
 
       - name: Create or update draft release
         env:
           GITHUB_TOKEN: ${{ github.token }}
           AGENT_SECRET_RELEASE_NOTES_FILE: dist/release-notes.md
         run: |
-          scripts/publish-draft-release.sh "$GITHUB_REF_NAME" \
+          scripts/release/publish-draft-release.sh "$GITHUB_REF_NAME" \
             "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \
             "dist/Agent-Secret-${GITHUB_REF_NAME}-macos-x86_64.dmg" \
             "dist/checksums.txt"

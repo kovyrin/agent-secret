@@ -39,7 +39,7 @@ for mod in "${modules[@]}"; do
   done < <(find "$module_dir" -name "*.go" -not -path "*/vendor/*")
 
   if [ ${#go_files[@]} -gt 0 ]; then
-    scripts/check-format.sh go "${go_files[@]}"
+    scripts/checks/check-format.sh go "${go_files[@]}"
   fi
 
   (cd "$module_dir" && go vet ./...)

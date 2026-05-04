@@ -4,9 +4,9 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 approver_root="$(cd "$script_dir/.." && pwd)"
 project_root="$(cd "$approver_root/.." && pwd)"
-# shellcheck source=scripts/bundle-metadata.sh
+# shellcheck source=scripts/lib/bundle-metadata.sh
 # shellcheck disable=SC1091
-source "$project_root/scripts/bundle-metadata.sh"
+source "$project_root/scripts/lib/bundle-metadata.sh"
 dist_dir="$approver_root/dist"
 bundle="$dist_dir/$AGENT_SECRET_APP_NAME.app"
 binary_name="agent-secret-app"
@@ -56,6 +56,6 @@ PLIST
 if command -v codesign >/dev/null 2>&1; then
   codesign --force --sign - "$bundle" >/dev/null
 fi
-"$project_root/scripts/check-bundle-metadata.sh" --app-only "$bundle" "$version" "$bundle_version"
+"$project_root/scripts/build/check-bundle-metadata.sh" --app-only "$bundle" "$version" "$bundle_version"
 
 echo "$bundle"

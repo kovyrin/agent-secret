@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/build-release.sh VERSION [flags]
+  scripts/release/build-release.sh VERSION [flags]
 
 Build a local macOS DMG release artifact and checksums.txt.
 
@@ -21,7 +21,7 @@ if [[ "$script_dir_part" == "$script_path" ]]; then
   script_dir_part="."
 fi
 script_dir="$(cd -- "$script_dir_part" && pwd)"
-project_root="$(cd -- "$script_dir/.." && pwd)"
+project_root="$(cd -- "$script_dir/../.." && pwd)"
 output_dir="$project_root/dist"
 require_production_signing=0
 
@@ -216,7 +216,7 @@ if [[ "$notarize" == "1" && "$codesign_identity" == "-" ]]; then
 fi
 
 echo "Building Agent Secret.app for $version..."
-"$project_root/scripts/build-app-bundle.sh" --version "$version" --output "$build_dir"
+"$project_root/scripts/build/build-app-bundle.sh" --version "$version" --output "$build_dir"
 
 if [[ "$notarize" == "1" ]]; then
   echo "Submitting app bundle for notarization..."

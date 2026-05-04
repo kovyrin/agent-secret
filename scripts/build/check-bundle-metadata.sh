@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/check-bundle-metadata.sh [--app-only] APP_BUNDLE [SHORT_VERSION] [BUNDLE_VERSION]
+  scripts/build/check-bundle-metadata.sh [--app-only] APP_BUNDLE [SHORT_VERSION] [BUNDLE_VERSION]
 
 Verify generated Agent Secret app bundle Info.plist metadata.
 USAGE
@@ -16,7 +16,7 @@ if [[ "$script_dir_part" == "$script_path" ]]; then
   script_dir_part="."
 fi
 script_dir="$(cd -- "$script_dir_part" && pwd)"
-project_root="$(cd -- "$script_dir/.." && pwd)"
+project_root="$(cd -- "$script_dir/../.." && pwd)"
 # shellcheck source=scripts/lib/bundle-metadata.sh
 # shellcheck disable=SC1091
 source "$project_root/scripts/lib/bundle-metadata.sh"
