@@ -22,6 +22,10 @@ version numbers for public releases.
 
 ## [0.0.8] - Pending
 
+### Added
+
+- `agent-secret --version` now prints the installed CLI version.
+
 ### Changed
 
 - The approval dialog now maps Esc to Deny and Enter to Allow once.
@@ -29,6 +33,12 @@ version numbers for public releases.
   project, scope, and secret details.
 - The approval dialog now emphasizes the item and field portions of displayed
   1Password references.
+
+### Fixed
+
+- Profile commands that resolve multiple 1Password refs no longer fail because
+  a stale cached 1Password desktop SDK client reports `invalid client id` or
+  `no vault matched` while `agent-secret doctor` still looks healthy.
 
 ## [0.0.7] - 2026-05-05
 

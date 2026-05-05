@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/buildinfo"
 	"github.com/kovyrin/agent-secret/internal/envfile"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
@@ -29,6 +30,7 @@ type Kind string
 
 const (
 	KindHelp         Kind = "help"
+	KindVersion      Kind = "version"
 	KindExec         Kind = "exec"
 	KindDoctor       Kind = "doctor"
 	KindInstallCLI   Kind = "install_cli"
@@ -44,6 +46,7 @@ type Command struct {
 	InstallCLIOptions   install.CLIOptions
 	InstallSkillOptions install.SkillOptions
 	HelpText            string
+	VersionText         string
 }
 
 type Parser struct{}
@@ -96,6 +99,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 	switch args[0] {
 	case "-h", "--help", "help":
 		return Command{Kind: KindHelp, HelpText: TopHelp()}, ErrHelpRequested
+	case "-v", "--version", "version":
+		return Command{Kind: KindVersion, VersionText: buildinfo.DisplayVersion()}, nil
 	case "exec":
 		return p.parseExec(args[1:])
 	case "daemon":
@@ -130,6 +135,7 @@ Commands:
   skill-install Install or repair the Agent Secret agent skill for this user.
   daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
   doctor    Print non-secret local diagnostics for setup troubleshooting.
+  version   Print the installed agent-secret version.
   help      Show this help.
 
 Common examples:

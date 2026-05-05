@@ -3,7 +3,9 @@ package opresolver
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 )
@@ -111,6 +113,55 @@ func TestResolveSecretPreservesMultilineTextValue(t *testing.T) {
 	}
 }
 
+func TestResolveSecretSerializesSDKCallsPerResolver(t *testing.T) {
+	t.Parallel()
+
+	fake := &blockingSecretsAPI{
+		entered: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
+	resolver, err := NewResolver(fake)
+	if err != nil {
+		t.Fatalf("NewResolver returned error: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	resolve := func(ref string) {
+		defer wg.Done()
+		_, err := resolver.ResolveSecret(context.Background(), ref)
+		errs <- err
+	}
+
+	wg.Add(1)
+	go resolve("op://Example Vault/Item/password")
+	<-fake.entered
+	released := false
+	defer func() {
+		if !released {
+			close(fake.release)
+		}
+	}()
+
+	wg.Add(1)
+	go resolve("op://Example Vault/Other/password")
+	select {
+	case <-fake.entered:
+		t.Fatal("second resolve entered SDK before first resolve returned")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(fake.release)
+	released = true
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("ResolveSecret returned error: %v", err)
+		}
+	}
+}
+
 func TestResolveSecretWrapsSDKError(t *testing.T) {
 	t.Parallel()
 
@@ -124,6 +175,17 @@ func TestResolveSecretWrapsSDKError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected resolve error")
 	}
+}
+
+type blockingSecretsAPI struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingSecretsAPI) Resolve(_ context.Context, _ string) (string, error) {
+	f.entered <- struct{}{}
+	<-f.release
+	return "synthetic-secret-value", nil
 }
 
 func TestNewResolverRequiresSecretsAPI(t *testing.T) {

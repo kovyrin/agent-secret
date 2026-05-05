@@ -151,6 +151,9 @@ func (a App) Run(ctx context.Context, args []string) int {
 	case KindHelp:
 		a.stdoutln(command.HelpText)
 		return 0
+	case KindVersion:
+		a.stdoutln(command.VersionText)
+		return 0
 	case KindExec:
 		return a.runExec(ctx, command)
 	case KindDaemonStatus:

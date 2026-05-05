@@ -412,6 +412,28 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 	}
 }
 
+func TestAppVersionDoesNotStartDaemon(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	manager := &appFakeDaemonManager{}
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"--version"}); code != 0 {
+		t.Fatalf("version exit=%d stderr=%q", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "agent-secret dev" {
+		t.Fatalf("version output = %q, want agent-secret dev", got)
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 || manager.statusCalls != 0 {
+		t.Fatalf(
+			"version touched daemon manager: ensure=%d connect=%d status=%d",
+			manager.ensureCalls,
+			manager.connectCalls,
+			manager.statusCalls,
+		)
+	}
+}
+
 func TestAppDaemonStatusReportsStoppedAfterRequestCancellation(t *testing.T) {
 	client, requestReceived, cleanup := startStallingAppDaemon(t)
 	defer cleanup()

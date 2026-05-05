@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 
 	onepassword "github.com/1password/onepassword-sdk-go"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
@@ -28,6 +30,7 @@ type ClientOptions struct {
 
 type Resolver struct {
 	secrets SecretsAPI
+	mu      sync.Mutex
 	// The 1Password SDK releases client IDs from a finalizer on its Client.
 	// Keep the owner reachable for as long as this resolver is cached.
 	keepAlive any
@@ -99,7 +102,10 @@ func (r *Resolver) ResolveSecret(ctx context.Context, ref string) (Secret, error
 		return Secret{}, err
 	}
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	value, err := r.secrets.Resolve(ctx, ref)
+	runtime.KeepAlive(r.keepAlive)
 	if err != nil {
 		return Secret{}, fmt.Errorf("resolve 1Password reference: %w", err)
 	}

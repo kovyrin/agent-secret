@@ -854,6 +854,8 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 		{args: []string{"doctor"}, want: KindDoctor},
 		{args: []string{"install-cli"}, want: KindInstallCLI},
 		{args: []string{"skill-install"}, want: KindSkillInstall},
+		{args: []string{"--version"}, want: KindVersion},
+		{args: []string{"version"}, want: KindVersion},
 	} {
 		command, err := parser.Parse(tt.args)
 		if err != nil {
@@ -915,7 +917,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "exec", "install-cli", "skill-install", "daemon", "doctor", "my.1password.com"},
+			wants: []string{"agent-secret controls", "exec", "install-cli", "skill-install", "daemon", "doctor", "version", "my.1password.com"},
 		},
 		{
 			name:  "exec",
