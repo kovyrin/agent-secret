@@ -56,7 +56,6 @@ func runConfigProfileExec(
 	stderr.Reset()
 	code := app.Run(context.Background(), []string{
 		"exec",
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReReadsConfigAccountForRunningDaemon", "--", "child",
 	})
@@ -94,7 +93,6 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=" + ref,
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecRunsChildWithApprovedEnvAndPassthrough", "--", "child",
 	})
@@ -135,7 +133,6 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecUsesManagerClientWithoutSocket", "--", "child",
 	})
@@ -250,7 +247,6 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--env-file", envFilePath,
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv", "--", "child",
 	})
@@ -283,7 +279,6 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecStopsBeforeSpawnOnApprovalDenial", "--", "child",
 	})
@@ -312,7 +307,6 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecAllowsChildAfterDaemonStoppedStartedAudit", "--", "child",
 	})
@@ -687,6 +681,41 @@ func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
 	}
 }
 
+func TestAppDoctorUsesProjectConfigAccount(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	root := t.TempDir()
+	t.Chdir(root)
+	writeProfileConfig(t, root, `
+version: 1
+account: fixture.1password.com
+`)
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		status:     protocol.StatusPayload{PID: 5678},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.DoctorApproverCheck = nil
+
+	code := app.Run(context.Background(), []string{"doctor"})
+	if code != 0 {
+		t.Fatalf("doctor exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "1password account: fixture.1password.com") {
+		t.Fatalf("doctor output = %q, want project account", stdout.String())
+	}
+	if len(manager.checkedAccounts) != 1 || manager.checkedAccounts[0] != "fixture.1password.com" {
+		t.Fatalf("checked accounts = %v, want fixture.1password.com", manager.checkedAccounts)
+	}
+}
+
 func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -698,7 +727,6 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReportsDaemonStartFailureBeforeSpawn", "--", "child",
 	})
@@ -733,7 +761,6 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 		"exec",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=" + ref,
-		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReportsRandomIDFailureBeforeRequest", "--", "child",
 	})
@@ -853,6 +880,8 @@ type appFakeDaemonManager struct {
 	startCalls   int
 	stopCalls    int
 	checkCalls   int
+
+	checkedAccounts []string
 }
 
 func (m *appFakeDaemonManager) EnsureRunning(context.Context) error {
@@ -886,8 +915,9 @@ func (m *appFakeDaemonManager) Stop(context.Context) error {
 	return m.stopErr
 }
 
-func (m *appFakeDaemonManager) CheckOnePassword(context.Context, string) error {
+func (m *appFakeDaemonManager) CheckOnePassword(_ context.Context, account string) error {
 	m.checkCalls++
+	m.checkedAccounts = append(m.checkedAccounts, account)
 	return m.checkErr
 }
 

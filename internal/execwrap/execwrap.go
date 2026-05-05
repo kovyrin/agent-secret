@@ -17,7 +17,6 @@ import (
 
 var ErrEnvironmentConflict = errors.New("approved alias already exists in parent environment")
 var ErrExecutableChanged = errors.New("approved executable changed before spawn")
-var ErrMutableExecutable = errors.New("mutable executable requires explicit opt-in")
 
 const terminateGracePeriod = 2 * time.Second
 
@@ -27,18 +26,17 @@ type LifecycleReporter interface {
 }
 
 type Spec struct {
-	Path                   string
-	PathIdentity           fileidentity.Identity
-	Args                   []string
-	Dir                    string
-	BaseEnv                []string
-	Env                    map[string]string
-	OverrideEnv            bool
-	AllowMutableExecutable bool
-	Stdin                  io.Reader
-	Stdout                 io.Writer
-	Stderr                 io.Writer
-	Lifecycle              LifecycleReporter
+	Path         string
+	PathIdentity fileidentity.Identity
+	Args         []string
+	Dir          string
+	BaseEnv      []string
+	Env          map[string]string
+	OverrideEnv  bool
+	Stdin        io.Reader
+	Stdout       io.Writer
+	Stderr       io.Writer
+	Lifecycle    LifecycleReporter
 }
 
 type Result struct {
@@ -52,11 +50,6 @@ func Run(ctx context.Context, spec Spec, interrupts <-chan os.Signal) (Result, e
 	}
 	if err := fileidentity.Verify(spec.Path, spec.PathIdentity); err != nil {
 		return Result{}, fmt.Errorf("%w: %w", ErrExecutableChanged, err)
-	}
-	if !spec.AllowMutableExecutable {
-		if err := fileidentity.ValidateStableExecutable(spec.Path); err != nil {
-			return Result{}, fmt.Errorf("%w: %w", ErrMutableExecutable, err)
-		}
 	}
 
 	baseEnv := spec.BaseEnv

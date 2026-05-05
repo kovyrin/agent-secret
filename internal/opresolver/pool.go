@@ -77,9 +77,40 @@ func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (
 	}
 	secret, err := resolver.ResolveSecret(ctx, ref)
 	if err != nil {
+		if refreshed, refreshErr := p.resolveWithRefreshedClient(ctx, ref, account, resolver, err); refreshErr == nil {
+			return refreshed, nil
+		}
 		return "", fmt.Errorf("resolve secret: %w", err)
 	}
 	return secret.Value(), nil
+}
+
+func (p *DesktopPool) resolveWithRefreshedClient(
+	ctx context.Context,
+	ref string,
+	account string,
+	stale *Resolver,
+	resolveErr error,
+) (string, error) {
+	if !shouldRefreshDesktopClient(resolveErr) {
+		return "", resolveErr
+	}
+	p.evictClient(account, stale)
+	resolver, err := p.client(ctx, account)
+	if err != nil {
+		return "", err
+	}
+	secret, err := resolver.ResolveSecret(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	return secret.Value(), nil
+}
+
+func shouldRefreshDesktopClient(err error) bool {
+	return err != nil &&
+		!errors.Is(err, ErrInvalidReference) &&
+		strings.Contains(strings.ToLower(err.Error()), "invalid client id")
 }
 
 func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*Resolver, error) {
@@ -160,6 +191,14 @@ func (p *DesktopPool) finishClientInit(account string, init *desktopPoolInit, re
 	init.resolver = resolver
 	init.err = err
 	close(init.done)
+}
+
+func (p *DesktopPool) evictClient(account string, resolver *Resolver) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.clients[account] == resolver {
+		delete(p.clients, account)
+	}
 }
 
 func waitForDesktopPoolInit(ctx context.Context, init *desktopPoolInit) (*Resolver, error) {

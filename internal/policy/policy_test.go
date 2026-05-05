@@ -74,7 +74,6 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 		{name: "account", mutate: func(r *request.ExecRequest) { r.Secrets[0].Account = "Fixture" }},
 		{name: "override", mutate: func(r *request.ExecRequest) { r.OverrideEnv = true }},
 		{name: "overridden alias", mutate: func(r *request.ExecRequest) { r.OverriddenAliases = []string{"TOKEN"} }},
-		{name: "mutable executable opt-in", mutate: func(r *request.ExecRequest) { r.AllowMutableExecutable = true }},
 		{name: "ttl", mutate: func(r *request.ExecRequest) { r.TTL = 5 * time.Minute }},
 		{name: "reusable uses", mutate: func(r *request.ExecRequest) { r.ReusableUses = request.DefaultReusableUses + 1 }},
 	}

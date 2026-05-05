@@ -25,7 +25,6 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 		"--ttl", "90s",
 		"--secret", "TOKEN=op://Example Vault/Cloudflare/token",
 		"--force-refresh",
-		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -36,7 +35,7 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 		t.Fatalf("kind = %s, want exec", command.Kind)
 	}
 	req := command.ExecRequest
-	if req.Reason != "Terraform plan" || req.TTL != 90*time.Second || !req.ForceRefresh || !req.AllowMutableExecutable {
+	if req.Reason != "Terraform plan" || req.TTL != 90*time.Second || !req.ForceRefresh {
 		t.Fatalf("unexpected request policy: %+v", req)
 	}
 	if req.Command[0] != "terraform" || req.ResolvedExecutable == "" {
@@ -75,7 +74,6 @@ profiles:
 	command, err := parser.Parse([]string{
 		"exec",
 		"--profile", "terraform-cloudflare",
-		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -129,7 +127,6 @@ profiles:
 		"--profile", "ansible",
 		"--only", "B_TOKEN,A_TOKEN",
 		"--secret", "EXTRA_TOKEN=op://Example/Extra/token",
-		"--allow-mutable-executable",
 		"--",
 		"ansible-playbook", "site.yml",
 	})
@@ -181,7 +178,6 @@ NEXT=op://Example/Next/token
 		"--reason", "Env file command",
 		"--env-file", firstEnv,
 		"--env-file", secondEnv,
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -241,7 +237,6 @@ profiles:
 		"exec",
 		"--reason", "Plain env file",
 		"--env-file", envPath,
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -273,7 +268,6 @@ PLAIN=kept
 		"--reason", "Env file command",
 		"--env-file", envPath,
 		"--only", "BETA_TOKEN",
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -326,7 +320,6 @@ PLAIN=kept
 		"--env-file", envPath,
 		"--only", "PROFILE_KEEP,FILE_KEEP",
 		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -397,7 +390,7 @@ exit 64
 			command, err := NewParser().Parse([]string{
 				"exec", "--reason", "Account default",
 				"--secret", "TOKEN=op://Example/Item/token",
-				"--allow-mutable-executable", "--", "tool",
+				"--", "tool",
 			})
 			if err != nil {
 				t.Fatalf("Parse returned error: %v", err)
@@ -439,7 +432,6 @@ profiles:
 		"--account", "CLI Account",
 		"--env-file", envPath,
 		"--secret", "EXPLICIT_TOKEN=op://Example/Explicit/token",
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -491,7 +483,6 @@ profiles:
 		"--profile", "deploy",
 		"--account", "CLI Account",
 		"--env-file", envPath,
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -553,24 +544,6 @@ profiles:
 	}
 }
 
-func TestParseExecRejectsMutableExecutableWithoutOptIn(t *testing.T) {
-	dir := t.TempDir()
-	writeExecutable(t, dir, "tool")
-	t.Setenv("PATH", dir)
-	parser := NewParser()
-
-	_, err := parser.Parse([]string{
-		"exec",
-		"--reason", "reason",
-		"--secret", "TOKEN=op://Example/Item/token",
-		"--",
-		"tool",
-	})
-	if !errors.Is(err, request.ErrMutableExecutable) {
-		t.Fatalf("Parse error = %v, want %v", err, request.ErrMutableExecutable)
-	}
-}
-
 func TestParseExecBuildsRequestFromDefaultProfile(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -595,7 +568,6 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
-		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -642,7 +614,6 @@ profiles:
 	command, err := parser.Parse([]string{
 		"exec",
 		"--config", configPath,
-		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -684,7 +655,6 @@ profiles:
 		"exec",
 		"--reason", "Explicit only",
 		"--secret", "TOKEN=op://Example/Item/token",
-		"--allow-mutable-executable",
 		"--",
 		"tool",
 	})
@@ -698,6 +668,56 @@ profiles:
 	}
 	if req.Secrets[0].Account != "Default Account" {
 		t.Fatalf("secret account = %q, want top-level config account", req.Secrets[0].Account)
+	}
+}
+
+func TestParseExecExplicitSecretsUseConfigOnlyAccount(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+account: fixture.1password.com
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser()
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Explicit only",
+		"--secret", "TOKEN=op://Fixture Infra/PlanetScale Slow Logs Token/credential",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	req := command.ExecRequest
+	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "TOKEN" {
+		t.Fatalf("secrets = %+v, want TOKEN only", req.Secrets)
+	}
+	if req.Secrets[0].Account != "fixture.1password.com" {
+		t.Fatalf("secret account = %q, want fixture.1password.com", req.Secrets[0].Account)
+	}
+
+	command, err = parser.Parse([]string{
+		"exec",
+		"--config", filepath.Join(root, "agent-secret.yml"),
+		"--reason", "Explicit config only",
+		"--secret", "TOKEN=op://Fixture Infra/PlanetScale Slow Logs Token/credential",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse with explicit config returned error: %v", err)
+	}
+	if got := command.ExecRequest.Secrets[0].Account; got != "fixture.1password.com" {
+		t.Fatalf("explicit config secret account = %q, want fixture.1password.com", got)
 	}
 }
 
@@ -728,7 +748,6 @@ profiles:
 		"--reason", "CLI reason",
 		"--ttl", "90s",
 		"--secret", "CADDY_TOKEN=op://Example/Caddy/token",
-		"--allow-mutable-executable",
 		"--",
 		"ansible-playbook", "site.yml",
 	})

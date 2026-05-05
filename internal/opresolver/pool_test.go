@@ -143,6 +143,73 @@ func TestDesktopPoolResolveReturnsSecretValue(t *testing.T) {
 	}
 }
 
+func TestDesktopPoolRefreshesClientAfterInvalidClientID(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "fixture.1password.com" {
+			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
+		}
+		if calls.Add(1) == 1 {
+			return NewResolver(&fakeSecretsAPI{err: errors.New("invalid client id")})
+		}
+		return NewResolver(&fakeSecretsAPI{value: "fresh-secret-value"})
+	})
+
+	value, err := pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if value != "fresh-secret-value" {
+		t.Fatalf("value = %q, want fresh-secret-value", value)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("factory calls = %d, want stale client plus refresh", got)
+	}
+
+	value, err = pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
+	if err != nil {
+		t.Fatalf("second Resolve returned error: %v", err)
+	}
+	if value != "fresh-secret-value" {
+		t.Fatalf("second value = %q, want fresh-secret-value", value)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("factory calls after second resolve = %d, want cached refreshed client", got)
+	}
+}
+
+func TestDesktopPoolDoesNotRefreshClientForInvalidReference(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	resolver := testDesktopResolver(t)
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "fixture.1password.com" {
+			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
+		}
+		calls.Add(1)
+		return resolver, nil
+	})
+
+	_, err := pool.Resolve(context.Background(), "Fixture Infra/PlanetScale/token", "fixture.1password.com")
+	if !errors.Is(err, ErrInvalidReference) {
+		t.Fatalf("Resolve error = %v, want ErrInvalidReference", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("factory calls after invalid ref = %d, want 1", got)
+	}
+
+	_, err = pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
+	if err != nil {
+		t.Fatalf("valid Resolve returned error: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("factory calls after valid ref = %d, want cached client", got)
+	}
+}
+
 func TestDesktopPoolResolveWrapsWaiterCancellationOnce(t *testing.T) {
 	t.Parallel()
 

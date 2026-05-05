@@ -7,6 +7,7 @@ import Foundation
         private typealias Metric = ApprovalPanelStyle.Metric
 
         let secret: RequestedSecretRowViewModel
+        let aliasColumnWidth: CGFloat
 
         var body: some View {
             HStack(spacing: Metric.secretListRowSpacing) {
@@ -14,7 +15,7 @@ import Foundation
                 Text(secret.alias)
                     .font(.system(size: Metric.secretListAliasFontSize, weight: .semibold, design: .monospaced))
                     .lineLimit(Metric.singleLineLimit)
-                    .frame(width: Metric.secretListAliasWidth, alignment: .leading)
+                    .frame(width: aliasColumnWidth, alignment: .leading)
                 VStack(alignment: .leading, spacing: Metric.rowTextSpacing) {
                     Text(secret.ref)
                         .font(.system(size: Metric.secretListRefFontSize, design: .monospaced))

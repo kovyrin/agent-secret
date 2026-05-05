@@ -29,7 +29,6 @@ const (
 var (
 	ErrInvalidAlias        = errors.New("invalid secret alias")
 	ErrInvalidCommand      = errors.New("invalid command")
-	ErrMutableExecutable   = errors.New("mutable executable requires explicit opt-in")
 	ErrInvalidReason       = errors.New("invalid reason")
 	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
 	ErrInvalidReusableUses = errors.New("invalid reusable use count")
@@ -60,17 +59,16 @@ type Secret struct {
 }
 
 type ExecOptions struct {
-	Reason                 string
-	Command                []string
-	CWD                    string
-	Env                    []string
-	Secrets                []SecretSpec
-	TTL                    time.Duration
-	ReceivedAt             time.Time
-	ReusableUses           int
-	OverrideEnv            bool
-	ForceRefresh           bool
-	AllowMutableExecutable bool
+	Reason       string
+	Command      []string
+	CWD          string
+	Env          []string
+	Secrets      []SecretSpec
+	TTL          time.Duration
+	ReceivedAt   time.Time
+	ReusableUses int
+	OverrideEnv  bool
+	ForceRefresh bool
 }
 
 type ExecRequest struct {
@@ -89,7 +87,6 @@ type ExecRequest struct {
 	OverrideEnv            bool                  `json:"override_env"`
 	OverriddenAliases      []string              `json:"overridden_aliases"`
 	ForceRefresh           bool                  `json:"force_refresh"`
-	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 }
 
 func SecretAliases(secrets []Secret) []string {
@@ -199,12 +196,6 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	if err != nil {
 		return ExecRequest{}, fmt.Errorf("%w: capture executable identity: %w", ErrInvalidCommand, err)
 	}
-	if !opts.AllowMutableExecutable {
-		if err := fileidentity.ValidateStableExecutable(resolved); err != nil {
-			return ExecRequest{}, fmt.Errorf("%w: %w", ErrMutableExecutable, err)
-		}
-	}
-
 	secrets, err := parseSecrets(opts.Secrets)
 	if err != nil {
 		return ExecRequest{}, err
@@ -231,7 +222,6 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		OverrideEnv:            opts.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,
 		ForceRefresh:           opts.ForceRefresh,
-		AllowMutableExecutable: opts.AllowMutableExecutable,
 	}, nil
 }
 

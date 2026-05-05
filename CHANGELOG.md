@@ -20,6 +20,20 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.7] - Pending
+
+### Changed
+
+- `agent-secret exec` no longer rejects current-user-writable developer tools
+  such as mise-installed commands before approval.
+
+### Fixed
+
+- The daemon now keeps the owning 1Password SDK client alive for cached desktop
+  resolvers, preventing later `invalid client id` failures.
+- `agent-secret doctor` now reports and checks the 1Password account from the
+  discovered project config when one is present.
+
 ## [0.0.6] - 2026-05-04
 
 ### Fixed

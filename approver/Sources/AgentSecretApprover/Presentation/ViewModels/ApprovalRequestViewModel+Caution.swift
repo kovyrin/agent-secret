@@ -4,7 +4,6 @@ extension ApprovalRequestViewModel {
     struct WarningPresentation: Equatable {
         let printsEnvironment: Bool
         let override: String?
-        let mutableExecutable: String?
         let cautionMessages: [String]
     }
 
@@ -18,16 +17,13 @@ extension ApprovalRequestViewModel {
     ) -> WarningPresentation {
         let printsEnvironment: Bool = printsEnvironment(for: request)
         let override: String? = overrideWarning(for: request)
-        let mutableExecutable: String? = mutableExecutableWarning(for: request)
         return WarningPresentation(
             printsEnvironment: printsEnvironment,
             override: override,
-            mutableExecutable: mutableExecutable,
             cautionMessages: cautionMessages(
                 printsEnvironmentWarning: printsEnvironment,
                 highScopeWarning: highScopeWarning,
-                overrideWarning: override,
-                mutableExecutableWarning: mutableExecutable
+                overrideWarning: override
             )
         )
     }
@@ -40,18 +36,10 @@ extension ApprovalRequestViewModel {
         return "Will replace existing variables: \(aliases.joined(separator: ", "))"
     }
 
-    private static func mutableExecutableWarning(for request: ApprovalRequest) -> String? {
-        guard request.allowMutableExecutable else {
-            return nil
-        }
-        return "Mutable executable opt-in: command path may be replaceable before launch."
-    }
-
     private static func cautionMessages(
         printsEnvironmentWarning: Bool,
         highScopeWarning: Bool,
-        overrideWarning: String?,
-        mutableExecutableWarning: String?
+        overrideWarning: String?
     ) -> [String] {
         var messages: [String] = []
         if printsEnvironmentWarning, !highScopeWarning {
@@ -59,9 +47,6 @@ extension ApprovalRequestViewModel {
         }
         if let overrideWarning {
             messages.append(overrideWarning)
-        }
-        if let mutableExecutableWarning {
-            messages.append(mutableExecutableWarning)
         }
         return messages
     }

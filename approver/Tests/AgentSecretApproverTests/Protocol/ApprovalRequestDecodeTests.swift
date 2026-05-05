@@ -16,7 +16,6 @@ final class ApprovalRequestDecodeTests: XCTestCase {
         for field in [
             "override_env",
             "overridden_aliases",
-            "allow_mutable_executable",
             "resolved_executable",
             "reusable_uses"
         ] {

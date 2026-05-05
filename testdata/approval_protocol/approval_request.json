@@ -10,7 +10,6 @@
     "EXAMPLE_TOKEN"
   ],
   "override_env": true,
-  "allow_mutable_executable": true,
   "reason": "Run Terraform plan for staging",
   "request_id": "req_123",
   "resolved_executable": "/opt/homebrew/bin/terraform",

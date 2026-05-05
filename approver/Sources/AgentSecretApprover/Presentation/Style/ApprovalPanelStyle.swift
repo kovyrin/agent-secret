@@ -105,8 +105,11 @@ import Foundation
             static let rowTextSpacing: CGFloat = 3
             static let rowSpacing: CGFloat = 12
             static let secondaryBorderOpacity: Double = 0.25
+            static let secretListAliasCharacterWidth: CGFloat = 8.4
+            static let secretListAliasHorizontalAllowance: CGFloat = 8
             static let secretListAliasFontSize: CGFloat = 14
-            static let secretListAliasWidth: CGFloat = 130
+            static let secretListAliasMinimumWidth: CGFloat = 130
+            static let secretListAliasMaximumWidth: CGFloat = 250
             static let secretListIconFontSize: CGFloat = 12
             static let secretListIconSize: CGFloat = 26
             static let secretListRefFontSize: CGFloat = 11

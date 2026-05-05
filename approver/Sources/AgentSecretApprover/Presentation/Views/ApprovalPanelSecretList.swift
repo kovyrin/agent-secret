@@ -10,12 +10,14 @@ import Foundation
         let secrets: [RequestedSecretRowViewModel]
 
         var body: some View {
+            let aliasColumnWidth = ApprovalPanelSecretListLayout.aliasColumnWidth(for: secrets.map(\.alias))
+
             VStack(alignment: .leading, spacing: Metric.secretListSpacing) {
                 Text(heading)
                     .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
                     .foregroundStyle(Color.green)
                 ForEach(secrets, id: \.alias) { secret in
-                    ApprovalPanelSecretListRow(secret: secret)
+                    ApprovalPanelSecretListRow(secret: secret, aliasColumnWidth: aliasColumnWidth)
                 }
             }
             .padding(Metric.secretPanelPadding)

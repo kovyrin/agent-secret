@@ -10,18 +10,17 @@ import (
 )
 
 type ApprovalRequestPayload struct {
-	RequestID              string                    `json:"request_id"`
-	Nonce                  string                    `json:"nonce"`
-	Reason                 string                    `json:"reason"`
-	Command                []string                  `json:"command"`
-	CWD                    string                    `json:"cwd"`
-	ResolvedExecutable     string                    `json:"resolved_executable"`
-	ExpiresAt              time.Time                 `json:"expires_at"`
-	Secrets                []ApprovalRequestedSecret `json:"secrets"`
-	OverrideEnv            bool                      `json:"override_env"`
-	OverriddenAliases      []string                  `json:"overridden_aliases"`
-	AllowMutableExecutable bool                      `json:"allow_mutable_executable"`
-	ReusableUses           int                       `json:"reusable_uses"`
+	RequestID          string                    `json:"request_id"`
+	Nonce              string                    `json:"nonce"`
+	Reason             string                    `json:"reason"`
+	Command            []string                  `json:"command"`
+	CWD                string                    `json:"cwd"`
+	ResolvedExecutable string                    `json:"resolved_executable"`
+	ExpiresAt          time.Time                 `json:"expires_at"`
+	Secrets            []ApprovalRequestedSecret `json:"secrets"`
+	OverrideEnv        bool                      `json:"override_env"`
+	OverriddenAliases  []string                  `json:"overridden_aliases"`
+	ReusableUses       int                       `json:"reusable_uses"`
 }
 
 type ApprovalRequestedSecret struct {
@@ -60,18 +59,17 @@ func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest
 		overriddenAliases = []string{}
 	}
 	return ApprovalRequestPayload{
-		RequestID:              correlation.RequestID,
-		Nonce:                  correlation.Nonce,
-		Reason:                 req.Reason,
-		Command:                slices.Clone(req.Command),
-		CWD:                    req.CWD,
-		ResolvedExecutable:     req.ResolvedExecutable,
-		ExpiresAt:              req.ExpiresAt,
-		Secrets:                secrets,
-		OverrideEnv:            req.OverrideEnv,
-		OverriddenAliases:      overriddenAliases,
-		AllowMutableExecutable: req.AllowMutableExecutable,
-		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
+		RequestID:          correlation.RequestID,
+		Nonce:              correlation.Nonce,
+		Reason:             req.Reason,
+		Command:            slices.Clone(req.Command),
+		CWD:                req.CWD,
+		ResolvedExecutable: req.ResolvedExecutable,
+		ExpiresAt:          req.ExpiresAt,
+		Secrets:            secrets,
+		OverrideEnv:        req.OverrideEnv,
+		OverriddenAliases:  overriddenAliases,
+		ReusableUses:       request.ReusableUsesOrDefault(req.ReusableUses),
 	}
 }
 

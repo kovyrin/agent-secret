@@ -49,28 +49,27 @@ type SecretRef struct {
 }
 
 type Event struct {
-	Timestamp              time.Time   `json:"timestamp"`
-	Type                   EventType   `json:"type"`
-	RequestID              string      `json:"request_id,omitempty"`
-	ApprovalID             string      `json:"approval_id,omitempty"`
-	Reason                 string      `json:"reason,omitempty"`
-	Command                []string    `json:"command,omitempty"`
-	ResolvedExecutable     string      `json:"resolved_executable,omitempty"`
-	CWD                    string      `json:"cwd,omitempty"`
-	SecretRefs             []SecretRef `json:"secret_refs,omitempty"`
-	ChildPID               *int        `json:"child_pid,omitempty"`
-	ExitCode               *int        `json:"exit_code,omitempty"`
-	Signal                 string      `json:"signal,omitempty"`
-	ErrorCode              ErrorCode   `json:"error_code,omitempty"`
-	RequesterPID           *int        `json:"requester_pid,omitempty"`
-	RequesterUID           *int        `json:"requester_uid,omitempty"`
-	RequesterPath          string      `json:"requester_path,omitempty"`
-	RemainingTTLMillis     *int64      `json:"remaining_ttl_ms,omitempty"`
-	RemainingUses          *int        `json:"remaining_uses,omitempty"`
-	ForceRefresh           bool        `json:"force_refresh,omitempty"`
-	OverrideEnv            bool        `json:"override_env,omitempty"`
-	OverriddenAliases      []string    `json:"overridden_aliases,omitempty"`
-	AllowMutableExecutable bool        `json:"allow_mutable_executable,omitempty"`
+	Timestamp          time.Time   `json:"timestamp"`
+	Type               EventType   `json:"type"`
+	RequestID          string      `json:"request_id,omitempty"`
+	ApprovalID         string      `json:"approval_id,omitempty"`
+	Reason             string      `json:"reason,omitempty"`
+	Command            []string    `json:"command,omitempty"`
+	ResolvedExecutable string      `json:"resolved_executable,omitempty"`
+	CWD                string      `json:"cwd,omitempty"`
+	SecretRefs         []SecretRef `json:"secret_refs,omitempty"`
+	ChildPID           *int        `json:"child_pid,omitempty"`
+	ExitCode           *int        `json:"exit_code,omitempty"`
+	Signal             string      `json:"signal,omitempty"`
+	ErrorCode          ErrorCode   `json:"error_code,omitempty"`
+	RequesterPID       *int        `json:"requester_pid,omitempty"`
+	RequesterUID       *int        `json:"requester_uid,omitempty"`
+	RequesterPath      string      `json:"requester_path,omitempty"`
+	RemainingTTLMillis *int64      `json:"remaining_ttl_ms,omitempty"`
+	RemainingUses      *int        `json:"remaining_uses,omitempty"`
+	ForceRefresh       bool        `json:"force_refresh,omitempty"`
+	OverrideEnv        bool        `json:"override_env,omitempty"`
+	OverriddenAliases  []string    `json:"overridden_aliases,omitempty"`
 }
 
 type Writer struct {
@@ -97,17 +96,16 @@ func OpenDefault(now func() time.Time) (*Writer, error) {
 
 func FromExecRequest(eventType EventType, requestID string, req request.ExecRequest) Event {
 	return Event{
-		Type:                   eventType,
-		RequestID:              requestID,
-		Reason:                 req.Reason,
-		Command:                slices.Clone(req.Command),
-		ResolvedExecutable:     req.ResolvedExecutable,
-		CWD:                    req.CWD,
-		SecretRefs:             secretRefs(req.Secrets),
-		ForceRefresh:           req.ForceRefresh,
-		OverrideEnv:            req.OverrideEnv,
-		OverriddenAliases:      slices.Clone(req.OverriddenAliases),
-		AllowMutableExecutable: req.AllowMutableExecutable,
+		Type:               eventType,
+		RequestID:          requestID,
+		Reason:             req.Reason,
+		Command:            slices.Clone(req.Command),
+		ResolvedExecutable: req.ResolvedExecutable,
+		CWD:                req.CWD,
+		SecretRefs:         secretRefs(req.Secrets),
+		ForceRefresh:       req.ForceRefresh,
+		OverrideEnv:        req.OverrideEnv,
+		OverriddenAliases:  slices.Clone(req.OverriddenAliases),
 	}
 }
 

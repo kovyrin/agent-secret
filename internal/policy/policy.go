@@ -90,7 +90,6 @@ type ReuseKey struct {
 	ReusableUses           int
 	OverrideEnv            bool
 	OverriddenAliases      []string
-	AllowMutableExecutable bool
 }
 
 type SecretGrant struct {
@@ -347,7 +346,6 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      overridden,
-		AllowMutableExecutable: req.AllowMutableExecutable,
 	}
 }
 
@@ -362,7 +360,6 @@ func (k ReuseKey) Equal(other ReuseKey) bool {
 		k.TTL == other.TTL &&
 		k.ReusableUses == other.ReusableUses &&
 		k.OverrideEnv == other.OverrideEnv &&
-		k.AllowMutableExecutable == other.AllowMutableExecutable &&
 		slices.Equal(k.OverriddenAliases, other.OverriddenAliases)
 }
 

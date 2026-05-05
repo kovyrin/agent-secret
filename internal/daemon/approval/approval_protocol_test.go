@@ -30,9 +30,8 @@ func TestNewRequestPayloadCopiesProtocolFields(t *testing.T) {
 				Account: "example.1password.com",
 			},
 		},
-		OverrideEnv:            true,
-		OverriddenAliases:      []string{"TOKEN"},
-		AllowMutableExecutable: true,
+		OverrideEnv:       true,
+		OverriddenAliases: []string{"TOKEN"},
 	}
 
 	payload := NewRequestPayload(protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"}, req)
@@ -63,9 +62,6 @@ func TestNewRequestPayloadCopiesProtocolFields(t *testing.T) {
 	}
 	if !payload.OverrideEnv {
 		t.Fatal("OverrideEnv = false, want true")
-	}
-	if !payload.AllowMutableExecutable {
-		t.Fatal("AllowMutableExecutable = false, want true")
 	}
 }
 
