@@ -10,31 +10,34 @@ import Foundation
         @Binding var textInspection: ApprovalPanelTextInspection?
 
         var body: some View {
-            VStack(alignment: .leading, spacing: Metric.contextRowSpacing) {
-                ApprovalPanelContextRow(
-                    icon: "bubble.left",
-                    title: "Reason",
-                    value: viewModel.reason,
-                    valueLineLimit: nil
-                )
+            VStack(alignment: .leading, spacing: Metric.contextSectionSpacing) {
                 ApprovalPanelContextRow(
                     icon: "terminal",
                     title: "Command",
                     value: viewModel.command,
+                    valueLineLimit: Metric.commandPreviewLineLimit,
                     inspectAction: commandInspectionAction
                 )
-                ApprovalPanelContextRow(
-                    icon: "folder",
-                    title: "Project folder",
-                    value: viewModel.projectFolder,
-                    inspectAction: requestScopeInspectionAction
-                )
-                ApprovalPanelContextRow(
-                    icon: "scope",
-                    title: "Scope",
-                    value: viewModel.scopeSummary,
-                    inspectAction: requestScopeInspectionAction
-                )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                HStack(alignment: .top, spacing: Metric.contextColumnSpacing) {
+                    ApprovalPanelContextRow(
+                        icon: "folder",
+                        title: "Project folder",
+                        value: viewModel.projectFolder,
+                        inspectAction: requestScopeInspectionAction
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                    ApprovalPanelContextRow(
+                        icon: "scope",
+                        title: "Scope",
+                        value: viewModel.scopeSummary,
+                        valueLineLimit: Metric.scopePreviewLineLimit,
+                        inspectAction: requestScopeInspectionAction
+                    )
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
         }
 

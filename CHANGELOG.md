@@ -25,6 +25,10 @@ version numbers for public releases.
 ### Changed
 
 - The approval dialog now maps Esc to Deny and Enter to Allow once.
+- The approval dialog now emphasizes the request reason before command,
+  project, scope, and secret details.
+- The approval dialog now emphasizes the item and field portions of displayed
+  1Password references.
 
 ## [0.0.7] - 2026-05-05
 

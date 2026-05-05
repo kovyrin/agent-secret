@@ -10,9 +10,9 @@ import Foundation
 /// AppKit-backed presenter that surfaces prompts on the main actor and fails closed outside AppKit.
 public final class AppKitApprovalPresenter: ApprovalPresenter {
     #if canImport(AppKit)
-        private static let panelHeight: CGFloat = 660
+        private static let panelHeight: CGFloat = 720
         private static let panelOrigin: CGFloat = 0
-        private static let panelWidth: CGFloat = 832
+        private static let panelWidth: CGFloat = 912
 
         @MainActor private var activeWindow: NSWindow?
     #endif

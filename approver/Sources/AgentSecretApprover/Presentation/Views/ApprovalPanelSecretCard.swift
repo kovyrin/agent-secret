@@ -22,10 +22,12 @@ import Foundation
                 VStack(alignment: .leading, spacing: Metric.detailSpacing) {
                     Text(secret.alias)
                         .font(.system(size: Metric.iconFontSize, weight: .semibold, design: .monospaced))
-                    Text(secret.ref)
-                        .font(.system(size: Metric.detailTitleFontSize, design: .monospaced))
-                        .lineLimit(Metric.twoLineLimit)
-                        .truncationMode(.middle)
+                    ApprovalPanelSecretReferenceText(
+                        segments: secret.refSegments,
+                        fontSize: Metric.detailTitleFontSize,
+                        lineLimit: Metric.twoLineLimit
+                    )
+                    .truncationMode(.middle)
                     Text(secret.accountLabel)
                         .font(.system(size: Metric.detailSubtitleFontSize))
                         .foregroundStyle(.secondary)

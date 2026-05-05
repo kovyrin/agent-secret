@@ -46,6 +46,15 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         XCTAssertEqual(viewModel.executable, "tool\\u202Etxt")
         XCTAssertEqual(viewModel.resolvedExecutable, "/tmp/bin/tool\\u202Etxt")
         XCTAssertEqual(secret.ref, "op://Shared\\nInjected/Item\\u202E/token")
+        XCTAssertEqual(
+            secret.refSegments,
+            [
+                RequestedSecretReferenceSegment(text: "op://Shared\\nInjected/", isEmphasized: false),
+                RequestedSecretReferenceSegment(text: "Item\\u202E", isEmphasized: true),
+                RequestedSecretReferenceSegment(text: "/", isEmphasized: false),
+                RequestedSecretReferenceSegment(text: "token", isEmphasized: true)
+            ]
+        )
         XCTAssertEqual(secret.account, "Work\\u202E\\nAdmin")
         XCTAssertEqual(secret.accountLabel, "Account: Work\\u202E\\nAdmin")
         XCTAssertEqual(secret.vaultName, "Shared\\nInjected")

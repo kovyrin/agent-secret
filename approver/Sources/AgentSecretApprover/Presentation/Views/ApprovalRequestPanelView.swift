@@ -52,8 +52,9 @@ import Foundation
                             secretCount: viewModel.secretCount
                         )
                     }
-                    secretSection
+                    reasonCard
                     requestContext
+                    secretSection
                     if !viewModel.cautionMessages.isEmpty {
                         caution
                     }
@@ -111,6 +112,10 @@ import Foundation
             ApprovalRequestContextSection(viewModel: viewModel, textInspection: $textInspection)
         }
 
+        private var reasonCard: some View {
+            ApprovalPanelReasonCard(reason: viewModel.reason)
+        }
+
         private var caution: some View {
             HStack(alignment: .top, spacing: Metric.cautionSpacing) {
                 Image(systemName: "exclamationmark.triangle")
@@ -157,7 +162,7 @@ import Foundation
                 .padding(.leading, Metric.detailLeadingPadding)
             } label: {
                 VStack(alignment: .leading, spacing: Metric.detailLabelSpacing) {
-                    Text("Details")
+                    Text("Show details")
                         .font(.system(size: Metric.detailTitleFontSize, weight: .semibold))
                     Text("Resolved binary, working directory, and approval behavior")
                         .font(.system(size: Metric.detailSubtitleFontSize))

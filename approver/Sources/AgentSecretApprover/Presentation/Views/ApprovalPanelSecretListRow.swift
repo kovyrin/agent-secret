@@ -17,11 +17,13 @@ import Foundation
                     .lineLimit(Metric.singleLineLimit)
                     .frame(width: aliasColumnWidth, alignment: .leading)
                 VStack(alignment: .leading, spacing: Metric.rowTextSpacing) {
-                    Text(secret.ref)
-                        .font(.system(size: Metric.secretListRefFontSize, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(Metric.singleLineLimit)
-                        .truncationMode(.middle)
+                    ApprovalPanelSecretReferenceText(
+                        segments: secret.refSegments,
+                        fontSize: Metric.secretListRefFontSize,
+                        lineLimit: Metric.singleLineLimit
+                    )
+                    .lineLimit(Metric.singleLineLimit)
+                    .truncationMode(.middle)
                     Text(secret.accountLabel)
                         .font(.system(size: Metric.secretListRefFontSize))
                         .foregroundStyle(.secondary)

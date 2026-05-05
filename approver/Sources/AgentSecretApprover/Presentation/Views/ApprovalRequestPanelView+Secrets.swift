@@ -38,7 +38,7 @@ import Foundation
             if viewModel.secretCount == Metric.singleSecretCount {
                 return "Requested secret"
             }
-            return "Requested secrets"
+            return "Requested secrets (\(viewModel.secretCount))"
         }
 
         var secretPanelBackground: some View {

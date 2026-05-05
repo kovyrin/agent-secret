@@ -32,9 +32,9 @@ extension ApprovalRequestViewModel {
 
     static func scopeSummary(uses: Int, remaining: String, expired: Bool) -> String {
         if expired {
-            return "Same command only • max \(uses) uses • request expired"
+            return "Same command only • max \(uses) uses\nrequest expired"
         }
-        return "Same command only • max \(uses) uses • expires in \(remaining)"
+        return "Same command only • max \(uses) uses\nexpires in \(remaining)"
     }
 
     static func reuseTitle(uses: Int, remaining: String, expired: Bool) -> String {

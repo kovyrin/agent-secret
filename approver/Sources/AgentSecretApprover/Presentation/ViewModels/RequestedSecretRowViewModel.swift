@@ -2,10 +2,13 @@ import Foundation
 
 /// One requested secret prepared for display without secret values.
 public struct RequestedSecretRowViewModel: Equatable, Sendable {
+    private static let emphasizedReferencePartCount: Int = 2
+    private static let minimumEmphasizedReferencePartCount: Int = 3
     private static let opReferencePrefix: String = "op://"
 
     public let alias: String
     public let ref: String
+    let refSegments: [RequestedSecretReferenceSegment]
     public let account: String
     public let accountLabel: String
     public let vaultName: String
@@ -19,6 +22,7 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
         let normalizedAccount: String = account.trimmingCharacters(in: .whitespacesAndNewlines)
         self.alias = Self.sanitizedDisplayText(alias)
         self.ref = Self.sanitizedDisplayText(ref)
+        refSegments = Self.referenceSegments(ref)
         self.account = Self.sanitizedDisplayText(normalizedAccount)
         accountLabel = "Account: \(self.account)"
         vaultName = Self.sanitizedDisplayText(parts.first ?? "Unknown vault")
@@ -35,6 +39,28 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
         return ref.dropFirst(opReferencePrefix.count)
             .split(separator: "/", omittingEmptySubsequences: false)
             .map(String.init)
+    }
+
+    private static func referenceSegments(_ ref: String) -> [RequestedSecretReferenceSegment] {
+        let parts: [String] = Self.referenceParts(ref)
+        guard parts.count >= minimumEmphasizedReferencePartCount else {
+            return [
+                RequestedSecretReferenceSegment(text: Self.sanitizedDisplayText(ref), isEmphasized: false)
+            ]
+        }
+
+        let emphasizedStartIndex: Int = parts.count - emphasizedReferencePartCount
+        let prefixParts: [String] = parts.prefix(emphasizedStartIndex).map(Self.sanitizedDisplayText)
+        let emphasizedParts: [String] = parts.suffix(emphasizedReferencePartCount).map(Self.sanitizedDisplayText)
+        return [
+            RequestedSecretReferenceSegment(
+                text: "\(opReferencePrefix)\(prefixParts.joined(separator: "/"))/",
+                isEmphasized: false
+            ),
+            RequestedSecretReferenceSegment(text: emphasizedParts[0], isEmphasized: true),
+            RequestedSecretReferenceSegment(text: "/", isEmphasized: false),
+            RequestedSecretReferenceSegment(text: emphasizedParts[1], isEmphasized: true)
+        ]
     }
 
     private static func symbolName(alias: String, ref: String) -> String {

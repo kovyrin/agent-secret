@@ -102,11 +102,12 @@ import Foundation
                         ))
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(secret.ref)
-                        .font(.system(size: Metric.groupExpandedRefFontSize, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ApprovalPanelSecretReferenceText(
+                        segments: secret.refSegments,
+                        fontSize: Metric.groupExpandedRefFontSize,
+                        lineLimit: nil
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
                     Text(secret.accountLabel)
                         .font(.system(size: Metric.groupExpandedRefFontSize))
                         .foregroundStyle(.secondary)

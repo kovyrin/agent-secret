@@ -25,7 +25,7 @@ import Foundation
             static let cardShadowRadius: CGFloat = 18
             static let cardShadowYOffset: CGFloat = 10
             static let cardVerticalPadding: CGFloat = 22
-            static let cardWidth: CGFloat = 780
+            static let cardWidth: CGFloat = 860
             static let cautionBlue: Double = 0.04
             static let cautionBorderOpacity: Double = 0.30
             static let cautionCornerRadius: CGFloat = 12
@@ -36,7 +36,10 @@ import Foundation
             static let cautionRed: Double = 0.38
             static let cautionSpacing: CGFloat = 10
             static let compactSecretLimit: Int = 5
+            static let commandPreviewLineLimit: Int = 4
+            static let contextColumnSpacing: CGFloat = 16
             static let contextRowSpacing: CGFloat = 10
+            static let contextSectionSpacing: CGFloat = 8
             static let contextTitleFontSize: CGFloat = 13
             static let contextValueFontSize: CGFloat = 12
             static let countdownTickInterval: TimeInterval = 1
@@ -102,6 +105,18 @@ import Foundation
             static let promptFontSize: CGFloat = 21
             static let promptSpacing: CGFloat = 8
             static let refLayoutPriority: Double = 1
+            static let reasonCardPadding: CGFloat = 18
+            static let reasonCardSpacing: CGFloat = 20
+            static let reasonFontSize: CGFloat = 19
+            static let reasonIconCircleSize: CGFloat = 56
+            static let reasonIconFillOpacity: Double = 0.10
+            static let reasonIconSize: CGFloat = 26
+            static let reasonLineLimit: Int = 2
+            static let reasonMinimumScaleFactor: CGFloat = 0.88
+            static let reasonTextBlue: Double = 0.16
+            static let reasonTextGreen: Double = 0.08
+            static let reasonTextRed: Double = 0.03
+            static let reasonTextSpacing: CGFloat = 4
             static let rowTextSpacing: CGFloat = 3
             static let rowSpacing: CGFloat = 12
             static let secondaryBorderOpacity: Double = 0.25
@@ -120,7 +135,8 @@ import Foundation
             static let secretPanelPadding: CGFloat = 14
             static let sectionLabelFontSize: CGFloat = 14
             static let sectionSpacing: CGFloat = 10
-            static let scrollableApprovalContentMaxHeight: CGFloat = 430
+            static let scopePreviewLineLimit: Int = 3
+            static let scrollableApprovalContentMaxHeight: CGFloat = 520
             static let singleLineLimit: Int = 1
             static let singleSecretCount: Int = 1
             static let subtleBorderOpacity: Double = 0.18
@@ -136,6 +152,13 @@ import Foundation
                 green: Metric.cautionGreen,
                 blue: Metric.cautionBlue
             )
+            static let reasonText = Color(
+                red: Metric.reasonTextRed,
+                green: Metric.reasonTextGreen,
+                blue: Metric.reasonTextBlue
+            )
+            static let secretReference = Color.secondary
+            static let secretReferenceEmphasis = Color.primary
         }
     }
 #endif

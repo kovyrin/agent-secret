@@ -50,12 +50,12 @@ final class ApprovalRequestViewModelExpirationTests: XCTestCase {
 
         XCTAssertFalse(liveViewModel.isExpired)
         XCTAssertEqual(liveViewModel.compactTimeRemaining, "2 sec")
-        XCTAssertTrue(liveViewModel.scopeSummary.contains("expires in 2 sec"))
+        XCTAssertEqual(liveViewModel.scopeSummary, "Same command only • max 3 uses\nexpires in 2 sec")
         XCTAssertTrue(expiredViewModel.isExpired)
         XCTAssertEqual(expiredViewModel.compactTimeRemaining, "expired")
         XCTAssertEqual(expiredViewModel.promptQuestion, "This secret access request has expired.")
         XCTAssertEqual(expiredViewModel.accessSummary, "can no longer receive access.")
-        XCTAssertTrue(expiredViewModel.scopeSummary.contains("request expired"))
+        XCTAssertEqual(expiredViewModel.scopeSummary, "Same command only • max 3 uses\nrequest expired")
         XCTAssertTrue(expiredViewModel.footerMessage.contains("expired before approval"))
         XCTAssertTrue(expiredViewModel.renderedText.contains("Time remaining: expired"))
     }

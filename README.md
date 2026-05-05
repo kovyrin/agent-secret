@@ -9,6 +9,8 @@ the agent by default.
 
 This repository is designed as a standalone open-source project.
 
+![Agent Secret approval prompt](docs/images/approval-request.png)
+
 ## Status
 
 Agent Secret is in a macOS Apple Silicon release-candidate stage. The shipped
