@@ -36,20 +36,14 @@ or general credential-helper framework.
 - There is no automatic updater. Upgrade by installing a newer release over the
   existing app.
 
-## Current Documents
+## Project Documents
 
 - [Changelog](CHANGELOG.md)
 - [Security Policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
-- [Product Requirements](docs/prd.md)
-- [Threat Model](docs/threat-model.md)
-- [Public Release Security Boundary Review](docs/security-boundary-review-2026-05-05.md)
-- [Implementation Plan](docs/implementation-plan.md)
 - [Configuration Reference](docs/configuration.md)
-- [macOS Distribution Plan](docs/macos-distribution-plan.md)
 - [Release Process](docs/release-process.md)
-- [Code Layout](docs/code-layout.md)
-- [Epic 2 Spike Notes](docs/epic-2-spikes.md)
+- [Threat Model](docs/threat-model.md)
 
 ## Project Boundary
 
@@ -71,9 +65,7 @@ agent-secret/
   docs/                          # Product, architecture, and implementation docs
 ```
 
-The code layout is documented in
-[Code Layout](docs/code-layout.md). Research spikes may refine package
-internals, but the repository boundary and module path should remain stable.
+The repository boundary and module path should remain stable.
 
 ## Current Verification
 

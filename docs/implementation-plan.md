@@ -272,8 +272,7 @@ Spike harnesses are implemented for all four Epic 2 surfaces. Local non-secret
 tests pass, and live 1Password SDK resolution has been verified with a
 test-only metadata-only integration run. The manual foreground smoke initially
 showed Finder could cover the alert; after raising the alert window explicitly,
-the prompt was visually confirmed in front. See
-[Epic 2 Spike Notes](epic-2-spikes.md).
+the prompt was visually confirmed in front.
 
 ### Epic 2 Acceptance Criteria
 
