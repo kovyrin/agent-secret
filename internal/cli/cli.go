@@ -53,18 +53,17 @@ func NewParser() Parser {
 }
 
 type execFlags struct {
-	reason                 string
-	cwd                    string
-	ttl                    time.Duration
-	profileName            string
-	configPath             string
-	account                string
-	overrideEnv            bool
-	forceRefresh           bool
-	allowMutableExecutable bool
-	secrets                secretFlags
-	only                   onlyFlags
-	envFiles               envFileFlags
+	reason       string
+	cwd          string
+	ttl          time.Duration
+	profileName  string
+	configPath   string
+	account      string
+	overrideEnv  bool
+	forceRefresh bool
+	secrets      secretFlags
+	only         onlyFlags
+	envFiles     envFileFlags
 }
 
 type execInputs struct {
@@ -169,7 +168,6 @@ Safety rules:
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - With no account override, agent-secret detects one signed-in 1Password CLI account before falling back to my.1password.com.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
-  - Commands from current-user-writable files or directories are rejected unless --allow-mutable-executable is set.
   - exec has no --json mode and never prints secret values.
   - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
@@ -208,8 +206,6 @@ Flags:
   --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
   --override-env      Allow approved aliases to replace existing child environment variables.
   --force-refresh     For matching reusable approvals, refetch approved refs before delivery.
-  --allow-mutable-executable
-                      Permit a project or temp executable that can be replaced by the current user.
   -h, --help          Show this help.
 
 Project profiles:
@@ -249,14 +245,14 @@ Project profiles:
   op:// are treated as secret refs; other values are passed to the child as
   plain environment entries. When multiple env files define the same key, the
   later file wins. Env-file keys override the caller environment for that child.
-	  --account applies when a loaded profile, config, or explicit secret entry does
-	  not already supply an account default.
-	  --only filters profile-loaded aliases and env-file secret aliases before
-	  one-off --secret refs are added.
-	  Invocations with explicit --secret or --env-file sources do not load
-	  default_profile unless --profile is provided.
-	  CLI --reason and --ttl override profile defaults.
-	  Account precedence is per-secret account, profile account, top-level account,
+  --account applies when a loaded profile, config, or explicit secret entry does
+  not already supply an account default.
+  --only filters profile-loaded aliases and env-file secret aliases before
+  one-off --secret refs are added.
+  Invocations with explicit --secret or --env-file sources do not load
+  default_profile unless --profile is provided.
+  CLI --reason and --ttl override profile defaults.
+  Account precedence is per-secret account, profile account, top-level account,
   --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, one detected signed-in
   1Password CLI account, then my.1password.com.
   Included profiles are resolved in order. Later includes and the selected
@@ -329,7 +325,6 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	fs.StringVar(&execOpts.account, "account", "", "1Password account")
 	fs.BoolVar(&execOpts.overrideEnv, "override-env", false, "override existing env aliases")
 	fs.BoolVar(&execOpts.forceRefresh, "force-refresh", false, "refresh reusable approval values")
-	fs.BoolVar(&execOpts.allowMutableExecutable, "allow-mutable-executable", false, "allow mutable executable path")
 	jsonOutput := fs.Bool("json", false, "unsupported")
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&execOpts.secrets, "secret", "secret mapping")
@@ -354,15 +349,14 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	req, err := request.NewExec(request.ExecOptions{
-		Reason:                 inputs.reason,
-		Command:                command,
-		CWD:                    execOpts.cwd,
-		Env:                    inputs.env,
-		Secrets:                inputs.secrets,
-		TTL:                    inputs.ttl,
-		OverrideEnv:            execOpts.overrideEnv,
-		ForceRefresh:           execOpts.forceRefresh,
-		AllowMutableExecutable: execOpts.allowMutableExecutable,
+		Reason:       inputs.reason,
+		Command:      command,
+		CWD:          execOpts.cwd,
+		Env:          inputs.env,
+		Secrets:      inputs.secrets,
+		TTL:          inputs.ttl,
+		OverrideEnv:  execOpts.overrideEnv,
+		ForceRefresh: execOpts.forceRefresh,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build exec request: %w", err)

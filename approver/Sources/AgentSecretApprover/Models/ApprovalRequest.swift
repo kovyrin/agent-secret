@@ -7,7 +7,6 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case cwd
         case expiresAt = "expires_at"
         case nonce
-        case allowMutableExecutable = "allow_mutable_executable"
         case overrideEnv = "override_env"
         case overriddenAliases = "overridden_aliases"
         case reason
@@ -31,7 +30,6 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var expiresAt: Date
     public var secrets: [RequestedSecret]
     public var overrideEnv: Bool
-    public var allowMutableExecutable: Bool
     public var overriddenAliases: [String]
     public var reusableUses: Int
 
@@ -45,7 +43,6 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         secrets: [RequestedSecret],
         resolvedExecutable: String,
         overrideEnv: Bool = false,
-        allowMutableExecutable: Bool = false,
         overriddenAliases: [String] = [],
         reusableUses: Int = Self.defaultReusableUses
     ) {
@@ -58,7 +55,6 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.expiresAt = expiresAt
         self.secrets = secrets
         self.overrideEnv = overrideEnv
-        self.allowMutableExecutable = allowMutableExecutable
         self.overriddenAliases = overriddenAliases
         self.reusableUses = Self.boundedReusableUses(reusableUses)
     }
@@ -75,7 +71,6 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
         overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)
-        allowMutableExecutable = try container.decode(Bool.self, forKey: .allowMutableExecutable)
         overriddenAliases = try container.decode([String].self, forKey: .overriddenAliases)
         let decodedReusableUses: Int = try container.decode(
             Int.self,

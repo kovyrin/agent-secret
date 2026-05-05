@@ -210,7 +210,6 @@ Required checks:
 
 - The child command is argv, not a shell string.
 - The approved executable identity is verified immediately before launch.
-- Mutable executable paths are rejected or launched atomically.
 - Existing env values are not overwritten unless the request says so.
 - Signals and terminal foreground state are handled without losing audit state.
 

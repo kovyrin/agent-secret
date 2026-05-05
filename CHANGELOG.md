@@ -22,6 +22,11 @@ version numbers for public releases.
 
 ## [0.0.7] - Pending
 
+### Changed
+
+- `agent-secret exec` no longer rejects current-user-writable developer tools
+  such as mise-installed commands before approval.
+
 ### Fixed
 
 - The daemon now keeps the owning 1Password SDK client alive for cached desktop

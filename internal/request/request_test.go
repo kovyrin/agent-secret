@@ -30,7 +30,6 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 			{Alias: "TOKEN", Ref: "op://Example Vault/Cloudflare/token", Account: " Fixture "},
 			{Alias: "TOKEN_COPY", Ref: "op://Example Vault/Cloudflare/token"},
 		},
-		AllowMutableExecutable: true,
 	})
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
@@ -150,35 +149,6 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
-func TestNewExecRejectsMutableExecutableByDefault(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	writeExecutable(t, dir)
-
-	_, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-		o.AllowMutableExecutable = false
-	}))
-	if !errors.Is(err, ErrMutableExecutable) {
-		t.Fatalf("NewExec error = %v, want %v", err, ErrMutableExecutable)
-	}
-}
-
-func TestNewExecAllowsMutableExecutableWithExplicitOptIn(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	writeExecutable(t, dir)
-
-	req, err := NewExec(baseOptions(dir, "reason"))
-	if err != nil {
-		t.Fatalf("NewExec returned error: %v", err)
-	}
-	if !req.AllowMutableExecutable {
-		t.Fatal("AllowMutableExecutable = false, want explicit opt-in recorded")
-	}
-}
-
 func TestNewExecResolvesSlashPathRelativeToCWD(t *testing.T) {
 	t.Parallel()
 
@@ -285,7 +255,6 @@ func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
 		"override_env",
 		"overridden_aliases",
 		"force_refresh",
-		"allow_mutable_executable",
 	} {
 		if _, ok := fields[field]; !ok {
 			t.Fatalf("request JSON omitted snake_case field %q: %s", field, raw)
@@ -487,7 +456,6 @@ func baseOptions(dir string, reason string) ExecOptions {
 		Secrets: []SecretSpec{
 			{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
 		},
-		AllowMutableExecutable: true,
 	}
 }
 

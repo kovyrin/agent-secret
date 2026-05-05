@@ -27,35 +27,6 @@ final class ApprovalCautionWarningTests: XCTestCase {
         )
     }
 
-    private static var multiSecretRequest: ApprovalRequest {
-        ApprovalRequest(
-            requestID: "req_caution_multi",
-            nonce: "nonce_caution_multi",
-            reason: "Run integration checks",
-            command: ["/usr/bin/env"],
-            cwd: "/tmp/project",
-            expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-            secrets: multiSecrets,
-            resolvedExecutable: "/usr/bin/env",
-            reusableUses: expectedReusableUses
-        )
-    }
-
-    private static var multiSecrets: [RequestedSecret] {
-        [
-            RequestedSecret(alias: "LOGIN", ref: "op://Private/Github/username", account: "Work"),
-            RequestedSecret(alias: "GITHUB_TOKEN", ref: "op://Private/Github/token", account: "Work"),
-            RequestedSecret(alias: "GITHUB_EMAIL", ref: "op://Private/Github/email", account: "Work"),
-            RequestedSecret(alias: "DB_HOST", ref: "op://Database/App/host", account: "Work"),
-            RequestedSecret(alias: "DB_USER", ref: "op://Database/App/user", account: "Work"),
-            RequestedSecret(alias: "DB_PASSWORD", ref: "op://Database/App/password", account: "Work"),
-            RequestedSecret(alias: "DB_NAME", ref: "op://Database/App/name", account: "Work"),
-            RequestedSecret(alias: "OPENAI_API_KEY", ref: "op://OpenAI/Platform/api_key", account: "Work"),
-            RequestedSecret(alias: "OPENAI_ORG_ID", ref: "op://OpenAI/Platform/org_id", account: "Work"),
-            RequestedSecret(alias: "OPENAI_PROJECT_ID", ref: "op://OpenAI/Platform/project_id", account: "Work")
-        ]
-    }
-
     func testOverrideWarningIsVisibleOutsideCollapsedDetails() {
         var request: ApprovalRequest = Self.sampleRequest
         request.overrideEnv = true
@@ -70,19 +41,5 @@ final class ApprovalCautionWarningTests: XCTestCase {
         XCTAssertTrue(viewModel.cautionMessages.contains { message in
             message.contains("Will replace existing variables: EXAMPLE_TOKEN, PATH")
         })
-    }
-
-    func testMutableExecutableWarningIsVisibleOutsideCollapsedDetails() {
-        var request: ApprovalRequest = Self.multiSecretRequest
-        request.allowMutableExecutable = true
-        let viewModel = ApprovalRequestViewModel(
-            request: request,
-            now: Date(timeIntervalSince1970: Self.viewModelNow)
-        )
-
-        XCTAssertTrue(viewModel.highScopeWarning)
-        XCTAssertTrue(viewModel.printsEnvironmentWarning)
-        XCTAssertEqual(viewModel.cautionMessages.count, 1)
-        XCTAssertTrue(viewModel.cautionMessages[0].contains("Mutable executable opt-in"))
     }
 }

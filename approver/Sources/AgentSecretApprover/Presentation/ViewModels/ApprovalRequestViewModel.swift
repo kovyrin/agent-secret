@@ -55,7 +55,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let overrideEnv: Bool
     public let overriddenAliases: [String]
     public let overrideWarning: String?
-    public let mutableExecutableWarning: String?
     public let cautionMessages: [String]
     public let footerMessage: String
     public let renderedText: String
@@ -94,7 +93,6 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         overrideEnv = request.overrideEnv
         overriddenAliases = request.overriddenAliases.map(Self.sanitizedDisplayText)
         overrideWarning = warnings.override
-        mutableExecutableWarning = warnings.mutableExecutable
         cautionMessages = warnings.cautionMessages
         footerMessage = Self.footerMessage(secretCount: secretPresentation.count, expired: isExpired)
         renderedText = Self.renderedText(
