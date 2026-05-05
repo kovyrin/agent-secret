@@ -49,6 +49,10 @@ func NewManager(socketPath string) (Manager, error) {
 func (m Manager) EnsureRunning(ctx context.Context) error {
 	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
+	} else if isRetiringDaemon(err) {
+		if err := m.waitUntilUnavailable(ctx, 25*time.Millisecond); err != nil {
+			return err
+		}
 	} else if !errors.Is(err, socket.ErrDaemonUnavailable) {
 		return err
 	}
@@ -61,6 +65,10 @@ func (m Manager) EnsureRunning(ctx context.Context) error {
 func (m Manager) Start(ctx context.Context) error {
 	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
+	} else if isRetiringDaemon(err) {
+		if err := m.waitUntilUnavailable(ctx, 25*time.Millisecond); err != nil {
+			return err
+		}
 	} else if !errors.Is(err, socket.ErrDaemonUnavailable) {
 		return err
 	}
@@ -198,6 +206,40 @@ func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) err
 	}
 }
 
+func (m Manager) waitUntilUnavailable(ctx context.Context, interval time.Duration) error {
+	if interval <= 0 {
+		interval = 25 * time.Millisecond
+	}
+	timeout := m.StartupTimeout
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		unavailable, err := m.statusUnavailable(waitCtx)
+		if err != nil {
+			return err
+		}
+		if unavailable {
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			ctxErr := waitCtx.Err()
+			if cause := context.Cause(waitCtx); cause != nil && !errors.Is(cause, ctxErr) {
+				ctxErr = errors.Join(ctxErr, cause)
+			}
+			return fmt.Errorf("%w: retiring daemon still responds: %w", ErrDaemonStillRunning, ctxErr)
+		case <-ticker.C:
+		}
+	}
+}
+
 func (m Manager) trustedDaemonPaths() ([]string, error) {
 	daemonPath := m.DaemonPath
 	if daemonPath == "" {
@@ -225,7 +267,14 @@ func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 	if errors.Is(err, socket.ErrDaemonUnavailable) || errors.Is(err, io.EOF) {
 		return true, nil
 	}
+	if isRetiringDaemon(err) {
+		return false, nil
+	}
 	return false, err
+}
+
+func isRetiringDaemon(err error) bool {
+	return IsProtocolError(err, protocol.ErrorCodeDaemonStopped)
 }
 
 func (m Manager) daemonArgs() []string {

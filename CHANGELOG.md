@@ -29,6 +29,8 @@ version numbers for public releases.
 
 ### Fixed
 
+- The daemon now retires when the installed daemon executable is replaced, and
+  `agent-secret exec` retries once so the command uses the upgraded daemon.
 - The daemon now keeps the owning 1Password SDK client alive for cached desktop
   resolvers, preventing later `invalid client id` failures.
 - `agent-secret doctor` now reports and checks the 1Password account from the

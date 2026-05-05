@@ -181,13 +181,6 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		a.stderrf("agent-secret: start daemon: %v\n", err)
 		return 1
 	}
-	client, err := manager.Connect(ctx)
-	if err != nil {
-		a.stderrf("agent-secret: connect daemon: %v\n", err)
-		return 1
-	}
-	defer func() { _ = client.Close() }()
-
 	requestID, err := a.randomID("req")
 	if err != nil {
 		a.stderrf("agent-secret: generate request id: %v\n", err)
@@ -199,11 +192,12 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		return 1
 	}
 	correlation := protocol.Correlation{RequestID: requestID, Nonce: nonce}
-	payload, err := client.RequestExec(ctx, correlation, command.ExecRequest)
+	client, payload, err := a.requestExec(ctx, manager, correlation, command.ExecRequest)
 	if err != nil {
-		a.stderrf("agent-secret: request rejected: %v\n", err)
+		a.stderrf("agent-secret: %v\n", err)
 		return 1
 	}
+	defer func() { _ = client.Close() }()
 
 	interrupts := make(chan os.Signal, 2)
 	signal.Notify(interrupts, os.Interrupt, syscall.SIGTERM)
@@ -231,6 +225,41 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		return 1
 	}
 	return result.ExitCode
+}
+
+func (a App) requestExec(
+	ctx context.Context,
+	manager daemonManager,
+	correlation protocol.Correlation,
+	req request.ExecRequest,
+) (daemonClient, protocol.ExecResponsePayload, error) {
+	client, err := manager.Connect(ctx)
+	if err != nil {
+		return nil, protocol.ExecResponsePayload{}, fmt.Errorf("connect daemon: %w", err)
+	}
+	payload, err := client.RequestExec(ctx, correlation, req)
+	if err == nil {
+		return client, payload, nil
+	}
+	if !control.IsProtocolError(err, protocol.ErrorCodeDaemonStopped) {
+		_ = client.Close()
+		return nil, protocol.ExecResponsePayload{}, fmt.Errorf("request rejected: %w", err)
+	}
+	_ = client.Close()
+
+	if err := manager.EnsureRunning(ctx); err != nil {
+		return nil, protocol.ExecResponsePayload{}, fmt.Errorf("start daemon after upgrade: %w", err)
+	}
+	client, err = manager.Connect(ctx)
+	if err != nil {
+		return nil, protocol.ExecResponsePayload{}, fmt.Errorf("connect daemon after upgrade: %w", err)
+	}
+	payload, err = client.RequestExec(ctx, correlation, req)
+	if err != nil {
+		_ = client.Close()
+		return nil, protocol.ExecResponsePayload{}, fmt.Errorf("request rejected: %w", err)
+	}
+	return client, payload, nil
 }
 
 func (a App) runDaemonStatus(ctx context.Context) int {

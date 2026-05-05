@@ -156,6 +156,61 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 	}
 }
 
+func TestAppExecRetriesOnceWhenDaemonRetiresBeforeSpawn(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	retiredClient := &appFakeDaemonClient{
+		requestErr: &control.ProtocolError{Code: protocol.ErrorCodeDaemonStopped, Message: "daemon stopped"},
+	}
+	freshClient := &appFakeDaemonClient{
+		execPayload: protocol.ExecResponsePayload{
+			Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+			SecretAliases: []string{"TOKEN"},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		clients:    []daemonClient{retiredClient, freshClient},
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--reason", "Run helper",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		os.Args[0], "-test.run=TestAppExecRetriesOnceWhenDaemonRetiresBeforeSpawn", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "env-ok" {
+		t.Fatalf("stdout = %q, want env-ok", stdout.String())
+	}
+	if manager.ensureCalls != 2 || manager.connectCalls != 2 {
+		t.Fatalf("manager calls: ensure=%d connect=%d, want 2 each", manager.ensureCalls, manager.connectCalls)
+	}
+	if retiredClient.requestExecCalls != 1 || retiredClient.closeCalls != 1 {
+		t.Fatalf("retired client calls: request=%d close=%d", retiredClient.requestExecCalls, retiredClient.closeCalls)
+	}
+	if freshClient.requestExecCalls != 1 || freshClient.closeCalls != 1 {
+		t.Fatalf("fresh client calls: request=%d close=%d", freshClient.requestExecCalls, freshClient.closeCalls)
+	}
+	if len(freshClient.startedPIDs) != 1 || len(freshClient.completedExitCodes) != 1 {
+		t.Fatalf("fresh client audit calls: started=%v completed=%v", freshClient.startedPIDs, freshClient.completedExitCodes)
+	}
+	if strings.Contains(stderr.String(), "request rejected") {
+		t.Fatalf("stderr reported pre-retry rejection: %q", stderr.String())
+	}
+}
+
 func TestAppExecReReadsConfigAccountForRunningDaemon(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
 		runAppExecHelper()
@@ -865,6 +920,7 @@ type appTestClient struct {
 type appFakeDaemonManager struct {
 	socketPath string
 	client     daemonClient
+	clients    []daemonClient
 	status     protocol.StatusPayload
 
 	ensureErr  error
@@ -893,6 +949,11 @@ func (m *appFakeDaemonManager) Connect(context.Context) (daemonClient, error) {
 	m.connectCalls++
 	if m.connectErr != nil {
 		return nil, m.connectErr
+	}
+	if len(m.clients) > 0 {
+		client := m.clients[0]
+		m.clients = m.clients[1:]
+		return client, nil
 	}
 	if m.client == nil {
 		return nil, errors.New("fake daemon client missing")

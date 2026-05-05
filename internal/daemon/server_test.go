@@ -846,6 +846,44 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	}
 }
 
+func TestServerRetiresWhenExecutableSelfCheckFailsBeforeExec(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	resolver := &mockResolver{values: map[string]string{ref: "value"}}
+	aud := &memoryAudit{}
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: resolver,
+			Audit:    aud,
+		}),
+		Validator: staticPeerValidator{info: peerInfoForTest(t, os.Getpid(), currentExecutable(t))},
+		SelfCheck: func() error { return ErrExecutableChanged },
+	})
+	defer stop()
+
+	client := control.NewClient(conn)
+	defer func() { _ = client.Close() }()
+
+	_, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: ref},
+	}))
+	if !control.IsProtocolError(err, protocol.ErrorCodeDaemonStopped) {
+		t.Fatalf("RequestExec error = %v, want daemon_stopped", err)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver called after executable self-check failure: %v", calls)
+	}
+	events := aud.Events()
+	if len(events) != 1 || events[0].Type != audit.EventDaemonStop {
+		t.Fatalf("audit events = %+v, want daemon_stop", events)
+	}
+	if events[0].ErrorCode != audit.ErrorCode(protocol.ErrorCodeDaemonStopped) {
+		t.Fatalf("daemon stop error code = %q, want daemon_stopped", events[0].ErrorCode)
+	}
+}
+
 func TestServerServeStopsWhenServerStops(t *testing.T) {
 	t.Parallel()
 

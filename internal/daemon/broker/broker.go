@@ -115,6 +115,12 @@ func (b *Broker) Now() time.Time {
 	return b.now()
 }
 
+func (b *Broker) ActiveCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.active)
+}
+
 func (b *Broker) HandleExecDelivery(
 	ctx context.Context,
 	correlation protocol.Correlation,

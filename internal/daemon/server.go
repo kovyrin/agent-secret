@@ -51,12 +51,15 @@ type Server struct {
 	validator               PeerValidator
 	execValidator           peertrust.ExecValidator
 	onePasswordCheck        func(context.Context, string) error
+	selfCheck               func() error
 	maxFrameBytes           int64
 	readTimeout             time.Duration
 	now                     func() time.Time
 	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func()
 	listenUnix              func(string) (unixListener, error)
+	retireMu                sync.Mutex
+	retireAfterActive       bool
 	stopOnce                sync.Once
 	stop                    chan struct{}
 }
@@ -67,6 +70,7 @@ type ServerOptions struct {
 	Validator               PeerValidator
 	ExecValidator           peertrust.ExecValidator
 	OnePasswordCheck        func(context.Context, string) error
+	SelfCheck               func() error
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
 	now                     func() time.Time
@@ -172,6 +176,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		validator:               validator,
 		execValidator:           execValidator,
 		onePasswordCheck:        onePasswordCheck,
+		selfCheck:               opts.SelfCheck,
 		maxFrameBytes:           maxFrameBytes,
 		readTimeout:             readTimeout,
 		now:                     now,
@@ -236,6 +241,56 @@ func (s *Server) stopWithAudit(ctx context.Context, event audit.Event) {
 	s.stopOnce.Do(func() { close(s.stop) })
 }
 
+func (s *Server) retireIfExecutableChanged(ctx context.Context, encoder *json.Encoder, env protocol.Envelope) bool {
+	if s.selfCheck == nil || s.stopped() || !checksExecutableIdentity(env.Type) {
+		return false
+	}
+	if err := s.selfCheck(); err == nil {
+		return false
+	} else {
+		s.markRetireAfterActive()
+		if s.broker.ActiveCount() == 0 {
+			s.stopForExecutableChange(ctx)
+		}
+		stoppedErr := fmt.Errorf("%w: %w", daemonbroker.ErrDaemonStopped, err)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeDaemonStopped, stoppedErr)
+		return true
+	}
+}
+
+func checksExecutableIdentity(messageType protocol.MessageType) bool {
+	//nolint:exhaustive // Only new foreground work should trigger daemon executable self-checks.
+	switch messageType {
+	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) markRetireAfterActive() {
+	s.retireMu.Lock()
+	defer s.retireMu.Unlock()
+	s.retireAfterActive = true
+}
+
+func (s *Server) stopIfRetiredAndIdle(ctx context.Context) {
+	s.retireMu.Lock()
+	retire := s.retireAfterActive
+	s.retireMu.Unlock()
+	if !retire || s.stopped() || s.broker.ActiveCount() != 0 {
+		return
+	}
+	s.stopForExecutableChange(ctx)
+}
+
+func (s *Server) stopForExecutableChange(ctx context.Context) {
+	s.stopWithAudit(ctx, audit.Event{
+		Type:      audit.EventDaemonStop,
+		ErrorCode: audit.ErrorCode(protocol.ErrorCodeDaemonStopped),
+	})
+}
+
 func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	defer func() { _ = conn.Close() }()
 	if err := s.validator.Validate(conn); err != nil {
@@ -251,6 +306,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		if err != nil {
 			if requestID := state.disconnectRequestID(); requestID != "" {
 				s.broker.ClientDisconnected(ctx, requestID)
+				s.stopIfRetiredAndIdle(ctx)
 			}
 			if errors.Is(err, protocol.ErrProtocolFrameSize) {
 				_ = writeErrorEncoder(encoder, protocol.Correlation{}, protocol.ErrorCodeFrameTooLarge, err)
@@ -262,6 +318,9 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		if err := protocol.ValidateEnvelope(env); err != nil {
 			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadEnvelope, err)
 			continue
+		}
+		if s.retireIfExecutableChanged(ctx, encoder, env) {
+			return
 		}
 		if s.stopped() && env.Type != protocol.TypeDaemonStatus {
 			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(daemonbroker.ErrDaemonStopped), daemonbroker.ErrDaemonStopped)
@@ -521,6 +580,7 @@ func (s *Server) handleCommandCompleted(
 		return false
 	}
 	_ = writeOK(encoder, env.Correlation(), nil)
+	s.stopIfRetiredAndIdle(ctx)
 	return true
 }
 
