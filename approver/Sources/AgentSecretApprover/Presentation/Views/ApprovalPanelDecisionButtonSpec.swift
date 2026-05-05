@@ -18,18 +18,18 @@ import Foundation
                     decision: .deny,
                     icon: "shield.slash",
                     title: "Deny",
-                    subtitle: "Default: Return",
+                    subtitle: "Esc",
                     role: .secondary,
-                    keyboardShortcut: .defaultAction,
+                    keyboardShortcut: .cancelAction,
                     isEnabled: true
                 ),
                 Self(
                     decision: .approveOnce,
                     icon: "clock",
                     title: "Allow once",
-                    subtitle: viewModel.isExpired ? "Request expired" : "This time only",
+                    subtitle: viewModel.isExpired ? "Request expired" : "Enter",
                     role: .secondary,
-                    keyboardShortcut: nil,
+                    keyboardShortcut: .defaultAction,
                     isEnabled: !viewModel.isExpired
                 ),
                 Self(

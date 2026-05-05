@@ -29,17 +29,26 @@ import XCTest
             return ApprovalPanelDecisionButtonSpec.makeAll(viewModel: viewModel)
         }
 
-        func testDenyIsTheOnlyDefaultApprovalPanelAction() {
+        func testAllowOnceIsTheOnlyDefaultApprovalPanelAction() {
             let specs = Self.sampleButtonSpecs()
 
             XCTAssertEqual(specs.map(\.decision), [.deny, .approveOnce, .approveReusable])
             XCTAssertEqual(
                 specs.filter { spec in spec.keyboardShortcut == .defaultAction }.map(\.decision),
+                [.approveOnce]
+            )
+        }
+
+        func testDenyIsTheOnlyCancelApprovalPanelAction() {
+            let specs = Self.sampleButtonSpecs()
+
+            XCTAssertEqual(
+                specs.filter { spec in spec.keyboardShortcut == .cancelAction }.map(\.decision),
                 [.deny]
             )
         }
 
-        func testApprovalActionsRequirePointerSelection() throws {
+        func testReusableApprovalRequiresPointerSelection() throws {
             let specs = Self.sampleButtonSpecs()
             let approveOnce: ApprovalPanelDecisionButtonSpec = try XCTUnwrap(
                 specs.first { spec in spec.decision == .approveOnce }
@@ -48,23 +57,22 @@ import XCTest
                 specs.first { spec in spec.decision == .approveReusable }
             )
 
-            XCTAssertNil(approveOnce.keyboardShortcut)
+            XCTAssertEqual(approveOnce.keyboardShortcut, .defaultAction)
             XCTAssertNil(approveReusable.keyboardShortcut)
             XCTAssertTrue(approveOnce.isEnabled)
             XCTAssertTrue(approveReusable.isEnabled)
-            XCTAssertFalse(approveOnce.subtitle.localizedCaseInsensitiveContains("default"))
+            XCTAssertEqual(approveOnce.subtitle, "Enter")
             XCTAssertFalse(approveReusable.subtitle.localizedCaseInsensitiveContains("default"))
         }
 
-        func testDenyCopyDescribesReturnKeyDefault() throws {
+        func testDenyCopyDescribesEscapeKey() throws {
             let deny: ApprovalPanelDecisionButtonSpec = try XCTUnwrap(
                 Self.sampleButtonSpecs().first { spec in spec.decision == .deny }
             )
 
             XCTAssertEqual(deny.title, "Deny")
-            XCTAssertTrue(deny.subtitle.localizedCaseInsensitiveContains("default"))
-            XCTAssertTrue(deny.subtitle.localizedCaseInsensitiveContains("return"))
-            XCTAssertEqual(deny.keyboardShortcut, .defaultAction)
+            XCTAssertEqual(deny.subtitle, "Esc")
+            XCTAssertEqual(deny.keyboardShortcut, .cancelAction)
         }
 
         func testExpiredRequestsDisableApprovalActions() throws {
@@ -77,7 +85,7 @@ import XCTest
             )
 
             XCTAssertTrue(deny.isEnabled)
-            XCTAssertEqual(deny.keyboardShortcut, .defaultAction)
+            XCTAssertEqual(deny.keyboardShortcut, .cancelAction)
             XCTAssertEqual(approvalSpecs.map(\.isEnabled), [false, false])
             XCTAssertTrue(approvalSpecs.allSatisfy { spec in spec.subtitle == "Request expired" })
         }

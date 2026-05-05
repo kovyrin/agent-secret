@@ -20,6 +20,12 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.8] - Pending
+
+### Changed
+
+- The approval dialog now maps Esc to Deny and Enter to Allow once.
+
 ## [0.0.7] - 2026-05-05
 
 ### Added
