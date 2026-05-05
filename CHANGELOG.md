@@ -20,12 +20,19 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
-## [0.0.7] - Pending
+## [0.0.7] - 2026-05-05
+
+### Added
+
+- Added public release security policy, contribution stance, and a dated
+  security-boundary review for the current macOS release candidate.
 
 ### Changed
 
 - `agent-secret exec` no longer rejects current-user-writable developer tools
   such as mise-installed commands before approval.
+- The README now states the current support boundaries and limitations for the
+  initial macOS Apple Silicon release.
 
 ### Fixed
 

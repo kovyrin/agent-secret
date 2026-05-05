@@ -33,6 +33,18 @@ for term in "${private_terms[@]}"; do
   fi
 done
 
+stale_public_terms=(
+  "distribution PR"
+  "private dogfood"
+)
+
+for term in "${stale_public_terms[@]}"; do
+  matches="$(grep -n -F -- "$term" "${scan_files[@]}" || true)"
+  if [ -n "$matches" ]; then
+    fail "public docs contain stale release-readiness wording '$term': $matches"
+  fi
+done
+
 secret_print_examples=(
   "-- env"
   "-- printenv"

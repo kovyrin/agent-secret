@@ -85,7 +85,7 @@ Agents and setup scripts pin the bootstrap script to the same immutable release
 tag as `AGENT_SECRET_VERSION`:
 
 ```bash
-version="v0.3.1"
+version="v0.0.7"
 base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
 curl -fsSL "$base_url/${version}/install.sh" |
   AGENT_SECRET_VERSION="$version" sh
@@ -107,7 +107,7 @@ The installer should:
 Useful installer options:
 
 ```bash
-AGENT_SECRET_VERSION=v0.3.1 install.sh
+AGENT_SECRET_VERSION=v0.0.7 install.sh
 AGENT_SECRET_APP_DIR="$HOME/Applications" install.sh
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin" install.sh
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills" install.sh

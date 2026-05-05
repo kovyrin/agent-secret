@@ -29,15 +29,16 @@ Source: [Product Requirements](prd.md)
 - Session mode and credential helpers come after the `exec` path is proven.
 - Live 1Password tests require explicit opt-in configuration and must not print
   values.
-- V1 is private dogfood first, with standalone structure and docs.
-- The first real dogfood workflows are Terraform and Ansible commands that need
+- V1 is a narrow macOS Apple Silicon release, with standalone structure and
+  public-facing docs.
+- The first real validation workflows are Terraform and Ansible commands that need
   scoped credentials.
 - A generic `op-secrets.yml`-style config-driven secret sync flow is a candidate
-  follow-on dogfood workflow.
+  follow-on validation workflow.
 - V1 `exec` accepts explicit `--secret ALIAS=op://...` mappings,
   project-local `agent-secret.yml` / `.agent-secret.yml` profiles including
   `default_profile`, and `--env-file` inputs. A broader `--secret-config` or
-  config-driven sync workflow remains a follow-on dogfood candidate.
+  config-driven sync workflow remains a follow-on validation candidate.
 - Delivery is env-only `agent-secret exec`; session-handle delivery remains a
   future Epic 6 concern for tools or wrappers that cannot consume env vars
   cleanly.
@@ -180,8 +181,8 @@ Source: [Product Requirements](prd.md)
   project-local `--profile` support covers named ref bundles.
 - No reusable approval management commands in v1 beyond `agent-secret daemon
   stop`.
-- No public-release polish such as notarized installers, contribution process,
-  or broad support docs until the private dogfood loop works.
+- No broad platform support, long-term support promise, or contribution process
+  beyond the explicit pre-1.0 stance until the macOS release path is stable.
 
 ## Epic 1: Standalone Project Scaffold
 
@@ -981,22 +982,23 @@ Status: Not started
 - Failure modes fail closed with clear messages.
 - LaunchAgent and helper startup are documented or implemented.
 - Audit logs are inspectable directly as JSONL files without a CLI viewer.
-- Local run/install notes exist as convenience docs only, with no v1 trust-path
-  policy.
+- Local run/install notes distinguish development builds from signed public
+  release artifacts.
 
 ### Epic 7 Definition Of Done
 
 - `doctor` tests cover healthy and unhealthy local configurations.
 - A daily-use smoke checklist exists.
-- Codesigning and notarization are explicitly not required for private dogfood
-  and are documented as pre-public-distribution work.
+- Local development builds may be ad-hoc signed, while public release artifacts
+  require Developer ID signing, notarization, stapling, and verification.
 
 ### Epic 7 Risks And Mitigations
 
-- Risk: public distribution needs stronger binary identity than private dogfood.
-- Mitigation: defer signing/notarization and installation-integrity guidance to
-  the release path; `exec` rejects current-user-writable executable paths unless
-  the caller explicitly opts into mutable local executable launch.
+- Risk: public distribution needs stronger binary identity than local
+  development builds.
+- Mitigation: keep signing, notarization, Team ID, bundle ID, and installation
+  integrity checks in the release path; make approval display the resolved
+  command identity before any secret access.
 
 ### Epic 7 Tasks
 
@@ -1031,8 +1033,8 @@ Status: Not started
   examples use project-local paths.
 - Implementation:
   - document that v1 does not enforce or warn on binary install paths
-  - document that private dogfood does not require codesigning or notarization
-  - document codesigning/notarization expectations before wider distribution
+  - document that local development builds may be ad-hoc signed
+  - document codesigning/notarization expectations for public release artifacts
   - document standalone repository release checklist
 - Verification:
   - `npx --yes markdownlint-cli '**/*.md'`
@@ -1044,11 +1046,11 @@ Status: Not started
 - Epic 3 can start after the request fields from Epic 2 are confirmed.
 - Epic 4 depends on Epic 3 and can use fake approver and fake SDK interfaces.
 - Epic 5 can run in parallel with Epic 4 once approval fixtures are defined.
-- The first dogfood target is Epic 4 plus Epic 5: env-only `exec`, hidden daemon
+- The first validation target is Epic 4 plus Epic 5: env-only `exec`, hidden daemon
   startup, and reusable same-command approvals.
 - Epic 6 depends on the completed `exec`, daemon socket, native approval, and
   reusable approval paths. It should not block initial Terraform/Ansible
-  dogfood.
+  validation.
 - Epic 7 should follow the first working `exec` path, then broaden after session
   handles land.
 
@@ -1097,7 +1099,7 @@ Status: Not started
 
 The first three smokes should prove approval, fetch, env delivery, audit, and
 cleanup without intentional infrastructure mutation. Credential sync is a later
-dogfood step because it may write to a project-managed encrypted or managed
+validation step because it may write to a project-managed encrypted or managed
 secret store.
 
 ## Fixtures
