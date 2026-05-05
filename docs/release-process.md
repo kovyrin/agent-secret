@@ -134,6 +134,26 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
 12. Confirm the published release page shows the expected notes and assets.
 
+## Clean-Machine Release Candidate Drill
+
+Before public announcement, test the latest release candidate on a clean macOS
+user account or VM:
+
+1. Install through the human DMG flow by dragging `Agent Secret.app` into
+   `/Applications`.
+2. Open the app, install command-line tools, and run `agent-secret doctor`.
+3. Approve 1Password Desktop SDK authorization and run one test-only
+   `agent-secret exec` flow that does not print secret values.
+4. Install or upgrade through the pinned `install.sh` flow for the same tag.
+5. Confirm `agent-secret doctor`, `agent-secret skill-install`, and the bundled
+   skill symlink work after upgrade.
+6. Run the pinned `uninstall.sh` flow and confirm it removes the app, command
+   symlink, skill symlink, and support state while preserving audit logs by
+   default.
+
+Record evidence in the public release prep issue before treating the candidate
+as public-announcement ready.
+
 ## Signing Preconditions
 
 The tag-triggered release job needs these repository secrets configured:

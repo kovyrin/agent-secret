@@ -1,6 +1,6 @@
 # Product Requirements: Agent Secret Broker
 
-Status: draft.
+Status: implementation-backed release-candidate contract.
 
 ## Summary
 
@@ -8,24 +8,25 @@ Agent Secret Broker is a local, macOS-first system for letting coding agents use
 1Password-backed secrets without making the agent a trusted secret holder. The
 agent requests exact secret references with a reason and a bounded policy. A
 local broker presents a native approval prompt, fetches approved secrets through
-the official 1Password SDK, and delivers them through constrained execution or
-short-lived capabilities.
+the official 1Password SDK, and delivers them through CLI-supervised execution.
+Short-lived capability modes remain future work.
 
 The first user is a local developer running coding agents such as Codex, Claude
 Code, Cursor agent, or similar tools. The first practical workflow is running
 local infrastructure commands, such as Terraform, that need credentials from
 1Password.
 
-## V1 Product Stance
+## Initial Product Stance
 
-V1 is a private dogfood tool first and a standalone project second. Success
-means the tool is safe and useful for real local agent workflows before it is
-polished for public distribution.
+The initial public release is a narrow macOS Apple Silicon tool for real local
+agent workflows. Success means the shipped `agent-secret exec` path is useful,
+auditable, and honest about its limits before the project expands into more
+platforms, secret backends, or delivery modes.
 
-Open-source readiness is a design constraint, not a release gate. The project
-should keep clean boundaries, avoid external runtime dependencies, and maintain
-honest docs, but it can defer public-package polish such as notarized installers,
-contributor docs, broad platform support, and long-term support promises.
+Open-source readiness is a release constraint. The project keeps clean
+boundaries, avoids external runtime dependencies, maintains honest docs, and
+ships signed/notarized release artifacts without promising broad platform
+support or long-term support before 1.0.
 
 When Go code is added, the module path should be
 `github.com/kovyrin/agent-secret`. That keeps imports, examples, and docs
@@ -56,8 +57,8 @@ policy and reuse keys but not shown in the approval prompt.
 - Never print secret values to the console or return them to the agent.
 - Support command execution through `agent-secret exec` as the default delivery
   mode.
-- Support short-lived sessions, opaque per-secret handles, and credential-helper
-  integrations after the `exec` path is proven.
+- Leave room for future short-lived sessions, opaque per-secret handles, and
+  credential-helper integrations without shipping them in the initial release.
 - Keep secret values in memory only by default.
 - Enforce TTL, requested refs, command, cwd, UID, strict macOS peer/process
   checks for session/socket reads, and max reads only for session/socket reads.
@@ -108,11 +109,11 @@ one-shot in-memory copies. If the user approved same-command reuse, the daemon
 keeps those values in memory only until the approval TTL or use limit is
 exhausted.
 
-The same v1 path should support Ansible commands that need environment-provided
+The same initial path should support Ansible commands that need environment-provided
 credentials, inventory access tokens, SSH-related variables, or cloud provider
-credentials. Terraform and Ansible are the first real dogfood workflows.
+credentials. Terraform and Ansible are representative validation workflows.
 
-### Use Case 2: Multi-Step Deployment Session
+### Future Use Case: Multi-Step Deployment Session
 
 An agent requests a short session for a bounded workflow such as:
 
@@ -126,6 +127,8 @@ The user approves once for a TTL. The broker returns a session ID or opaque
 handles, and subsequent commands must run through broker wrappers such as
 `agent-secret with-session`.
 
+This is not shipped in the initial public release.
+
 ### Use Case 3: Config-Driven Secret Sync
 
 Some local projects keep a checked-in mapping from logical credential keys to
@@ -133,7 +136,7 @@ Some local projects keep a checked-in mapping from logical credential keys to
 values into the project's own encrypted or managed secret store. The broker
 feature should stay generic and should not depend on any one consumer project.
 
-The first dogfood-ready config workflow is project-local profiles. A checked-in
+The first release-ready config workflow is project-local profiles. A checked-in
 `agent-secret.yml` file names reusable secret bundles while still storing only
 `op://` refs and metadata. If `default_profile` is set, the caller can omit
 `--profile` when no explicit `--secret` flags are provided:
@@ -560,9 +563,9 @@ Audit logs must never include:
 - 1Password item field values
 - child stdout or stderr
 
-For v1 private dogfood, audit logs store full `op://` refs so local debugging is
-straightforward. This records vault, item, and field names as metadata, but never
-secret values. Logs must be current-user-only by default.
+For the initial release, audit logs store full `op://` refs so local debugging
+is straightforward. This records vault, item, and field names as metadata, but
+never secret values. Logs must be current-user-only by default.
 V1 uses a fixed per-user macOS audit log at
 `~/Library/Logs/agent-secret/audit.jsonl` and does not accept a CLI audit-path
 override. The daemon owns audit path selection, creates directories/files with
@@ -606,7 +609,7 @@ process-supervision role.
 
 ### Delivery Sequence
 
-The dogfood sequence is:
+The validation sequence is:
 
 1. env-only `agent-secret exec`;
 2. ephemeral Unix socket reads for tools or wrappers that cannot consume
@@ -964,9 +967,9 @@ CLI path this tool is meant to replace.
 - Use public macOS APIs only.
 - Avoid private APIs and Accessibility-permission hacks.
 - Prefer a per-user LaunchAgent after the on-demand v1 works.
-- Private dogfood does not require codesigning or notarization. Build and run
-  locally first; signed binaries, notarization, and a hardened Swift app are
-  pre-public-distribution work.
+- Local development builds may be ad-hoc signed. Public release artifacts must
+  be Developer ID signed, notarized, stapled, and verified by the release
+  process.
 - Consider mutual identity checks between daemon and approver where practical.
 
 ## MVP Scope
@@ -1007,7 +1010,7 @@ MVP can defer:
 - AWS `credential_process`
 - SSH-agent-like mode
 - file descriptor mode
-- codesigning and notarization automation
+- broader release-channel automation beyond signed/notarized GitHub Releases
 - policy file system
 - team sharing
 - Linux support
@@ -1088,7 +1091,7 @@ Deliverables:
 
 Exit criteria:
 
-- The tool is safe enough for daily local use by one developer on macOS.
+- The tool is safe enough for daily local use on supported macOS systems.
 - Common failure modes fail closed with clear messages.
 
 ### Milestone 4: Credential Helpers
@@ -1158,7 +1161,7 @@ Exit criteria:
   denial, approval, and error events without secret values or environment
   payloads.
 
-### Session Mode Criteria
+### Future Session Mode Criteria
 
 - Session create returns handles only.
 - Handles cannot be resolved after TTL.
@@ -1209,12 +1212,13 @@ Exit criteria:
 - Default workflows never require console secret output.
 - Broker-generated logs contain zero secret values.
 - Approval appears before the 1Password prompt in normal flows.
-- Terraform and Ansible dogfood workflows work end to end through `exec`.
+- Terraform and Ansible-style validation workflows work end to end through
+  `exec`.
 - A config-driven secret sync workflow is either supported or explicitly
-  designed as the next dogfood target.
+  designed as a future target.
 - Session expiration and max-read tests pass reliably.
 
-Initial dogfood smokes should run in this order:
+Initial validation smokes should run in this order:
 
 1. `terraform plan`
 2. `ansible-playbook site.yml --check`

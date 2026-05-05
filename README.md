@@ -11,17 +11,37 @@ This repository is designed as a standalone open-source project.
 
 ## Status
 
-Planning scaffold, research spikes, Epic 3 core Go packages, the Epic 4
-CLI/daemon/exec path, and the Epic 5 native approver socket integration are in
-place. The macOS app bundle, development installer, local DMG builder,
-unattended install/uninstall scripts, and optional release signing hooks are in
-place on the distribution PR.
+Agent Secret is in a macOS Apple Silicon release-candidate stage. The shipped
+surface is the local app bundle, `agent-secret exec`, the per-user daemon,
+native approval UI, project profiles, env-file migration path, install and
+uninstall scripts, bundled coding-agent skill, and signed/notarized GitHub
+Release artifacts.
+
+The current public release target is intentionally narrow. Agent Secret is not
+yet a cross-platform secret manager, background updater, session-handle service,
+or general credential-helper framework.
+
+## Current Support Boundaries
+
+- macOS only.
+- Apple Silicon release artifacts only.
+- 1Password is the only secret backend.
+- The only shipped secret delivery mode is CLI-supervised `agent-secret exec`
+  with environment injection.
+- Session handles, `with-session`, credential helpers, file-descriptor delivery,
+  and socket value reads are not shipped.
+- Linux and Windows are not supported.
+- There is no automatic updater. Upgrade by installing a newer release over the
+  existing app.
 
 ## Current Documents
 
 - [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 - [Product Requirements](docs/prd.md)
 - [Threat Model](docs/threat-model.md)
+- [Public Release Security Boundary Review](docs/security-boundary-review-2026-05-05.md)
 - [Implementation Plan](docs/implementation-plan.md)
 - [Configuration Reference](docs/configuration.md)
 - [macOS Distribution Plan](docs/macos-distribution-plan.md)
@@ -208,7 +228,7 @@ Unattended install and upgrade use the same script. Pin the bootstrap script to
 the same immutable release tag as `AGENT_SECRET_VERSION`:
 
 ```bash
-version="v0.3.1"
+version="v0.0.7"
 base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
 curl -fsSL "$base_url/${version}/install.sh" |
   AGENT_SECRET_VERSION="$version" sh
@@ -231,7 +251,7 @@ curl -fsSL "$base_url/${version}/install.sh" |
 Useful installer environment variables:
 
 ```bash
-AGENT_SECRET_VERSION=v0.3.1
+AGENT_SECRET_VERSION=v0.0.7
 AGENT_SECRET_APP_DIR="$HOME/Applications"
 AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
 AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
@@ -250,7 +270,7 @@ development mode with local files:
 
 ```bash
 AGENT_SECRET_INSTALL_DEV_MODE=1 \
-AGENT_SECRET_DMG=./dist/Agent-Secret-v0.3.1-macos-arm64.dmg \
+AGENT_SECRET_DMG=./dist/Agent-Secret-v0.0.7-macos-arm64.dmg \
 AGENT_SECRET_CHECKSUMS_FILE=./dist/checksums.txt \
 AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
 ./install.sh
@@ -347,7 +367,7 @@ AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
 AGENT_SECRET_NOTARY_KEY_ID=KEYID
 AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
 scripts/release/check-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.3.1 --require-production-signing
+AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.0.7 --require-production-signing
 ```
 
 `AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is
@@ -553,6 +573,20 @@ Agent Secret is designed to keep raw secret values away from coding agents while
 still letting a human approve narrowly scoped commands. It is a local broker, not
 a sandbox. The approved child process receives the secret and can use, print, or
 forward it like any other process environment value.
+
+### Limitations
+
+- Agent Secret does not protect against root, the kernel, a compromised
+  1Password app, or a fully compromised macOS user session.
+- Same-UID local processes are in scope for specific trust-boundary checks, but
+  Agent Secret is not a sandbox for all activity by the logged-in user.
+- Approved child processes receive raw secrets by design through their
+  environment and can leak them after launch.
+- Audit logs contain metadata such as command argv, cwd, reason, aliases,
+  `op://` refs, accounts, timing, decisions, and child status. They do not
+  contain raw secret values.
+- Live 1Password integration tests are opt-in and must use test-only refs. They
+  may trigger 1Password Desktop authorization prompts.
 
 ### Trusted Components
 
