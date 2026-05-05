@@ -38,6 +38,29 @@ func TestLiveDesktopResolveSecret(t *testing.T) {
 	t.Logf("resolved 1Password reference metadata: length=%d sha256=%s", metadata.Length, metadata.SHA256)
 }
 
+func TestLiveDesktopPoolResolveSecret(t *testing.T) {
+	ref := os.Getenv("AGENT_SECRET_LIVE_REF")
+	account := os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")
+	if ref == "" {
+		t.Skip("set AGENT_SECRET_LIVE_REF to run live 1Password SDK pool test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
+		IntegrationName:    "Agent Secret Broker SDK Pool Spike",
+		IntegrationVersion: "dev",
+	})
+	value, err := pool.Resolve(ctx, ref, account)
+	if err != nil {
+		t.Fatalf("resolve live reference through pool: %v", err)
+	}
+
+	metadata := Secret{value: value}.Metadata()
+	t.Logf("resolved 1Password reference metadata through pool: length=%d sha256=%s", metadata.Length, metadata.SHA256)
+}
+
 func TestLiveDesktopResolveSecretTextFileReference(t *testing.T) {
 	ref := os.Getenv("AGENT_SECRET_LIVE_TEXT_FILE_REF")
 	account := os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")

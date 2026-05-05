@@ -180,6 +180,32 @@ func TestDesktopPoolRefreshesClientAfterInvalidClientID(t *testing.T) {
 	}
 }
 
+func TestDesktopPoolRefreshesClientAfterVaultNotFound(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "fixture.1password.com" {
+			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
+		}
+		if calls.Add(1) == 1 {
+			return NewResolver(&fakeSecretsAPI{err: errors.New("no vault matched the secret reference query")})
+		}
+		return NewResolver(&fakeSecretsAPI{value: "fresh-secret-value"})
+	})
+
+	value, err := pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if value != "fresh-secret-value" {
+		t.Fatalf("value = %q, want fresh-secret-value", value)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("factory calls = %d, want stale client plus refresh", got)
+	}
+}
+
 func TestDesktopPoolDoesNotRefreshClientForInvalidReference(t *testing.T) {
 	t.Parallel()
 
