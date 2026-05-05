@@ -251,6 +251,16 @@ func TestManagerWaitUntilReadyPreservesStartupDeadline(t *testing.T) {
 	}
 }
 
+func TestManagerWaitUntilUnavailableReturnsForMissingSocket(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+
+	if err := manager.waitUntilUnavailable(context.Background(), 0); err != nil {
+		t.Fatalf("waitUntilUnavailable returned error: %v", err)
+	}
+}
+
 func TestManagerStartRequiresDaemonPathAfterSocketPreparation(t *testing.T) {
 	t.Parallel()
 
@@ -288,6 +298,25 @@ func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	}
 	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
 		t.Fatalf("statusUnavailable error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
+	}
+}
+
+func TestManagerStatusUnavailableTreatsRetiringDaemonAsStillRunning(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startFakeStatusErrorDaemon(t, protocol.ErrorCodeDaemonStopped)
+	defer stop()
+	manager := Manager{
+		SocketPath: path,
+		DaemonPath: os.Args[0],
+	}
+
+	unavailable, err := manager.statusUnavailable(context.Background())
+	if err != nil {
+		t.Fatalf("statusUnavailable returned error: %v", err)
+	}
+	if unavailable {
+		t.Fatal("statusUnavailable = true for retiring daemon, want false until socket disappears")
 	}
 }
 
@@ -552,6 +581,54 @@ func startFakeExecDaemon(t *testing.T) (string, func()) {
 		_ = listener.Close()
 		<-done
 		_ = os.RemoveAll(dir)
+	}
+}
+
+func startFakeStatusErrorDaemon(t *testing.T, code protocol.ErrorCode) (string, func()) {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-fake-status-daemon-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	path := filepath.Join(dir, "d.sock")
+	listener, err := socket.ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
+	if err != nil {
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.AcceptUnix()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		serveFakeStatusError(conn, code)
+	}()
+	return path, func() {
+		_ = listener.Close()
+		<-done
+		_ = os.RemoveAll(dir)
+	}
+}
+
+func serveFakeStatusError(conn *net.UnixConn, code protocol.ErrorCode) {
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+	var env protocol.Envelope
+	if err := decoder.Decode(&env); err != nil {
+		return
+	}
+	resp, err := protocol.NewEnvelope(protocol.TypeError, env.Correlation(), protocol.ErrorPayload{
+		Code:    code,
+		Message: "daemon stopped",
+	})
+	if err != nil {
+		return
+	}
+	if err := encoder.Encode(resp); err != nil {
+		return
 	}
 }
 

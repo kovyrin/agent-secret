@@ -65,11 +65,17 @@ func run() int {
 		stderrf("agent-secretd: discover trusted clients: %v\n", err)
 		return 1
 	}
+	selfCheck, err := daemon.CurrentExecutableSelfCheck()
+	if err != nil {
+		stderrf("agent-secretd: initialize executable self-check: %v\n", err)
+		return 1
+	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:           broker,
 		Approvals:        approver,
 		ExecValidator:    peertrust.NewExecutableValidator(defaultClientPaths),
 		OnePasswordCheck: onePasswordDesktopIntegrationCheck(),
+		SelfCheck:        selfCheck,
 	})
 	if err != nil {
 		stderrf("agent-secretd: initialize server: %v\n", err)

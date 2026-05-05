@@ -108,9 +108,12 @@ func (p *DesktopPool) resolveWithRefreshedClient(
 }
 
 func shouldRefreshDesktopClient(err error) bool {
-	return err != nil &&
-		!errors.Is(err, ErrInvalidReference) &&
-		strings.Contains(strings.ToLower(err.Error()), "invalid client id")
+	if err == nil || errors.Is(err, ErrInvalidReference) {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "invalid client id") ||
+		strings.Contains(message, "no vault matched the secret reference query")
 }
 
 func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*Resolver, error) {
