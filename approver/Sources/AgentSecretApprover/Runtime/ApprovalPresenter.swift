@@ -5,5 +5,5 @@ import Foundation
 @MainActor
 public protocol ApprovalPresenter {
     /// Runs on the main actor because native presenters may open AppKit UI.
-    func decide(for request: ApprovalRequest) -> ApprovalDecisionKind
+    func decide(for request: ApprovalRequest) -> ApprovalPresentationDecision
 }

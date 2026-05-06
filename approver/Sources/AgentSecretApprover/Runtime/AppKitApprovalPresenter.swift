@@ -14,11 +14,15 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         private static let panelOrigin: CGFloat = 0
         private static let panelWidth: CGFloat = 912
 
+        private let screenLockState: ScreenLockStateChecking
         @MainActor private var activeWindow: NSWindow?
     #endif
 
-    // swiftlint:disable:next no_empty_block
-    public init() {}
+    public init(screenLockState: ScreenLockStateChecking = CGSessionScreenLockStateChecker()) {
+        #if canImport(AppKit)
+            self.screenLockState = screenLockState
+        #endif
+    }
 
     #if canImport(AppKit)
         @MainActor
@@ -45,14 +49,26 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         @MainActor
         static func preflightDecision(
             for request: ApprovalRequest,
-            now: Date = Date()
-        ) -> ApprovalDecisionKind? {
-            ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: now)
+            now: Date = Date(),
+            isScreenLocked: Bool = false
+        ) -> ApprovalPresentationDecision? {
+            if isScreenLocked {
+                return ApprovalPresentationDecision(kind: .deny, denialReason: .computerLocked)
+            }
+            guard let timeoutDecision = ApprovalPromptExpiration(expiresAt: request.expiresAt)
+                .timeoutDecision(at: now)
+            else {
+                return nil
+            }
+            return ApprovalPresentationDecision(kind: timeoutDecision)
         }
 
         @MainActor
-        private func decideOnMain(for request: ApprovalRequest) -> ApprovalDecisionKind {
-            if let preflightDecision: ApprovalDecisionKind = Self.preflightDecision(for: request) {
+        private func decideOnMain(for request: ApprovalRequest) -> ApprovalPresentationDecision {
+            if let preflightDecision: ApprovalPresentationDecision = Self.preflightDecision(
+                for: request,
+                isScreenLocked: screenLockState.isScreenLocked()
+            ) {
                 return preflightDecision
             }
 
@@ -87,18 +103,18 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             logger.record("approval_modal_presented", requestID: request.requestID)
             _ = app.runModal(for: window)
             logger.record("approval_modal_returned", requestID: request.requestID)
-            return coordinator.decision
+            return ApprovalPresentationDecision(kind: coordinator.decision)
         }
     #endif
 
     /// Keeps UI work on the main actor; non-AppKit builds return timeout instead of approving.
     @preconcurrency
     @MainActor
-    public func decide(for request: ApprovalRequest) -> ApprovalDecisionKind {
+    public func decide(for request: ApprovalRequest) -> ApprovalPresentationDecision {
         #if canImport(AppKit)
             decideOnMain(for: request)
         #else
-            .timeout
+            ApprovalPresentationDecision(kind: .timeout)
         #endif
     }
 }

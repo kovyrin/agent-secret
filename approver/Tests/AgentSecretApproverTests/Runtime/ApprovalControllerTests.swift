@@ -116,7 +116,7 @@ final class ApprovalControllerTests: XCTestCase {
     func testPresenterContractIsMainActorAccessible() {
         let presenter: ApprovalPresenter = FixedDecisionPresenter(decision: .deny)
 
-        XCTAssertEqual(presenter.decide(for: Self.sampleRequest), .deny)
+        XCTAssertEqual(presenter.decide(for: Self.sampleRequest), ApprovalPresentationDecision(kind: .deny))
     }
 
     func testSharedApprovalFixturesDecode() throws {
@@ -169,6 +169,22 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertFalse(encoded.contains("op://"))
         XCTAssertFalse(encoded.contains("EXAMPLE_TOKEN"))
         XCTAssertFalse(logger.events.contains { event -> Bool in event.contains("op://") })
+    }
+
+    @MainActor
+    func testLockedScreenDenialCarriesReason() async throws {
+        let request: ApprovalRequest = Self.sampleRequest
+        let client = RecordingDaemonClient(request: request)
+        let controller = ApprovalController(
+            client: client,
+            presenter: FixedDecisionPresenter(decision: .deny, denialReason: .computerLocked),
+            logger: RecordingLogger()
+        )
+
+        let decision: ApprovalDecision = try await controller.run()
+
+        XCTAssertEqual(decision, .deny(for: request, reason: .computerLocked))
+        XCTAssertEqual(client.submittedDecision, decision)
     }
 
     func testViewModelContainsApprovalContextWithoutSecretValuesOrDebugIdentifiers() {

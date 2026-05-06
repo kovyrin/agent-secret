@@ -468,16 +468,17 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 		t.Fatalf("expected stale approval error, got %v", err)
 	}
 	err = approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), approval.ApprovalDecisionPayload{
-		RequestID: "req_1",
-		Nonce:     "nonce_1",
-		Decision:  approval.ApprovalDecisionDeny,
+		RequestID:    "req_1",
+		Nonce:        "nonce_1",
+		Decision:     approval.ApprovalDecisionDeny,
+		DenialReason: approval.DenialReasonComputerLocked,
 	})
 	if err != nil {
 		t.Fatalf("SubmitDecision deny returned error: %v", err)
 	}
 	select {
 	case decision := <-resultCh:
-		if decision.Approved {
+		if decision.Approved || decision.DenialReason != approval.DenialReasonComputerLocked {
 			t.Fatalf("ApproveExec decision = %+v, want denial", decision)
 		}
 	case err := <-errCh:

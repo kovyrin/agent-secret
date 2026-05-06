@@ -38,10 +38,14 @@ public final class ApprovalController {
         let request: ApprovalRequest = try await client.fetchPendingRequest()
         logger.record("approval_request_loaded", requestID: request.requestID)
 
-        let presentedDecisionKind: ApprovalDecisionKind = presenter.decide(for: request)
+        let presentedDecision: ApprovalPresentationDecision = presenter.decide(for: request)
         let decisionKind: ApprovalDecisionKind = ApprovalPromptExpiration(expiresAt: request.expiresAt)
-            .guardDecision(presentedDecisionKind, at: now())
-        let decision: ApprovalDecision = decision(for: decisionKind, request: request)
+            .guardDecision(presentedDecision.kind, at: now())
+        let decision: ApprovalDecision = decision(
+            for: decisionKind,
+            request: request,
+            denialReason: presentedDecision.kind == decisionKind ? presentedDecision.denialReason : nil
+        )
 
         logger.record("approval_decision_submit_started", requestID: request.requestID)
         do {
@@ -56,7 +60,8 @@ public final class ApprovalController {
 
     private func decision(
         for decisionKind: ApprovalDecisionKind,
-        request: ApprovalRequest
+        request: ApprovalRequest,
+        denialReason: ApprovalDenialReason?
     ) -> ApprovalDecision {
         switch decisionKind {
         case .approveOnce:
@@ -66,7 +71,7 @@ public final class ApprovalController {
             .approveReusable(for: request)
 
         case .deny:
-            .deny(for: request)
+            .deny(for: request, reason: denialReason)
 
         case .timeout:
             .timeout(for: request)

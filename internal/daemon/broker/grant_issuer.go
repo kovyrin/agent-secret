@@ -326,7 +326,7 @@ func (g *grantIssuer) freshGrant(
 		if err := g.recordApprovalDenied(ctx, correlation.RequestID, req); err != nil {
 			return issuedGrant{}, err
 		}
-		return issuedGrant{}, approval.ErrApprovalDenied
+		return issuedGrant{}, approval.DenialError(decision.DenialReason)
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
 		return issuedGrant{}, err

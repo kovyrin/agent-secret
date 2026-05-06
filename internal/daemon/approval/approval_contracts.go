@@ -18,6 +18,7 @@ type Decision struct {
 	Approved     bool
 	Reusable     bool
 	ReusableUses int
+	DenialReason DenialReason
 }
 
 type ApprovalEndpoint interface {

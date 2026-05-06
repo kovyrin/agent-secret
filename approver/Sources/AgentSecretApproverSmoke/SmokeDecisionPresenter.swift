@@ -8,7 +8,7 @@ final class SmokeDecisionPresenter: ApprovalPresenter {
         self.decision = decision
     }
 
-    func decide(for _: ApprovalRequest) -> ApprovalDecisionKind {
-        decision
+    func decide(for _: ApprovalRequest) -> ApprovalPresentationDecision {
+        ApprovalPresentationDecision(kind: decision)
     }
 }

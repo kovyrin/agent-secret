@@ -65,6 +65,22 @@ func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	})
 }
 
+func TestBrokerComputerLockedDenialReturnsSpecificReason(t *testing.T) {
+	t.Parallel()
+
+	assertApprovalFailureAudited(t, approvalFailureAuditCase{
+		name: "computer locked denial",
+		approverDecision: approval.Decision{
+			Approved:     false,
+			DenialReason: approval.DenialReasonComputerLocked,
+		},
+		wantErr:     approval.ErrApprovalDenied,
+		wantErrText: "Denied: Computer is locked, human approval is impossible",
+		eventType:   audit.EventApprovalDenied,
+		errorCode:   protocol.ErrorCodeApprovalDenied,
+	})
+}
+
 func TestBrokerApprovalTimeoutAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 
@@ -158,6 +174,7 @@ type approvalFailureAuditCase struct {
 	approverDecision approval.Decision
 	approverErr      error
 	wantErr          error
+	wantErrText      string
 	eventType        audit.EventType
 	errorCode        protocol.ErrorCode
 }
@@ -178,6 +195,9 @@ func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
 	}))
 	if !errors.Is(err, tc.wantErr) {
 		t.Fatalf("expected approval %s, got %v", tc.name, err)
+	}
+	if tc.wantErrText != "" && err.Error() != tc.wantErrText {
+		t.Fatalf("approval %s error = %q, want %q", tc.name, err.Error(), tc.wantErrText)
 	}
 	if len(resolver.Calls()) != 0 {
 		t.Fatalf("resolver was called after approval %s: %v", tc.name, resolver.Calls())

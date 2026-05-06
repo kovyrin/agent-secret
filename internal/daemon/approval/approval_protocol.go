@@ -43,6 +43,7 @@ type ApprovalDecisionPayload struct {
 	Nonce        string               `json:"nonce"`
 	Decision     ApprovalDecisionKind `json:"decision"`
 	ReusableUses *int                 `json:"reusable_uses,omitempty"`
+	DenialReason DenialReason         `json:"denial_reason,omitempty"`
 }
 
 func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
@@ -73,6 +74,13 @@ func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest
 	}
 }
 
+func ValidateDecision(decision ApprovalDecisionPayload, expectedReusableUses int) error {
+	if err := ValidateDecisionReusableUses(decision, expectedReusableUses); err != nil {
+		return err
+	}
+	return ValidateDecisionDenialReason(decision)
+}
+
 func ValidateDecisionReusableUses(decision ApprovalDecisionPayload, expected int) error {
 	if decision.Decision != ApprovalDecisionApproveReusable {
 		if decision.ReusableUses != nil {
@@ -95,4 +103,19 @@ func ValidateDecisionReusableUses(decision ApprovalDecisionPayload, expected int
 		)
 	}
 	return nil
+}
+
+func ValidateDecisionDenialReason(decision ApprovalDecisionPayload) error {
+	if decision.Decision != ApprovalDecisionDeny {
+		if decision.DenialReason != "" {
+			return fmt.Errorf("%w: denial reason is only valid for deny", protocol.ErrMalformedEnvelope)
+		}
+		return nil
+	}
+	switch decision.DenialReason {
+	case "", DenialReasonComputerLocked:
+		return nil
+	default:
+		return fmt.Errorf("%w: invalid denial reason %q", protocol.ErrMalformedEnvelope, decision.DenialReason)
+	}
 }

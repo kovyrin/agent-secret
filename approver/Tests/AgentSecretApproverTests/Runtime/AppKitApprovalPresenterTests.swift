@@ -6,6 +6,14 @@ import XCTest
     import AppKit
 
     final class AppKitApprovalPresenterTests: XCTestCase {
+        private struct FixedScreenLockState: ScreenLockStateChecking {
+            let locked: Bool
+
+            func isScreenLocked() -> Bool {
+                locked
+            }
+        }
+
         private static let fixedNow = Date(timeIntervalSince1970: 1_800_000_000)
 
         private static func approvalRequest(expiresAt: Date) -> ApprovalRequest {
@@ -29,7 +37,7 @@ import XCTest
 
             XCTAssertEqual(
                 AppKitApprovalPresenter.preflightDecision(for: request, now: Self.fixedNow),
-                .timeout
+                ApprovalPresentationDecision(kind: .timeout)
             )
         }
 
@@ -38,6 +46,31 @@ import XCTest
             let request = Self.approvalRequest(expiresAt: Self.fixedNow.addingTimeInterval(0.001))
 
             XCTAssertNil(AppKitApprovalPresenter.preflightDecision(for: request, now: Self.fixedNow))
+        }
+
+        @MainActor
+        func testLockedScreenPreflightsToDeniedWithoutOpeningModal() {
+            let request = Self.approvalRequest(expiresAt: Self.fixedNow.addingTimeInterval(60))
+
+            XCTAssertEqual(
+                AppKitApprovalPresenter.preflightDecision(
+                    for: request,
+                    now: Self.fixedNow,
+                    isScreenLocked: true
+                ),
+                ApprovalPresentationDecision(kind: .deny, denialReason: .computerLocked)
+            )
+        }
+
+        @MainActor
+        func testScreenLockCheckerCanBeInjected() {
+            let presenter = AppKitApprovalPresenter(screenLockState: FixedScreenLockState(locked: true))
+            let request = Self.approvalRequest(expiresAt: Self.fixedNow.addingTimeInterval(60))
+
+            XCTAssertEqual(
+                presenter.decide(for: request),
+                ApprovalPresentationDecision(kind: .deny, denialReason: .computerLocked)
+            )
         }
 
         @MainActor

@@ -11,6 +11,12 @@ final class ApprovalDecisionTests: XCTestCase {
         XCTAssertNil(ApprovalDecision.timeout(for: request).reusableUses)
         XCTAssertEqual(
             ApprovalDecision
+                .deny(for: request, reason: .computerLocked)
+                .denialReason,
+            .computerLocked
+        )
+        XCTAssertEqual(
+            ApprovalDecision
                 .approveReusable(for: request)
                 .reusableUses,
             3
@@ -75,6 +81,43 @@ final class ApprovalDecisionTests: XCTestCase {
 
             XCTAssertThrowsError(try decode(json))
         }
+    }
+
+    func testDecodeAcceptsDenialReasonOnlyForDeny() throws {
+        let deniedJSON = """
+        {
+            "request_id": "req_1",
+            "nonce": "nonce_1",
+            "decision": "deny",
+            "denial_reason": "computer_locked"
+        }
+        """
+
+        XCTAssertEqual(try decode(deniedJSON).denialReason, .computerLocked)
+
+        for decision in ["approve_once", "timeout"] {
+            let json = """
+            {
+                "request_id": "req_1",
+                "nonce": "nonce_1",
+                "decision": "\(decision)",
+                "denial_reason": "computer_locked"
+            }
+            """
+
+            XCTAssertThrowsError(try decode(json))
+        }
+        let approvedReusableJSON = """
+        {
+            "request_id": "req_1",
+            "nonce": "nonce_1",
+            "decision": "approve_reusable",
+            "reusable_uses": 3,
+            "denial_reason": "computer_locked"
+        }
+        """
+
+        XCTAssertThrowsError(try decode(approvedReusableJSON))
     }
 
     private func decode(_ json: String) throws -> ApprovalDecision {

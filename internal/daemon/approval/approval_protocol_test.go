@@ -145,6 +145,67 @@ func TestValidateDecisionReusableUses(t *testing.T) {
 	}
 }
 
+func TestValidateDecisionDenialReason(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		decision ApprovalDecisionPayload
+		wantErr  string
+	}{
+		{
+			name:     "deny accepts empty reason",
+			decision: ApprovalDecisionPayload{Decision: ApprovalDecisionDeny},
+		},
+		{
+			name: "deny accepts locked computer reason",
+			decision: ApprovalDecisionPayload{
+				Decision:     ApprovalDecisionDeny,
+				DenialReason: DenialReasonComputerLocked,
+			},
+		},
+		{
+			name: "deny rejects unknown reason",
+			decision: ApprovalDecisionPayload{
+				Decision:     ApprovalDecisionDeny,
+				DenialReason: DenialReason("surprise"),
+			},
+			wantErr: "invalid denial reason",
+		},
+		{
+			name: "approval rejects denial reason",
+			decision: ApprovalDecisionPayload{
+				Decision:     ApprovalDecisionApproveOnce,
+				DenialReason: DenialReasonComputerLocked,
+			},
+			wantErr: "only valid for deny",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateDecisionDenialReason(tt.decision)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("ValidateDecisionDenialReason returned nil error")
+				}
+				if !errors.Is(err, protocol.ErrMalformedEnvelope) {
+					t.Fatalf("error = %v, want ErrMalformedEnvelope", err)
+				}
+				if !contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want substring %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateDecisionDenialReason returned error: %v", err)
+			}
+		})
+	}
+}
+
 func contains(value string, substring string) bool {
 	return strings.Contains(value, substring)
 }
