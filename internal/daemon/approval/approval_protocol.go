@@ -10,6 +10,8 @@ import (
 )
 
 type ApprovalRequestPayload struct {
+	Operation          ApprovalOperation         `json:"operation,omitempty"`
+	AllowsReusable     bool                      `json:"allows_reusable"`
 	RequestID          string                    `json:"request_id"`
 	Nonce              string                    `json:"nonce"`
 	Reason             string                    `json:"reason"`
@@ -22,6 +24,13 @@ type ApprovalRequestPayload struct {
 	OverriddenAliases  []string                  `json:"overridden_aliases"`
 	ReusableUses       int                       `json:"reusable_uses"`
 }
+
+type ApprovalOperation string
+
+const (
+	ApprovalOperationExec         ApprovalOperation = "exec"
+	ApprovalOperationItemDescribe ApprovalOperation = "item_describe"
+)
 
 type ApprovalRequestedSecret struct {
 	Alias   string `json:"alias"`
@@ -60,6 +69,8 @@ func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest
 		overriddenAliases = []string{}
 	}
 	return ApprovalRequestPayload{
+		Operation:          ApprovalOperationExec,
+		AllowsReusable:     true,
 		RequestID:          correlation.RequestID,
 		Nonce:              correlation.Nonce,
 		Reason:             req.Reason,
@@ -74,19 +85,49 @@ func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest
 	}
 }
 
-func ValidateDecision(decision ApprovalDecisionPayload, expectedReusableUses int) error {
-	if err := ValidateDecisionReusableUses(decision, expectedReusableUses); err != nil {
+func NewItemDescribePayload(
+	correlation protocol.Correlation,
+	req request.ItemDescribeRequest,
+) ApprovalRequestPayload {
+	return ApprovalRequestPayload{
+		Operation:          ApprovalOperationItemDescribe,
+		AllowsReusable:     false,
+		RequestID:          correlation.RequestID,
+		Nonce:              correlation.Nonce,
+		Reason:             req.Reason,
+		Command:            slices.Clone(req.Command),
+		CWD:                req.CWD,
+		ResolvedExecutable: req.ResolvedExecutable,
+		ExpiresAt:          req.ExpiresAt,
+		Secrets: []ApprovalRequestedSecret{
+			{
+				Alias:   req.Ref.Item,
+				Ref:     req.Ref.Raw,
+				Account: req.Account,
+			},
+		},
+		OverrideEnv:       false,
+		OverriddenAliases: []string{},
+		ReusableUses:      1,
+	}
+}
+
+func ValidateDecision(decision ApprovalDecisionPayload, expectedReusableUses int, allowsReusable bool) error {
+	if err := ValidateDecisionReusableUses(decision, expectedReusableUses, allowsReusable); err != nil {
 		return err
 	}
 	return ValidateDecisionDenialReason(decision)
 }
 
-func ValidateDecisionReusableUses(decision ApprovalDecisionPayload, expected int) error {
+func ValidateDecisionReusableUses(decision ApprovalDecisionPayload, expected int, allowsReusable bool) error {
 	if decision.Decision != ApprovalDecisionApproveReusable {
 		if decision.ReusableUses != nil {
 			return fmt.Errorf("%w: reusable use count is only valid for approve_reusable", protocol.ErrMalformedEnvelope)
 		}
 		return nil
+	}
+	if !allowsReusable {
+		return fmt.Errorf("%w: reusable approval is not valid for this request", protocol.ErrMalformedEnvelope)
 	}
 	if expected <= 0 {
 		return fmt.Errorf("%w: invalid pending reusable use count %d", protocol.ErrMalformedEnvelope, expected)

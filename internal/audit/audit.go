@@ -34,6 +34,11 @@ const (
 	EventApprovalRefreshed                  EventType = "approval_refreshed"
 	EventSecretFetchStarted                 EventType = "secret_fetch_started"
 	EventSecretFetchFailed                  EventType = "secret_fetch_failed"
+	EventItemMetadataRequested              EventType = "item_metadata_requested"
+	EventItemMetadataGranted                EventType = "item_metadata_granted"
+	EventItemMetadataFetchStarted           EventType = "item_metadata_fetch_started"
+	EventItemMetadataFetchCompleted         EventType = "item_metadata_fetch_completed"
+	EventItemMetadataFetchFailed            EventType = "item_metadata_fetch_failed"
 	EventCommandStarting                    EventType = "command_starting"
 	EventCommandStarted                     EventType = "command_started"
 	EventCommandCompleted                   EventType = "command_completed"
@@ -58,6 +63,8 @@ type Event struct {
 	ResolvedExecutable string      `json:"resolved_executable,omitempty"`
 	CWD                string      `json:"cwd,omitempty"`
 	SecretRefs         []SecretRef `json:"secret_refs,omitempty"`
+	ItemRef            string      `json:"item_ref,omitempty"`
+	Account            string      `json:"account,omitempty"`
 	ChildPID           *int        `json:"child_pid,omitempty"`
 	ExitCode           *int        `json:"exit_code,omitempty"`
 	Signal             string      `json:"signal,omitempty"`
@@ -106,6 +113,19 @@ func FromExecRequest(eventType EventType, requestID string, req request.ExecRequ
 		ForceRefresh:       req.ForceRefresh,
 		OverrideEnv:        req.OverrideEnv,
 		OverriddenAliases:  slices.Clone(req.OverriddenAliases),
+	}
+}
+
+func FromItemDescribeRequest(eventType EventType, requestID string, req request.ItemDescribeRequest) Event {
+	return Event{
+		Type:               eventType,
+		RequestID:          requestID,
+		Reason:             req.Reason,
+		Command:            slices.Clone(req.Command),
+		ResolvedExecutable: req.ResolvedExecutable,
+		CWD:                req.CWD,
+		ItemRef:            req.Ref.Raw,
+		Account:            req.Account,
 	}
 }
 

@@ -133,6 +133,21 @@ func (c *Client) RequestExec(
 	return payload, nil
 }
 
+func (c *Client) DescribeItem(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.ItemDescribeRequest,
+) (protocol.ItemDescribeResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.ItemDescribeResponsePayload](ctx, c, protocol.TypeItemDescribe, correlation, req)
+	if err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	if payload.Item.Item == "" || payload.Item.Vault == "" {
+		return protocol.ItemDescribeResponsePayload{}, fmt.Errorf("%w: item.describe response missing item metadata", protocol.ErrMalformedEnvelope)
+	}
+	return payload, nil
+}
+
 func (c *Client) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
 	return roundTripAck(ctx, c, protocol.TypeCommandStarted, correlation, protocol.CommandStartedPayload{ChildPID: childPID})
 }
@@ -285,16 +300,39 @@ func (c *Client) contextWithDefaultDeadline(
 	timeout := c.defaultTimeout()
 	now := time.Now()
 	deadline := now.Add(timeout)
-	if messageType == protocol.TypeRequestExec {
-		if req, ok := payload.(request.ExecRequest); ok {
-			if req.ExpiresAt.After(now) {
-				deadline = req.ExpiresAt.Add(timeout)
-			} else if req.ExpiresAt.IsZero() && req.TTL > 0 {
-				deadline = now.Add(req.TTL + timeout)
-			}
-		}
+	if expiresAt, ttl, ok := protocolRequestTiming(messageType, payload); ok {
+		deadline = protocolRequestDeadline(now, timeout, expiresAt, ttl)
 	}
 	return context.WithDeadline(ctx, deadline)
+}
+
+func protocolRequestTiming(messageType protocol.MessageType, payload any) (time.Time, time.Duration, bool) {
+	//nolint:exhaustive // Only request types with approval TTLs extend client protocol deadlines.
+	switch messageType {
+	case protocol.TypeRequestExec:
+		req, ok := payload.(request.ExecRequest)
+		return req.ExpiresAt, req.TTL, ok
+	case protocol.TypeItemDescribe:
+		req, ok := payload.(request.ItemDescribeRequest)
+		return req.ExpiresAt, req.TTL, ok
+	default:
+		return time.Time{}, 0, false
+	}
+}
+
+func protocolRequestDeadline(
+	now time.Time,
+	timeout time.Duration,
+	expiresAt time.Time,
+	ttl time.Duration,
+) time.Time {
+	if expiresAt.After(now) {
+		return expiresAt.Add(timeout)
+	}
+	if expiresAt.IsZero() && ttl > 0 {
+		return now.Add(ttl + timeout)
+	}
+	return now.Add(timeout)
 }
 
 func (c *Client) defaultTimeout() time.Duration {

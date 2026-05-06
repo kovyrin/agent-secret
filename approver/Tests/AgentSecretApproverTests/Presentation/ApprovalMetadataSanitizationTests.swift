@@ -74,7 +74,7 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         XCTAssertTrue(viewModel.requestInspectionText.contains("- API\\u202EKEY"))
         XCTAssertFalse(viewModel.requestInspectionText.contains("\u{202E}"))
         XCTAssertFalse(viewModel.requestInspectionText.contains("\nROOT"))
-        XCTAssertEqual(viewModel.command, "'/bin/echo' $'safe\\u202Etxt'")
+        XCTAssertEqual(viewModel.command, "/bin/echo $'safe\\u202Etxt'")
         XCTAssertFalse(viewModel.renderedText.contains("\u{202E}"))
         XCTAssertFalse(viewModel.renderedText.contains("\u{200D}"))
         XCTAssertFalse(viewModel.renderedText.contains("\r"))

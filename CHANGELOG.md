@@ -25,6 +25,9 @@ version numbers for public releases.
 ### Added
 
 - `agent-secret --version` now prints the installed CLI version.
+- `agent-secret item describe` now performs approval-gated, secret-safe
+  1Password item metadata inspection, including text, JSON, and env-ref output
+  modes for discovering available field refs without printing values.
 
 ### Changed
 

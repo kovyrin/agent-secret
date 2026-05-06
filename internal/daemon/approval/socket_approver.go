@@ -132,7 +132,7 @@ func (a *SocketApprover) SubmitDecision(
 	if decision.RequestID != job.payload.RequestID || decision.Nonce != job.payload.Nonce {
 		return ErrStaleApproval
 	}
-	if err := ValidateDecision(decision, job.payload.ReusableUses); err != nil {
+	if err := ValidateDecision(decision, job.payload.ReusableUses, job.payload.AllowsReusable); err != nil {
 		return err
 	}
 	switch decision.Decision {

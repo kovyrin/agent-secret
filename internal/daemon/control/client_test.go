@@ -15,6 +15,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -50,6 +51,24 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 		TTL:                request.DefaultExecTTL,
 		ReceivedAt:         now,
 		ExpiresAt:          now.Add(request.DefaultExecTTL),
+	}
+}
+
+func testItemDescribeRequestAt(now time.Time) request.ItemDescribeRequest {
+	return request.ItemDescribeRequest{
+		Reason:             "Inspect item metadata",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example/Item"},
+		ResolvedExecutable: "/opt/homebrew/bin/agent-secret",
+		CWD:                "/tmp/project",
+		Ref: itemmetadata.Ref{
+			Raw:   "op://Example/Item",
+			Vault: "Example",
+			Item:  "Item",
+		},
+		Account:    "Work",
+		TTL:        request.DefaultItemDescribeTTL,
+		ReceivedAt: now,
+		ExpiresAt:  now.Add(request.DefaultItemDescribeTTL),
 	}
 }
 
@@ -204,6 +223,25 @@ func TestClientRequestExecDefaultDeadlineUsesRequestExpiry(t *testing.T) {
 	want := req.ExpiresAt.Add(defaultTimeout)
 	if !deadline.Equal(want) {
 		t.Fatalf("RequestExec deadline = %s, want %s", deadline, want)
+	}
+}
+
+func TestClientRequestItemDescribeDefaultDeadlineUsesRequestExpiry(t *testing.T) {
+	t.Parallel()
+
+	defaultTimeout := 25 * time.Millisecond
+	client := &Client{DefaultTimeout: defaultTimeout}
+	req := testItemDescribeRequestAt(time.Now())
+	ctx, cancel := client.contextWithDefaultDeadline(context.Background(), protocol.TypeItemDescribe, req)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("DescribeItem context did not receive a deadline")
+	}
+	want := req.ExpiresAt.Add(defaultTimeout)
+	if !deadline.Equal(want) {
+		t.Fatalf("DescribeItem deadline = %s, want %s", deadline, want)
 	}
 }
 
@@ -363,6 +401,46 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				t.Fatalf("error %q does not contain %q", err, tc.wantErrMsg)
 			}
 		})
+	}
+}
+
+func TestClientDescribeItemRoundTripsPayload(t *testing.T) {
+	t.Parallel()
+
+	req := testItemDescribeRequestAt(time.Now())
+	requests := make(chan protocol.Envelope, 1)
+	client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+		requests <- env
+		return okResponseFrame(t, env, protocol.ItemDescribeResponsePayload{
+			Item: itemmetadata.Metadata{
+				Account: "Work",
+				Vault:   "Example",
+				Item:    "Item",
+				Fields: []itemmetadata.Field{
+					{Label: "token", Ref: "op://Example/Item/token"},
+				},
+			},
+		})
+	})
+	defer cleanup()
+
+	payload, err := client.DescribeItem(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if payload.Item.Account != "Work" || payload.Item.Item != "Item" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+	env := receiveStalledRequest(t, requests)
+	if env.Type != protocol.TypeItemDescribe {
+		t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeItemDescribe)
+	}
+	got, err := protocol.DecodeRequiredPayload[request.ItemDescribeRequest](env)
+	if err != nil {
+		t.Fatalf("decode item describe request: %v", err)
+	}
+	if got.Ref.Raw != req.Ref.Raw || got.Account != req.Account {
+		t.Fatalf("unexpected item describe request: %+v", got)
 	}
 }
 

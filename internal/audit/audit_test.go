@@ -278,6 +278,41 @@ func TestFromExecRequestUsesValidatedTrimmedReason(t *testing.T) {
 	}
 }
 
+func TestFromItemDescribeRequestUsesMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir, "agent-secret")
+	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
+		Reason:             "  Inspect item fields  ",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token"},
+		CWD:                dir,
+		ResolvedExecutable: filepath.Join(dir, "agent-secret"),
+		Ref:                "op://Example Vault/Deploy Token/*",
+		Account:            " Work ",
+		ReceivedAt:         time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("NewItemDescribe returned error: %v", err)
+	}
+
+	encoded, err := json.Marshal(FromItemDescribeRequest(EventItemMetadataRequested, "req_1", req))
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	if bytes.Contains(encoded, []byte("  Inspect item fields  ")) {
+		t.Fatalf("audit retained raw pre-trim reason: %s", encoded)
+	}
+	if !bytes.Contains(encoded, []byte(`"item_ref":"op://Example Vault/Deploy Token"`)) ||
+		!bytes.Contains(encoded, []byte(`"account":"Work"`)) ||
+		!bytes.Contains(encoded, []byte(`"reason":"Inspect item fields"`)) {
+		t.Fatalf("audit item metadata event missing expected metadata: %s", encoded)
+	}
+	if bytes.Contains(encoded, []byte(canaryValue)) {
+		t.Fatalf("audit item metadata event leaked synthetic value: %s", encoded)
+	}
+}
+
 func TestWriterRejectsInvalidEventsAndClosedUse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

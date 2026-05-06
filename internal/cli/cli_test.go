@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -867,6 +868,67 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 	}
 }
 
+func TestParseItemDescribeBuildsValidatedRequest(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	command, err := parser.Parse([]string{
+		"item",
+		"describe",
+		"--account", "fixture.1password.com",
+		"--format", "env-refs",
+		"--prefix", "PLANETSCALE",
+		"--ttl", "90s",
+		"op://Fixture Infra/Beta PlanetScale Introspection Probe/*",
+	})
+	if err != nil {
+		t.Fatalf("Parse item describe returned error: %v", err)
+	}
+	if command.Kind != KindItemDescribe {
+		t.Fatalf("kind = %s, want %s", command.Kind, KindItemDescribe)
+	}
+	if command.ItemDescribeFormat != itemmetadata.FormatEnvRefs {
+		t.Fatalf("format = %s, want env-refs", command.ItemDescribeFormat)
+	}
+	if command.ItemDescribePrefix != "PLANETSCALE" {
+		t.Fatalf("prefix = %q, want PLANETSCALE", command.ItemDescribePrefix)
+	}
+
+	req := command.ItemDescribeRequest
+	if req.Reason != "Inspect 1Password item metadata" {
+		t.Fatalf("reason = %q", req.Reason)
+	}
+	if req.Account != "fixture.1password.com" {
+		t.Fatalf("account = %q", req.Account)
+	}
+	if req.Ref.Raw != "op://Fixture Infra/Beta PlanetScale Introspection Probe" {
+		t.Fatalf("ref = %#v", req.Ref)
+	}
+	if req.TTL != 90*time.Second {
+		t.Fatalf("ttl = %s", req.TTL)
+	}
+	if got := strings.Join(req.Command, " "); !strings.HasPrefix(got, "agent-secret item describe ") {
+		t.Fatalf("command = %q", got)
+	}
+	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
+		t.Fatalf("client request should not set receipt times: %+v", req)
+	}
+}
+
+func TestParseItemDescribeRejectsFieldRefs(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewParser().Parse([]string{
+		"item",
+		"describe",
+		"--account", "fixture.1password.com",
+		"op://Fixture Infra/Beta PlanetScale Introspection Probe/password",
+	})
+	if !errors.Is(err, itemmetadata.ErrInvalidItemRef) {
+		t.Fatalf("Parse item describe error = %v, want invalid item ref", err)
+	}
+}
+
 func TestParseInstallCLIOptions(t *testing.T) {
 	t.Parallel()
 
@@ -917,7 +979,17 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "exec", "install-cli", "skill-install", "daemon", "doctor", "version", "my.1password.com"},
+			wants: []string{"agent-secret controls", "exec", "item", "install-cli", "skill-install", "daemon", "doctor", "version", "my.1password.com"},
+		},
+		{
+			name:  "item",
+			args:  []string{"item", "--help"},
+			wants: []string{"item", "describe", "metadata", "secret values"},
+		},
+		{
+			name:  "item describe",
+			args:  []string{"item", "describe", "--help"},
+			wants: []string{"--format", "env-refs", "--prefix", "metadata only", "op://vault/item"},
 		},
 		{
 			name:  "exec",

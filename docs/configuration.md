@@ -225,6 +225,33 @@ The resolved file contents are injected into the alias environment variable
 with multiline text preserved. Agent Secret does not create a temp file for the
 value and env-var delivery does not support binary attachments with NUL bytes.
 
+## Item Metadata Inspection
+
+Use `agent-secret item describe` when an agent has an item-level ref but does
+not know which field labels are available yet:
+
+```bash
+agent-secret item describe "op://Example Infra/Database Credentials"
+agent-secret item describe --format env-refs --prefix DATABASE \
+  "op://Example Infra/Database Credentials"
+```
+
+The command accepts `op://vault/item` and `op://vault/item/*`. It requires local
+approval, performs one metadata lookup, and prints no field values. Output may
+include item title, category, field labels, field IDs, field types, section
+names, concealment flags, account, and canonical field refs.
+
+Formats:
+
+- `text`: human-readable metadata table.
+- `json`: machine-readable item metadata.
+- `env-refs`: shell-quoted `ALIAS='op://...'` field-ref mappings.
+
+`--account` overrides account selection for this inspection command. Without
+`--account`, the command uses the discovered project config account, then
+environment account overrides, one detected signed-in 1Password CLI account,
+then `my.1password.com`.
+
 ## Other Commands
 
 Daemon management:

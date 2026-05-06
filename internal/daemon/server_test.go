@@ -120,6 +120,42 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerItemDescribeProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	aud := &memoryAudit{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{},
+		Audit:    aud,
+	})
+	defer cleanup()
+
+	req := testItemDescribeRequest(t)
+	payload, err := client.DescribeItem(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if payload.Item.Account != "Work" ||
+		payload.Item.Vault != "Example" ||
+		payload.Item.Item != "Item" ||
+		len(payload.Item.Fields) != 1 ||
+		payload.Item.Fields[0].Ref != "op://Example/Item/token" {
+		t.Fatalf("unexpected item metadata payload: %+v", payload)
+	}
+
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventItemMetadataRequested,
+		audit.EventItemMetadataGranted,
+		audit.EventItemMetadataFetchStarted,
+		audit.EventItemMetadataFetchCompleted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
 func TestServerStampsApprovalExpiryWithDaemonClock(t *testing.T) {
 	t.Parallel()
 

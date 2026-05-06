@@ -53,6 +53,41 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	assertAuditEventsValueFree(t, events)
 }
 
+func TestBrokerItemDescribeApprovesBeforeMetadataLookupAndAudits(t *testing.T) {
+	t.Parallel()
+
+	order := []string{}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}, order: &order},
+		Resolver: &mockResolver{order: &order},
+		Audit:    aud,
+	})
+	req := testItemDescribeRequest(t)
+
+	payload, err := broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	if err != nil {
+		t.Fatalf("HandleItemDescribe returned error: %v", err)
+	}
+	if payload.Item.Item != "Item" || payload.Item.Vault != "Example" || payload.Item.Account != "Work" {
+		t.Fatalf("unexpected item metadata: %+v", payload.Item)
+	}
+	if !reflect.DeepEqual(order, []string{"approve", "describe:Work|op://Example/Item"}) {
+		t.Fatalf("unexpected operation order: %v", order)
+	}
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventItemMetadataRequested,
+		audit.EventItemMetadataGranted,
+		audit.EventItemMetadataFetchStarted,
+		audit.EventItemMetadataFetchCompleted,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	assertAuditEventsValueFree(t, events)
+}
+
 func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 

@@ -24,6 +24,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/install"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -153,6 +154,181 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "synthetic-secret-value") {
 		t.Fatalf("stderr leaked secret: %q", stderr.String())
+	}
+}
+
+func TestAppItemDescribePrintsMetadataWithoutSecretValues(t *testing.T) {
+	t.Parallel()
+
+	client := &appFakeDaemonClient{
+		itemDescribePayload: protocol.ItemDescribeResponsePayload{
+			Item: itemmetadata.Metadata{
+				Account: "example.1password.com",
+				Vault:   "Demo Infra",
+				Item:    "Deploy Key",
+				Fields: []itemmetadata.Field{
+					{
+						Label:     "private key",
+						Type:      "Concealed",
+						Concealed: true,
+						Ref:       "op://Demo Infra/Deploy Key/private key",
+					},
+				},
+			},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"item",
+		"describe",
+		"--account", "example.1password.com",
+		"--format", "env-refs",
+		"--prefix", "DEMO",
+		"op://Demo Infra/Deploy Key",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if want := "DEMO_PRIVATE_KEY='op://Demo Infra/Deploy Key/private key'\n"; stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if manager.ensureCalls != 1 || manager.connectCalls != 1 {
+		t.Fatalf("manager calls: ensure=%d connect=%d", manager.ensureCalls, manager.connectCalls)
+	}
+	if client.itemDescribeCalls != 1 || client.closeCalls != 1 {
+		t.Fatalf("client calls: itemDescribe=%d close=%d", client.itemDescribeCalls, client.closeCalls)
+	}
+	if len(client.itemDescribeRequests) != 1 {
+		t.Fatalf("item describe requests = %d", len(client.itemDescribeRequests))
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("output leaked secret-looking canary")
+	}
+}
+
+func TestAppItemDescribePrintsTextMetadata(t *testing.T) {
+	t.Parallel()
+
+	client := &appFakeDaemonClient{
+		itemDescribePayload: protocol.ItemDescribeResponsePayload{
+			Item: itemmetadata.Metadata{
+				Account:  "example.1password.com",
+				Vault:    "Demo Infra",
+				Item:     "Deploy Key",
+				Category: "api_credential",
+				Fields: []itemmetadata.Field{
+					{
+						Label:     "credential",
+						Type:      "Concealed",
+						Concealed: true,
+						Ref:       "op://Demo Infra/Deploy Key/credential",
+					},
+					{
+						Label:   "hostname",
+						Type:    "Text",
+						Section: "connection",
+						Ref:     "op://Demo Infra/Deploy Key/connection/hostname",
+					},
+				},
+			},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"item",
+		"describe",
+		"--account", "example.1password.com",
+		"op://Demo Infra/Deploy Key",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"item:",
+		"Deploy Key",
+		"category:",
+		"api_credential",
+		"vault:",
+		"Demo Infra",
+		"account:",
+		"example.1password.com",
+		"fields:",
+		"CREDENTIAL",
+		"connection/hostname",
+		"op://Demo Infra/Deploy Key/credential",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("text output missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("output leaked secret-looking canary")
+	}
+}
+
+func TestAppItemDescribeUsesConfigAccountByDefault(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	configPath := filepath.Join(root, "agent-secret.yml")
+	if err := os.WriteFile(configPath, []byte("version: 1\naccount: fixture.1password.com\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	client := &appFakeDaemonClient{
+		itemDescribePayload: protocol.ItemDescribeResponsePayload{
+			Item: itemmetadata.Metadata{
+				Account: "fixture.1password.com",
+				Vault:   "Fixture Infra",
+				Item:    "Probe",
+			},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"item",
+		"describe",
+		"--config", configPath,
+		"--format", "json",
+		"op://Fixture Infra/Probe",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if len(client.itemDescribeRequests) != 1 {
+		t.Fatalf("item describe requests = %d", len(client.itemDescribeRequests))
+	}
+	if got := client.itemDescribeRequests[0].Account; got != "fixture.1password.com" {
+		t.Fatalf("request account = %q, want fixture.1password.com", got)
+	}
+	if !strings.Contains(stdout.String(), `"account": "fixture.1password.com"`) {
+		t.Fatalf("json output missing account: %s", stdout.String())
 	}
 }
 
@@ -1009,18 +1185,22 @@ func (m *appFakeDaemonManager) SocketPath() string {
 }
 
 type appFakeDaemonClient struct {
-	execPayload protocol.ExecResponsePayload
+	execPayload         protocol.ExecResponsePayload
+	itemDescribePayload protocol.ItemDescribeResponsePayload
 
 	requestErr         error
+	itemDescribeErr    error
 	reportStartedErr   error
 	reportCompletedErr error
 	closeErr           error
 
-	requestExecCalls   int
-	requests           []request.ExecRequest
-	closeCalls         int
-	startedPIDs        []int
-	completedExitCodes []int
+	requestExecCalls     int
+	itemDescribeCalls    int
+	requests             []request.ExecRequest
+	itemDescribeRequests []request.ItemDescribeRequest
+	closeCalls           int
+	startedPIDs          []int
+	completedExitCodes   []int
 }
 
 func (c *appFakeDaemonClient) Close() error {
@@ -1036,6 +1216,16 @@ func (c *appFakeDaemonClient) RequestExec(
 	c.requestExecCalls++
 	c.requests = append(c.requests, req)
 	return c.execPayload, c.requestErr
+}
+
+func (c *appFakeDaemonClient) DescribeItem(
+	_ context.Context,
+	_ protocol.Correlation,
+	req request.ItemDescribeRequest,
+) (protocol.ItemDescribeResponsePayload, error) {
+	c.itemDescribeCalls++
+	c.itemDescribeRequests = append(c.itemDescribeRequests, req)
+	return c.itemDescribePayload, c.itemDescribeErr
 }
 
 func (c *appFakeDaemonClient) ReportStarted(_ context.Context, _ protocol.Correlation, childPID int) error {
@@ -1091,6 +1281,27 @@ type appResolver struct {
 
 func (r *appResolver) Resolve(_ context.Context, ref string, _ string) (string, error) {
 	return r.values[ref], nil
+}
+
+func (r *appResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return itemmetadata.Metadata{
+		Account: account,
+		Vault:   ref.Vault,
+		Item:    ref.Item,
+		Fields: []itemmetadata.Field{
+			{
+				Label:     "token",
+				Type:      "Concealed",
+				Concealed: true,
+				Ref:       itemmetadata.BuildFieldRef(ref.Vault, ref.Item, "", "token"),
+				Alias:     "TOKEN",
+			},
+		},
+	}, nil
 }
 
 type appAudit struct{}
@@ -1281,7 +1492,7 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, payload); err != nil {
 				return err
 			}
-		case protocol.TypeCommandStarted, protocol.TypeCommandCompleted:
+		case protocol.TypeItemDescribe, protocol.TypeCommandStarted, protocol.TypeCommandCompleted:
 			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemonbroker.ErrDaemonStopped); err != nil {
 				return err
 			}

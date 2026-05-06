@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 )
 
 const ProtocolVersion = 1
@@ -21,6 +23,7 @@ const (
 	TypeApprovalPending   MessageType = "approval.pending"
 	TypeApprovalDecision  MessageType = "approval.decision"
 	TypeRequestExec       MessageType = "request.exec"
+	TypeItemDescribe      MessageType = "item.describe"
 	TypeCommandStarted    MessageType = "command.started"
 	TypeCommandCompleted  MessageType = "command.completed"
 	TypeOK                MessageType = "ok"
@@ -89,6 +92,10 @@ type ErrorPayload struct {
 type ExecResponsePayload struct {
 	Env           map[string]string `json:"env"`
 	SecretAliases []string          `json:"secret_aliases"`
+}
+
+type ItemDescribeResponsePayload struct {
+	Item itemmetadata.Metadata `json:"item"`
 }
 
 type CommandStartedPayload struct {

@@ -23,6 +23,7 @@ import (
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -55,6 +56,27 @@ type managerResolver struct {
 
 func (r managerResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
 	return r.values[resolverCallKey(ref, account)], nil
+}
+
+func (r managerResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return itemmetadata.Metadata{
+		Account: account,
+		Vault:   ref.Vault,
+		Item:    ref.Item,
+		Fields: []itemmetadata.Field{
+			{
+				Label:     "token",
+				Type:      "Concealed",
+				Concealed: true,
+				Ref:       itemmetadata.BuildFieldRef(ref.Vault, ref.Item, "", "token"),
+				Alias:     "TOKEN",
+			},
+		},
+	}, nil
 }
 
 type managerAudit struct {

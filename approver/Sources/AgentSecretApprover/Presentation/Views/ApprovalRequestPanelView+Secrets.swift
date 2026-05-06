@@ -35,10 +35,7 @@ import Foundation
         }
 
         var secretCardHeading: String {
-            if viewModel.secretCount == Metric.singleSecretCount {
-                return "Requested secret"
-            }
-            return "Requested secrets (\(viewModel.secretCount))"
+            viewModel.requestedSecretsHeading
         }
 
         var secretPanelBackground: some View {

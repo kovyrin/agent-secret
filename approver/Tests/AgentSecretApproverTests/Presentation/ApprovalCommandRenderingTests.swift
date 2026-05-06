@@ -28,7 +28,7 @@ final class ApprovalCommandRenderingTests: XCTestCase {
         )
     }
 
-    func testCompactCommandDisplayShellEscapesEveryArgvElement() {
+    func testCompactCommandDisplayQuotesOnlyWhenNeeded() {
         let argv = [
             "/bin/echo",
             "hello world",
@@ -44,7 +44,7 @@ final class ApprovalCommandRenderingTests: XCTestCase {
 
         XCTAssertEqual(
             viewModel.command,
-            "'/bin/echo' 'hello world' 'it'\\''s' $'line\\nbreak' '--flag' " +
+            "/bin/echo 'hello world' 'it'\\''s' $'line\\nbreak' --flag " +
                 "'$(rm -rf /)' 'snowman ☃' $'bell\\a' $'\\x1Funit'"
         )
         XCTAssertNotEqual(viewModel.command, argv.joined(separator: " "))
@@ -68,7 +68,7 @@ final class ApprovalCommandRenderingTests: XCTestCase {
 
         XCTAssertEqual(
             viewModel.command,
-            "'/bin/echo' $'safe\\u202Etxt' $'join\\u200Der' $'line\\u2028sep' " +
+            "/bin/echo $'safe\\u202Etxt' $'join\\u200Der' $'line\\u2028sep' " +
                 "$'para\\u2029sep' $'private\\uE000use' $'unassigned\\u0378scalar'"
         )
         XCTAssertTrue(viewModel.commandNeedsInspector)
@@ -95,9 +95,9 @@ final class ApprovalCommandRenderingTests: XCTestCase {
         XCTAssertTrue(viewModel.commandNeedsInspector)
         XCTAssertEqual(viewModel.commandArguments.map(\.index), [0, 1, 2, 3, 4, 5])
         XCTAssertTrue(viewModel.commandInspectionText.contains("argv[1]: 'NAME=value with space'"))
-        XCTAssertTrue(viewModel.commandInspectionText.contains("argv[2]: '--'"))
+        XCTAssertTrue(viewModel.commandInspectionText.contains("argv[2]: --"))
         XCTAssertTrue(viewModel.commandInspectionText.contains("argv[4]: $'%s\\n'"))
-        XCTAssertTrue(viewModel.commandInspectionText.contains("argv[5]: 'emoji-🚀'"))
+        XCTAssertTrue(viewModel.commandInspectionText.contains("argv[5]: emoji-🚀"))
     }
 
     func testCommandDisplayKeepsOriginalArgvZeroSeparateFromResolvedBinary() {
@@ -106,7 +106,7 @@ final class ApprovalCommandRenderingTests: XCTestCase {
             resolvedExecutable: "/opt/homebrew/bin/terraform"
         )
 
-        XCTAssertEqual(viewModel.command, "'terraform' 'plan'")
+        XCTAssertEqual(viewModel.command, "terraform plan")
         XCTAssertTrue(viewModel.renderedText.contains("Resolved binary: /opt/homebrew/bin/terraform"))
     }
 }

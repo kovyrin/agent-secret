@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	onepassword "github.com/1password/onepassword-sdk-go"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 )
 
@@ -188,12 +190,77 @@ func (f *blockingSecretsAPI) Resolve(_ context.Context, _ string) (string, error
 	return "synthetic-secret-value", nil
 }
 
+type fakeVaultsAPI struct {
+	vaults []onepassword.VaultOverview
+	err    error
+}
+
+func (f *fakeVaultsAPI) List(context.Context, ...onepassword.VaultListParams) ([]onepassword.VaultOverview, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.vaults, nil
+}
+
+type fakeItemsAPI struct {
+	overviews []onepassword.ItemOverview
+	item      onepassword.Item
+	listErr   error
+	getErr    error
+}
+
+func (f *fakeItemsAPI) List(
+	_ context.Context,
+	_ string,
+	_ ...onepassword.ItemListFilter,
+) ([]onepassword.ItemOverview, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return f.overviews, nil
+}
+
+func (f *fakeItemsAPI) Get(context.Context, string, string) (onepassword.Item, error) {
+	if f.getErr != nil {
+		return onepassword.Item{}, f.getErr
+	}
+	return f.item, nil
+}
+
+func mustItemRef(t *testing.T, raw string) itemmetadata.Ref {
+	t.Helper()
+	ref, err := itemmetadata.ParseRef(raw)
+	if err != nil {
+		t.Fatalf("ParseRef returned error: %v", err)
+	}
+	return ref
+}
+
 func TestNewResolverRequiresSecretsAPI(t *testing.T) {
 	t.Parallel()
 
 	_, err := NewResolver(nil)
 	if err == nil {
 		t.Fatal("expected nil secrets API error")
+	}
+}
+
+func TestNewResolverWithItemMetadataRequiresAPIs(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewResolverWithItemMetadata(nil, &fakeVaultsAPI{}, &fakeItemsAPI{})
+	if err == nil {
+		t.Fatal("expected nil secrets API error")
+	}
+
+	_, err = NewResolverWithItemMetadata(&fakeSecretsAPI{}, nil, &fakeItemsAPI{})
+	if !errors.Is(err, ErrItemsUnavailable) {
+		t.Fatalf("nil vaults error = %v, want ErrItemsUnavailable", err)
+	}
+
+	_, err = NewResolverWithItemMetadata(&fakeSecretsAPI{}, &fakeVaultsAPI{}, nil)
+	if !errors.Is(err, ErrItemsUnavailable) {
+		t.Fatalf("nil items error = %v, want ErrItemsUnavailable", err)
 	}
 }
 
@@ -225,6 +292,138 @@ func TestResolveSecretRejectsInvalidReferenceBeforeSDKCall(t *testing.T) {
 	}
 	if fake.calls != 0 {
 		t.Fatalf("invalid reference called SDK %d time(s)", fake.calls)
+	}
+}
+
+func TestDescribeItemReturnsMetadataWithoutValues(t *testing.T) {
+	t.Parallel()
+
+	sectionID := "database"
+	vaults := &fakeVaultsAPI{
+		vaults: []onepassword.VaultOverview{{ID: "vault_1", Title: "Fixture Infra"}},
+	}
+	items := &fakeItemsAPI{
+		overviews: []onepassword.ItemOverview{
+			{ID: "item_1", Title: "Beta PlanetScale Introspection Probe", VaultID: "vault_1"},
+		},
+		item: onepassword.Item{
+			ID:       "item_1",
+			Title:    "Beta PlanetScale Introspection Probe",
+			Category: onepassword.ItemCategoryDatabase,
+			Sections: []onepassword.ItemSection{{ID: sectionID, Title: "connection"}},
+			Fields: []onepassword.ItemField{
+				{
+					ID:        "username",
+					Title:     "username",
+					FieldType: onepassword.ItemFieldTypeText,
+					Value:     "synthetic-user-value",
+				},
+				{
+					ID:        "password",
+					Title:     "password",
+					SectionID: &sectionID,
+					FieldType: onepassword.ItemFieldTypeConcealed,
+					Value:     "synthetic-secret-value",
+				},
+			},
+		},
+	}
+	resolver, err := NewResolverWithItemMetadata(&fakeSecretsAPI{}, vaults, items)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+	}
+
+	metadata, err := resolver.DescribeItem(
+		context.Background(),
+		mustItemRef(t, "op://Fixture Infra/Beta PlanetScale Introspection Probe"),
+		"fixture.1password.com",
+	)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if metadata.Account != "fixture.1password.com" ||
+		metadata.Vault != "Fixture Infra" ||
+		metadata.Item != "Beta PlanetScale Introspection Probe" ||
+		metadata.Category != string(onepassword.ItemCategoryDatabase) {
+		t.Fatalf("unexpected metadata: %+v", metadata)
+	}
+	if len(metadata.Fields) != 2 {
+		t.Fatalf("fields = %d, want 2: %+v", len(metadata.Fields), metadata.Fields)
+	}
+	if metadata.Fields[0].Concealed {
+		t.Fatalf("username field should not be concealed: %+v", metadata.Fields[0])
+	}
+	if !metadata.Fields[1].Concealed {
+		t.Fatalf("password field should be concealed: %+v", metadata.Fields[1])
+	}
+	if metadata.Fields[1].Ref != "op://Fixture Infra/Beta PlanetScale Introspection Probe/connection/password" {
+		t.Fatalf("section field ref = %q", metadata.Fields[1].Ref)
+	}
+	for _, field := range metadata.Fields {
+		if field.Ref == "synthetic-secret-value" || field.Ref == "synthetic-user-value" {
+			t.Fatalf("field metadata leaked value: %+v", field)
+		}
+	}
+}
+
+func TestDescribeItemReturnsLookupErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		vaults *fakeVaultsAPI
+		items  *fakeItemsAPI
+		want   error
+	}{
+		{
+			name:   "vault not found",
+			vaults: &fakeVaultsAPI{vaults: []onepassword.VaultOverview{{ID: "vault_1", Title: "Other"}}},
+			items:  &fakeItemsAPI{},
+			want:   ErrVaultNotFound,
+		},
+		{
+			name: "ambiguous vault",
+			vaults: &fakeVaultsAPI{vaults: []onepassword.VaultOverview{
+				{ID: "vault_1", Title: "Fixture Infra"},
+				{ID: "vault_2", Title: "Fixture Infra"},
+			}},
+			items: &fakeItemsAPI{},
+			want:  ErrAmbiguousVault,
+		},
+		{
+			name:   "item not found",
+			vaults: &fakeVaultsAPI{vaults: []onepassword.VaultOverview{{ID: "vault_1", Title: "Fixture Infra"}}},
+			items:  &fakeItemsAPI{overviews: []onepassword.ItemOverview{{ID: "item_1", Title: "Other"}}},
+			want:   ErrItemNotFound,
+		},
+		{
+			name:   "ambiguous item",
+			vaults: &fakeVaultsAPI{vaults: []onepassword.VaultOverview{{ID: "vault_1", Title: "Fixture Infra"}}},
+			items: &fakeItemsAPI{overviews: []onepassword.ItemOverview{
+				{ID: "item_1", Title: "Beta PlanetScale Introspection Probe"},
+				{ID: "item_2", Title: "Beta PlanetScale Introspection Probe"},
+			}},
+			want: ErrAmbiguousItem,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resolver, err := NewResolverWithItemMetadata(&fakeSecretsAPI{}, tt.vaults, tt.items)
+			if err != nil {
+				t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+			}
+			_, err = resolver.DescribeItem(
+				context.Background(),
+				mustItemRef(t, "op://Fixture Infra/Beta PlanetScale Introspection Probe"),
+				"fixture.1password.com",
+			)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("DescribeItem error = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }
 

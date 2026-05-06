@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	onepassword "github.com/1password/onepassword-sdk-go"
 )
 
 func TestDesktopPoolResolveRequiresRequestAccount(t *testing.T) {
@@ -17,6 +19,16 @@ func TestDesktopPoolResolveRequiresRequestAccount(t *testing.T) {
 	_, err := pool.Resolve(context.Background(), "op://Example Vault/Item/password", " \t ")
 	if !errors.Is(err, ErrAccountRequired) {
 		t.Fatalf("Resolve error = %v, want ErrAccountRequired", err)
+	}
+}
+
+func TestDesktopPoolDescribeItemRequiresRequestAccount(t *testing.T) {
+	t.Parallel()
+
+	pool := NewDesktopPool()
+	_, err := pool.DescribeItem(context.Background(), mustItemRef(t, "op://Example Vault/Item"), " \t ")
+	if !errors.Is(err, ErrAccountRequired) {
+		t.Fatalf("DescribeItem error = %v, want ErrAccountRequired", err)
 	}
 }
 
@@ -143,6 +155,43 @@ func TestDesktopPoolResolveReturnsSecretValue(t *testing.T) {
 	}
 }
 
+func TestDesktopPoolDescribeItemReturnsMetadata(t *testing.T) {
+	t.Parallel()
+
+	var gotOptions ClientOptions
+	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
+		IntegrationName:    "test integration",
+		IntegrationVersion: "test version",
+		Factory: func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+			gotOptions = opts
+			return testDesktopItemResolver(t, nil), nil
+		},
+	})
+
+	metadata, err := pool.DescribeItem(
+		context.Background(),
+		mustItemRef(t, "op://Fixture Infra/Beta PlanetScale Introspection Probe"),
+		"fixture.1password.com",
+	)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if metadata.Account != "fixture.1password.com" ||
+		metadata.Vault != "Fixture Infra" ||
+		metadata.Item != "Beta PlanetScale Introspection Probe" {
+		t.Fatalf("unexpected metadata: %+v", metadata)
+	}
+	if len(metadata.Fields) != 1 || metadata.Fields[0].Ref != "op://Fixture Infra/Beta PlanetScale Introspection Probe/credential" {
+		t.Fatalf("unexpected fields: %+v", metadata.Fields)
+	}
+	if gotOptions.Account != "fixture.1password.com" {
+		t.Fatalf("account = %q, want fixture.1password.com", gotOptions.Account)
+	}
+	if gotOptions.IntegrationName != "test integration" || gotOptions.IntegrationVersion != "test version" {
+		t.Fatalf("integration options were not preserved: %+v", gotOptions)
+	}
+}
+
 func TestDesktopPoolRefreshesClientAfterInvalidClientID(t *testing.T) {
 	t.Parallel()
 
@@ -177,6 +226,36 @@ func TestDesktopPoolRefreshesClientAfterInvalidClientID(t *testing.T) {
 	}
 	if got := calls.Load(); got != 2 {
 		t.Fatalf("factory calls after second resolve = %d, want cached refreshed client", got)
+	}
+}
+
+func TestDesktopPoolDescribeItemRefreshesClientAfterInvalidClientID(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "fixture.1password.com" {
+			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
+		}
+		if calls.Add(1) == 1 {
+			return testDesktopItemResolver(t, errors.New("invalid client id")), nil
+		}
+		return testDesktopItemResolver(t, nil), nil
+	})
+
+	metadata, err := pool.DescribeItem(
+		context.Background(),
+		mustItemRef(t, "op://Fixture Infra/Beta PlanetScale Introspection Probe"),
+		"fixture.1password.com",
+	)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if metadata.Item != "Beta PlanetScale Introspection Probe" {
+		t.Fatalf("item = %q, want Beta PlanetScale Introspection Probe", metadata.Item)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("factory calls = %d, want stale client plus refresh", got)
 	}
 }
 
@@ -321,6 +400,38 @@ func testDesktopResolver(t *testing.T) *Resolver {
 	resolver, err := NewResolver(&fakeSecretsAPI{value: "synthetic-secret-value"})
 	if err != nil {
 		t.Fatalf("NewResolver returned error: %v", err)
+	}
+	return resolver
+}
+
+func testDesktopItemResolver(t *testing.T, getErr error) *Resolver {
+	t.Helper()
+
+	resolver, err := NewResolverWithItemMetadata(
+		&fakeSecretsAPI{value: "synthetic-secret-value"},
+		&fakeVaultsAPI{vaults: []onepassword.VaultOverview{{ID: "vault_1", Title: "Fixture Infra"}}},
+		&fakeItemsAPI{
+			overviews: []onepassword.ItemOverview{
+				{ID: "item_1", Title: "Beta PlanetScale Introspection Probe", VaultID: "vault_1"},
+			},
+			item: onepassword.Item{
+				ID:       "item_1",
+				Title:    "Beta PlanetScale Introspection Probe",
+				Category: onepassword.ItemCategoryLogin,
+				Fields: []onepassword.ItemField{
+					{
+						ID:        "credential",
+						Title:     "credential",
+						FieldType: onepassword.ItemFieldTypeConcealed,
+						Value:     "synthetic-secret-value",
+					},
+				},
+			},
+			getErr: getErr,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
 	}
 	return resolver
 }

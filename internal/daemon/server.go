@@ -261,7 +261,7 @@ func (s *Server) retireIfExecutableChanged(ctx context.Context, encoder *json.En
 func checksExecutableIdentity(messageType protocol.MessageType) bool {
 	//nolint:exhaustive // Only new foreground work should trigger daemon executable self-checks.
 	switch messageType {
-	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec:
+	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe:
 		return true
 	default:
 		return false
@@ -342,25 +342,7 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 				state.setApprovalDecisionReadTimeout(s.approvalDecisionReadTimeout(payload.ExpiresAt))
 			}
 		case protocol.TypeApprovalDecision:
-			if s.approvals == nil {
-				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, approval.ErrUnavailable)
-				continue
-			}
-			payload, err := protocol.DecodeRequiredPayload[approval.ApprovalDecisionPayload](env)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadApprovalDecision, err)
-				continue
-			}
-			peer, err := s.peerInfo(conn)
-			if err != nil {
-				_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
-				continue
-			}
-			if err := s.approvals.SubmitDecision(ctx, peer, payload); err != nil {
-				_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-				continue
-			}
-			_ = writeOK(encoder, env.Correlation(), nil)
+			s.handleApprovalDecision(ctx, conn, encoder, env)
 		case protocol.TypeRequestExec:
 			if state.hasActiveRequest() {
 				_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
@@ -369,6 +351,8 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
 				state.beginExec(requestID)
 			}
+		case protocol.TypeItemDescribe:
+			s.handleItemDescribe(ctx, conn, encoder, env)
 		case protocol.TypeCommandStarted:
 			if !s.lifecycleRequestMatchesConnection(encoder, env, &state) {
 				continue
@@ -387,6 +371,61 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
 		}
 	}
+}
+
+func (s *Server) handleApprovalDecision(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if s.approvals == nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeApprovalUnavailable, approval.ErrUnavailable)
+		return
+	}
+	payload, err := protocol.DecodeRequiredPayload[approval.ApprovalDecisionPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadApprovalDecision, err)
+		return
+	}
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
+		return
+	}
+	if err := s.approvals.SubmitDecision(ctx, peer, payload); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), nil)
+}
+
+func (s *Server) handleItemDescribe(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	req, err := protocol.DecodeRequiredPayload[request.ItemDescribeRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	req = req.WithReceiptTime(s.broker.Now())
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	payload, err := s.broker.HandleItemDescribe(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), payload)
 }
 
 func (s *Server) handleStatusRequest(ctx context.Context, encoder *json.Encoder, env protocol.Envelope) {

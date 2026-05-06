@@ -3,12 +3,14 @@ package broker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -25,6 +27,7 @@ var (
 
 type Resolver interface {
 	Resolve(ctx context.Context, ref string, account string) (string, error)
+	DescribeItem(ctx context.Context, ref itemmetadata.Ref, account string) (itemmetadata.Metadata, error)
 }
 
 type AuditSink interface {
@@ -163,6 +166,100 @@ func (b *Broker) HandleExecDelivery(
 	}
 	b.grants.finishDeliveryAfterPayload(issued.delivery)
 	return issued.grant, nil
+}
+
+func (b *Broker) HandleItemDescribe(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.ItemDescribeRequest,
+) (protocol.ItemDescribeResponsePayload, error) {
+	if correlation.RequestID == "" || correlation.Nonce == "" {
+		return protocol.ItemDescribeResponsePayload{}, protocol.ErrInvalidNonce
+	}
+	if b.stopped() {
+		return protocol.ItemDescribeResponsePayload{}, ErrDaemonStopped
+	}
+	if err := b.audit.Preflight(ctx); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	if req.Expired(b.now()) {
+		return protocol.ItemDescribeResponsePayload{}, approval.ErrRequestExpired
+	}
+	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	decision, err := b.grants.approver.ApproveExec(ctx, approval.NewItemDescribePayload(correlation, req))
+	if err != nil {
+		if auditErr := b.audit.Record(ctx, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
+			return protocol.ItemDescribeResponsePayload{}, auditErr
+		}
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	if !decision.Approved {
+		if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventApprovalDenied, correlation.RequestID, req)); err != nil {
+			return protocol.ItemDescribeResponsePayload{}, err
+		}
+		return protocol.ItemDescribeResponsePayload{}, approval.DenialError(decision.DenialReason)
+	}
+	if err := b.ensureItemDescribeActive(ctx, req); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataGranted, correlation.RequestID, req)); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchStarted, correlation.RequestID, req)); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	metadata, err := b.grants.resolver.DescribeItem(ctx, req.Ref, req.Account)
+	if err != nil {
+		failed := audit.FromItemDescribeRequest(audit.EventItemMetadataFetchFailed, correlation.RequestID, req)
+		failed.ErrorCode = audit.ErrorCode(secretFetchErrorCode(err))
+		if auditErr := b.audit.Record(ctx, failed); auditErr != nil {
+			return protocol.ItemDescribeResponsePayload{}, auditErr
+		}
+		return protocol.ItemDescribeResponsePayload{}, fmt.Errorf("%w: %w", ErrSecretResolveFailed, err)
+	}
+	if err := b.ensureItemDescribeActive(ctx, req); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchCompleted, correlation.RequestID, req)); err != nil {
+		return protocol.ItemDescribeResponsePayload{}, err
+	}
+	return protocol.ItemDescribeResponsePayload{Item: metadata}, nil
+}
+
+func (b *Broker) ensureItemDescribeActive(ctx context.Context, req request.ItemDescribeRequest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if b.stopped() {
+		return ErrDaemonStopped
+	}
+	if req.Expired(b.now()) {
+		return approval.ErrRequestExpired
+	}
+	return nil
+}
+
+func itemDescribeErrorEvent(requestID string, req request.ItemDescribeRequest, err error) audit.Event {
+	if errors.Is(err, approval.ErrRequestExpired) {
+		event := audit.FromItemDescribeRequest(audit.EventApprovalTimedOut, requestID, req)
+		event.ErrorCode = audit.ErrorCode(protocol.ErrorCodeRequestExpired)
+		return event
+	}
+	event := audit.FromItemDescribeRequest(audit.EventItemMetadataFetchFailed, requestID, req)
+	event.ErrorCode = audit.ErrorCode(codeForItemDescribeError(err))
+	return event
+}
+
+func codeForItemDescribeError(err error) protocol.ErrorCode {
+	if errors.Is(err, context.Canceled) {
+		return protocol.ErrorCodeContextCanceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return protocol.ErrorCodeContextDeadlineExceeded
+	}
+	return protocol.ErrorCodeRequestFailed
 }
 
 func (b *Broker) requestContext(ctx context.Context, req request.ExecRequest) (context.Context, context.CancelFunc) {

@@ -17,6 +17,8 @@ needs to understand how to run `agent-secret`, or when migrating direct
 - Use project-local profiles for repeated multi-secret workflows.
 - Migrate direct `op` usage to `agent-secret exec` while preserving command
   behavior.
+- Inspect 1Password item metadata when field names are unknown, without
+  revealing secret values.
 - Verify real behavior with safe checks that do not leak secrets.
 
 ## Safety Rules
@@ -171,6 +173,40 @@ Do not migrate binary attachments this way; env vars cannot carry NUL bytes. If
 the existing script expects a file path, prefer passing contents to its
 env-first path and let the approved child process create any temp file it
 already owns.
+
+## Item Metadata Inspection
+
+Use `agent-secret item describe` when you know the 1Password item but need a
+secret-safe list of fields before choosing exact `op://` refs. This is for
+metadata only: labels, IDs, types, sections, and canonical refs are shown, but
+values are not returned.
+
+Describe an item:
+
+```bash
+agent-secret item describe \
+  --reason "Inspect deploy credential fields" \
+  "op://Example Infra/Production Deploy Token"
+```
+
+The command accepts item-level refs such as `op://Vault/Item` and
+`op://Vault/Item/*`. Do not use field refs for inspection; use the output to
+choose exact refs for `agent-secret exec`.
+
+Ask for env-ready aliases when wiring a profile or wrapper:
+
+```bash
+agent-secret item describe \
+  --format env-refs \
+  --prefix DEPLOY \
+  --reason "Inspect deploy credential fields" \
+  "op://Example Infra/Production Deploy Token/*"
+```
+
+Prefer project config account discovery. Use `--account` only when the project
+does not already define the intended account or when an explicit one-off
+override is needed. Do not fall back to `op item get` unless the user explicitly
+asks for that diagnostic.
 
 ## Migrating From 1Password CLI
 

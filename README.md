@@ -11,13 +11,15 @@ This repository is designed as a standalone open-source project.
 
 ![Agent Secret approval prompt](docs/images/approval-request.png)
 
+![Agent Secret item metadata request prompt](docs/images/item-metadata-request.png)
+
 ## Status
 
 Agent Secret is in a macOS Apple Silicon release-candidate stage. The shipped
-surface is the local app bundle, `agent-secret exec`, the per-user daemon,
-native approval UI, project profiles, env-file migration path, install and
-uninstall scripts, bundled coding-agent skill, and signed/notarized GitHub
-Release artifacts.
+surface is the local app bundle, `agent-secret exec`, `agent-secret item
+describe`, the per-user daemon, native approval UI, project profiles, env-file
+migration path, install and uninstall scripts, bundled coding-agent skill, and
+signed/notarized GitHub Release artifacts.
 
 The current public release target is intentionally narrow. Agent Secret is not
 yet a cross-platform secret manager, background updater, session-handle service,
@@ -450,6 +452,36 @@ resolve them as text. For example, a ref such as
 var, preserving multiline text such as PEM keys. Agent Secret does not write the
 value to a temp file and does not print it. Binary attachments with NUL bytes
 are not supported by env-var delivery.
+
+### Item Metadata Inspection
+
+`agent-secret item describe` lets an agent ask what fields an item exposes
+without receiving any secret values:
+
+```bash
+agent-secret item describe "op://Example Infra/Database Credentials"
+agent-secret item describe --format env-refs --prefix DATABASE \
+  "op://Example Infra/Database Credentials"
+agent-secret item describe --format json \
+  "op://Example Infra/Database Credentials/*"
+```
+
+The command accepts item-level refs only: `op://vault/item` and
+`op://vault/item/*`. It rejects field refs because it is for discovery before
+exact secret mappings are known.
+
+Output includes metadata such as item title, category, field labels, field
+types, section names, concealment flags, account, and canonical `op://` field
+refs. It does not include field values, even for non-concealed 1Password
+fields. The metadata lookup is still approval-gated in the native approver, and
+the approval is one metadata lookup only.
+
+`--format env-refs` prints shell-quoted `ALIAS='op://...'` mappings that can be
+copied into an env file or converted into `agent-secret.yml` profile entries.
+`--account` overrides account selection for the inspection request; otherwise
+the command uses the discovered project config account, environment account
+overrides, one detected signed-in 1Password CLI account, then
+`my.1password.com`.
 
 Daemon management and diagnostics:
 

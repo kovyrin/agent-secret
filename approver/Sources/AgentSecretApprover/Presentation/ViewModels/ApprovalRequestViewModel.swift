@@ -38,6 +38,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let projectFolder: String
     public let resolvedExecutable: String
     public let requestedSecrets: [RequestedSecretRowViewModel]
+    public let requestedSecretsHeading: String
     public let secretRows: [String]
     public let secretCount: Int
     public let vaultGroups: [SecretVaultGroupViewModel]
@@ -49,6 +50,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let timeRemaining: String
     public let compactTimeRemaining: String
     public let reusableUses: Int
+    public let allowsReusableApproval: Bool
     public let scopeSummary: String
     public let allowReusableTitle: String
     public let printsEnvironmentWarning: Bool
@@ -61,7 +63,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
 
     /// Builds a prompt view model without including raw secret values.
     public init(request: ApprovalRequest, now: Date = Date()) {
-        title = "Secret Access Request"
+        title = Self.title(for: request.operation)
         reason = Self.sanitizedDisplayText(request.reason)
         executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable))
         commandArguments = Self.commandArguments(request.command)
@@ -73,28 +75,29 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         resolvedExecutable = Self.sanitizedDisplayText(request.resolvedExecutable)
         let secretPresentation: SecretPresentation = Self.secretPresentation(for: request.secrets)
         requestedSecrets = secretPresentation.rows
+        requestedSecretsHeading = Self.requestedSecretsHeading(for: request, secretCount: secretPresentation.count)
         secretRows = secretPresentation.rowText
         secretCount = secretPresentation.count
         vaultGroups = secretPresentation.vaultGroups
         vaultCount = secretPresentation.vaultCount
         let remaining: TimeInterval = request.expiresAt.timeIntervalSince(now)
         isExpired = Self.isExpired(remaining)
-        promptQuestion = Self.promptQuestion(secretCount: secretPresentation.count, isExpired: isExpired)
-        accessSummary = Self.accessSummary(isExpired: isExpired)
-        highScopeWarning = secretPresentation.count >= Self.highScopeSecretThreshold
+        promptQuestion = Self.promptQuestion(for: request, secretCount: secretPresentation.count, isExpired: isExpired)
+        accessSummary = Self.accessSummary(operation: request.operation, isExpired: isExpired)
+        highScopeWarning = request.operation == .exec && secretPresentation.count >= Self.highScopeSecretThreshold
         timeRemaining = isExpired ? Self.expiredTimeRemaining() : Self.formatRemaining(remaining)
         compactTimeRemaining = timeRemaining
-        let reusableUseLimit: Int = request.reusableUses
-        reusableUses = reusableUseLimit
-        scopeSummary = Self.scopeSummary(uses: reusableUseLimit, remaining: timeRemaining, expired: isExpired)
-        allowReusableTitle = Self.reuseTitle(uses: reusableUseLimit, remaining: timeRemaining, expired: isExpired)
+        reusableUses = request.reusableUses
+        allowsReusableApproval = request.allowsReusable
+        scopeSummary = Self.scopeSummary(for: request, remaining: timeRemaining, expired: isExpired)
+        allowReusableTitle = Self.reuseTitle(uses: request.reusableUses, remaining: timeRemaining, expired: isExpired)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
         printsEnvironmentWarning = warnings.printsEnvironment
         overrideEnv = request.overrideEnv
         overriddenAliases = request.overriddenAliases.map(Self.sanitizedDisplayText)
         overrideWarning = warnings.override
         cautionMessages = warnings.cautionMessages
-        footerMessage = Self.footerMessage(secretCount: secretPresentation.count, expired: isExpired)
+        footerMessage = Self.footerMessage(for: request, secretCount: secretPresentation.count, expired: isExpired)
         renderedText = Self.renderedText(
             for: request,
             viewModel: SelfRenderInput(
@@ -165,13 +168,17 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
             "Scope: \(viewModel.scopeSummary)"
         ])
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
-        lines.append("Secrets:")
+        lines.append(request.operation == .itemDescribe ? "Item metadata:" : "Secrets:")
         lines.append(contentsOf: viewModel.secretRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
-        lines.append(
-            "Reusable approval keeps values in daemon memory for this window " +
-                "and is limited to \(request.reusableUses) uses."
-        )
+        if request.allowsReusable {
+            lines.append(
+                "Reusable approval keeps values in daemon memory for this window " +
+                    "and is limited to \(request.reusableUses) uses."
+            )
+        } else {
+            lines.append("Approval is limited to one metadata lookup.")
+        }
         lines.append(contentsOf: viewModel.cautionMessages)
         return lines.joined(separator: "\n")
     }

@@ -21,6 +21,8 @@ struct CommandArgumentViewModel: Equatable {
         static let singleQuote: UInt32 = 39
     }
 
+    private static let shellMetacharacters = CharacterSet(charactersIn: "|&;<>()$`\\\"'*!?[]{}")
+
     let index: Int
     let value: String
     let escaped: String
@@ -43,6 +45,9 @@ struct CommandArgumentViewModel: Equatable {
         }
         if value.unicodeScalars.contains(where: requiresANSICEscaping) {
             return "$'\(ansiCEscaped(value))'"
+        }
+        if canDisplayBare(value) {
+            return value
         }
         return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
@@ -88,11 +93,15 @@ struct CommandArgumentViewModel: Equatable {
         if value.isEmpty || value.hasPrefix("-") {
             return true
         }
-        let shellMetacharacters = CharacterSet(charactersIn: "|&;<>()$`\\\"'*!?[]{}")
         return value.rangeOfCharacter(from: .whitespacesAndNewlines) != nil ||
             value.rangeOfCharacter(from: .controlCharacters) != nil ||
-            value.unicodeScalars.contains(where: Self.requiresANSICEscaping) ||
+            value.unicodeScalars.contains(where: requiresANSICEscaping) ||
             value.rangeOfCharacter(from: shellMetacharacters) != nil
+    }
+
+    private static func canDisplayBare(_ value: String) -> Bool {
+        value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
+            value.rangeOfCharacter(from: shellMetacharacters) == nil
     }
 
     private static func requiresANSICEscaping(_ scalar: Unicode.Scalar) -> Bool {

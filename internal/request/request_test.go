@@ -435,6 +435,177 @@ func TestExecRequestWithReceiptTimeRebasesExpiry(t *testing.T) {
 	}
 }
 
+func TestNewItemDescribeValidatesAndNormalizesRequest(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	bin := writeExecutable(t, dir)
+	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+
+	req, err := NewItemDescribe(ItemDescribeOptions{
+		Reason:             "  Inspect item metadata  ",
+		CWD:                dir,
+		ResolvedExecutable: bin,
+		Ref:                "op://Example Vault/Deploy Token/*",
+		Account:            " Work ",
+		TTL:                time.Minute,
+		ReceivedAt:         receivedAt,
+	})
+	if err != nil {
+		t.Fatalf("NewItemDescribe returned error: %v", err)
+	}
+
+	if req.Reason != "Inspect item metadata" {
+		t.Fatalf("reason = %q", req.Reason)
+	}
+	if req.Account != "Work" {
+		t.Fatalf("account = %q, want Work", req.Account)
+	}
+	if req.Ref.Raw != "op://Example Vault/Deploy Token" ||
+		req.Ref.Vault != "Example Vault" ||
+		req.Ref.Item != "Deploy Token" {
+		t.Fatalf("unexpected item ref: %+v", req.Ref)
+	}
+	if req.TTL != time.Minute {
+		t.Fatalf("ttl = %s, want 1m", req.TTL)
+	}
+	if !req.ReceivedAt.Equal(receivedAt) || !req.ExpiresAt.Equal(receivedAt.Add(time.Minute)) {
+		t.Fatalf("unexpected request times: received=%s expires=%s", req.ReceivedAt, req.ExpiresAt)
+	}
+	if req.ResolvedExecutable != bin {
+		t.Fatalf("resolved executable = %q, want %q", req.ResolvedExecutable, bin)
+	}
+	wantCommand := []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token/*"}
+	if !slices.Equal(req.Command, wantCommand) {
+		t.Fatalf("default command = %v, want %v", req.Command, wantCommand)
+	}
+	if req.Expired(receivedAt.Add(time.Minute - time.Nanosecond)) {
+		t.Fatal("item describe request expired before TTL boundary")
+	}
+	if !req.Expired(receivedAt.Add(time.Minute)) {
+		t.Fatal("item describe request did not expire at TTL boundary")
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		t.Fatalf("ValidateForDaemon returned error: %v", err)
+	}
+}
+
+func TestNewItemDescribeLeavesReceiptTimesUnsetByDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	bin := writeExecutable(t, dir)
+
+	req, err := NewItemDescribe(ItemDescribeOptions{
+		Reason:             "Inspect item metadata",
+		CWD:                dir,
+		ResolvedExecutable: bin,
+		Ref:                "op://Example Vault/Deploy Token",
+		Account:            "Work",
+	})
+	if err != nil {
+		t.Fatalf("NewItemDescribe returned error: %v", err)
+	}
+	if req.TTL != DefaultItemDescribeTTL {
+		t.Fatalf("ttl = %s, want default %s", req.TTL, DefaultItemDescribeTTL)
+	}
+	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
+		t.Fatalf("client request times = received %s expires %s, want unset", req.ReceivedAt, req.ExpiresAt)
+	}
+
+	daemonTime := time.Date(2026, 4, 28, 11, 0, 0, 0, time.UTC)
+	rebased := req.WithReceiptTime(daemonTime)
+	if !rebased.ReceivedAt.Equal(daemonTime) || !rebased.ExpiresAt.Equal(daemonTime.Add(DefaultItemDescribeTTL)) {
+		t.Fatalf("rebased times = received %s expires %s", rebased.ReceivedAt, rebased.ExpiresAt)
+	}
+}
+
+func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	bin := writeExecutable(t, dir)
+	base := ItemDescribeOptions{
+		Reason:             "Inspect item metadata",
+		CWD:                dir,
+		ResolvedExecutable: bin,
+		Ref:                "op://Example Vault/Deploy Token",
+		Account:            "Work",
+	}
+	tests := []struct {
+		name string
+		opts ItemDescribeOptions
+		want error
+	}{
+		{name: "missing reason", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Reason = "" }), want: ErrInvalidReason},
+		{name: "field ref", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Ref = "op://Example Vault/Deploy Token/password" }), want: ErrInvalidReference},
+		{name: "missing account", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Account = " \t " }), want: ErrInvalidReference},
+		{name: "ttl too low", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
+		{name: "ttl too high", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = MaxExecTTL + time.Second }), want: ErrInvalidTTL},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := NewItemDescribe(tt.opts)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestItemDescribeRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	bin := writeExecutable(t, dir)
+	req, err := NewItemDescribe(ItemDescribeOptions{
+		Reason:             "Inspect item metadata",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token"},
+		CWD:                dir,
+		ResolvedExecutable: bin,
+		Ref:                "op://Example Vault/Deploy Token",
+		Account:            "Work",
+		TTL:                time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewItemDescribe returned error: %v", err)
+	}
+	req = req.WithReceiptTime(time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
+
+	tests := []struct {
+		name   string
+		mutate func(*ItemDescribeRequest)
+		want   error
+	}{
+		{name: "unnormalized reason", mutate: func(r *ItemDescribeRequest) { r.Reason = " reason " }, want: ErrInvalidReason},
+		{name: "ttl outside bounds", mutate: func(r *ItemDescribeRequest) { r.TTL = time.Second }, want: ErrInvalidTTL},
+		{name: "missing receipt time", mutate: func(r *ItemDescribeRequest) { r.ReceivedAt = time.Time{} }, want: ErrInvalidRequest},
+		{name: "expiration mismatch", mutate: func(r *ItemDescribeRequest) { r.ExpiresAt = r.ExpiresAt.Add(time.Second) }, want: ErrInvalidTTL},
+		{name: "relative cwd", mutate: func(r *ItemDescribeRequest) { r.CWD = "project" }, want: ErrInvalidRequest},
+		{name: "relative resolved executable", mutate: func(r *ItemDescribeRequest) { r.ResolvedExecutable = "tool" }, want: ErrInvalidRequest},
+		{name: "missing command", mutate: func(r *ItemDescribeRequest) { r.Command = nil }, want: ErrInvalidCommand},
+		{name: "tampered ref metadata", mutate: func(r *ItemDescribeRequest) { r.Ref.Raw = "op://Example Vault/Deploy Token/password" }, want: ErrInvalidReference},
+		{name: "empty account", mutate: func(r *ItemDescribeRequest) { r.Account = "" }, want: ErrInvalidReference},
+		{name: "blank account", mutate: func(r *ItemDescribeRequest) { r.Account = " \t " }, want: ErrInvalidReference},
+		{name: "unnormalized account", mutate: func(r *ItemDescribeRequest) { r.Account = " Work " }, want: ErrInvalidReference},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := cloneItemDescribeRequest(req)
+			tt.mutate(&got)
+			if err := got.ValidateForDaemon(); !errors.Is(err, tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestParseSecretRef(t *testing.T) {
 	t.Parallel()
 
@@ -464,11 +635,21 @@ func mutate(opts ExecOptions, fn func(*ExecOptions)) ExecOptions {
 	return opts
 }
 
+func mutateItemDescribeOptions(opts ItemDescribeOptions, fn func(*ItemDescribeOptions)) ItemDescribeOptions {
+	fn(&opts)
+	return opts
+}
+
 func cloneRequest(req ExecRequest) ExecRequest {
 	req.Command = slices.Clone(req.Command)
 	req.Env = slices.Clone(req.Env)
 	req.Secrets = slices.Clone(req.Secrets)
 	req.OverriddenAliases = slices.Clone(req.OverriddenAliases)
+	return req
+}
+
+func cloneItemDescribeRequest(req ItemDescribeRequest) ItemDescribeRequest {
+	req.Command = slices.Clone(req.Command)
 	return req
 }
 

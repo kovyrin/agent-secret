@@ -7,6 +7,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case cwd
         case expiresAt = "expires_at"
         case nonce
+        case operation
+        case allowsReusable = "allows_reusable"
         case overrideEnv = "override_env"
         case overriddenAliases = "overridden_aliases"
         case reason
@@ -28,6 +30,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var cwd: String
     public var resolvedExecutable: String
     public var expiresAt: Date
+    public var operation: ApprovalOperation
+    public var allowsReusable: Bool
     public var secrets: [RequestedSecret]
     public var overrideEnv: Bool
     public var overriddenAliases: [String]
@@ -42,6 +46,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         expiresAt: Date,
         secrets: [RequestedSecret],
         resolvedExecutable: String,
+        operation: ApprovalOperation = .exec,
+        allowsReusable: Bool = true,
         overrideEnv: Bool = false,
         overriddenAliases: [String] = [],
         reusableUses: Int = Self.defaultReusableUses
@@ -53,6 +59,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.cwd = cwd
         self.resolvedExecutable = resolvedExecutable
         self.expiresAt = expiresAt
+        self.operation = operation
+        self.allowsReusable = allowsReusable
         self.secrets = secrets
         self.overrideEnv = overrideEnv
         self.overriddenAliases = overriddenAliases
@@ -69,6 +77,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         cwd = try container.decode(String.self, forKey: .cwd)
         resolvedExecutable = try container.decode(String.self, forKey: .resolvedExecutable)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
+        operation = try container.decodeIfPresent(ApprovalOperation.self, forKey: .operation) ?? .exec
+        allowsReusable = try container.decodeIfPresent(Bool.self, forKey: .allowsReusable) ?? true
         secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
         overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)
         overriddenAliases = try container.decode([String].self, forKey: .overriddenAliases)

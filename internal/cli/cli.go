@@ -13,6 +13,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/buildinfo"
 	"github.com/kovyrin/agent-secret/internal/envfile"
 	"github.com/kovyrin/agent-secret/internal/install"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -32,6 +33,7 @@ const (
 	KindHelp         Kind = "help"
 	KindVersion      Kind = "version"
 	KindExec         Kind = "exec"
+	KindItemDescribe Kind = "item_describe"
 	KindDoctor       Kind = "doctor"
 	KindInstallCLI   Kind = "install_cli"
 	KindSkillInstall Kind = "skill_install"
@@ -43,6 +45,9 @@ const (
 type Command struct {
 	Kind                Kind
 	ExecRequest         request.ExecRequest
+	ItemDescribeRequest request.ItemDescribeRequest
+	ItemDescribeFormat  itemmetadata.Format
+	ItemDescribePrefix  string
 	InstallCLIOptions   install.CLIOptions
 	InstallSkillOptions install.SkillOptions
 	HelpText            string
@@ -86,6 +91,15 @@ type execInputSources struct {
 	configAccount  string
 }
 
+type itemDescribeFlags struct {
+	account    string
+	configPath string
+	format     string
+	prefix     string
+	reason     string
+	ttl        time.Duration
+}
+
 type filteredExecSecretSources struct {
 	profileSecrets []request.SecretSpec
 	envFileSecrets []request.SecretSpec
@@ -103,6 +117,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return Command{Kind: KindVersion, VersionText: buildinfo.DisplayVersion()}, nil
 	case "exec":
 		return p.parseExec(args[1:])
+	case "item":
+		return p.parseItem(args[1:], args)
 	case "daemon":
 		return parseDaemon(args[1:])
 	case "doctor":
@@ -131,6 +147,7 @@ Secrets are never printed by agent-secret and are never written to disk. The nor
 Commands:
 
   exec       Run a command with approved secrets injected as environment variables.
+  item       Inspect 1Password item metadata without revealing secret values.
   install-cli Install or repair the agent-secret command symlink for this user.
   skill-install Install or repair the Agent Secret agent skill for this user.
   daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
@@ -161,6 +178,9 @@ Common examples:
     --secret TOKEN=op://Example/Item/token \
     -- sh -c 'echo "$TOKEN" >/dev/null'
 
+  agent-secret item describe "op://Example/Cloudflare Token"
+  agent-secret item describe --format env-refs --prefix CLOUDFLARE "op://Example/Cloudflare Token"
+
 Safety rules:
 
   - --reason is required, trimmed, and capped at 240 characters.
@@ -176,12 +196,54 @@ Safety rules:
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - exec has no --json mode and never prints secret values.
   - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
+  - item describe requires approval and prints item metadata only: field labels, types, concealment flags, and refs.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
   - Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
   - Non-zero child exits are returned as child exits, not as broker failures.
 
 Run agent-secret exec --help for flags and more examples.
+`)
+}
+
+func ItemHelp() string {
+	return strings.TrimSpace(`
+agent-secret item provides secret-safe inspection commands for 1Password items.
+
+Commands:
+
+  describe  Show approved item metadata without revealing secret values.
+
+Run agent-secret item describe --help for flags and examples.
+`)
+}
+
+func ItemDescribeHelp() string {
+	return strings.TrimSpace(`
+agent-secret item describe asks the local approver for permission to inspect one 1Password item, then prints metadata only.
+
+Usage:
+
+  agent-secret item describe [flags] op://vault/item
+  agent-secret item describe [flags] op://vault/item/*
+
+Flags:
+
+  --account ACCOUNT   1Password account override. Defaults to project config, environment, one detected CLI account, then my.1password.com.
+  --config PATH       Profile config path. Defaults to upward discovery from the current directory.
+  --format FORMAT     Output format: text, json, or env-refs. Defaults to text.
+  --prefix PREFIX     Prefix env aliases in env-refs output.
+  --reason TEXT       Human-readable reason shown to the approver. Defaults to item metadata inspection.
+  --ttl DURATION      Approval TTL. Defaults to 2m. Allowed range: 10s through 10m.
+  -h, --help          Show this help.
+
+Output never includes field values. It may include item title, field labels, field ids, field types, section names, concealment flags, accounts, and canonical op:// refs.
+
+Examples:
+
+  agent-secret item describe "op://Fixture Infra/Beta PlanetScale Introspection Probe"
+  agent-secret item describe --format env-refs --prefix PLANETSCALE "op://Fixture Infra/Beta PlanetScale Introspection Probe"
+  agent-secret item describe --format json "op://Fixture Infra/Beta PlanetScale Introspection Probe/*"
 `)
 }
 
@@ -369,6 +431,69 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	return Command{Kind: KindExec, ExecRequest: req}, nil
+}
+
+func (p Parser) parseItem(args []string, fullArgs []string) (Command, error) {
+	if len(args) == 0 {
+		return Command{}, fmt.Errorf("%w: item requires a subcommand", ErrInvalidArguments)
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		return Command{Kind: KindHelp, HelpText: ItemHelp()}, ErrHelpRequested
+	}
+	if args[0] != "describe" {
+		return Command{}, fmt.Errorf("%w: unknown item subcommand %q", ErrInvalidArguments, args[0])
+	}
+	return p.parseItemDescribe(args[1:], fullArgs)
+}
+
+func (p Parser) parseItemDescribe(args []string, fullArgs []string) (Command, error) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return Command{Kind: KindHelp, HelpText: ItemDescribeHelp()}, ErrHelpRequested
+	}
+
+	var flags itemDescribeFlags
+	fs := flag.NewFlagSet("item describe", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&flags.account, "account", "", "1Password account")
+	fs.StringVar(&flags.configPath, "config", "", "profile config path")
+	fs.StringVar(&flags.format, "format", string(itemmetadata.FormatText), "output format")
+	fs.StringVar(&flags.prefix, "prefix", "", "env alias prefix for env-refs output")
+	fs.StringVar(&flags.reason, "reason", "", "approval reason")
+	fs.DurationVar(&flags.ttl, "ttl", 0, "approval ttl")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 1 {
+		return Command{}, fmt.Errorf("%w: item describe accepts exactly one op:// item reference", ErrInvalidArguments)
+	}
+	format, err := itemmetadata.ParseFormat(flags.format)
+	if err != nil {
+		return Command{}, err
+	}
+	account, err := resolveItemDescribeAccount(flags)
+	if err != nil {
+		return Command{}, err
+	}
+	reason := strings.TrimSpace(flags.reason)
+	if reason == "" {
+		reason = "Inspect 1Password item metadata"
+	}
+	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
+		Reason:  reason,
+		Command: append([]string{"agent-secret"}, fullArgs...),
+		Ref:     fs.Arg(0),
+		Account: account,
+		TTL:     flags.ttl,
+	})
+	if err != nil {
+		return Command{}, fmt.Errorf("build item describe request: %w", err)
+	}
+	return Command{
+		Kind:                KindItemDescribe,
+		ItemDescribeRequest: req,
+		ItemDescribeFormat:  format,
+		ItemDescribePrefix:  flags.prefix,
+	}, nil
 }
 
 func resolveExecInputs(flags execFlags) (execInputs, error) {
@@ -561,6 +686,25 @@ func execAccountFallback(cliAccount string) string {
 		return account
 	}
 	return opaccount.SelectDesktopAccount("", os.Getenv("OP_ACCOUNT"))
+}
+
+func resolveItemDescribeAccount(flags itemDescribeFlags) (string, error) {
+	if account := strings.TrimSpace(flags.account); account != "" {
+		return account, nil
+	}
+	metadata, err := profileconfig.LoadMetadata(profileconfig.LoadOptions{
+		ConfigPath: flags.configPath,
+	})
+	if err == nil {
+		if account := strings.TrimSpace(metadata.Account); account != "" {
+			return account, nil
+		}
+		return execAccountFallback(flags.account), nil
+	}
+	if flags.configPath == "" && errors.Is(err, profileconfig.ErrConfigNotFound) {
+		return execAccountFallback(flags.account), nil
+	}
+	return "", fmt.Errorf("load config metadata: %w", err)
 }
 
 func newOnlySet(aliases []string) map[string]struct{} {

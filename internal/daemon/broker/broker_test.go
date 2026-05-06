@@ -14,6 +14,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
@@ -61,6 +62,22 @@ func requireNoActiveRequest(t *testing.T, b *Broker, correlation protocol.Correl
 	if _, err := b.activeRequest(correlation); !errors.Is(err, want) {
 		t.Fatalf("active request %q = %v, want %v", correlation.RequestID, err, want)
 	}
+}
+
+func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
+	t.Helper()
+	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
+		Reason:     "Inspect item metadata",
+		Command:    []string{"agent-secret", "item", "describe", "op://Example/Item"},
+		Ref:        "op://Example/Item",
+		Account:    "Work",
+		TTL:        time.Minute,
+		ReceivedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("NewItemDescribe returned error: %v", err)
+	}
+	return req
 }
 
 func TestBrokerActivatesExecBeforePayloadWriteAndClearsOnWriteFailure(t *testing.T) {
@@ -193,6 +210,25 @@ func (m *mockResolver) Resolve(_ context.Context, ref string, account string) (s
 	return m.values[key], nil
 }
 
+func (m *mockResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := resolverCallKey(ref.Raw, account)
+	m.calls = append(m.calls, key)
+	if m.order != nil {
+		*m.order = append(*m.order, "describe:"+key)
+	}
+	if err := m.errs[key]; err != nil {
+		return itemmetadata.Metadata{}, err
+	}
+	return defaultItemMetadata(ref, account), nil
+}
+
 func (m *mockResolver) Calls() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -232,6 +268,14 @@ func (r *cancelObservingResolver) Resolve(ctx context.Context, ref string, _ str
 	}
 }
 
+func (r *cancelObservingResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return defaultItemMetadata(ref, account), nil
+}
+
 type deadlineObservingResolver struct {
 	done chan struct{}
 }
@@ -240,6 +284,14 @@ func (r *deadlineObservingResolver) Resolve(ctx context.Context, _ string, _ str
 	<-ctx.Done()
 	close(r.done)
 	return "", ctx.Err()
+}
+
+func (r *deadlineObservingResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return defaultItemMetadata(ref, account), nil
 }
 
 type blockingResolver struct {
@@ -254,6 +306,14 @@ func (r *blockingResolver) Resolve(ctx context.Context, _ string, _ string) (str
 	return "", ctx.Err()
 }
 
+func (r *blockingResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return defaultItemMetadata(ref, account), nil
+}
+
 type contextIgnoringResolver struct {
 	started chan struct{}
 	release chan struct{}
@@ -265,6 +325,14 @@ func (r *contextIgnoringResolver) Resolve(ctx context.Context, _ string, _ strin
 	return "", ctx.Err()
 }
 
+func (r *contextIgnoringResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return defaultItemMetadata(ref, account), nil
+}
+
 type advancingResolver struct {
 	value   string
 	advance func()
@@ -273,6 +341,31 @@ type advancingResolver struct {
 func (r *advancingResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
 	r.advance()
 	return r.value, nil
+}
+
+func (r *advancingResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return defaultItemMetadata(ref, account), nil
+}
+
+func defaultItemMetadata(ref itemmetadata.Ref, account string) itemmetadata.Metadata {
+	return itemmetadata.Metadata{
+		Account: account,
+		Vault:   ref.Vault,
+		Item:    ref.Item,
+		Fields: []itemmetadata.Field{
+			{
+				Label:     "token",
+				Type:      "Concealed",
+				Concealed: true,
+				Ref:       itemmetadata.BuildFieldRef(ref.Vault, ref.Item, "", "token"),
+				Alias:     "TOKEN",
+			},
+		},
+	}
 }
 
 type failingSecretCache struct {

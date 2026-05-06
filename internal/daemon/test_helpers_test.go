@@ -17,6 +17,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -145,6 +146,27 @@ func (m *mockResolver) Resolve(_ context.Context, ref string, account string) (s
 		return "", err
 	}
 	return m.values[key], nil
+}
+
+func (m *mockResolver) DescribeItem(
+	_ context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	return itemmetadata.Metadata{
+		Account: account,
+		Vault:   ref.Vault,
+		Item:    ref.Item,
+		Fields: []itemmetadata.Field{
+			{
+				Label:     "token",
+				Type:      "Concealed",
+				Concealed: true,
+				Ref:       itemmetadata.BuildFieldRef(ref.Vault, ref.Item, "", "token"),
+				Alias:     "TOKEN",
+			},
+		},
+	}, nil
 }
 
 func (m *mockResolver) Calls() []string {
@@ -302,6 +324,35 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 		TTL:        request.DefaultExecTTL,
 		ReceivedAt: now,
 		ExpiresAt:  now.Add(request.DefaultExecTTL),
+	}
+}
+
+func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
+	t.Helper()
+
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+	cwd, err := pathresolve.Strict(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize cwd: %v", err)
+	}
+	executable := filepath.Join(cwd, "agent-secret")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon tests need a runnable fixture executable.
+		t.Fatalf("write executable: %v", err)
+	}
+	ref, err := itemmetadata.ParseRef("op://Example/Item")
+	if err != nil {
+		t.Fatalf("ParseRef returned error: %v", err)
+	}
+	return request.ItemDescribeRequest{
+		Reason:             "Inspect item metadata",
+		Command:            []string{"agent-secret", "item", "describe", ref.Raw},
+		ResolvedExecutable: executable,
+		CWD:                cwd,
+		Ref:                ref,
+		Account:            "Work",
+		TTL:                request.DefaultItemDescribeTTL,
+		ReceivedAt:         now,
+		ExpiresAt:          now.Add(request.DefaultItemDescribeTTL),
 	}
 }
 

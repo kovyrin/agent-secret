@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 )
 
 const DefaultDesktopPoolInitTimeout = 30 * time.Second
@@ -85,6 +87,29 @@ func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (
 	return secret.Value(), nil
 }
 
+func (p *DesktopPool) DescribeItem(
+	ctx context.Context,
+	ref itemmetadata.Ref,
+	account string,
+) (itemmetadata.Metadata, error) {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return itemmetadata.Metadata{}, ErrAccountRequired
+	}
+	resolver, err := p.client(ctx, account)
+	if err != nil {
+		return itemmetadata.Metadata{}, fmt.Errorf("create 1Password resolver: %w", err)
+	}
+	metadata, err := resolver.DescribeItem(ctx, ref, account)
+	if err != nil {
+		if refreshed, refreshErr := p.describeItemWithRefreshedClient(ctx, ref, account, resolver, err); refreshErr == nil {
+			return refreshed, nil
+		}
+		return itemmetadata.Metadata{}, fmt.Errorf("describe item metadata: %w", err)
+	}
+	return metadata, nil
+}
+
 func (p *DesktopPool) resolveWithRefreshedClient(
 	ctx context.Context,
 	ref string,
@@ -105,6 +130,28 @@ func (p *DesktopPool) resolveWithRefreshedClient(
 		return "", err
 	}
 	return secret.Value(), nil
+}
+
+func (p *DesktopPool) describeItemWithRefreshedClient(
+	ctx context.Context,
+	ref itemmetadata.Ref,
+	account string,
+	stale *Resolver,
+	describeErr error,
+) (itemmetadata.Metadata, error) {
+	if !shouldRefreshDesktopClient(describeErr) {
+		return itemmetadata.Metadata{}, describeErr
+	}
+	p.evictClient(account, stale)
+	resolver, err := p.client(ctx, account)
+	if err != nil {
+		return itemmetadata.Metadata{}, err
+	}
+	metadata, err := resolver.DescribeItem(ctx, ref, account)
+	if err != nil {
+		return itemmetadata.Metadata{}, err
+	}
+	return metadata, nil
 }
 
 func shouldRefreshDesktopClient(err error) bool {

@@ -83,6 +83,7 @@ func TestValidateDecisionReusableUses(t *testing.T) {
 		name     string
 		decision ApprovalDecisionPayload
 		expected int
+		disallow bool
 		wantErr  string
 	}{
 		{
@@ -119,13 +120,20 @@ func TestValidateDecisionReusableUses(t *testing.T) {
 			decision: ApprovalDecisionPayload{Decision: ApprovalDecisionApproveReusable, ReusableUses: &reusableUses3},
 			expected: 3,
 		},
+		{
+			name:     "reusable rejected when request disallows reusable approval",
+			decision: ApprovalDecisionPayload{Decision: ApprovalDecisionApproveReusable, ReusableUses: &reusableUses3},
+			expected: 3,
+			disallow: true,
+			wantErr:  "reusable approval is not valid",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := ValidateDecisionReusableUses(tt.decision, tt.expected)
+			err := ValidateDecisionReusableUses(tt.decision, tt.expected, !tt.disallow)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatal("ValidateDecisionReusableUses returned nil error")

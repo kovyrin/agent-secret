@@ -156,7 +156,7 @@ import Foundation
                     if let overrideWarning: String = viewModel.overrideWarning {
                         ApprovalPanelDetailLine(label: "Overrides", value: overrideWarning)
                     }
-                    ApprovalPanelDetailLine(label: "Reusable approval", value: reusableDetail)
+                    ApprovalPanelDetailLine(label: approvalBehaviorLabel, value: reusableDetail)
                 }
                 .padding(.top, Metric.detailTopPadding)
                 .padding(.leading, Metric.detailLeadingPadding)
@@ -174,7 +174,14 @@ import Foundation
         }
 
         private var reusableDetail: String {
-            viewModel.allowReusableTitle.replacingOccurrences(of: "\n", with: " • ")
+            if viewModel.allowsReusableApproval {
+                return viewModel.allowReusableTitle.replacingOccurrences(of: "\n", with: " • ")
+            }
+            return viewModel.scopeSummary.replacingOccurrences(of: "\n", with: " • ")
+        }
+
+        private var approvalBehaviorLabel: String {
+            viewModel.allowsReusableApproval ? "Reusable approval" : "Approval behavior"
         }
 
         private var decisionButtons: some View {
@@ -186,7 +193,12 @@ import Foundation
                     .frame(width: Metric.decisionButtonWidth)
                 }
             }
-            .frame(height: Metric.buttonHeight)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: Metric.buttonHeight,
+                maxHeight: Metric.buttonHeight,
+                alignment: .center
+            )
         }
 
         private var decisionButtonSpecs: [ApprovalPanelDecisionButtonSpec] {
@@ -207,9 +219,10 @@ import Foundation
                     .font(.system(size: Metric.bodyFontSize))
                     .foregroundStyle(.secondary)
                     .lineLimit(Metric.twoLineLimit)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
 
         init(
