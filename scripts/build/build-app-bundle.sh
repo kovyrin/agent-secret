@@ -34,8 +34,9 @@ if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
 fi
 
 output_dir="$project_root/dist"
-version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
+version="${AGENT_SECRET_VERSION:-}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
+build_revision="${AGENT_SECRET_BUILD_REVISION:-}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 approver_team_id="-"
 daemon_entitlements="$project_root/scripts/build/agent-secretd.entitlements"
@@ -70,7 +71,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$version" == "" ]]; then
+  version="$(agent_secret_default_dev_version "$project_root/CHANGELOG.md")" || {
+    echo "build-app-bundle: could not derive development version from changelog" >&2
+    exit 1
+  }
+fi
 version="$(agent_secret_normalize_short_version "$version")"
+if ! agent_secret_assert_latest_changelog_version "$version" "$project_root/CHANGELOG.md"; then
+  echo "build-app-bundle: version must be the latest CHANGELOG.md version" >&2
+  exit 1
+fi
+if [[ "$build_revision" == "" ]]; then
+  build_revision="$(agent_secret_git_revision "$project_root")" || {
+    echo "build-app-bundle: could not determine git revision" >&2
+    exit 1
+  }
+fi
 
 require_tool() {
   local name="$1"
@@ -253,6 +270,7 @@ fi
 go_ldflags=(
   "-X github.com/kovyrin/agent-secret/internal/daemon/trust.defaultDeveloperIDTeamID=$approver_team_id"
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Version=$version"
+  "-X github.com/kovyrin/agent-secret/internal/buildinfo.Revision=$build_revision"
 )
 go_build_flags+=(-ldflags "${go_ldflags[*]}")
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret

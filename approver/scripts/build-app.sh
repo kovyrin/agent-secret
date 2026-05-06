@@ -10,8 +10,20 @@ source "$project_root/scripts/lib/bundle-metadata.sh"
 dist_dir="$approver_root/dist"
 bundle="$dist_dir/$AGENT_SECRET_APP_NAME.app"
 binary_name="agent-secret-app"
-version="${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}"
+version="${AGENT_SECRET_VERSION:-}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
+
+if [[ "$version" == "" ]]; then
+  version="$(agent_secret_default_dev_version "$project_root/CHANGELOG.md")" || {
+    echo "build-app: could not derive development version from changelog" >&2
+    exit 1
+  }
+fi
+version="$(agent_secret_normalize_short_version "$version")"
+if ! agent_secret_assert_latest_changelog_version "$version" "$project_root/CHANGELOG.md"; then
+  echo "build-app: version must be the latest CHANGELOG.md version" >&2
+  exit 1
+fi
 
 cd "$approver_root"
 swift build -c release --product "$binary_name"

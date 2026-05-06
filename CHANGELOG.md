@@ -28,6 +28,8 @@ version numbers for public releases.
 
 ### Changed
 
+- The approval app now immediately denies requests while the Mac is locked
+  instead of waiting for human approval that cannot happen.
 - The approval dialog now maps Esc to Deny and Enter to Allow once.
 - The approval dialog now emphasizes the request reason before command,
   project, scope, and secret details.
@@ -38,6 +40,9 @@ version numbers for public releases.
 
 ### Fixed
 
+- Local development installs now report a changelog-aligned dev version with
+  git revision, and bundle builds fail when the requested version does not
+  match the latest `CHANGELOG.md` section.
 - Profile commands that resolve multiple 1Password refs no longer fail because
   a stale cached 1Password desktop SDK client reports `invalid client id` or
   `no vault matched` while `agent-secret doctor` still looks healthy.

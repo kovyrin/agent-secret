@@ -33,10 +33,20 @@ if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 app_bundle="$1"
-short_version="${2:-${AGENT_SECRET_VERSION:-$AGENT_SECRET_DEFAULT_VERSION}}"
+short_version="${2:-${AGENT_SECRET_VERSION:-}}"
 bundle_version="${3:-${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}}"
 daemon_bundle="$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+if [[ "$short_version" == "" ]]; then
+  short_version="$(agent_secret_default_dev_version "$project_root/CHANGELOG.md")" || {
+    echo "check-bundle-metadata: could not derive development version from changelog" >&2
+    exit 1
+  }
+fi
 short_version="$(agent_secret_normalize_short_version "$short_version")"
+if ! agent_secret_assert_latest_changelog_version "$short_version" "$project_root/CHANGELOG.md"; then
+  echo "check-bundle-metadata: version must be the latest CHANGELOG.md version" >&2
+  exit 1
+fi
 
 require_command() {
   local name="$1"
