@@ -31,6 +31,8 @@ version numbers for public releases.
 - The approval dialog now maps Esc to Deny and Enter to Allow once.
 - The approval dialog now emphasizes the request reason before command,
   project, scope, and secret details.
+- The approval dialog now uses a warm reason highlight to make the access
+  rationale stand apart from requested secret details.
 - The approval dialog now emphasizes the item and field portions of displayed
   1Password references.
 

@@ -113,6 +113,11 @@ import Foundation
             static let reasonIconSize: CGFloat = 26
             static let reasonLineLimit: Int = 2
             static let reasonMinimumScaleFactor: CGFloat = 0.88
+            static let reasonAccentBlue: Double = 0.00
+            static let reasonAccentGreen: Double = 0.48
+            static let reasonAccentRed: Double = 0.95
+            static let reasonBorderOpacity: Double = 0.42
+            static let reasonPanelOpacity: Double = 0.08
             static let reasonTextBlue: Double = 0.16
             static let reasonTextGreen: Double = 0.08
             static let reasonTextRed: Double = 0.03
@@ -156,6 +161,11 @@ import Foundation
                 red: Metric.reasonTextRed,
                 green: Metric.reasonTextGreen,
                 blue: Metric.reasonTextBlue
+            )
+            static let reasonAccent = Color(
+                red: Metric.reasonAccentRed,
+                green: Metric.reasonAccentGreen,
+                blue: Metric.reasonAccentBlue
             )
             static let secretReference = Color.secondary
             static let secretReferenceEmphasis = Color.primary

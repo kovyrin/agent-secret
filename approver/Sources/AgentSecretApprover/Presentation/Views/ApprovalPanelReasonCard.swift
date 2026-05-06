@@ -12,19 +12,19 @@ import Foundation
         var body: some View {
             HStack(alignment: .center, spacing: Metric.reasonCardSpacing) {
                 Circle()
-                    .fill(Color.green.opacity(Metric.reasonIconFillOpacity))
+                    .fill(Palette.reasonAccent.opacity(Metric.reasonIconFillOpacity))
                     .frame(width: Metric.reasonIconCircleSize, height: Metric.reasonIconCircleSize)
                     .overlay {
                         Image(systemName: "bubble.left")
                             .font(.system(size: Metric.reasonIconSize, weight: .medium))
-                            .foregroundStyle(Color.green)
+                            .foregroundStyle(Palette.reasonAccent)
                             .accessibilityHidden(true)
                     }
 
                 VStack(alignment: .leading, spacing: Metric.reasonTextSpacing) {
                     Text("Reason")
                         .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
-                        .foregroundStyle(Color.green)
+                        .foregroundStyle(Palette.reasonAccent)
                     Text(reason)
                         .font(.system(size: Metric.reasonFontSize, weight: .bold, design: .rounded))
                         .foregroundStyle(Palette.reasonText)
@@ -41,12 +41,12 @@ import Foundation
 
         private var panelBackground: some View {
             RoundedRectangle(cornerRadius: Metric.panelCornerRadius, style: .continuous)
-                .fill(Color.green.opacity(Metric.greenPanelOpacity))
+                .fill(Palette.reasonAccent.opacity(Metric.reasonPanelOpacity))
         }
 
         private var panelBorder: some View {
             RoundedRectangle(cornerRadius: Metric.panelCornerRadius, style: .continuous)
-                .stroke(Color.green.opacity(Metric.greenBorderOpacity), lineWidth: Metric.borderWidth)
+                .stroke(Palette.reasonAccent.opacity(Metric.reasonBorderOpacity), lineWidth: Metric.borderWidth)
         }
     }
 #endif
