@@ -21,6 +21,19 @@ The fork is not an alternate secret source and must not grow Agent Secret
 specific product behavior. Product code still imports the SDK only through
 `internal/opresolver`, and all live SDK tests remain opt-in.
 
+Upstream tracking:
+
+- Upstream module: `github.com/1password/onepassword-sdk-go`.
+- Temporary fork module: `github.com/kovyrin/onepassword-sdk-go`.
+- Review upstream changes before every Agent Secret release while the fork is
+  present. For security-relevant upstream fixes, merge or cherry-pick the fix
+  into the fork before cutting an Agent Secret release.
+- Keep fork commits limited to desktop integration lifetime, item metadata API,
+  and multi-account resolver fixes. Do not add Agent Secret product policy to
+  the fork.
+- Validate a fork update with `go mod tidy`, `mise exec -- go test ./...`, and
+  `mise run lint:go` from this repository.
+
 Removal criteria:
 
 - the upstream SDK exposes the item metadata APIs Agent Secret uses;
