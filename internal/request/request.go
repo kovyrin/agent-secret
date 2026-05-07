@@ -20,8 +20,8 @@ import (
 const (
 	MaxReasonLength     = 240
 	DefaultExecTTL      = 2 * time.Minute
-	MinExecTTL          = 10 * time.Second
-	MaxExecTTL          = 10 * time.Minute
+	MinRequestTTL       = 10 * time.Second
+	MaxRequestTTL       = 10 * time.Minute
 	DefaultReusableUses = 3
 	MaxReusableUses     = 20
 )
@@ -155,8 +155,8 @@ func validateDaemonLifecycle(lifecycle daemonLifecycle) error {
 	if reason != lifecycle.Reason {
 		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
 	}
-	if lifecycle.TTL < MinExecTTL || lifecycle.TTL > MaxExecTTL {
-		return fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
+	if lifecycle.TTL < MinRequestTTL || lifecycle.TTL > MaxRequestTTL {
+		return fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinRequestTTL, MaxRequestTTL)
 	}
 	if lifecycle.ReceivedAt.IsZero() || lifecycle.ExpiresAt.IsZero() {
 		return fmt.Errorf("%w: request times are required", ErrInvalidRequest)
@@ -191,8 +191,8 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	if ttl == 0 {
 		ttl = DefaultExecTTL
 	}
-	if ttl < MinExecTTL || ttl > MaxExecTTL {
-		return ExecRequest{}, fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
+	if ttl < MinRequestTTL || ttl > MaxRequestTTL {
+		return ExecRequest{}, fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinRequestTTL, MaxRequestTTL)
 	}
 
 	receivedAt := opts.ReceivedAt

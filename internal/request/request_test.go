@@ -130,7 +130,7 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 			o.Secrets[0].Ref = "op://Example Vault//token"
 		}), want: ErrInvalidReference},
 		{name: "ttl too low", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
-		{name: "ttl too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.TTL = MaxExecTTL + time.Second }), want: ErrInvalidTTL},
+		{name: "ttl too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.TTL = MaxRequestTTL + time.Second }), want: ErrInvalidTTL},
 		{name: "reusable uses too low", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = -1 }), want: ErrInvalidReusableUses},
 		{name: "reusable uses too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = MaxReusableUses + 1 }), want: ErrInvalidReusableUses},
 		{name: "env conflict without override", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
@@ -548,7 +548,7 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 		{name: "field ref", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Ref = "op://Example Vault/Deploy Token/password" }), want: ErrInvalidReference},
 		{name: "missing account", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Account = " \t " }), want: ErrInvalidReference},
 		{name: "ttl too low", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
-		{name: "ttl too high", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = MaxExecTTL + time.Second }), want: ErrInvalidTTL},
+		{name: "ttl too high", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = MaxRequestTTL + time.Second }), want: ErrInvalidTTL},
 		{name: "missing resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "" }), want: ErrInvalidCommand},
 	}
 

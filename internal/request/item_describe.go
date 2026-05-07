@@ -51,8 +51,8 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 	if ttl == 0 {
 		ttl = DefaultItemDescribeTTL
 	}
-	if ttl < MinExecTTL || ttl > MaxExecTTL {
-		return ItemDescribeRequest{}, fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
+	if ttl < MinRequestTTL || ttl > MaxRequestTTL {
+		return ItemDescribeRequest{}, fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinRequestTTL, MaxRequestTTL)
 	}
 	cwd, err := normalizeCWD(opts.CWD)
 	if err != nil {
