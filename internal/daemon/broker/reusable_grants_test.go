@@ -8,7 +8,6 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
-	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -336,9 +335,9 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 		broker,
 		testCorrelation("req_2", "nonce_2"),
 		reuse,
-		func(_ protocol.ExecResponsePayload, _ time.Time, beforeWrite func() error) error {
+		func(delivery *ExecDelivery) error {
 			now = req.ExpiresAt.Add(time.Second)
-			return beforeWrite()
+			return delivery.BeforeWrite()
 		},
 	)
 	if !errors.Is(err, approval.ErrRequestExpired) {
@@ -382,10 +381,11 @@ func TestBrokerDoesNotReturnPostWriteReusableFinalizationError(t *testing.T) {
 		broker,
 		testCorrelation("req_2", "nonce_2"),
 		reuse,
-		func(payload protocol.ExecResponsePayload, _ time.Time, beforeWrite func() error) error {
-			if err := beforeWrite(); err != nil {
+		func(delivery *ExecDelivery) error {
+			if err := delivery.BeforeWrite(); err != nil {
 				return err
 			}
+			payload := delivery.Payload()
 			if payload.Env["TOKEN"] != "first" {
 				t.Fatalf("reused payload env = %+v, want first value", payload.Env)
 			}

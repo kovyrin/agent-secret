@@ -32,12 +32,8 @@ func deliverExecForTest(
 	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (Grant, error) {
-	return deliverExecWithWriteForTest(ctx, b, correlation, req, func(
-		_ protocol.ExecResponsePayload,
-		_ time.Time,
-		beforeWrite func() error,
-	) error {
-		return beforeWrite()
+	return deliverExecWithWriteForTest(ctx, b, correlation, req, func(delivery *ExecDelivery) error {
+		return delivery.BeforeWrite()
 	})
 }
 
@@ -46,9 +42,24 @@ func deliverExecWithWriteForTest(
 	b *Broker,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-	write func(protocol.ExecResponsePayload, time.Time, func() error) error,
+	write func(*ExecDelivery) error,
 ) (Grant, error) {
-	return b.HandleExecDelivery(ctx, correlation, req, write)
+	delivery, err := b.PrepareExecDelivery(ctx, correlation, req)
+	if err != nil {
+		return Grant{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	if err := write(delivery); err != nil {
+		return Grant{}, err
+	}
+	grant := delivery.CommitDelivered()
+	committed = true
+	return grant, nil
 }
 
 func requireActiveRequest(t *testing.T, b *Broker, correlation protocol.Correlation) {
@@ -105,9 +116,9 @@ func TestBrokerActivatesExecBeforePayloadWriteAndClearsOnWriteFailure(t *testing
 		broker,
 		correlation,
 		testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}),
-		func(_ protocol.ExecResponsePayload, _ time.Time, beforeWrite func() error) error {
+		func(delivery *ExecDelivery) error {
 			requireActiveRequest(t, broker, correlation)
-			if err := beforeWrite(); err != nil {
+			if err := delivery.BeforeWrite(); err != nil {
 				return err
 			}
 			return writeErr

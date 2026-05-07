@@ -529,31 +529,36 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return ""
 	}
-	_, err = s.broker.HandleExecDelivery(ctx, env.Correlation(), req, func(
-		payload protocol.ExecResponsePayload,
-		expiresAt time.Time,
-		beforeWrite func() error,
-	) error {
-		if s.beforeExecResponseWrite != nil {
-			s.beforeExecResponseWrite()
-		}
-		clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, expiresAt)
-		if err != nil {
-			return err
-		}
-		defer clearWriteDeadline()
-		if err := beforeWrite(); err != nil {
-			return err
-		}
-		if err := writeOK(encoder, env.Correlation(), payload); err != nil {
-			return err
-		}
-		return nil
-	})
+	delivery, err := s.broker.PrepareExecDelivery(ctx, env.Correlation(), req)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	if s.beforeExecResponseWrite != nil {
+		s.beforeExecResponseWrite()
+	}
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	defer clearWriteDeadline()
+	if err := delivery.BeforeWrite(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	delivery.CommitDelivered()
+	committed = true
 	return env.RequestID
 }
 

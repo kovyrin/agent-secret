@@ -128,48 +128,87 @@ func (b *Broker) ActiveCount() int {
 	return len(b.active)
 }
 
-func (b *Broker) HandleExecDelivery(
+func (b *Broker) PrepareExecDelivery(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
-	write func(protocol.ExecResponsePayload, time.Time, func() error) error,
-) (Grant, error) {
+) (*ExecDelivery, error) {
 	if correlation.RequestID == "" || correlation.Nonce == "" {
-		return Grant{}, protocol.ErrInvalidNonce
+		return nil, protocol.ErrInvalidNonce
 	}
 	if b.stopped() {
-		return Grant{}, ErrDaemonStopped
+		return nil, ErrDaemonStopped
 	}
 	if err := b.grants.preflightAudit(ctx); err != nil {
-		return Grant{}, err
+		return nil, err
 	}
 	if req.Expired(b.now()) {
-		return Grant{}, approval.ErrRequestExpired
+		return nil, approval.ErrRequestExpired
 	}
 	execCtx, cancelExec := b.requestContext(ctx, req)
-	defer cancelExec()
 	issued, err := b.grants.issue(execCtx, correlation, req)
 	if err != nil {
-		return Grant{}, err
+		cancelExec()
+		return nil, err
 	}
 	if err := b.activateExec(correlation, req); err != nil {
 		b.grants.finishDeliveryBeforePayload(issued.delivery)
-		return Grant{}, err
+		cancelExec()
+		return nil, err
 	}
-	payload := protocol.ExecResponsePayload{
-		Env:           issued.grant.Env,
-		SecretAliases: issued.grant.SecretAliases,
-	}
-	beforeWrite := func() error {
-		return b.grants.ensurePayloadWritable(execCtx, req, issued.delivery)
-	}
-	if err := write(payload, issued.grant.payloadExpiresAt, beforeWrite); err != nil {
-		b.deactivateExec(correlation)
-		b.grants.finishDeliveryBeforePayload(issued.delivery)
-		return Grant{}, err
-	}
-	b.grants.finishDeliveryAfterPayload(issued.delivery)
-	return issued.grant, nil
+	return &ExecDelivery{
+		broker:        b,
+		cancelExec:    cancelExec,
+		correlation:   correlation,
+		issued:        issued,
+		beforePayload: func() error { return b.grants.ensurePayloadWritable(execCtx, req, issued.delivery) },
+		payload: protocol.ExecResponsePayload{
+			Env:           issued.grant.Env,
+			SecretAliases: issued.grant.SecretAliases,
+		},
+	}, nil
+}
+
+type ExecDelivery struct {
+	broker        *Broker
+	cancelExec    context.CancelFunc
+	correlation   protocol.Correlation
+	issued        issuedGrant
+	beforePayload func() error
+	payload       protocol.ExecResponsePayload
+	finalizeOnce  sync.Once
+}
+
+func (d *ExecDelivery) Payload() protocol.ExecResponsePayload {
+	return d.payload
+}
+
+func (d *ExecDelivery) ExpiresAt() time.Time {
+	return d.issued.grant.payloadExpiresAt
+}
+
+func (d *ExecDelivery) BeforeWrite() error {
+	return d.beforePayload()
+}
+
+func (d *ExecDelivery) CommitDelivered() Grant {
+	d.finalizeOnce.Do(func() {
+		d.broker.grants.finishDeliveryAfterPayload(d.issued.delivery)
+		d.cancelExec()
+	})
+	return d.issued.grant
+}
+
+func (d *ExecDelivery) AbortBeforePayload() {
+	d.finalizeOnce.Do(func() {
+		d.broker.deactivateExec(d.correlation)
+		d.broker.grants.finishDeliveryBeforePayload(d.issued.delivery)
+		d.cancelExec()
+	})
+}
+
+func (d *ExecDelivery) Grant() Grant {
+	return d.issued.grant
 }
 
 func (b *Broker) HandleItemDescribe(
