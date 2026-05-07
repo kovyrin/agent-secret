@@ -331,8 +331,10 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 
 		//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 		switch env.Type {
-		case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus:
-			s.handleStatusRequest(ctx, encoder, env)
+		case protocol.TypeDaemonStatus:
+			s.handleDaemonStatus(encoder, env)
+		case protocol.TypeOnePasswordStatus:
+			s.handleOnePasswordStatus(ctx, conn, encoder, env)
 		case protocol.TypeDaemonStop:
 			if s.handleDaemonStop(ctx, conn, encoder, env) {
 				return
@@ -428,9 +430,18 @@ func (s *Server) handleItemDescribe(
 	_ = writeOK(encoder, env.Correlation(), payload)
 }
 
-func (s *Server) handleStatusRequest(ctx context.Context, encoder *json.Encoder, env protocol.Envelope) {
-	if env.Type == protocol.TypeDaemonStatus {
-		_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
+func (s *Server) handleDaemonStatus(encoder *json.Encoder, env protocol.Envelope) {
+	_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
+}
+
+func (s *Server) handleOnePasswordStatus(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return
 	}
 	payload, err := protocol.DecodeRequiredPayload[protocol.OnePasswordStatusPayload](env)

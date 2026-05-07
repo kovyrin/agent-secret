@@ -877,6 +877,38 @@ func TestServerOnePasswordStatusRejectsBlankAccountBeforeCheck(t *testing.T) {
 	}
 }
 
+func TestServerRejectsUntrustedOnePasswordStatusPeerBeforeCheck(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	peer := peerInfoForTest(t, os.Getpid(), exe)
+	checkCalls := 0
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
+		OnePasswordCheck: func(context.Context, string) error {
+			checkCalls++
+			return nil
+		},
+	})
+	defer stop()
+
+	client := control.NewClient(conn)
+	defer func() { _ = client.Close() }()
+	err := client.CheckOnePassword(context.Background(), "my.1password.ca")
+	if !control.IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
+		t.Fatalf("CheckOnePassword error = %v, want untrusted_client", err)
+	}
+	if checkCalls != 0 {
+		t.Fatalf("one password check calls = %d, want 0", checkCalls)
+	}
+}
+
 func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	t.Parallel()
 
