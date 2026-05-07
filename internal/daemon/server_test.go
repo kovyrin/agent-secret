@@ -828,6 +828,55 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 	}
 }
 
+func TestServerOnePasswordStatusRejectsBlankAccountBeforeCheck(t *testing.T) {
+	t.Parallel()
+
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	checkCalls := 0
+	server, err := NewServer(ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:     staticPeerValidator{info: peer},
+		ExecValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		OnePasswordCheck: func(context.Context, string) error {
+			checkCalls++
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+
+	serverConn, clientConn := unixsocket.Pair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleConn(ctx, serverConn)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("server connection did not stop")
+		}
+	}()
+
+	client := control.NewClient(clientConn)
+	defer func() { _ = client.Close() }()
+	err = client.CheckOnePassword(context.Background(), " \t ")
+	if !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("CheckOnePassword error = %v, want bad_request", err)
+	}
+	if checkCalls != 0 {
+		t.Fatalf("one password check calls = %d, want 0", checkCalls)
+	}
+}
+
 func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	t.Parallel()
 

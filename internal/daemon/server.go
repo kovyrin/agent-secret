@@ -18,7 +18,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
-	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -83,6 +82,7 @@ const DefaultProtocolReadTimeout = 30 * time.Second
 var (
 	ErrRequestAlreadyActive        = errors.New("connection already has an active exec request")
 	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
+	ErrOnePasswordAccountRequired  = errors.New("1Password account is required")
 	errExecValidatorRequired       = errors.New("exec validator is required")
 )
 
@@ -439,7 +439,7 @@ func (s *Server) handleStatusRequest(ctx context.Context, encoder *json.Encoder,
 		return
 	}
 	if strings.TrimSpace(payload.Account) == "" {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, opresolver.ErrAccountRequired)
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, ErrOnePasswordAccountRequired)
 		return
 	}
 	if err := s.onePasswordCheck(ctx, payload.Account); err != nil {
