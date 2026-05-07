@@ -16,8 +16,8 @@ import (
 
 var ErrUntrustedClient = errors.New("untrusted daemon client")
 
-type ExecValidator interface {
-	ValidateExecPeer(info peercred.Info) error
+type ClientValidator interface {
+	ValidatePeer(info peercred.Info) error
 }
 
 type ExecutableValidator struct {
@@ -202,7 +202,7 @@ func containingAppBundlePath(path string) (string, bool) {
 	}
 }
 
-func (v ExecutableValidator) ValidateExecPeer(info peercred.Info) error {
+func (v ExecutableValidator) ValidatePeer(info peercred.Info) error {
 	return v.set.validatePeer(info)
 }
 

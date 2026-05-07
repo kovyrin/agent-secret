@@ -52,19 +52,19 @@ func (v staticPeerValidator) Info(_ *net.UnixConn) (peercred.Info, error) {
 	return v.info, nil
 }
 
-func trustedCurrentPeer(t *testing.T) (PeerValidator, peertrust.ExecValidator) {
+func trustedCurrentPeer(t *testing.T) (PeerValidator, peertrust.ClientValidator) {
 	t.Helper()
 	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
 	return staticPeerValidator{info: peer}, peertrust.NewExecutableValidator([]string{peer.ExecutablePath})
 }
 
-func trustedCurrentExecValidator(t *testing.T) peertrust.ExecValidator {
+func trustedCurrentClientValidator(t *testing.T) peertrust.ClientValidator {
 	t.Helper()
-	_, execValidator := trustedCurrentPeer(t)
-	return execValidator
+	_, clientValidator := trustedCurrentPeer(t)
+	return clientValidator
 }
 
-func TestNewServerRequiresExecValidator(t *testing.T) {
+func TestNewServerRequiresClientValidator(t *testing.T) {
 	t.Parallel()
 
 	_, err := NewServer(ServerOptions{
@@ -74,8 +74,8 @@ func TestNewServerRequiresExecValidator(t *testing.T) {
 			Audit:    &memoryAudit{},
 		}),
 	})
-	if !errors.Is(err, errExecValidatorRequired) {
-		t.Fatalf("NewServer error = %v, want %v", err, errExecValidatorRequired)
+	if !errors.Is(err, errClientValidatorRequired) {
+		t.Fatalf("NewServer error = %v, want %v", err, errClientValidatorRequired)
 	}
 }
 
@@ -202,12 +202,12 @@ func TestServerAllowsCommandCompletionAfterProtocolReadTimeout(t *testing.T) {
 		Audit:    aud,
 	})
 	readTimeouts := make(chan time.Duration, 8)
-	validator, execValidator := trustedCurrentPeer(t)
+	validator, clientValidator := trustedCurrentPeer(t)
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
-		Broker:        broker,
-		Validator:     validator,
-		ExecValidator: execValidator,
-		ReadTimeout:   time.Second,
+		Broker:          broker,
+		Validator:       validator,
+		ClientValidator: clientValidator,
+		ReadTimeout:     time.Second,
 		beforeRead: func(timeout time.Duration) {
 			readTimeouts <- timeout
 		},
@@ -415,11 +415,11 @@ func TestServerValidatesExecPeerBeforeDecodingPayload(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
-		Broker:        newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
-		MaxFrameBytes: 4096,
-		ReadTimeout:   time.Second,
+		Broker:          newTestBroker(t, daemonbroker.Options{Approver: &mockApprover{}, Resolver: &mockResolver{}, Audit: &memoryAudit{}}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
+		MaxFrameBytes:   4096,
+		ReadTimeout:     time.Second,
 	})
 	defer stop()
 
@@ -559,11 +559,11 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 	req := testExecRequestAt(t, daemonNow, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.ReusableUses = 1
 	var hookOnce sync.Once
-	validator, execValidator := trustedCurrentPeer(t)
+	validator, clientValidator := trustedCurrentPeer(t)
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
-		Broker:        broker,
-		Validator:     validator,
-		ExecValidator: execValidator,
+		Broker:          broker,
+		Validator:       validator,
+		ClientValidator: clientValidator,
 		beforeExecResponseWrite: func() {
 			hookOnce.Do(func() {
 				now = daemonNow.Add(request.DefaultExecTTL + time.Second)
@@ -603,15 +603,15 @@ func TestServerRejectsSecondExecOnSameSocketWithoutOrphaningFirst(t *testing.T) 
 	defer unsubscribe()
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
 	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
-	validator, execValidator := trustedCurrentPeer(t)
+	validator, clientValidator := trustedCurrentPeer(t)
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: approver,
 			Resolver: resolver,
 			Audit:    aud,
 		}),
-		Validator:     validator,
-		ExecValidator: execValidator,
+		Validator:       validator,
+		ClientValidator: clientValidator,
 	})
 	defer stop()
 
@@ -693,7 +693,7 @@ func TestServerDaemonStopTerminatesListener(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	aud := &memoryAudit{}
-	path, stop := startRawServerWithBrokerAndExecValidator(
+	path, stop := startRawServerWithBrokerAndClientValidator(
 		t,
 		newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
@@ -738,8 +738,8 @@ func TestServerDaemonStopOverSocketPairAuditsRequester(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{exe}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{exe}),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -786,8 +786,8 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
 		OnePasswordCheck: func(_ context.Context, account string) error {
 			checkCalls++
 			checkedAccount = account
@@ -839,8 +839,8 @@ func TestServerOnePasswordStatusRejectsBlankAccountBeforeCheck(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
 		OnePasswordCheck: func(context.Context, string) error {
 			checkCalls++
 			return nil
@@ -888,9 +888,9 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 		Audit:    &memoryAudit{},
 	})
 	server, err := NewServer(ServerOptions{
-		Broker:        broker,
-		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
+		Broker:          broker,
+		Validator:       allowPeerValidator{},
+		ClientValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -979,7 +979,7 @@ func TestServerServeStopsWhenServerStops(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
-		ExecValidator: trustedCurrentExecValidator(t),
+		ClientValidator: trustedCurrentClientValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1015,7 +1015,7 @@ func TestServerServeReturnsAcceptErrors(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		ExecValidator: trustedCurrentExecValidator(t),
+		ClientValidator: trustedCurrentClientValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1035,7 +1035,7 @@ func TestServerListenAndServeStopsInjectedListenerOnContextCancel(t *testing.T) 
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    aud,
 		}),
-		ExecValidator: trustedCurrentExecValidator(t),
+		ClientValidator: trustedCurrentClientValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1070,7 +1070,7 @@ func TestServerListenAndServeReturnsListenErrors(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		ExecValidator: trustedCurrentExecValidator(t),
+		ClientValidator: trustedCurrentClientValidator(t),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1089,7 +1089,7 @@ func TestServerRejectsUntrustedDaemonStopPeer(t *testing.T) {
 	exe := currentExecutable(t)
 	peer := peerInfoForTest(t, os.Getpid(), exe)
 	aud := &memoryAudit{}
-	path, stop := startRawServerWithBrokerAndExecValidator(
+	path, stop := startRawServerWithBrokerAndClientValidator(
 		t,
 		newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
@@ -1198,11 +1198,11 @@ func TestServerAllowsApprovalDecisionAfterProtocolReadTimeout(t *testing.T) {
 	})
 	readTimeouts := make(chan time.Duration, 8)
 	path, stop := startRawServerWithOptions(t, ServerOptions{
-		Broker:        broker,
-		Approvals:     approver,
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
-		ReadTimeout:   time.Second,
+		Broker:          broker,
+		Approvals:       approver,
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
+		ReadTimeout:     time.Second,
 		beforeRead: func(timeout time.Duration) {
 			readTimeouts <- timeout
 		},
@@ -1264,8 +1264,8 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
+		Validator:       allowPeerValidator{},
+		ClientValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	})
 	defer stop()
 
@@ -1288,15 +1288,15 @@ func TestServerReportsApprovalUnavailable(t *testing.T) {
 func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 	t.Parallel()
 
-	validator, execValidator := trustedCurrentPeer(t)
+	validator, clientValidator := trustedCurrentPeer(t)
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{"op://Example/Item/token": "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		Validator:     validator,
-		ExecValidator: execValidator,
+		Validator:       validator,
+		ClientValidator: clientValidator,
 	})
 	defer stop()
 
@@ -1347,15 +1347,15 @@ func TestServerReportsBadLifecyclePayloadsForActiveRequest(t *testing.T) {
 	t.Parallel()
 
 	ref := "op://Example/Item/token"
-	validator, execValidator := trustedCurrentPeer(t)
+	validator, clientValidator := trustedCurrentPeer(t)
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 			Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 			Audit:    &memoryAudit{},
 		}),
-		Validator:     validator,
-		ExecValidator: execValidator,
+		Validator:       validator,
+		ClientValidator: clientValidator,
 	})
 	defer stop()
 
@@ -1472,8 +1472,8 @@ func TestServerRejectsUntrustedExecPeerBeforeSecretPayload(t *testing.T) {
 			Resolver: resolver,
 			Audit:    &memoryAudit{},
 		}),
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
 	})
 	defer stop()
 
@@ -1507,8 +1507,8 @@ func TestServerRejectsRawSameUIDExecSocketClientBeforeApprovalOrFetch(t *testing
 			Resolver: resolver,
 			Audit:    aud,
 		}),
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{writeClientExecutableAt(t, t.TempDir())}),
 	})
 	defer stop()
 
@@ -1691,9 +1691,9 @@ func startSocketPairTestServer(t *testing.T, opts daemonbroker.Options) (*contro
 	broker := newTestBroker(t, opts)
 	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
 	server, err := NewServer(ServerOptions{
-		Broker:        broker,
-		Validator:     staticPeerValidator{info: peer},
-		ExecValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		Broker:          broker,
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
 	})
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
@@ -1758,7 +1758,7 @@ func startRawServerWithBroker(
 	validator PeerValidator,
 ) (string, func()) {
 	t.Helper()
-	return startRawServerWithBrokerAndExecValidator(
+	return startRawServerWithBrokerAndClientValidator(
 		t,
 		broker,
 		approvals,
@@ -1767,26 +1767,26 @@ func startRawServerWithBroker(
 	)
 }
 
-func startRawServerWithBrokerAndExecValidator(
+func startRawServerWithBrokerAndClientValidator(
 	t *testing.T,
 	broker *daemonbroker.Broker,
 	approvals approval.ApprovalEndpoint,
 	validator PeerValidator,
-	execValidator peertrust.ExecValidator,
+	clientValidator peertrust.ClientValidator,
 ) (string, func()) {
 	t.Helper()
 	return startRawServerWithOptions(t, ServerOptions{
-		Broker:        broker,
-		Approvals:     approvals,
-		Validator:     validator,
-		ExecValidator: execValidator,
+		Broker:          broker,
+		Approvals:       approvals,
+		Validator:       validator,
+		ClientValidator: clientValidator,
 	})
 }
 
 func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixConn, func()) {
 	t.Helper()
-	if opts.ExecValidator == nil {
-		opts.ExecValidator = trustedCurrentExecValidator(t)
+	if opts.ClientValidator == nil {
+		opts.ClientValidator = trustedCurrentClientValidator(t)
 	}
 	server, err := NewServer(opts)
 	if err != nil {
@@ -1813,8 +1813,8 @@ func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixC
 
 func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()) {
 	t.Helper()
-	if opts.ExecValidator == nil {
-		opts.ExecValidator = trustedCurrentExecValidator(t)
+	if opts.ClientValidator == nil {
+		opts.ClientValidator = trustedCurrentClientValidator(t)
 	}
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-test-")
 	if err != nil {

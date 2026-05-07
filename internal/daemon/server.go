@@ -48,7 +48,7 @@ type Server struct {
 	broker                  *daemonbroker.Broker
 	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
-	execValidator           peertrust.ExecValidator
+	clientValidator         peertrust.ClientValidator
 	onePasswordCheck        func(context.Context, string) error
 	selfCheck               func() error
 	maxFrameBytes           int64
@@ -67,7 +67,7 @@ type ServerOptions struct {
 	Broker                  *daemonbroker.Broker
 	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
-	ExecValidator           peertrust.ExecValidator
+	ClientValidator         peertrust.ClientValidator
 	OnePasswordCheck        func(context.Context, string) error
 	SelfCheck               func() error
 	MaxFrameBytes           int64
@@ -83,7 +83,7 @@ var (
 	ErrRequestAlreadyActive        = errors.New("connection already has an active exec request")
 	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
 	ErrOnePasswordAccountRequired  = errors.New("1Password account is required")
-	errExecValidatorRequired       = errors.New("exec validator is required")
+	errClientValidatorRequired     = errors.New("client validator is required")
 )
 
 type connectionState struct {
@@ -150,9 +150,9 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if validator == nil {
 		validator = SameUIDValidator{}
 	}
-	execValidator := opts.ExecValidator
-	if execValidator == nil {
-		return nil, errExecValidatorRequired
+	clientValidator := opts.ClientValidator
+	if clientValidator == nil {
+		return nil, errClientValidatorRequired
 	}
 	onePasswordCheck := opts.OnePasswordCheck
 	if onePasswordCheck == nil {
@@ -174,7 +174,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		broker:                  opts.Broker,
 		approvals:               opts.Approvals,
 		validator:               validator,
-		execValidator:           execValidator,
+		clientValidator:         clientValidator,
 		onePasswordCheck:        onePasswordCheck,
 		selfCheck:               opts.SelfCheck,
 		maxFrameBytes:           maxFrameBytes,
@@ -499,7 +499,7 @@ func (s *Server) handleDaemonStop(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
 		return false
 	}
-	if err := s.execValidator.ValidateExecPeer(peer); err != nil {
+	if err := s.clientValidator.ValidatePeer(peer); err != nil {
 		s.broker.RecordStopAttempt(ctx, daemonStopAuditEvent(peer, err))
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return false
@@ -671,7 +671,7 @@ func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
 	if err != nil {
 		return err
 	}
-	return s.execValidator.ValidateExecPeer(peer)
+	return s.clientValidator.ValidatePeer(peer)
 }
 
 func writeOK(encoder *json.Encoder, correlation protocol.Correlation, payload any) error {

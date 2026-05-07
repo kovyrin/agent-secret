@@ -1359,7 +1359,7 @@ func startAppTestServer(
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:           broker,
 		Validator:        appAllowPeer{},
-		ExecValidator:    peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
+		ClientValidator:  peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 		OnePasswordCheck: onePasswordCheck,
 	})
 	if err != nil {

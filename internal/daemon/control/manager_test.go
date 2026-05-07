@@ -196,9 +196,9 @@ func runDaemonManagerHelper(t *testing.T) {
 		os.Exit(70)
 	}
 	server, err := daemon.NewServer(daemon.ServerOptions{
-		Broker:        broker,
-		Validator:     allowPeerValidator{},
-		ExecValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
+		Broker:          broker,
+		Validator:       allowPeerValidator{},
+		ClientValidator: peertrust.NewExecutableValidator(currentExecutableClientPaths(t)),
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "new server: %v\n", err)

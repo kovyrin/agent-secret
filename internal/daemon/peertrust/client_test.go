@@ -70,9 +70,9 @@ func TestExecutableValidatorMatchesComparableExecutablePath(t *testing.T) {
 	}
 
 	validator := NewExecutableValidator([]string{link})
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: target})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: target})
 	if err != nil {
-		t.Fatalf("ValidateExecPeer returned error: %v", err)
+		t.Fatalf("ValidatePeer returned error: %v", err)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestExecutableValidatorRejectsUnlistedExecutable(t *testing.T) {
 	other := writeExecutableAt(t, dir, "raw-client")
 
 	validator := NewExecutableValidator([]string{trusted})
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: other})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: other})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
@@ -101,12 +101,12 @@ func TestExecutableValidatorRejectsBrokenPeerExecutablePath(t *testing.T) {
 	}
 
 	validator := NewExecutableValidator([]string{trusted})
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: broken})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: broken})
 	if !errors.Is(err, ErrUntrustedClient) {
-		t.Fatalf("ValidateExecPeer error = %v, want ErrUntrustedClient", err)
+		t.Fatalf("ValidatePeer error = %v, want ErrUntrustedClient", err)
 	}
 	if !strings.Contains(err.Error(), "normalize peer executable") {
-		t.Fatalf("ValidateExecPeer error = %q, want normalization context", err.Error())
+		t.Fatalf("ValidatePeer error = %q, want normalization context", err.Error())
 	}
 }
 
@@ -121,12 +121,12 @@ func TestExecutableValidatorRejectsBrokenTrustedExecutablePath(t *testing.T) {
 	}
 
 	validator := NewExecutableValidator([]string{broken})
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
-		t.Fatalf("ValidateExecPeer error = %v, want ErrUntrustedClient", err)
+		t.Fatalf("ValidatePeer error = %v, want ErrUntrustedClient", err)
 	}
 	if !strings.Contains(err.Error(), "canonicalize trusted executable") {
-		t.Fatalf("ValidateExecPeer error = %q, want trusted executable context", err.Error())
+		t.Fatalf("ValidatePeer error = %q, want trusted executable context", err.Error())
 	}
 }
 
@@ -144,7 +144,7 @@ func TestExecutableValidatorRejectsExecutableReplacedAfterStartup(t *testing.T) 
 		t.Fatalf("replace trusted executable: %v", err)
 	}
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient after replacement, got %v", err)
 	}
@@ -169,7 +169,7 @@ func TestExecutableValidatorRejectsExecutableMutatedAfterStartupWhenSignatureDis
 		t.Fatalf("mutate trusted executable: %v", err)
 	}
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient after mutation, got %v", err)
 	}
@@ -189,8 +189,8 @@ func TestExecutableValidatorVerifiesPeerProcessSignature(t *testing.T) {
 	}
 	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
-	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
-		t.Fatalf("ValidateExecPeer returned error: %v", err)
+	if err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
+		t.Fatalf("ValidatePeer returned error: %v", err)
 	}
 	wantPath, err := pathresolve.Strict(trusted)
 	if err != nil {
@@ -215,7 +215,7 @@ func TestExecutableValidatorRejectsPeerProcessSignatureMismatch(t *testing.T) {
 	}
 	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
@@ -242,7 +242,7 @@ func TestExecutableValidatorRejectsMissingPIDForSignatureValidation(t *testing.T
 	}
 	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
@@ -263,7 +263,7 @@ func TestExecutableValidatorRejectsBundledExecutableWhenTeamIDMissing(t *testing
 		set: newExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, true),
 	}
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
@@ -293,8 +293,8 @@ func TestExecutableValidatorAllowsBundledExecutableWithDevelopmentTeamIDSentinel
 		),
 	}
 
-	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
-		t.Fatalf("ValidateExecPeer returned error for development Team ID sentinel: %v", err)
+	if err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
+		t.Fatalf("ValidatePeer returned error for development Team ID sentinel: %v", err)
 	}
 	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
 		t.Fatalf("signature verifier called for development Team ID sentinel: paths=%v pids=%v", verifier.paths, verifier.pids)
@@ -313,8 +313,8 @@ func TestExecutableValidatorSkipsSignatureWhenDisabled(t *testing.T) {
 		set: newExecutableSetWithVerifier([]string{trusted}, "", ErrUntrustedClient, verifier, false),
 	}
 
-	if err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
-		t.Fatalf("ValidateExecPeer returned error when signature verification disabled: %v", err)
+	if err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted, PID: 4321}); err != nil {
+		t.Fatalf("ValidatePeer returned error when signature verification disabled: %v", err)
 	}
 	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
 		t.Fatalf("signature verifier called when verification disabled: paths=%v pids=%v", verifier.paths, verifier.pids)
@@ -332,7 +332,7 @@ func TestExecutableValidatorWrapsPeerProcessSignatureFailure(t *testing.T) {
 	}
 	validator := newTestExecutableValidator([]string{trusted}, verifier)
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: trusted, PID: 4321})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient, got %v", err)
 	}
@@ -347,7 +347,7 @@ func TestExecutableValidatorSkipsMissingTrustedPath(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "agent-secret")
 	validator := NewExecutableValidator([]string{missing})
 
-	err := validator.ValidateExecPeer(peercred.Info{ExecutablePath: missing})
+	err := validator.ValidatePeer(peercred.Info{ExecutablePath: missing})
 	if !errors.Is(err, ErrUntrustedClient) {
 		t.Fatalf("expected ErrUntrustedClient for missing trusted path, got %v", err)
 	}
