@@ -53,6 +53,11 @@ version numbers for public releases.
   1Password desktop accounts in one process instead of reusing the first
   account selected by the SDK.
 
+### Internal
+
+- Documented the temporary 1Password SDK fork, its removal criteria, and the
+  package boundary that keeps SDK access contained in `internal/opresolver`.
+
 ## [0.0.7] - 2026-05-05
 
 ### Added
