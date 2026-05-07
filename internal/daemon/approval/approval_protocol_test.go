@@ -53,10 +53,10 @@ func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 	if payload.ExpiresAt != expiresAt {
 		t.Fatalf("expires at = %v, want %v", payload.ExpiresAt, expiresAt)
 	}
-	if len(payload.Secrets) != 1 {
-		t.Fatalf("secrets = %d, want 1", len(payload.Secrets))
+	if len(payload.Resources) != 1 {
+		t.Fatalf("secrets = %d, want 1", len(payload.Resources))
 	}
-	secret := payload.Secrets[0]
+	secret := payload.Resources[0]
 	if secret.Alias != "TOKEN" || secret.Ref != "op://Vault/Item/token" || secret.Account != "example.1password.com" {
 		t.Fatalf("secret = %+v, want mapped secret fields", secret)
 	}

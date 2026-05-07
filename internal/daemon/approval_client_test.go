@@ -175,8 +175,8 @@ func validateApprovalRequestPayloadForServerTest(payload approval.ApprovalReques
 	if payload.ExpiresAt.IsZero() {
 		return fmt.Errorf("%w: approval.pending response missing expiry", protocol.ErrMalformedEnvelope)
 	}
-	if len(payload.Secrets) == 0 {
-		return fmt.Errorf("%w: approval.pending response missing secrets", protocol.ErrMalformedEnvelope)
+	if len(payload.Resources) == 0 {
+		return fmt.Errorf("%w: approval.pending response missing resources", protocol.ErrMalformedEnvelope)
 	}
 	return nil
 }

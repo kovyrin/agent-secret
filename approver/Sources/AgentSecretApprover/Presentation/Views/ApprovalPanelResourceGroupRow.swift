@@ -3,10 +3,10 @@ import Foundation
 #if canImport(SwiftUI)
     import SwiftUI
 
-    struct ApprovalPanelSecretGroupRow: View {
+    struct ApprovalPanelResourceGroupRow: View {
         private typealias Metric = ApprovalPanelStyle.Metric
 
-        let group: SecretVaultGroupViewModel
+        let group: ResourceVaultGroupViewModel
         let isExpanded: Bool
         let toggle: () -> Void
 
@@ -18,11 +18,11 @@ import Foundation
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
                 .accessibilityLabel("\(group.vaultName), \(group.countLabel)")
-                .accessibilityHint(isExpanded ? "Collapse requested secrets" : "Expand requested secrets")
+                .accessibilityHint(isExpanded ? "Collapse requested resources" : "Expand requested resources")
 
                 if isExpanded {
-                    expandedSecrets
-                        .padding(.top, Metric.groupSecretListTopPadding)
+                    expandedResources
+                        .padding(.top, Metric.groupResourceListTopPadding)
                 }
             }
             .padding(.vertical, Metric.groupRowVerticalPadding)
@@ -58,24 +58,24 @@ import Foundation
             }
         }
 
-        private var expandedSecrets: some View {
+        private var expandedResources: some View {
             ScrollView {
-                VStack(alignment: .leading, spacing: Metric.groupExpandedSecretListSpacing) {
-                    ForEach(group.secrets, id: \.alias) { secret in
-                        expandedRow(for: secret)
+                VStack(alignment: .leading, spacing: Metric.groupExpandedResourceListSpacing) {
+                    ForEach(group.resources, id: \.alias) { resource in
+                        expandedRow(for: resource)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: expandedSecretListHeight)
+            .frame(height: expandedResourceListHeight)
             .scrollIndicators(.visible)
         }
 
-        private var expandedSecretListHeight: CGFloat {
-            let rowCount = CGFloat(group.secrets.count)
-            let gapCount = CGFloat(max(Metric.singleSecretCount, group.secrets.count) - Metric.singleSecretCount)
-            let contentHeight: CGFloat = rowCount * Metric.groupExpandedSecretRowEstimatedHeight +
-                gapCount * Metric.groupExpandedSecretListSpacing
+        private var expandedResourceListHeight: CGFloat {
+            let rowCount = CGFloat(group.resources.count)
+            let gapCount = CGFloat(max(Metric.singleResourceCount, group.resources.count) - Metric.singleResourceCount)
+            let contentHeight: CGFloat = rowCount * Metric.groupExpandedResourceRowEstimatedHeight +
+                gapCount * Metric.groupExpandedResourceListSpacing
             return min(contentHeight, Metric.groupExpandedListMaxHeight)
         }
 
@@ -90,39 +90,39 @@ import Foundation
                 }
         }
 
-        private func expandedRow(for secret: RequestedSecretRowViewModel) -> some View {
-            HStack(alignment: .top, spacing: Metric.secretListRowSpacing) {
-                secretIcon(for: secret)
+        private func expandedRow(for resource: RequestedResourceRowViewModel) -> some View {
+            HStack(alignment: .top, spacing: Metric.resourceListRowSpacing) {
+                resourceIcon(for: resource)
                 VStack(alignment: .leading, spacing: Metric.rowTextSpacing) {
-                    Text(secret.alias)
+                    Text(resource.alias)
                         .font(.system(
-                            size: Metric.groupExpandedSecretAliasFontSize,
+                            size: Metric.groupExpandedResourceAliasFontSize,
                             weight: .semibold,
                             design: .monospaced
                         ))
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
-                    ApprovalPanelSecretReferenceText(
-                        segments: secret.refSegments,
+                    ApprovalPanelResourceReferenceText(
+                        segments: resource.refSegments,
                         fontSize: Metric.groupExpandedRefFontSize,
                         lineLimit: nil
                     )
                     .fixedSize(horizontal: false, vertical: true)
-                    Text(secret.accountLabel)
+                    Text(resource.accountLabel)
                         .font(.system(size: Metric.groupExpandedRefFontSize))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, Metric.groupExpandedSecretRowVerticalPadding)
+            .padding(.vertical, Metric.groupExpandedResourceRowVerticalPadding)
         }
 
-        private func secretIcon(for secret: RequestedSecretRowViewModel) -> some View {
+        private func resourceIcon(for resource: RequestedResourceRowViewModel) -> some View {
             Circle()
                 .fill(Color.green.opacity(Metric.greenPanelOpacity + Metric.cautionPanelOpacity))
                 .frame(width: Metric.groupExpandedIconSize, height: Metric.groupExpandedIconSize)
                 .overlay {
-                    Image(systemName: secret.symbolName)
+                    Image(systemName: resource.symbolName)
                         .font(.system(size: Metric.groupExpandedIconFontSize, weight: .medium))
                         .foregroundStyle(Color.green)
                         .accessibilityHidden(true)

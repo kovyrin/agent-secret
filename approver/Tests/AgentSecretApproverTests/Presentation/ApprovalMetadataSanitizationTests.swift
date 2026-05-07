@@ -14,8 +14,8 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
             command: ["/bin/echo", "safe\u{202E}txt"],
             cwd: "/tmp/project\rspoof\u{200D}",
             expiresAt: Date(timeIntervalSince1970: Self.sampleExpiration),
-            secrets: [
-                RequestedSecret(
+            resources: [
+                RequestedResource(
                     alias: "DEPLOY_TOKEN",
                     ref: "op://Shared\nInjected/Item\u{202E}/token",
                     account: "Work\u{202E}\nAdmin"
@@ -39,7 +39,7 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        let secret = try XCTUnwrap(viewModel.requestedSecrets.first, file: file, line: line)
+        let secret = try XCTUnwrap(viewModel.requestedResources.first, file: file, line: line)
         XCTAssertEqual(viewModel.reason, "Deploy\\nAccount: Work\\u202E\\t")
         XCTAssertEqual(viewModel.cwd, "/tmp/project\\rspoof\\u200D")
         XCTAssertEqual(viewModel.projectFolder, "/tmp/project\\rspoof\\u200D")
@@ -49,10 +49,10 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         XCTAssertEqual(
             secret.refSegments,
             [
-                RequestedSecretReferenceSegment(text: "op://Shared\\nInjected/", isEmphasized: false),
-                RequestedSecretReferenceSegment(text: "Item\\u202E", isEmphasized: true),
-                RequestedSecretReferenceSegment(text: "/", isEmphasized: false),
-                RequestedSecretReferenceSegment(text: "token", isEmphasized: true)
+                RequestedResourceReferenceSegment(text: "op://Shared\\nInjected/", isEmphasized: false),
+                RequestedResourceReferenceSegment(text: "Item\\u202E", isEmphasized: true),
+                RequestedResourceReferenceSegment(text: "/", isEmphasized: false),
+                RequestedResourceReferenceSegment(text: "token", isEmphasized: true)
             ]
         )
         XCTAssertEqual(secret.account, "Work\\u202E\\nAdmin")
@@ -60,7 +60,7 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
         XCTAssertEqual(secret.vaultName, "Shared\\nInjected")
         XCTAssertEqual(secret.vaultScopeName, "Work\\u202E\\nAdmin / Shared\\nInjected")
         XCTAssertEqual(
-            viewModel.secretRows,
+            viewModel.resourceRows,
             [
                 "DEPLOY_TOKEN [Account: Work\\u202E\\nAdmin] -> " +
                     "op://Shared\\nInjected/Item\\u202E/token"
@@ -96,8 +96,8 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
             command: ["/usr/bin/env", "deploy"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: Self.sampleExpiration),
-            secrets: [
-                RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
+            resources: [
+                RequestedResource(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
             ],
             resolvedExecutable: "/usr/bin/env"
         )
@@ -106,7 +106,7 @@ final class ApprovalMetadataSanitizationTests: XCTestCase {
             request: request,
             now: Date(timeIntervalSince1970: Self.viewModelNow)
         )
-        let secret = try XCTUnwrap(viewModel.requestedSecrets.first)
+        let secret = try XCTUnwrap(viewModel.requestedResources.first)
 
         XCTAssertEqual(viewModel.reason, "Deploy café service 🚀")
         XCTAssertEqual(viewModel.cwd, "/tmp/project")

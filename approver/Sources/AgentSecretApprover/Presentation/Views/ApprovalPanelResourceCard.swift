@@ -3,32 +3,32 @@ import Foundation
 #if canImport(SwiftUI)
     import SwiftUI
 
-    struct ApprovalPanelSecretCard: View {
+    struct ApprovalPanelResourceCard: View {
         private typealias Metric = ApprovalPanelStyle.Metric
 
-        let secret: RequestedSecretRowViewModel
+        let resource: RequestedResourceRowViewModel
 
         var body: some View {
             HStack(spacing: Metric.contextRowSpacing) {
                 ZStack {
                     Circle()
                         .fill(Color.green.opacity(Metric.greenPanelOpacity + Metric.cautionPanelOpacity))
-                    Image(systemName: secret.symbolName)
+                    Image(systemName: resource.symbolName)
                         .font(.system(size: Metric.footerIconSize, weight: .semibold))
                         .foregroundStyle(Color.green)
                         .accessibilityHidden(true)
                 }
-                .frame(width: Metric.secretIconSize, height: Metric.secretIconSize)
+                .frame(width: Metric.resourceIconSize, height: Metric.resourceIconSize)
                 VStack(alignment: .leading, spacing: Metric.detailSpacing) {
-                    Text(secret.alias)
+                    Text(resource.alias)
                         .font(.system(size: Metric.iconFontSize, weight: .semibold, design: .monospaced))
-                    ApprovalPanelSecretReferenceText(
-                        segments: secret.refSegments,
+                    ApprovalPanelResourceReferenceText(
+                        segments: resource.refSegments,
                         fontSize: Metric.detailTitleFontSize,
                         lineLimit: Metric.twoLineLimit
                     )
                     .truncationMode(.middle)
-                    Text(secret.accountLabel)
+                    Text(resource.accountLabel)
                         .font(.system(size: Metric.detailSubtitleFontSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(Metric.singleLineLimit)

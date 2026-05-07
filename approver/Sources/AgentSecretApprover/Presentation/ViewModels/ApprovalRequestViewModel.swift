@@ -2,11 +2,11 @@ import Foundation
 
 /// Sanitized text prepared for the approval UI.
 public struct ApprovalRequestViewModel: Equatable, Sendable {
-    private struct SecretPresentation {
-        let rows: [RequestedSecretRowViewModel]
+    private struct ResourcePresentation {
+        let rows: [RequestedResourceRowViewModel]
         let rowText: [String]
         let count: Int
-        let vaultGroups: [SecretVaultGroupViewModel]
+        let vaultGroups: [ResourceVaultGroupViewModel]
         let vaultCount: Int
     }
 
@@ -18,12 +18,12 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         let cwd: String
         let scopeSummary: String
         let resolvedExecutable: String
-        let secretRows: [String]
+        let resourceRows: [String]
         let timeRemaining: String
         let cautionMessages: [String]
     }
 
-    private static let highScopeSecretThreshold: Int = 6
+    private static let highScopeResourceThreshold: Int = 6
     private static let commandInspectorThreshold: Int = 96
     private static let secondsPerMinute: Int = 60
 
@@ -37,11 +37,11 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     public let cwd: String
     public let projectFolder: String
     public let resolvedExecutable: String
-    public let requestedSecrets: [RequestedSecretRowViewModel]
-    public let requestedSecretsHeading: String
-    public let secretRows: [String]
-    public let secretCount: Int
-    public let vaultGroups: [SecretVaultGroupViewModel]
+    public let requestedResources: [RequestedResourceRowViewModel]
+    public let requestedResourcesHeading: String
+    public let resourceRows: [String]
+    public let resourceCount: Int
+    public let vaultGroups: [ResourceVaultGroupViewModel]
     public let vaultCount: Int
     public let promptQuestion: String
     public let accessSummary: String
@@ -73,20 +73,20 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         cwd = Self.sanitizedDisplayText(request.cwd)
         projectFolder = Self.sanitizedDisplayText(Self.displayPath(request.cwd))
         resolvedExecutable = Self.sanitizedDisplayText(request.resolvedExecutable)
-        let secretPresentation: SecretPresentation = Self.secretPresentation(for: request.secrets)
-        requestedSecrets = secretPresentation.rows
-        requestedSecretsHeading = Self.requestedSecretsHeading(
+        let resourcePresentation: ResourcePresentation = Self.resourcePresentation(for: request.resources)
+        requestedResources = resourcePresentation.rows
+        requestedResourcesHeading = Self.requestedResourcesHeading(
             operation: request.operation,
-            secretCount: secretPresentation.count
+            resourceCount: resourcePresentation.count
         )
-        secretRows = secretPresentation.rowText
-        secretCount = secretPresentation.count
-        vaultGroups = secretPresentation.vaultGroups
-        vaultCount = secretPresentation.vaultCount
-        let copy: CopyPresentation = Self.copyPresentation(for: request, count: secretPresentation.count, now: now)
+        resourceRows = resourcePresentation.rowText
+        resourceCount = resourcePresentation.count
+        vaultGroups = resourcePresentation.vaultGroups
+        vaultCount = resourcePresentation.vaultCount
+        let copy: CopyPresentation = Self.copyPresentation(for: request, count: resourcePresentation.count, now: now)
         (isExpired, timeRemaining, compactTimeRemaining) = (copy.isExpired, copy.timeRemaining, copy.timeRemaining)
         (promptQuestion, accessSummary) = (copy.promptQuestion, copy.accessSummary)
-        highScopeWarning = request.operation == .exec && secretPresentation.count >= Self.highScopeSecretThreshold
+        highScopeWarning = request.operation == .exec && resourcePresentation.count >= Self.highScopeResourceThreshold
         (reusableUses, allowsReusableApproval) = (request.reusableUses, request.allowsReusable)
         (scopeSummary, allowReusableTitle) = (copy.scopeSummary, copy.allowReusableTitle)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
@@ -108,22 +108,22 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
                 cwd: cwd,
                 scopeSummary: scopeSummary,
                 resolvedExecutable: resolvedExecutable,
-                secretRows: secretRows,
+                resourceRows: resourceRows,
                 timeRemaining: timeRemaining,
                 cautionMessages: cautionMessages
             )
         )
     }
 
-    private static func secretPresentation(for secrets: [RequestedSecret]) -> SecretPresentation {
-        let rows: [RequestedSecretRowViewModel] = secrets.map { secret -> RequestedSecretRowViewModel in
-            RequestedSecretRowViewModel(alias: secret.alias, ref: secret.ref, account: secret.account)
+    private static func resourcePresentation(for resources: [RequestedResource]) -> ResourcePresentation {
+        let rows: [RequestedResourceRowViewModel] = resources.map { resource -> RequestedResourceRowViewModel in
+            RequestedResourceRowViewModel(alias: resource.alias, ref: resource.ref, account: resource.account)
         }
-        let rowText: [String] = rows.map { secret -> String in
-            Self.secretRowText(secret)
+        let rowText: [String] = rows.map { resource -> String in
+            Self.resourceRowText(resource)
         }
-        let vaultGroups: [SecretVaultGroupViewModel] = Self.vaultGroups(for: rows)
-        return SecretPresentation(
+        let vaultGroups: [ResourceVaultGroupViewModel] = Self.vaultGroups(for: rows)
+        return ResourcePresentation(
             rows: rows,
             rowText: rowText,
             count: rows.count,
@@ -132,24 +132,24 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         )
     }
 
-    private static func vaultGroups(for rows: [RequestedSecretRowViewModel]) -> [SecretVaultGroupViewModel] {
-        var groups: [SecretVaultGroupViewModel] = []
+    private static func vaultGroups(for rows: [RequestedResourceRowViewModel]) -> [ResourceVaultGroupViewModel] {
+        var groups: [ResourceVaultGroupViewModel] = []
         var groupIndexesByScope: [String: Int] = [:]
         for row in rows {
             if let index: Int = groupIndexesByScope[row.vaultScopeName] {
-                var group: SecretVaultGroupViewModel = groups[index]
-                group = SecretVaultGroupViewModel(vaultName: group.vaultName, secrets: group.secrets + [row])
+                var group: ResourceVaultGroupViewModel = groups[index]
+                group = ResourceVaultGroupViewModel(vaultName: group.vaultName, resources: group.resources + [row])
                 groups[index] = group
             } else {
                 groupIndexesByScope[row.vaultScopeName] = groups.count
-                groups.append(SecretVaultGroupViewModel(vaultName: row.vaultScopeName, secrets: [row]))
+                groups.append(ResourceVaultGroupViewModel(vaultName: row.vaultScopeName, resources: [row]))
             }
         }
         return groups
     }
 
-    private static func secretRowText(_ secret: RequestedSecretRowViewModel) -> String {
-        "\(secret.alias) [\(secret.accountLabel)] -> \(secret.ref)"
+    private static func resourceRowText(_ resource: RequestedResourceRowViewModel) -> String {
+        "\(resource.alias) [\(resource.accountLabel)] -> \(resource.ref)"
     }
 
     private static func renderedText(
@@ -169,7 +169,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         ])
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
         lines.append(request.operation == .itemDescribe ? "Item metadata:" : "Secrets:")
-        lines.append(contentsOf: viewModel.secretRows)
+        lines.append(contentsOf: viewModel.resourceRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
         if request.allowsReusable {
             lines.append(

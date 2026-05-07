@@ -17,8 +17,8 @@ final class ApprovalCommandRenderingTests: XCTestCase {
             command: command,
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-            secrets: [
-                RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
+            resources: [
+                RequestedResource(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
             ],
             resolvedExecutable: resolvedExecutable
         )

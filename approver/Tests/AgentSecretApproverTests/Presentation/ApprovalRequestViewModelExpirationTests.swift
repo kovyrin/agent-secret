@@ -15,8 +15,8 @@ final class ApprovalRequestViewModelExpirationTests: XCTestCase {
             command: ["/bin/sh", "-c", script],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: Self.sampleExpiration),
-            secrets: [
-                RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
+            resources: [
+                RequestedResource(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
             ],
             resolvedExecutable: "/bin/sh"
         )
@@ -33,8 +33,8 @@ final class ApprovalRequestViewModelExpirationTests: XCTestCase {
             command: ["/usr/bin/env", "deploy"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: Self.viewModelNow + 2),
-            secrets: [
-                RequestedSecret(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
+            resources: [
+                RequestedResource(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
             ],
             resolvedExecutable: "/usr/bin/env"
         )

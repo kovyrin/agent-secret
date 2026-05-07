@@ -16,7 +16,7 @@
   "request_id": "req_123",
   "resolved_executable": "/opt/homebrew/bin/terraform",
   "reusable_uses": 3,
-  "secrets": [
+  "resources": [
     {
       "alias": "EXAMPLE_TOKEN",
       "account": "Work",

@@ -11,7 +11,7 @@ extension ApprovalRequestViewModel {
                 resolvedExecutable: resolvedExecutable,
                 overrideEnv: overrideEnv,
                 overriddenAliases: overriddenAliases,
-                secretRows: secretRows,
+                resourceRows: resourceRows,
                 scopeSummary: scopeSummary,
                 timeRemaining: timeRemaining
             )
@@ -27,7 +27,7 @@ extension ApprovalRequestViewModel {
         let resolvedExecutable: String
         let overrideEnv: Bool
         let overriddenAliases: [String]
-        let secretRows: [String]
+        let resourceRows: [String]
         let scopeSummary: String
         let timeRemaining: String
     }
@@ -49,7 +49,7 @@ extension ApprovalRequestViewModel {
         }
         lines.append("Scope: \(input.scopeSummary)")
         lines.append("Secrets:")
-        lines.append(contentsOf: input.secretRows)
+        lines.append(contentsOf: input.resourceRows)
         lines.append("Time remaining: \(input.timeRemaining)")
         return lines.joined(separator: "\n")
     }

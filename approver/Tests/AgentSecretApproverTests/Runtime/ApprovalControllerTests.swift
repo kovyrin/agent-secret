@@ -24,8 +24,8 @@ final class ApprovalControllerTests: XCTestCase {
             command: ["/opt/homebrew/bin/terraform", "plan"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-            secrets: [
-                RequestedSecret(
+            resources: [
+                RequestedResource(
                     alias: "EXAMPLE_TOKEN",
                     ref: "op://Example Vault/Example Item/token",
                     account: "Work"
@@ -43,23 +43,23 @@ final class ApprovalControllerTests: XCTestCase {
             command: ["/usr/bin/env"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-            secrets: multiSecrets,
+            resources: multiSecrets,
             resolvedExecutable: "/usr/bin/env"
         )
     }
 
-    private static var multiSecrets: [RequestedSecret] {
+    private static var multiSecrets: [RequestedResource] {
         [
-            RequestedSecret(alias: "LOGIN", ref: "op://Private/Github/username", account: "Work"),
-            RequestedSecret(alias: "GITHUB_TOKEN", ref: "op://Private/Github/token", account: "Work"),
-            RequestedSecret(alias: "GITHUB_EMAIL", ref: "op://Private/Github/email", account: "Work"),
-            RequestedSecret(alias: "DB_HOST", ref: "op://Database/App/host", account: "Work"),
-            RequestedSecret(alias: "DB_USER", ref: "op://Database/App/user", account: "Work"),
-            RequestedSecret(alias: "DB_PASSWORD", ref: "op://Database/App/password", account: "Work"),
-            RequestedSecret(alias: "DB_NAME", ref: "op://Database/App/name", account: "Work"),
-            RequestedSecret(alias: "OPENAI_API_KEY", ref: "op://OpenAI/Platform/api_key", account: "Work"),
-            RequestedSecret(alias: "OPENAI_ORG_ID", ref: "op://OpenAI/Platform/org_id", account: "Work"),
-            RequestedSecret(alias: "OPENAI_PROJECT_ID", ref: "op://OpenAI/Platform/project_id", account: "Work")
+            RequestedResource(alias: "LOGIN", ref: "op://Private/Github/username", account: "Work"),
+            RequestedResource(alias: "GITHUB_TOKEN", ref: "op://Private/Github/token", account: "Work"),
+            RequestedResource(alias: "GITHUB_EMAIL", ref: "op://Private/Github/email", account: "Work"),
+            RequestedResource(alias: "DB_HOST", ref: "op://Database/App/host", account: "Work"),
+            RequestedResource(alias: "DB_USER", ref: "op://Database/App/user", account: "Work"),
+            RequestedResource(alias: "DB_PASSWORD", ref: "op://Database/App/password", account: "Work"),
+            RequestedResource(alias: "DB_NAME", ref: "op://Database/App/name", account: "Work"),
+            RequestedResource(alias: "OPENAI_API_KEY", ref: "op://OpenAI/Platform/api_key", account: "Work"),
+            RequestedResource(alias: "OPENAI_ORG_ID", ref: "op://OpenAI/Platform/org_id", account: "Work"),
+            RequestedResource(alias: "OPENAI_PROJECT_ID", ref: "op://OpenAI/Platform/project_id", account: "Work")
         ]
     }
 
@@ -69,30 +69,30 @@ final class ApprovalControllerTests: XCTestCase {
             nonce: "nonce_long_scope",
             reason: "Run deployment with account-qualified references",
             command: [
-                "/tmp/project/bin/deploy-with-secrets",
+                "/tmp/project/bin/deploy-with-resources",
                 "--environment",
                 "production"
             ],
             cwd: "/tmp/project/services/release/with/a/very/long/path/component/that/must/stay-visible",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-            secrets: [
-                RequestedSecret(
+            resources: [
+                RequestedResource(
                     alias: "SERVICE_TOKEN",
                     ref: "op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-a",
                     account: "production-east-account-with-long-suffix-a"
                 ),
-                RequestedSecret(
+                RequestedResource(
                     alias: "SERVICE_TOKEN_BACKUP",
                     ref: "op://Very Long Production Vault/Service Token With Shared Prefix/token-ending-b",
                     account: "production-east-account-with-long-suffix-b"
                 ),
-                RequestedSecret(
+                RequestedResource(
                     alias: "DEPLOY_KEY",
                     ref: "op://Very Long Production Vault/Deploy Key/private-key",
                     account: "production-security-account"
                 )
             ],
-            resolvedExecutable: "/tmp/project/bin/deploy-with-secrets"
+            resolvedExecutable: "/tmp/project/bin/deploy-with-resources"
         )
     }
 
@@ -133,8 +133,8 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertTrue(request.overrideEnv)
         XCTAssertEqual(request.overriddenAliases, ["EXAMPLE_TOKEN"])
         XCTAssertEqual(request.reusableUses, Self.expectedReusableUses)
-        XCTAssertEqual(request.secrets.first?.ref, "op://Example Vault/Example Item/token")
-        XCTAssertEqual(request.secrets.first?.account, "Work")
+        XCTAssertEqual(request.resources.first?.ref, "op://Example Vault/Example Item/token")
+        XCTAssertEqual(request.resources.first?.account, "Work")
 
         let decision: ApprovalDecision = try decoder.decode(
             ApprovalDecision.self,
@@ -226,7 +226,7 @@ final class ApprovalControllerTests: XCTestCase {
             now: Date(timeIntervalSince1970: Self.viewModelNow)
         )
 
-        XCTAssertEqual(viewModel.secretCount, Self.multiSecrets.count)
+        XCTAssertEqual(viewModel.resourceCount, Self.multiSecrets.count)
         XCTAssertEqual(viewModel.vaultCount, Self.expectedReusableUses)
         XCTAssertEqual(viewModel.promptQuestion, "Allow this command to use the following 10 secrets?")
         XCTAssertEqual(viewModel.accessSummary, "wants temporary access.")
@@ -235,8 +235,8 @@ final class ApprovalControllerTests: XCTestCase {
         XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Work / Private", "Work / Database", "Work / OpenAI"])
         XCTAssertEqual(viewModel.vaultGroups.first?.countLabel, "3 secrets")
         XCTAssertEqual(viewModel.vaultGroups.first?.aliasSummary, "LOGIN, GITHUB_TOKEN, GITHUB_EMAIL")
-        XCTAssertEqual(viewModel.requestedSecrets.first?.fieldName, "username")
-        XCTAssertEqual(viewModel.requestedSecrets.first?.symbolName, "person")
+        XCTAssertEqual(viewModel.requestedResources.first?.fieldName, "username")
+        XCTAssertEqual(viewModel.requestedResources.first?.symbolName, "person")
         XCTAssertTrue(viewModel.footerMessage.contains("The secrets are injected"))
         XCTAssertFalse(viewModel.renderedText.contains(Self.canarySecretValue))
     }
@@ -252,7 +252,7 @@ final class ApprovalControllerTests: XCTestCase {
         let inspection: String = viewModel.requestInspectionText
 
         XCTAssertTrue(inspection.contains(request.cwd))
-        XCTAssertTrue(inspection.contains("/tmp/project/bin/deploy-with-secrets"))
+        XCTAssertTrue(inspection.contains("/tmp/project/bin/deploy-with-resources"))
         XCTAssertTrue(inspection.contains("Override existing environment: yes"))
         XCTAssertTrue(inspection.contains("- SERVICE_TOKEN"))
         XCTAssertTrue(inspection.contains("- DEPLOY_KEY"))

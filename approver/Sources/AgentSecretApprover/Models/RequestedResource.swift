@@ -1,7 +1,7 @@
 import Foundation
 
 /// Stores references only; raw secret values must not enter approver UI models.
-public struct RequestedSecret: Codable, Equatable, Sendable {
+public struct RequestedResource: Codable, Equatable, Sendable {
     public var alias: String
     public var ref: String
     public var account: String

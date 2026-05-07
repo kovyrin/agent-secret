@@ -8,7 +8,7 @@ import Foundation
         private typealias Palette = ApprovalPanelStyle.Palette
 
         let printsEnvironmentWarning: Bool
-        let secretCount: Int
+        let resourceCount: Int
 
         var body: some View {
             HStack(alignment: .top, spacing: Metric.cautionSpacing) {
@@ -19,7 +19,7 @@ import Foundation
                 VStack(alignment: .leading, spacing: Metric.detailLabelSpacing) {
                     Text("High-scope request")
                         .fontWeight(.semibold)
-                    Text("This command is requesting access to \(secretCount) secrets.")
+                    Text("This command is requesting access to \(resourceCount) secrets.")
                     if printsEnvironmentWarning {
                         Text("It can also print environment variables.")
                     }

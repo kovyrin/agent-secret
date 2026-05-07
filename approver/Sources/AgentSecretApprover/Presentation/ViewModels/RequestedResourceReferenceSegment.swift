@@ -1,6 +1,6 @@
 import Foundation
 
-struct RequestedSecretReferenceSegment: Equatable {
+struct RequestedResourceReferenceSegment: Equatable {
     let text: String
     let isEmphasized: Bool
 }

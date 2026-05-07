@@ -3,29 +3,29 @@ import Foundation
 #if canImport(SwiftUI)
     import SwiftUI
 
-    struct ApprovalPanelSecretListRow: View {
+    struct ApprovalPanelResourceListRow: View {
         private typealias Metric = ApprovalPanelStyle.Metric
 
-        let secret: RequestedSecretRowViewModel
+        let resource: RequestedResourceRowViewModel
         let aliasColumnWidth: CGFloat
 
         var body: some View {
-            HStack(spacing: Metric.secretListRowSpacing) {
+            HStack(spacing: Metric.resourceListRowSpacing) {
                 icon
-                Text(secret.alias)
-                    .font(.system(size: Metric.secretListAliasFontSize, weight: .semibold, design: .monospaced))
+                Text(resource.alias)
+                    .font(.system(size: Metric.resourceListAliasFontSize, weight: .semibold, design: .monospaced))
                     .lineLimit(Metric.singleLineLimit)
                     .frame(width: aliasColumnWidth, alignment: .leading)
                 VStack(alignment: .leading, spacing: Metric.rowTextSpacing) {
-                    ApprovalPanelSecretReferenceText(
-                        segments: secret.refSegments,
-                        fontSize: Metric.secretListRefFontSize,
+                    ApprovalPanelResourceReferenceText(
+                        segments: resource.refSegments,
+                        fontSize: Metric.resourceListRefFontSize,
                         lineLimit: Metric.singleLineLimit
                     )
                     .lineLimit(Metric.singleLineLimit)
                     .truncationMode(.middle)
-                    Text(secret.accountLabel)
-                        .font(.system(size: Metric.secretListRefFontSize))
+                    Text(resource.accountLabel)
+                        .font(.system(size: Metric.resourceListRefFontSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(Metric.singleLineLimit)
                 }
@@ -36,10 +36,10 @@ import Foundation
         private var icon: some View {
             Circle()
                 .fill(Color.green.opacity(Metric.greenPanelOpacity + Metric.cautionPanelOpacity))
-                .frame(width: Metric.secretListIconSize, height: Metric.secretListIconSize)
+                .frame(width: Metric.resourceListIconSize, height: Metric.resourceListIconSize)
                 .overlay {
-                    Image(systemName: secret.symbolName)
-                        .font(.system(size: Metric.secretListIconFontSize, weight: .medium))
+                    Image(systemName: resource.symbolName)
+                        .font(.system(size: Metric.resourceListIconFontSize, weight: .medium))
                         .foregroundStyle(Color.green)
                         .accessibilityHidden(true)
                 }

@@ -48,7 +48,7 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
                 "reason": "Run deployment",
                 "request_id": "req_123",
                 "resolved_executable": "/usr/bin/env",
-                "secrets": [
+                "resources": [
                     [
                         "account": "prod-account-123",
                         "alias": "SECRET_ALIAS_CANARY",

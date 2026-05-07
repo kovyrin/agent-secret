@@ -49,12 +49,12 @@ import Foundation
                     if viewModel.highScopeWarning {
                         ApprovalPanelHighScopeWarning(
                             printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
-                            secretCount: viewModel.secretCount
+                            resourceCount: viewModel.resourceCount
                         )
                     }
                     reasonCard
                     requestContext
-                    secretSection
+                    resourceSection
                     if !viewModel.cautionMessages.isEmpty {
                         caution
                     }

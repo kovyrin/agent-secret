@@ -1,14 +1,14 @@
 import Foundation
 
-/// One requested secret prepared for display without secret values.
-public struct RequestedSecretRowViewModel: Equatable, Sendable {
+/// One requested approval resource prepared for display without secret values.
+public struct RequestedResourceRowViewModel: Equatable, Sendable {
     private static let emphasizedReferencePartCount: Int = 2
     private static let minimumEmphasizedReferencePartCount: Int = 3
     private static let opReferencePrefix: String = "op://"
 
     public let alias: String
     public let ref: String
-    let refSegments: [RequestedSecretReferenceSegment]
+    let refSegments: [RequestedResourceReferenceSegment]
     public let account: String
     public let accountLabel: String
     public let vaultName: String
@@ -41,11 +41,11 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
             .map(String.init)
     }
 
-    private static func referenceSegments(_ ref: String) -> [RequestedSecretReferenceSegment] {
+    private static func referenceSegments(_ ref: String) -> [RequestedResourceReferenceSegment] {
         let parts: [String] = Self.referenceParts(ref)
         guard parts.count >= minimumEmphasizedReferencePartCount else {
             return [
-                RequestedSecretReferenceSegment(text: Self.sanitizedDisplayText(ref), isEmphasized: false)
+                RequestedResourceReferenceSegment(text: Self.sanitizedDisplayText(ref), isEmphasized: false)
             ]
         }
 
@@ -53,13 +53,13 @@ public struct RequestedSecretRowViewModel: Equatable, Sendable {
         let prefixParts: [String] = parts.prefix(emphasizedStartIndex).map(Self.sanitizedDisplayText)
         let emphasizedParts: [String] = parts.suffix(emphasizedReferencePartCount).map(Self.sanitizedDisplayText)
         return [
-            RequestedSecretReferenceSegment(
+            RequestedResourceReferenceSegment(
                 text: "\(opReferencePrefix)\(prefixParts.joined(separator: "/"))/",
                 isEmphasized: false
             ),
-            RequestedSecretReferenceSegment(text: emphasizedParts[0], isEmphasized: true),
-            RequestedSecretReferenceSegment(text: "/", isEmphasized: false),
-            RequestedSecretReferenceSegment(text: emphasizedParts[1], isEmphasized: true)
+            RequestedResourceReferenceSegment(text: emphasizedParts[0], isEmphasized: true),
+            RequestedResourceReferenceSegment(text: "/", isEmphasized: false),
+            RequestedResourceReferenceSegment(text: emphasizedParts[1], isEmphasized: true)
         ]
     }
 

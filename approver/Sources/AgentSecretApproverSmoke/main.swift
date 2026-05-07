@@ -52,7 +52,7 @@ private func sampleRequestData() -> Data {
         "expires_at": "2027-01-15T08:00:00Z",
         "operation": "exec",
         "allows_reusable": true,
-        "secrets": [
+        "resources": [
             {
                 "alias": "EXAMPLE_TOKEN",
                 "ref": "op://Example Vault/Example Item/token",

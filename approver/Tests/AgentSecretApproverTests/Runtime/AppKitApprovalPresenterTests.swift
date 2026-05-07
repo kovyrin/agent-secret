@@ -24,8 +24,8 @@ import XCTest
                 command: ["/usr/bin/env", "printenv", "TOKEN"],
                 cwd: "/tmp/project",
                 expiresAt: expiresAt,
-                secrets: [
-                    RequestedSecret(alias: "TOKEN", ref: "op://Example/Item/token", account: "Work")
+                resources: [
+                    RequestedResource(alias: "TOKEN", ref: "op://Example/Item/token", account: "Work")
                 ],
                 resolvedExecutable: "/usr/bin/env"
             )

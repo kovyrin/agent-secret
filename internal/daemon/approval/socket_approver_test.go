@@ -226,11 +226,11 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 	if approvalRequest.Operation != approval.ApprovalOperationExec || !approvalRequest.AllowsReusable {
 		t.Fatalf("unexpected approval request operation: %+v", approvalRequest)
 	}
-	if approvalRequest.Secrets[0].Ref != "op://Example Vault/Example Item/token" {
-		t.Fatalf("unexpected secret ref: %+v", approvalRequest.Secrets)
+	if approvalRequest.Resources[0].Ref != "op://Example Vault/Example Item/token" {
+		t.Fatalf("unexpected secret ref: %+v", approvalRequest.Resources)
 	}
-	if approvalRequest.Secrets[0].Account != "Work" {
-		t.Fatalf("unexpected secret account: %+v", approvalRequest.Secrets)
+	if approvalRequest.Resources[0].Account != "Work" {
+		t.Fatalf("unexpected secret account: %+v", approvalRequest.Resources)
 	}
 
 	decisionData := readFixture(t, "approval_decision.json")
@@ -293,8 +293,8 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	if payload.RequestID != "req_1" || payload.Nonce != "nonce_1" {
 		t.Fatalf("unexpected payload identifiers: %+v", payload)
 	}
-	if payload.Secrets[0].Account != "Work" {
-		t.Fatalf("payload secret account = %q, want Work", payload.Secrets[0].Account)
+	if payload.Resources[0].Account != "Work" {
+		t.Fatalf("payload secret account = %q, want Work", payload.Resources[0].Account)
 	}
 	if payload.ReusableUses != 2 {
 		t.Fatalf("payload reusable uses = %d, want request count 2", payload.ReusableUses)

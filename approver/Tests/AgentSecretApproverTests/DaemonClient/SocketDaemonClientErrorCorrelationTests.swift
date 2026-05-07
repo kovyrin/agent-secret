@@ -39,7 +39,7 @@ final class SocketDaemonClientErrorCorrelationTests: XCTestCase {
             command: ["/usr/bin/env", "true"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-            secrets: [],
+            resources: [],
             resolvedExecutable: "/usr/bin/env"
         )
     }

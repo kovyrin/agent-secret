@@ -3,11 +3,11 @@ import Foundation
 #if canImport(SwiftUI)
     import SwiftUI
 
-    struct ApprovalPanelSecretGroupList: View {
+    struct ApprovalPanelResourceGroupList: View {
         private typealias Metric = ApprovalPanelStyle.Metric
 
         let heading: String
-        let groups: [SecretVaultGroupViewModel]
+        let groups: [ResourceVaultGroupViewModel]
 
         @State private var expandedVaultNames: Set<String> = []
 
@@ -18,7 +18,7 @@ import Foundation
                     .foregroundStyle(Color.green)
                 VStack(spacing: Metric.zeroOffset) {
                     ForEach(groups, id: \.vaultName) { group in
-                        ApprovalPanelSecretGroupRow(
+                        ApprovalPanelResourceGroupRow(
                             group: group,
                             isExpanded: expandedVaultNames.contains(group.vaultName)
                         ) {
@@ -30,7 +30,7 @@ import Foundation
                     }
                 }
             }
-            .padding(Metric.secretPanelPadding)
+            .padding(Metric.resourcePanelPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(panelBackground)
             .overlay(panelBorder)
@@ -46,7 +46,7 @@ import Foundation
                 .stroke(Color.green.opacity(Metric.greenBorderOpacity), lineWidth: Metric.borderWidth)
         }
 
-        private func toggle(_ group: SecretVaultGroupViewModel) {
+        private func toggle(_ group: ResourceVaultGroupViewModel) {
             if expandedVaultNames.contains(group.vaultName) {
                 expandedVaultNames.remove(group.vaultName)
             } else {

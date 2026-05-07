@@ -19,8 +19,8 @@ final class ApprovalControllerExpirationTests: XCTestCase {
             command: ["/usr/bin/env", "true"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-            secrets: [
-                RequestedSecret(
+            resources: [
+                RequestedResource(
                     alias: "EXAMPLE_TOKEN",
                     ref: "op://Example Vault/Example Item/token",
                     account: "Work"

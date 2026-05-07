@@ -35,7 +35,7 @@ import Foundation
             static let cautionPanelOpacity: Double = 0.08
             static let cautionRed: Double = 0.38
             static let cautionSpacing: CGFloat = 10
-            static let compactSecretLimit: Int = 5
+            static let compactResourceLimit: Int = 5
             static let commandPreviewLineLimit: Int = 4
             static let contextColumnSpacing: CGFloat = 16
             static let contextRowSpacing: CGFloat = 10
@@ -65,17 +65,17 @@ import Foundation
             static let groupExpandedIconSize: CGFloat = 18
             static let groupExpandedListMaxHeight: CGFloat = 118
             static let groupExpandedRefFontSize: CGFloat = 10
-            static let groupExpandedSecretAliasFontSize: CGFloat = 11
-            static let groupExpandedSecretListSpacing: CGFloat = 3
-            static let groupExpandedSecretRowEstimatedHeight: CGFloat = 38
-            static let groupExpandedSecretRowVerticalPadding: CGFloat = 2
+            static let groupExpandedResourceAliasFontSize: CGFloat = 11
+            static let groupExpandedResourceListSpacing: CGFloat = 3
+            static let groupExpandedResourceRowEstimatedHeight: CGFloat = 38
+            static let groupExpandedResourceRowVerticalPadding: CGFloat = 2
             static let groupAliasFontSize: CGFloat = 11
             static let groupChevronFontSize: CGFloat = 10
             static let groupCountFontSize: CGFloat = 11
             static let groupIconCharacterCount: Int = 1
             static let groupIconFontSize: CGFloat = 12
             static let groupIconSize: CGFloat = 28
-            static let groupSecretListTopPadding: CGFloat = 6
+            static let groupResourceListTopPadding: CGFloat = 6
             static let groupListSpacing: CGFloat = 6
             static let groupRowSpacing: CGFloat = 10
             static let groupRowVerticalPadding: CGFloat = 6
@@ -125,25 +125,25 @@ import Foundation
             static let rowTextSpacing: CGFloat = 3
             static let rowSpacing: CGFloat = 12
             static let secondaryBorderOpacity: Double = 0.25
-            static let secretListAliasCharacterWidth: CGFloat = 8.4
-            static let secretListAliasHorizontalAllowance: CGFloat = 8
-            static let secretListAliasFontSize: CGFloat = 14
-            static let secretListAliasMinimumWidth: CGFloat = 130
-            static let secretListAliasMaximumWidth: CGFloat = 250
-            static let secretListIconFontSize: CGFloat = 12
-            static let secretListIconSize: CGFloat = 26
-            static let secretListRefFontSize: CGFloat = 11
-            static let secretListRowSpacing: CGFloat = 10
-            static let secretListSpacing: CGFloat = 8
-            static let secretCardSpacing: CGFloat = 8
-            static let secretIconSize: CGFloat = 42
-            static let secretPanelPadding: CGFloat = 14
+            static let resourceListAliasCharacterWidth: CGFloat = 8.4
+            static let resourceListAliasHorizontalAllowance: CGFloat = 8
+            static let resourceListAliasFontSize: CGFloat = 14
+            static let resourceListAliasMinimumWidth: CGFloat = 130
+            static let resourceListAliasMaximumWidth: CGFloat = 250
+            static let resourceListIconFontSize: CGFloat = 12
+            static let resourceListIconSize: CGFloat = 26
+            static let resourceListRefFontSize: CGFloat = 11
+            static let resourceListRowSpacing: CGFloat = 10
+            static let resourceListSpacing: CGFloat = 8
+            static let resourceCardSpacing: CGFloat = 8
+            static let resourceIconSize: CGFloat = 42
+            static let resourcePanelPadding: CGFloat = 14
             static let sectionLabelFontSize: CGFloat = 14
             static let sectionSpacing: CGFloat = 10
             static let scopePreviewLineLimit: Int = 3
             static let scrollableApprovalContentMaxHeight: CGFloat = 520
             static let singleLineLimit: Int = 1
-            static let singleSecretCount: Int = 1
+            static let singleResourceCount: Int = 1
             static let subtleBorderOpacity: Double = 0.18
             static let subtleFillOpacity: Double = 0.06
             static let titleFontSize: CGFloat = 23
@@ -167,8 +167,8 @@ import Foundation
                 green: Metric.reasonAccentGreen,
                 blue: Metric.reasonAccentBlue
             )
-            static let secretReference = Color.secondary
-            static let secretReferenceEmphasis = Color.primary
+            static let resourceReference = Color.secondary
+            static let resourceReferenceEmphasis = Color.primary
         }
     }
 #endif

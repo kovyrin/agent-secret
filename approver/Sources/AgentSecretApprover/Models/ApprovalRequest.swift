@@ -1,6 +1,6 @@
 import Foundation
 
-/// Secret approval context shown to the local operator before a command runs.
+/// Approval context shown to the local operator before a command receives access.
 public struct ApprovalRequest: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case command
@@ -15,7 +15,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case requestID = "request_id"
         case resolvedExecutable = "resolved_executable"
         case reusableUses = "reusable_uses"
-        case secrets
+        case resources
     }
 
     /// Default reusable approval count for programmatic requests and out-of-range daemon values.
@@ -32,7 +32,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var expiresAt: Date
     public var operation: ApprovalOperation
     public var allowsReusable: Bool
-    public var secrets: [RequestedSecret]
+    public var resources: [RequestedResource]
     public var overrideEnv: Bool
     public var overriddenAliases: [String]
     public var reusableUses: Int
@@ -44,7 +44,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         command: [String],
         cwd: String,
         expiresAt: Date,
-        secrets: [RequestedSecret],
+        resources: [RequestedResource],
         resolvedExecutable: String,
         operation: ApprovalOperation = .exec,
         allowsReusable: Bool = true,
@@ -61,7 +61,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.expiresAt = expiresAt
         self.operation = operation
         self.allowsReusable = allowsReusable
-        self.secrets = secrets
+        self.resources = resources
         self.overrideEnv = overrideEnv
         self.overriddenAliases = overriddenAliases
         self.reusableUses = Self.boundedReusableUses(reusableUses)
@@ -79,7 +79,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         operation = try container.decode(ApprovalOperation.self, forKey: .operation)
         allowsReusable = try container.decode(Bool.self, forKey: .allowsReusable)
-        secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
+        resources = try container.decode([RequestedResource].self, forKey: .resources)
         overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)
         overriddenAliases = try container.decode([String].self, forKey: .overriddenAliases)
         let decodedReusableUses: Int = try container.decode(

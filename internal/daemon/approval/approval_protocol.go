@@ -10,19 +10,19 @@ import (
 )
 
 type ApprovalRequestPayload struct {
-	Operation          ApprovalOperation         `json:"operation"`
-	AllowsReusable     bool                      `json:"allows_reusable"`
-	RequestID          string                    `json:"request_id"`
-	Nonce              string                    `json:"nonce"`
-	Reason             string                    `json:"reason"`
-	Command            []string                  `json:"command"`
-	CWD                string                    `json:"cwd"`
-	ResolvedExecutable string                    `json:"resolved_executable"`
-	ExpiresAt          time.Time                 `json:"expires_at"`
-	Secrets            []ApprovalRequestedSecret `json:"secrets"`
-	OverrideEnv        bool                      `json:"override_env"`
-	OverriddenAliases  []string                  `json:"overridden_aliases"`
-	ReusableUses       int                       `json:"reusable_uses"`
+	Operation          ApprovalOperation           `json:"operation"`
+	AllowsReusable     bool                        `json:"allows_reusable"`
+	RequestID          string                      `json:"request_id"`
+	Nonce              string                      `json:"nonce"`
+	Reason             string                      `json:"reason"`
+	Command            []string                    `json:"command"`
+	CWD                string                      `json:"cwd"`
+	ResolvedExecutable string                      `json:"resolved_executable"`
+	ExpiresAt          time.Time                   `json:"expires_at"`
+	Resources          []ApprovalRequestedResource `json:"resources"`
+	OverrideEnv        bool                        `json:"override_env"`
+	OverriddenAliases  []string                    `json:"overridden_aliases"`
+	ReusableUses       int                         `json:"reusable_uses"`
 }
 
 type ApprovalOperation string
@@ -32,7 +32,7 @@ const (
 	ApprovalOperationItemDescribe ApprovalOperation = "item_describe"
 )
 
-type ApprovalRequestedSecret struct {
+type ApprovalRequestedResource struct {
 	Alias   string `json:"alias"`
 	Ref     string `json:"ref"`
 	Account string `json:"account"`
@@ -56,9 +56,9 @@ type ApprovalDecisionPayload struct {
 }
 
 func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
-	secrets := make([]ApprovalRequestedSecret, 0, len(req.Secrets))
+	resources := make([]ApprovalRequestedResource, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
-		secrets = append(secrets, ApprovalRequestedSecret{
+		resources = append(resources, ApprovalRequestedResource{
 			Alias:   secret.Alias,
 			Ref:     secret.Ref.Raw,
 			Account: secret.Account,
@@ -78,7 +78,7 @@ func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) A
 		CWD:                req.CWD,
 		ResolvedExecutable: req.ResolvedExecutable,
 		ExpiresAt:          req.ExpiresAt,
-		Secrets:            secrets,
+		Resources:          resources,
 		OverrideEnv:        req.OverrideEnv,
 		OverriddenAliases:  overriddenAliases,
 		ReusableUses:       request.ReusableUsesOrDefault(req.ReusableUses),
@@ -99,7 +99,7 @@ func NewItemDescribePayload(
 		CWD:                req.CWD,
 		ResolvedExecutable: req.ResolvedExecutable,
 		ExpiresAt:          req.ExpiresAt,
-		Secrets: []ApprovalRequestedSecret{
+		Resources: []ApprovalRequestedResource{
 			{
 				Alias:   req.Ref.Item,
 				Ref:     req.Ref.Raw,

@@ -52,34 +52,34 @@ final class ApprovalRequestDecodeTests: XCTestCase {
         )
     }
 
-    func testApprovalRequestDecodeRequiresSecretAccount() throws {
+    func testApprovalRequestDecodeRequiresResourceAccount() throws {
         let fixture: Data = try ApprovalProtocolFixture.data("approval_request")
         let object: Any = try JSONSerialization.jsonObject(with: fixture)
         guard
             var fixtureFields = object as? [String: Any],
-            let fixtureSecrets = fixtureFields["secrets"] as? [[String: Any]],
-            var firstSecret = fixtureSecrets.first
+            let fixtureResources = fixtureFields["resources"] as? [[String: Any]],
+            var firstResource = fixtureResources.first
         else {
-            XCTFail("approval request fixture must include a secret object")
+            XCTFail("approval request fixture must include a resource object")
             return
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        firstSecret.removeValue(forKey: "account")
-        fixtureFields["secrets"] = [firstSecret]
+        firstResource.removeValue(forKey: "account")
+        fixtureFields["resources"] = [firstResource]
         var payload: Data = try JSONSerialization.data(withJSONObject: fixtureFields)
         XCTAssertThrowsError(
             try decoder.decode(ApprovalRequest.self, from: payload),
-            "missing secret account should fail decoding"
+            "missing resource account should fail decoding"
         )
 
-        firstSecret["account"] = NSNull()
-        fixtureFields["secrets"] = [firstSecret]
+        firstResource["account"] = NSNull()
+        fixtureFields["resources"] = [firstResource]
         payload = try JSONSerialization.data(withJSONObject: fixtureFields)
         XCTAssertThrowsError(
             try decoder.decode(ApprovalRequest.self, from: payload),
-            "null secret account should fail decoding"
+            "null resource account should fail decoding"
         )
     }
 }

@@ -132,7 +132,7 @@ final class ApprovalDecisionTests: XCTestCase {
             command: ["/usr/bin/true"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: 1_800_000_000),
-            secrets: [],
+            resources: [],
             resolvedExecutable: "/usr/bin/true",
             reusableUses: reusableUses
         )

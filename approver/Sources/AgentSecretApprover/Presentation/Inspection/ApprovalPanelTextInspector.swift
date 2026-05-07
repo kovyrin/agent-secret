@@ -27,7 +27,7 @@ import Foundation
                         .font(.system(size: Metric.contextValueFontSize, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(Metric.secretPanelPadding)
+                        .padding(Metric.resourcePanelPadding)
                 }
                 .frame(width: Metric.inspectorWidth, height: Metric.inspectorHeight)
                 .background(

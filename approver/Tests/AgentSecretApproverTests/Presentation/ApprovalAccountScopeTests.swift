@@ -14,9 +14,9 @@ final class ApprovalAccountScopeTests: XCTestCase {
             command: ["/usr/bin/env", "deploy"],
             cwd: "/tmp/project",
             expiresAt: Date(timeIntervalSince1970: Self.sampleExpiration),
-            secrets: [
-                RequestedSecret(alias: "PERSONAL_TOKEN", ref: "op://Shared/Deploy/token", account: "Personal"),
-                RequestedSecret(alias: "WORK_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
+            resources: [
+                RequestedResource(alias: "PERSONAL_TOKEN", ref: "op://Shared/Deploy/token", account: "Personal"),
+                RequestedResource(alias: "WORK_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
             ],
             resolvedExecutable: "/usr/bin/env"
         )
@@ -25,8 +25,8 @@ final class ApprovalAccountScopeTests: XCTestCase {
             now: Date(timeIntervalSince1970: Self.viewModelNow)
         )
 
-        XCTAssertEqual(viewModel.requestedSecrets.map(\.account), ["Personal", "Work"])
-        XCTAssertEqual(viewModel.requestedSecrets.map(\.accountLabel), ["Account: Personal", "Account: Work"])
+        XCTAssertEqual(viewModel.requestedResources.map(\.account), ["Personal", "Work"])
+        XCTAssertEqual(viewModel.requestedResources.map(\.accountLabel), ["Account: Personal", "Account: Work"])
         XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Personal / Shared", "Work / Shared"])
         XCTAssertTrue(
             viewModel.renderedText.contains(

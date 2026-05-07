@@ -11,13 +11,13 @@ extension ApprovalRequestViewModel {
         }
     }
 
-    static func requestedSecretsHeading(operation: ApprovalOperation, secretCount: Int) -> String {
+    static func requestedResourcesHeading(operation: ApprovalOperation, resourceCount: Int) -> String {
         if operation == .itemDescribe {
             return "Requested item metadata"
         }
-        if secretCount == 1 {
+        if resourceCount == 1 {
             return "Requested secret"
         }
-        return "Requested secrets (\(secretCount))"
+        return "Requested secrets (\(resourceCount))"
     }
 }

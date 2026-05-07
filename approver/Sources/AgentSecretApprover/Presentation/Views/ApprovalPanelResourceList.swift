@@ -3,24 +3,24 @@ import Foundation
 #if canImport(SwiftUI)
     import SwiftUI
 
-    struct ApprovalPanelSecretList: View {
+    struct ApprovalPanelResourceList: View {
         private typealias Metric = ApprovalPanelStyle.Metric
 
         let heading: String
-        let secrets: [RequestedSecretRowViewModel]
+        let resources: [RequestedResourceRowViewModel]
 
         var body: some View {
-            let aliasColumnWidth = ApprovalPanelSecretListLayout.aliasColumnWidth(for: secrets.map(\.alias))
+            let aliasColumnWidth = ApprovalPanelResourceListLayout.aliasColumnWidth(for: resources.map(\.alias))
 
-            VStack(alignment: .leading, spacing: Metric.secretListSpacing) {
+            VStack(alignment: .leading, spacing: Metric.resourceListSpacing) {
                 Text(heading)
                     .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
                     .foregroundStyle(Color.green)
-                ForEach(secrets, id: \.alias) { secret in
-                    ApprovalPanelSecretListRow(secret: secret, aliasColumnWidth: aliasColumnWidth)
+                ForEach(resources, id: \.alias) { resource in
+                    ApprovalPanelResourceListRow(resource: resource, aliasColumnWidth: aliasColumnWidth)
                 }
             }
-            .padding(Metric.secretPanelPadding)
+            .padding(Metric.resourcePanelPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(panelBackground)
             .overlay(panelBorder)

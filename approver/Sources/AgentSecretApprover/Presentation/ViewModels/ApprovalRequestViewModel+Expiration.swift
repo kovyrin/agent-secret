@@ -18,7 +18,7 @@ extension ApprovalRequestViewModel {
         return CopyPresentation(
             isExpired: expired,
             timeRemaining: remainingText,
-            promptQuestion: Self.promptQuestion(operation: request.operation, secretCount: count, isExpired: expired),
+            promptQuestion: Self.promptQuestion(operation: request.operation, resourceCount: count, isExpired: expired),
             accessSummary: Self.accessSummary(operation: request.operation, isExpired: expired),
             scopeSummary: Self.scopeSummary(
                 uses: request.reusableUses,
@@ -27,11 +27,11 @@ extension ApprovalRequestViewModel {
                 allowsReusable: request.allowsReusable
             ),
             allowReusableTitle: Self.reuseTitle(uses: request.reusableUses, remaining: remainingText, expired: expired),
-            footerMessage: Self.footerMessage(operation: request.operation, secretCount: count, expired: expired)
+            footerMessage: Self.footerMessage(operation: request.operation, resourceCount: count, expired: expired)
         )
     }
 
-    static func promptQuestion(operation: ApprovalOperation, secretCount: Int, isExpired: Bool) -> String {
+    static func promptQuestion(operation: ApprovalOperation, resourceCount: Int, isExpired: Bool) -> String {
         if isExpired {
             switch operation {
             case .exec:
@@ -44,10 +44,10 @@ extension ApprovalRequestViewModel {
         if operation == .itemDescribe {
             return "Allow this command to inspect this 1Password item?"
         }
-        if secretCount == 1 {
+        if resourceCount == 1 {
             return "Allow this command to use the following secret?"
         }
-        return "Allow this command to use the following \(secretCount) secrets?"
+        return "Allow this command to use the following \(resourceCount) secrets?"
     }
 
     static func accessSummary(operation: ApprovalOperation, isExpired: Bool) -> String {
@@ -60,7 +60,7 @@ extension ApprovalRequestViewModel {
         return "wants temporary access."
     }
 
-    static func footerMessage(operation: ApprovalOperation, secretCount: Int, expired: Bool) -> String {
+    static func footerMessage(operation: ApprovalOperation, resourceCount: Int, expired: Bool) -> String {
         if expired {
             return "This request expired before approval. Run the command again if access is still needed."
         }
@@ -70,8 +70,8 @@ extension ApprovalRequestViewModel {
             Secret values are never shown to the agent or stored on disk.
             """
         }
-        let noun: String = secretCount == 1 ? "secret is" : "secrets are"
-        let pronoun: String = secretCount == 1 ? "It is" : "They are"
+        let noun: String = resourceCount == 1 ? "secret is" : "secrets are"
+        let pronoun: String = resourceCount == 1 ? "It is" : "They are"
         return """
         The \(noun) injected into the approved process only.
         \(pronoun) never shown to the agent or stored on disk.
