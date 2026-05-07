@@ -222,24 +222,24 @@ func (b *Broker) HandleItemDescribe(
 	if b.stopped() {
 		return protocol.ItemDescribeResponsePayload{}, ErrDaemonStopped
 	}
-	if err := b.audit.Preflight(ctx); err != nil {
+	if err := b.preflightRequiredAudit(ctx); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	if req.Expired(b.now()) {
 		return protocol.ItemDescribeResponsePayload{}, approval.ErrRequestExpired
 	}
-	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
+	if err := b.recordRequiredAudit(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	decision, err := b.approver.Approve(ctx, approval.NewItemDescribePayload(correlation, req))
 	if err != nil {
-		if auditErr := b.audit.Record(ctx, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
+		if auditErr := b.recordRequiredAudit(ctx, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr
 		}
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	if !decision.Approved {
-		if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventApprovalDenied, correlation.RequestID, req)); err != nil {
+		if err := b.recordRequiredAudit(ctx, audit.FromItemDescribeRequest(audit.EventApprovalDenied, correlation.RequestID, req)); err != nil {
 			return protocol.ItemDescribeResponsePayload{}, err
 		}
 		return protocol.ItemDescribeResponsePayload{}, approval.DenialError(decision.DenialReason)
@@ -247,17 +247,17 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.ensureItemDescribeActive(ctx, req); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataGranted, correlation.RequestID, req)); err != nil {
+	if err := b.recordRequiredAudit(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataGranted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchStarted, correlation.RequestID, req)); err != nil {
+	if err := b.recordRequiredAudit(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchStarted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	metadata, err := b.resolver.DescribeItem(ctx, req.Ref, req.Account)
 	if err != nil {
 		failed := audit.FromItemDescribeRequest(audit.EventItemMetadataFetchFailed, correlation.RequestID, req)
 		failed.ErrorCode = audit.ErrorCode(secretFetchErrorCode(err))
-		if auditErr := b.audit.Record(ctx, failed); auditErr != nil {
+		if auditErr := b.recordRequiredAudit(ctx, failed); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr
 		}
 		return protocol.ItemDescribeResponsePayload{}, fmt.Errorf("%w: %w", ErrSecretResolveFailed, err)
@@ -265,10 +265,24 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.ensureItemDescribeActive(ctx, req); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchCompleted, correlation.RequestID, req)); err != nil {
+	if err := b.recordRequiredAudit(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchCompleted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	return protocol.ItemDescribeResponsePayload{Item: metadata}, nil
+}
+
+func (b *Broker) preflightRequiredAudit(ctx context.Context) error {
+	if err := b.audit.Preflight(ctx); err != nil {
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	}
+	return nil
+}
+
+func (b *Broker) recordRequiredAudit(ctx context.Context, event audit.Event) error {
+	if err := b.audit.Record(ctx, event); err != nil {
+		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
+	}
+	return nil
 }
 
 func (b *Broker) ensureItemDescribeActive(ctx context.Context, req request.ItemDescribeRequest) error {

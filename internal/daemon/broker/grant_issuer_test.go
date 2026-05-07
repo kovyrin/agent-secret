@@ -88,6 +88,113 @@ func TestBrokerItemDescribeApprovesBeforeMetadataLookupAndAudits(t *testing.T) {
 	assertAuditEventsValueFree(t, events)
 }
 
+func TestBrokerItemDescribeAuditFailuresAreRequired(t *testing.T) {
+	t.Parallel()
+
+	auditErr := errors.New("audit unavailable")
+	tests := []struct {
+		name              string
+		audit             *memoryAudit
+		approverDecision  approval.Decision
+		resolverErr       error
+		wantApproverCalls int
+		wantResolverCalls int
+	}{
+		{
+			name:              "preflight",
+			audit:             &memoryAudit{err: auditErr},
+			approverDecision:  approval.Decision{Approved: true},
+			wantApproverCalls: 0,
+			wantResolverCalls: 0,
+		},
+		{
+			name: "request event",
+			audit: &memoryAudit{errByType: map[audit.EventType]error{
+				audit.EventItemMetadataRequested: auditErr,
+			}},
+			approverDecision:  approval.Decision{Approved: true},
+			wantApproverCalls: 0,
+			wantResolverCalls: 0,
+		},
+		{
+			name: "denial event",
+			audit: &memoryAudit{errByType: map[audit.EventType]error{
+				audit.EventApprovalDenied: auditErr,
+			}},
+			approverDecision:  approval.Decision{Approved: false},
+			wantApproverCalls: 1,
+			wantResolverCalls: 0,
+		},
+		{
+			name: "grant event",
+			audit: &memoryAudit{errByType: map[audit.EventType]error{
+				audit.EventItemMetadataGranted: auditErr,
+			}},
+			approverDecision:  approval.Decision{Approved: true},
+			wantApproverCalls: 1,
+			wantResolverCalls: 0,
+		},
+		{
+			name: "fetch started event",
+			audit: &memoryAudit{errByType: map[audit.EventType]error{
+				audit.EventItemMetadataFetchStarted: auditErr,
+			}},
+			approverDecision:  approval.Decision{Approved: true},
+			wantApproverCalls: 1,
+			wantResolverCalls: 0,
+		},
+		{
+			name: "fetch failed event",
+			audit: &memoryAudit{errByType: map[audit.EventType]error{
+				audit.EventItemMetadataFetchFailed: auditErr,
+			}},
+			approverDecision:  approval.Decision{Approved: true},
+			resolverErr:       errors.New("resolver unavailable"),
+			wantApproverCalls: 1,
+			wantResolverCalls: 1,
+		},
+		{
+			name: "fetch completed event",
+			audit: &memoryAudit{errByType: map[audit.EventType]error{
+				audit.EventItemMetadataFetchCompleted: auditErr,
+			}},
+			approverDecision:  approval.Decision{Approved: true},
+			wantApproverCalls: 1,
+			wantResolverCalls: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := testItemDescribeRequest(t)
+			approver := &mockApprover{decision: tc.approverDecision}
+			resolver := &mockResolver{
+				errs: map[string]error{
+					resolverCallKey(req.Ref.Raw, req.Account): tc.resolverErr,
+				},
+			}
+			broker := newTestBroker(t, Options{
+				Approver: approver,
+				Resolver: resolver,
+				Audit:    tc.audit,
+			})
+
+			_, err := broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+			if !errors.Is(err, ErrAuditRequired) {
+				t.Fatalf("HandleItemDescribe error = %v, want %v", err, ErrAuditRequired)
+			}
+			if approver.calls != tc.wantApproverCalls {
+				t.Fatalf("approver calls = %d, want %d", approver.calls, tc.wantApproverCalls)
+			}
+			if calls := resolver.Calls(); len(calls) != tc.wantResolverCalls {
+				t.Fatalf("resolver calls = %v, want %d calls", calls, tc.wantResolverCalls)
+			}
+		})
+	}
+}
+
 func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 
