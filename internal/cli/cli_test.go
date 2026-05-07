@@ -195,19 +195,19 @@ NEXT=op://Example/Next/token
 			t.Fatalf("secret %d alias = %q, want %q: %+v", index, req.Secrets[index].Alias, want, req.Secrets)
 		}
 	}
-	if got := lookupTestEnv(req.Env, "TOKEN"); got != "" {
+	if got := lookupTestEnv(command.ExecEnv, "TOKEN"); got != "" {
 		t.Fatalf("env-file secret alias survived in child base env: TOKEN=%q", got)
 	}
-	if got := lookupTestEnv(req.Env, "PLAIN"); got != "first" {
+	if got := lookupTestEnv(command.ExecEnv, "PLAIN"); got != "first" {
 		t.Fatalf("PLAIN = %q, want first", got)
 	}
-	if got := lookupTestEnv(req.Env, "OVERRIDE"); got != "second" {
+	if got := lookupTestEnv(command.ExecEnv, "OVERRIDE"); got != "second" {
 		t.Fatalf("OVERRIDE = %q, want second", got)
 	}
-	if got := lookupTestEnv(req.Env, "REMOVED"); got != "plain-now" {
+	if got := lookupTestEnv(command.ExecEnv, "REMOVED"); got != "plain-now" {
 		t.Fatalf("REMOVED = %q, want plain-now", got)
 	}
-	if req.EnvironmentFingerprint != request.EnvironmentFingerprint(req.Env) {
+	if req.EnvironmentFingerprint != request.EnvironmentFingerprint(command.ExecEnv) {
 		t.Fatalf("environment fingerprint = %q, want fingerprint of effective env", req.EnvironmentFingerprint)
 	}
 }
@@ -280,10 +280,10 @@ PLAIN=kept
 	if len(req.Secrets) != 1 || req.Secrets[0].Alias != "BETA_TOKEN" {
 		t.Fatalf("secrets = %+v, want only BETA_TOKEN", req.Secrets)
 	}
-	if got := lookupTestEnv(req.Env, "PRODUCTION_TOKEN"); got != "" {
+	if got := lookupTestEnv(command.ExecEnv, "PRODUCTION_TOKEN"); got != "" {
 		t.Fatalf("filtered env-file secret alias survived in child base env: PRODUCTION_TOKEN=%q", got)
 	}
-	if got := lookupTestEnv(req.Env, "PLAIN"); got != "kept" {
+	if got := lookupTestEnv(command.ExecEnv, "PLAIN"); got != "kept" {
 		t.Fatalf("PLAIN = %q, want kept", got)
 	}
 }
@@ -340,7 +340,7 @@ PLAIN=kept
 			t.Fatalf("secret %d account = %q, want Profile Account: %+v", index, req.Secrets[index].Account, req.Secrets)
 		}
 	}
-	if got := lookupTestEnv(req.Env, "PLAIN"); got != "kept" {
+	if got := lookupTestEnv(command.ExecEnv, "PLAIN"); got != "kept" {
 		t.Fatalf("PLAIN = %q, want kept", got)
 	}
 }

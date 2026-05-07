@@ -19,12 +19,13 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	dir := t.TempDir()
 	bin := writeExecutable(t, dir)
 	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	env := []string{"PATH=" + dir, "EXISTING=value"}
 
 	req, err := NewExec(ExecOptions{
 		Reason:     "  Run Terraform plan  ",
 		Command:    []string{"tool", "plan"},
 		CWD:        dir,
-		Env:        []string{"PATH=" + dir, "EXISTING=value"},
+		Env:        env,
 		ReceivedAt: receivedAt,
 		Secrets: []SecretSpec{
 			{Alias: "TOKEN", Ref: "op://Example Vault/Cloudflare/token", Account: " Fixture "},
@@ -56,7 +57,7 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	if req.EnvironmentFingerprint == "" {
 		t.Fatal("environment fingerprint was not captured")
 	}
-	if req.EnvironmentFingerprint != EnvironmentFingerprint(req.Env) {
+	if req.EnvironmentFingerprint != EnvironmentFingerprint(env) {
 		t.Fatalf("environment fingerprint = %q, want fingerprint of request env", req.EnvironmentFingerprint)
 	}
 	if len(req.Secrets) != 2 || req.Secrets[0].Ref.Raw != req.Secrets[1].Ref.Raw {
@@ -262,6 +263,12 @@ func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
 	}
 	if _, ok := fields["ResolvedExecutable"]; ok {
 		t.Fatalf("request JSON included default Go field names: %s", raw)
+	}
+	if _, ok := fields["Env"]; ok {
+		t.Fatalf("request JSON included local launch env field: %s", raw)
+	}
+	if _, ok := fields["env"]; ok {
+		t.Fatalf("request JSON included local launch env field: %s", raw)
 	}
 }
 
@@ -645,7 +652,6 @@ func mutateItemDescribeOptions(opts ItemDescribeOptions, fn func(*ItemDescribeOp
 
 func cloneRequest(req ExecRequest) ExecRequest {
 	req.Command = slices.Clone(req.Command)
-	req.Env = slices.Clone(req.Env)
 	req.Secrets = slices.Clone(req.Secrets)
 	req.OverriddenAliases = slices.Clone(req.OverriddenAliases)
 	return req

@@ -226,7 +226,7 @@ func (a App) runExec(ctx context.Context, command Command) int {
 		PathIdentity: command.ExecRequest.ExecutableIdentity,
 		Args:         command.ExecRequest.Command[1:],
 		Dir:          command.ExecRequest.CWD,
-		BaseEnv:      command.ExecRequest.Env,
+		BaseEnv:      command.ExecEnv,
 		Env:          payload.Env,
 		OverrideEnv:  command.ExecRequest.OverrideEnv,
 		Stdout:       a.Stdout,

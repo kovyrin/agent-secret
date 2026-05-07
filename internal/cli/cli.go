@@ -45,6 +45,7 @@ const (
 type Command struct {
 	Kind                Kind
 	ExecRequest         request.ExecRequest
+	ExecEnv             []string
 	ItemDescribeRequest request.ItemDescribeRequest
 	ItemDescribeFormat  itemmetadata.Format
 	ItemDescribePrefix  string
@@ -430,7 +431,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("build exec request: %w", err)
 	}
 
-	return Command{Kind: KindExec, ExecRequest: req}, nil
+	return Command{Kind: KindExec, ExecRequest: req, ExecEnv: inputs.env}, nil
 }
 
 func (p Parser) parseItem(args []string, fullArgs []string) (Command, error) {

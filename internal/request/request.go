@@ -77,7 +77,6 @@ type ExecRequest struct {
 	ResolvedExecutable     string                `json:"resolved_executable"`
 	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
 	CWD                    string                `json:"cwd"`
-	Env                    []string              `json:"-"`
 	EnvironmentFingerprint string                `json:"environment_fingerprint"`
 	Secrets                []Secret              `json:"secrets"`
 	TTL                    time.Duration         `json:"ttl"`
@@ -207,11 +206,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		return ExecRequest{}, err
 	}
 
-	env := opts.Env
-	if env == nil {
-		env = os.Environ()
-	}
-	env = slices.Clone(env)
+	env := slices.Clone(opts.Env)
 
 	command, resolved, err := resolveCommand(cwd, env, opts.Command)
 	if err != nil {
@@ -237,7 +232,6 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		ResolvedExecutable:     resolved,
 		ExecutableIdentity:     executableIdentity,
 		CWD:                    cwd,
-		Env:                    env,
 		EnvironmentFingerprint: EnvironmentFingerprint(env),
 		Secrets:                secrets,
 		TTL:                    ttl,
