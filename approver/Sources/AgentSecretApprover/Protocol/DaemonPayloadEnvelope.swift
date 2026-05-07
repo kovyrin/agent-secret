@@ -1,6 +1,6 @@
 import Foundation
 
-struct DaemonEnvelope<Payload: Codable>: Codable, DaemonEnvelopeMetadata {
+struct DaemonPayloadEnvelope<Payload: Codable>: Codable, DaemonEnvelopeMetadata {
     private enum CodingKeys: String, CodingKey {
         case nonce
         case payload
@@ -10,7 +10,7 @@ struct DaemonEnvelope<Payload: Codable>: Codable, DaemonEnvelopeMetadata {
     }
 
     let nonce: String?
-    let payload: Payload?
+    let payload: Payload
     let requestID: String?
     let type: DaemonMessageType
     let version: Int

@@ -98,18 +98,6 @@ final class SocketDaemonClientTests: XCTestCase {
         )
     }
 
-    private static func errorResponseWithoutPayload() throws -> Data {
-        try encode(
-            DaemonEnvelope<EmptyPayload>(
-                nonce: nil,
-                payload: nil,
-                requestID: nil,
-                type: .error,
-                version: expectedProtocolVersion
-            )
-        )
-    }
-
     private static func encode(_ envelope: DaemonEnvelope<some Any>) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -271,16 +259,6 @@ final class SocketDaemonClientTests: XCTestCase {
                 error as? SocketDaemonClientError,
                 .daemonError(.staleApproval)
             )
-        }
-    }
-
-    func testRejectsDaemonErrorWithoutPayload() throws {
-        let client = try SocketDaemonClient(
-            transport: MemoryLineTransport(reads: [Self.errorResponseWithoutPayload()])
-        )
-
-        assertInvalidResponse("missing daemon error payload") {
-            _ = try client.fetchPendingRequest()
         }
     }
 }

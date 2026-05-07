@@ -52,10 +52,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             version: Self.protocolVersion
         )
         try send(request)
-        let response: DaemonEnvelope<ApprovalRequest> = try readOKEnvelope()
-        guard let payload: ApprovalRequest = response.payload else {
-            throw SocketDaemonClientError.invalidResponse("missing approval request payload")
-        }
+        let response: DaemonPayloadEnvelope<ApprovalRequest> = try readOKPayloadEnvelope()
+        let payload: ApprovalRequest = response.payload
         try validateCorrelation(
             response,
             requestID: payload.requestID,
@@ -73,41 +71,53 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             version: Self.protocolVersion
         )
         try send(request)
-        let _: DaemonEnvelope<EmptyPayload> = try readOKEnvelope(
+        try readOKAck(
             requestID: decision.requestID,
             nonce: decision.nonce
         )
     }
 
-    private func readOKEnvelope<Payload: Codable>(
+    private func readOKPayloadEnvelope<Payload: Codable>(
         requestID: String? = nil,
         nonce: String? = nil
-    ) throws -> DaemonEnvelope<Payload> {
-        let data: Data = try transport.readLine()
-        let header: DaemonHeader = try decodeHeader(from: data)
-        try validateHeader(header)
-        if header.type == .error {
-            let response: DaemonEnvelope<DaemonErrorPayload> = try decodeEnvelope(
-                DaemonEnvelope<DaemonErrorPayload>.self,
-                from: data,
-                invalidMessage: "malformed daemon error response"
-            )
-            try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
-            guard let payload: DaemonErrorPayload = response.payload else {
-                throw SocketDaemonClientError.invalidResponse("missing daemon error payload")
-            }
-            throw daemonError(from: payload)
-        }
-        guard header.type == .okResponse else {
-            throw SocketDaemonClientError.invalidResponse("unexpected response type")
-        }
-        let response: DaemonEnvelope<Payload> = try decodeEnvelope(
-            DaemonEnvelope<Payload>.self,
+    ) throws -> DaemonPayloadEnvelope<Payload> {
+        let data: Data = try readOKData(requestID: requestID, nonce: nonce)
+        let response: DaemonPayloadEnvelope<Payload> = try decodeEnvelope(
+            DaemonPayloadEnvelope<Payload>.self,
             from: data,
             invalidMessage: "malformed daemon response payload"
         )
         try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
         return response
+    }
+
+    private func readOKAck(requestID: String, nonce: String) throws {
+        let data: Data = try readOKData(requestID: requestID, nonce: nonce)
+        let response: DaemonEnvelope<EmptyPayload> = try decodeEnvelope(
+            DaemonEnvelope<EmptyPayload>.self,
+            from: data,
+            invalidMessage: "malformed daemon response payload"
+        )
+        try validateCorrelation(response, requestID: requestID, nonce: nonce)
+    }
+
+    private func readOKData(requestID: String? = nil, nonce: String? = nil) throws -> Data {
+        let data: Data = try transport.readLine()
+        let header: DaemonHeader = try decodeHeader(from: data)
+        try validateHeader(header)
+        if header.type == .error {
+            let response: DaemonPayloadEnvelope<DaemonErrorPayload> = try decodeEnvelope(
+                DaemonPayloadEnvelope<DaemonErrorPayload>.self,
+                from: data,
+                invalidMessage: "malformed daemon error response"
+            )
+            try validateCorrelationIfNeeded(response, requestID: requestID, nonce: nonce)
+            throw daemonError(from: response.payload)
+        }
+        guard header.type == .okResponse else {
+            throw SocketDaemonClientError.invalidResponse("unexpected response type")
+        }
+        return data
     }
 
     private func decodeHeader(from data: Data) throws -> DaemonHeader {
@@ -121,11 +131,11 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         }
     }
 
-    private func decodeEnvelope<Payload: Codable>(
-        _ type: DaemonEnvelope<Payload>.Type,
+    private func decodeEnvelope<Envelope: Codable>(
+        _ type: Envelope.Type,
         from data: Data,
         invalidMessage: String
-    ) throws -> DaemonEnvelope<Payload> {
+    ) throws -> Envelope {
         do {
             return try decoder.decode(type, from: data)
         } catch {
@@ -142,7 +152,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private func validateCorrelation(
-        _ response: DaemonEnvelope<some Codable>,
+        _ response: some DaemonEnvelopeMetadata,
         requestID: String,
         nonce: String
     ) throws {
@@ -155,7 +165,7 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private func validateCorrelationIfNeeded(
-        _ response: DaemonEnvelope<some Codable>,
+        _ response: some DaemonEnvelopeMetadata,
         requestID: String?,
         nonce: String?
     ) throws {
