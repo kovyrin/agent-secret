@@ -104,30 +104,16 @@ func (r ItemDescribeRequest) Expired(at time.Time) bool {
 }
 
 func (r ItemDescribeRequest) ValidateForDaemon() error {
-	reason, err := validateReason(r.Reason)
-	if err != nil {
+	if err := validateDaemonLifecycle(daemonLifecycle{
+		Reason:             r.Reason,
+		Command:            r.Command,
+		CWD:                r.CWD,
+		ResolvedExecutable: r.ResolvedExecutable,
+		TTL:                r.TTL,
+		ReceivedAt:         r.ReceivedAt,
+		ExpiresAt:          r.ExpiresAt,
+	}); err != nil {
 		return err
-	}
-	if reason != r.Reason {
-		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
-	}
-	if r.TTL < MinExecTTL || r.TTL > MaxExecTTL {
-		return fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
-	}
-	if r.ReceivedAt.IsZero() || r.ExpiresAt.IsZero() {
-		return fmt.Errorf("%w: request times are required", ErrInvalidRequest)
-	}
-	if !r.ExpiresAt.Equal(r.ReceivedAt.Add(r.TTL)) {
-		return fmt.Errorf("%w: expires_at must equal received_at plus ttl", ErrInvalidTTL)
-	}
-	if err := validateDaemonPath("cwd", r.CWD, false); err != nil {
-		return err
-	}
-	if err := validateDaemonPath("resolved executable", r.ResolvedExecutable, true); err != nil {
-		return err
-	}
-	if len(r.Command) == 0 || r.Command[0] == "" {
-		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
 	}
 	if _, err := itemmetadata.ParseRef(r.Ref.Raw); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidReference, err)

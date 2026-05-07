@@ -32,7 +32,7 @@ var (
 	ErrInvalidReason       = errors.New("invalid reason")
 	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
 	ErrInvalidReusableUses = errors.New("invalid reusable use count")
-	ErrInvalidRequest      = errors.New("invalid exec request")
+	ErrInvalidRequest      = errors.New("invalid request")
 	ErrInvalidTTL          = errors.New("invalid ttl")
 )
 
@@ -109,29 +109,7 @@ func (r ExecRequest) WithReceiptTime(receivedAt time.Time) ExecRequest {
 }
 
 func (r ExecRequest) ValidateForDaemon() error {
-	reason, err := validateReason(r.Reason)
-	if err != nil {
-		return err
-	}
-	if reason != r.Reason {
-		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
-	}
 	if err := validateReusableUses(r.ReusableUses); err != nil {
-		return err
-	}
-	if r.TTL < MinExecTTL || r.TTL > MaxExecTTL {
-		return fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
-	}
-	if r.ReceivedAt.IsZero() || r.ExpiresAt.IsZero() {
-		return fmt.Errorf("%w: request times are required", ErrInvalidRequest)
-	}
-	if !r.ExpiresAt.Equal(r.ReceivedAt.Add(r.TTL)) {
-		return fmt.Errorf("%w: expires_at must equal received_at plus ttl", ErrInvalidTTL)
-	}
-	if err := validateDaemonPath("cwd", r.CWD, false); err != nil {
-		return err
-	}
-	if err := validateDaemonPath("resolved executable", r.ResolvedExecutable, true); err != nil {
 		return err
 	}
 	if r.ExecutableIdentity.IsZero() {
@@ -140,14 +118,61 @@ func (r ExecRequest) ValidateForDaemon() error {
 	if err := validateEnvironmentFingerprint(r.EnvironmentFingerprint); err != nil {
 		return err
 	}
-	if len(r.Command) == 0 || r.Command[0] == "" {
-		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
+	if err := validateDaemonLifecycle(daemonLifecycle{
+		Reason:             r.Reason,
+		Command:            r.Command,
+		CWD:                r.CWD,
+		ResolvedExecutable: r.ResolvedExecutable,
+		TTL:                r.TTL,
+		ReceivedAt:         r.ReceivedAt,
+		ExpiresAt:          r.ExpiresAt,
+	}); err != nil {
+		return err
 	}
 	if _, err := validateDaemonSecrets(r.Secrets); err != nil {
 		return err
 	}
 	if err := validateOverriddenAliases(r.Secrets, r.OverriddenAliases, r.OverrideEnv); err != nil {
 		return err
+	}
+	return nil
+}
+
+type daemonLifecycle struct {
+	Reason             string
+	Command            []string
+	CWD                string
+	ResolvedExecutable string
+	TTL                time.Duration
+	ReceivedAt         time.Time
+	ExpiresAt          time.Time
+}
+
+func validateDaemonLifecycle(lifecycle daemonLifecycle) error {
+	reason, err := validateReason(lifecycle.Reason)
+	if err != nil {
+		return err
+	}
+	if reason != lifecycle.Reason {
+		return fmt.Errorf("%w: reason must be pre-normalized", ErrInvalidReason)
+	}
+	if lifecycle.TTL < MinExecTTL || lifecycle.TTL > MaxExecTTL {
+		return fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinExecTTL, MaxExecTTL)
+	}
+	if lifecycle.ReceivedAt.IsZero() || lifecycle.ExpiresAt.IsZero() {
+		return fmt.Errorf("%w: request times are required", ErrInvalidRequest)
+	}
+	if !lifecycle.ExpiresAt.Equal(lifecycle.ReceivedAt.Add(lifecycle.TTL)) {
+		return fmt.Errorf("%w: expires_at must equal received_at plus ttl", ErrInvalidTTL)
+	}
+	if err := validateDaemonPath("cwd", lifecycle.CWD, false); err != nil {
+		return err
+	}
+	if err := validateDaemonPath("resolved executable", lifecycle.ResolvedExecutable, true); err != nil {
+		return err
+	}
+	if len(lifecycle.Command) == 0 || lifecycle.Command[0] == "" {
+		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
 	}
 	return nil
 }
