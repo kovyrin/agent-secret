@@ -10,7 +10,7 @@ import (
 )
 
 type ApprovalRequestPayload struct {
-	Operation          ApprovalOperation         `json:"operation,omitempty"`
+	Operation          ApprovalOperation         `json:"operation"`
 	AllowsReusable     bool                      `json:"allows_reusable"`
 	RequestID          string                    `json:"request_id"`
 	Nonce              string                    `json:"nonce"`

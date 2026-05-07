@@ -3,9 +3,11 @@
     "/opt/homebrew/bin/terraform",
     "plan"
   ],
+  "allows_reusable": true,
   "cwd": "/tmp/project",
   "expires_at": "2027-01-15T08:00:00Z",
   "nonce": "nonce_456",
+  "operation": "exec",
   "overridden_aliases": [
     "EXAMPLE_TOKEN"
   ],

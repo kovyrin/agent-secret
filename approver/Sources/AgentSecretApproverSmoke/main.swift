@@ -50,6 +50,8 @@ private func sampleRequestData() -> Data {
         "command": ["/opt/homebrew/bin/terraform", "plan"],
         "cwd": "/tmp/project",
         "expires_at": "2027-01-15T08:00:00Z",
+        "operation": "exec",
+        "allows_reusable": true,
         "secrets": [
             {
                 "alias": "EXAMPLE_TOKEN",

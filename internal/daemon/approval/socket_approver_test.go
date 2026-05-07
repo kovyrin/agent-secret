@@ -223,6 +223,9 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 	if approvalRequest.RequestID != "req_123" || approvalRequest.Nonce != "nonce_456" {
 		t.Fatalf("unexpected approval request identifiers: %+v", approvalRequest)
 	}
+	if approvalRequest.Operation != approval.ApprovalOperationExec || !approvalRequest.AllowsReusable {
+		t.Fatalf("unexpected approval request operation: %+v", approvalRequest)
+	}
 	if approvalRequest.Secrets[0].Ref != "op://Example Vault/Example Item/token" {
 		t.Fatalf("unexpected secret ref: %+v", approvalRequest.Secrets)
 	}
@@ -257,7 +260,7 @@ func TestApprovalPayloadEncodesCurrentProtocolFields(t *testing.T) {
 	if err := json.Unmarshal(data, &fields); err != nil {
 		t.Fatalf("decode approval payload object: %v", err)
 	}
-	for _, field := range []string{"override_env", "overridden_aliases", "reusable_uses"} {
+	for _, field := range []string{"operation", "allows_reusable", "override_env", "overridden_aliases", "reusable_uses"} {
 		if _, ok := fields[field]; !ok {
 			t.Fatalf("approval payload omitted current protocol field %q: %s", field, data)
 		}

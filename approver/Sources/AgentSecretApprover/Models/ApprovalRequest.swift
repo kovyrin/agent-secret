@@ -77,8 +77,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         cwd = try container.decode(String.self, forKey: .cwd)
         resolvedExecutable = try container.decode(String.self, forKey: .resolvedExecutable)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
-        operation = try container.decodeIfPresent(ApprovalOperation.self, forKey: .operation) ?? .exec
-        allowsReusable = try container.decodeIfPresent(Bool.self, forKey: .allowsReusable) ?? true
+        operation = try container.decode(ApprovalOperation.self, forKey: .operation)
+        allowsReusable = try container.decode(Bool.self, forKey: .allowsReusable)
         secrets = try container.decode([RequestedSecret].self, forKey: .secrets)
         overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)
         overriddenAliases = try container.decode([String].self, forKey: .overriddenAliases)

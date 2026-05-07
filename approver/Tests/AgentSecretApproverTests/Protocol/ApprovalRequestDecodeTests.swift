@@ -14,6 +14,8 @@ final class ApprovalRequestDecodeTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
 
         for field in [
+            "allows_reusable",
+            "operation",
             "override_env",
             "overridden_aliases",
             "resolved_executable",
