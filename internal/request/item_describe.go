@@ -2,13 +2,11 @@ package request
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
-	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 const DefaultItemDescribeTTL = 2 * time.Minute
@@ -62,14 +60,11 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 	}
 	resolvedExecutable := opts.ResolvedExecutable
 	if resolvedExecutable == "" {
-		resolvedExecutable, err = os.Executable()
-		if err != nil {
-			return ItemDescribeRequest{}, fmt.Errorf("resolve current executable: %w", err)
-		}
-		resolvedExecutable, err = pathresolve.Strict(resolvedExecutable)
-		if err != nil {
-			return ItemDescribeRequest{}, fmt.Errorf("%w: resolve current executable: %w", ErrInvalidCommand, err)
-		}
+		return ItemDescribeRequest{}, fmt.Errorf("%w: resolved executable is required", ErrInvalidCommand)
+	}
+	resolvedExecutable, err = validateExecutable(resolvedExecutable)
+	if err != nil {
+		return ItemDescribeRequest{}, err
 	}
 	command := slices.Clone(opts.Command)
 	if len(command) == 0 {

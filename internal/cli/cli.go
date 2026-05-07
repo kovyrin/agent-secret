@@ -479,12 +479,17 @@ func (p Parser) parseItemDescribe(args []string, fullArgs []string) (Command, er
 	if reason == "" {
 		reason = "Inspect 1Password item metadata"
 	}
+	resolvedExecutable, err := os.Executable()
+	if err != nil {
+		return Command{}, fmt.Errorf("resolve current executable: %w", err)
+	}
 	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
-		Reason:  reason,
-		Command: append([]string{"agent-secret"}, fullArgs...),
-		Ref:     fs.Arg(0),
-		Account: account,
-		TTL:     flags.ttl,
+		Reason:             reason,
+		Command:            append([]string{"agent-secret"}, fullArgs...),
+		ResolvedExecutable: resolvedExecutable,
+		Ref:                fs.Arg(0),
+		Account:            account,
+		TTL:                flags.ttl,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build item describe request: %w", err)

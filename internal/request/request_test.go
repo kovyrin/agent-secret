@@ -549,6 +549,7 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 		{name: "missing account", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Account = " \t " }), want: ErrInvalidReference},
 		{name: "ttl too low", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
 		{name: "ttl too high", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = MaxExecTTL + time.Second }), want: ErrInvalidTTL},
+		{name: "missing resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "" }), want: ErrInvalidCommand},
 	}
 
 	for _, tt := range tests {

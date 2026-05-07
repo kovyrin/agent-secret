@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -66,13 +67,20 @@ func requireNoActiveRequest(t *testing.T, b *Broker, correlation protocol.Correl
 
 func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
 	t.Helper()
+	dir := t.TempDir()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
 	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
-		Reason:     "Inspect item metadata",
-		Command:    []string{"agent-secret", "item", "describe", "op://Example/Item"},
-		Ref:        "op://Example/Item",
-		Account:    "Work",
-		TTL:        time.Minute,
-		ReceivedAt: time.Now(),
+		Reason:             "Inspect item metadata",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example/Item"},
+		CWD:                dir,
+		ResolvedExecutable: exe,
+		Ref:                "op://Example/Item",
+		Account:            "Work",
+		TTL:                time.Minute,
+		ReceivedAt:         time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("NewItemDescribe returned error: %v", err)
