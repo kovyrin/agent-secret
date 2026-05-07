@@ -115,8 +115,12 @@ func (r ItemDescribeRequest) ValidateForDaemon() error {
 	}); err != nil {
 		return err
 	}
-	if _, err := itemmetadata.ParseRef(r.Ref.Raw); err != nil {
+	parsed, err := itemmetadata.ParseRef(r.Ref.Raw)
+	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidReference, err)
+	}
+	if parsed != r.Ref {
+		return fmt.Errorf("%w: item reference metadata must be pre-normalized", ErrInvalidReference)
 	}
 	if strings.TrimSpace(r.Account) != r.Account || r.Account == "" {
 		return fmt.Errorf("%w: item account is required", ErrInvalidReference)
