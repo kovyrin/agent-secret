@@ -49,6 +49,9 @@ version numbers for public releases.
 - Profile commands that resolve multiple 1Password refs no longer fail because
   a stale cached 1Password desktop SDK client reports `invalid client id` or
   `no vault matched` while `agent-secret doctor` still looks healthy.
+- Long-running daemon sessions can now resolve secrets from different
+  1Password desktop accounts in one process instead of reusing the first
+  account selected by the SDK.
 
 ## [0.0.7] - 2026-05-05
 

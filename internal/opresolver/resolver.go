@@ -11,10 +11,10 @@ import (
 	"strings"
 	"sync"
 
-	onepassword "github.com/1password/onepassword-sdk-go"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/opref"
+	onepassword "github.com/kovyrin/onepassword-sdk-go"
 )
 
 var (

@@ -3,7 +3,7 @@ module github.com/kovyrin/agent-secret
 go 1.26
 
 require (
-	github.com/1password/onepassword-sdk-go v0.4.0
+	github.com/kovyrin/onepassword-sdk-go v0.4.1-0.20260507003427-f987661ff244
 	golang.org/x/sys v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )

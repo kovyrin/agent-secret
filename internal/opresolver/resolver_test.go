@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	onepassword "github.com/1password/onepassword-sdk-go"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
+	onepassword "github.com/kovyrin/onepassword-sdk-go"
 )
 
 type fakeSecretsAPI struct {

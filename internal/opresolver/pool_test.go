@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	onepassword "github.com/1password/onepassword-sdk-go"
+	onepassword "github.com/kovyrin/onepassword-sdk-go"
 )
 
 func TestDesktopPoolResolveRequiresRequestAccount(t *testing.T) {
