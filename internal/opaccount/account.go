@@ -17,6 +17,8 @@ type cliAccount struct {
 	AccountUUID string `json:"account_uuid"`
 }
 
+type accountListRunner func(args ...string) ([]byte, error)
+
 func SelectDesktopAccount(accountOverride string, opAccount string) string {
 	return SelectDesktopAccountWithDetector(accountOverride, opAccount, DetectSingleCLIAccount)
 }
@@ -45,14 +47,20 @@ func DetectSingleCLIAccount() string {
 	if err != nil {
 		return ""
 	}
-	if account := detectSingleCLIAccountJSON(opPath); account != "" {
-		return account
-	}
-	return detectSingleCLIAccountTable(opPath)
+	return detectSingleCLIAccountWithRunner(func(args ...string) ([]byte, error) {
+		return runOPAccountList(opPath, args...)
+	})
 }
 
-func detectSingleCLIAccountJSON(opPath string) string {
-	output, err := runOPAccountList(opPath, "--format=json")
+func detectSingleCLIAccountWithRunner(run accountListRunner) string {
+	if account := detectSingleCLIAccountJSON(run); account != "" {
+		return account
+	}
+	return detectSingleCLIAccountTable(run)
+}
+
+func detectSingleCLIAccountJSON(run accountListRunner) string {
+	output, err := run("--format=json")
 	if err != nil {
 		return ""
 	}
@@ -75,8 +83,8 @@ func singleCLIAccountFromJSON(output []byte) string {
 	})
 }
 
-func detectSingleCLIAccountTable(opPath string) string {
-	output, err := runOPAccountList(opPath)
+func detectSingleCLIAccountTable(run accountListRunner) string {
+	output, err := run()
 	if err != nil {
 		return ""
 	}
