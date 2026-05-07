@@ -128,6 +128,30 @@ func TestUniqueAliasesBuildsStableEnvAliases(t *testing.T) {
 	}
 }
 
+func TestUniqueAliasesAvoidsSuffixCollisions(t *testing.T) {
+	t.Parallel()
+
+	fields := []Field{
+		{Label: "token"},
+		{Label: "token"},
+		{Label: "token 2"},
+		{Label: "token"},
+	}
+
+	got := UniqueAliases(fields, "")
+	want := []string{
+		"TOKEN",
+		"TOKEN_2",
+		"TOKEN_2_2",
+		"TOKEN_3",
+	}
+	for i, field := range got {
+		if field.Alias != want[i] {
+			t.Fatalf("field %d alias = %q, want %q", i, field.Alias, want[i])
+		}
+	}
+}
+
 func TestEnvAliasHandlesEmptyPrefixAndNumericFallback(t *testing.T) {
 	t.Parallel()
 

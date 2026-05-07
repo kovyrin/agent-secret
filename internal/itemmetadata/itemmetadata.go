@@ -107,13 +107,17 @@ func EnvAlias(prefix string, label string, fallback string) string {
 
 func UniqueAliases(fields []Field, prefix string) []Field {
 	out := slices.Clone(fields)
-	counts := make(map[string]int, len(out))
+	used := make(map[string]struct{}, len(out))
 	for i := range out {
-		alias := EnvAlias(prefix, out[i].Label, out[i].ID)
-		counts[alias]++
-		if counts[alias] > 1 {
-			alias = fmt.Sprintf("%s_%d", alias, counts[alias])
+		base := EnvAlias(prefix, out[i].Label, out[i].ID)
+		alias := base
+		for suffix := 2; ; suffix++ {
+			if _, exists := used[alias]; !exists {
+				break
+			}
+			alias = fmt.Sprintf("%s_%d", base, suffix)
 		}
+		used[alias] = struct{}{}
 		out[i].Alias = alias
 	}
 	return out
