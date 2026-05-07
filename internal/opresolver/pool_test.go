@@ -40,7 +40,7 @@ func TestDesktopPoolInitializesDifferentAccountsConcurrently(t *testing.T) {
 	slowDone := make(chan error, 1)
 	fastResolver := testDesktopResolver(t)
 	slowResolver := testDesktopResolver(t)
-	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*ItemResolver, error) {
 		switch opts.Account {
 		case "slow":
 			close(slowStarted)
@@ -84,7 +84,7 @@ func TestDesktopPoolCoalescesConcurrentSameAccountInitialization(t *testing.T) {
 	releaseShared := make(chan struct{})
 	sharedResolver := testDesktopResolver(t)
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "shared" {
 			return nil, fmt.Errorf("unexpected account %q", opts.Account)
 		}
@@ -131,9 +131,9 @@ func TestDesktopPoolResolveReturnsSecretValue(t *testing.T) {
 	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
 		IntegrationName:    "test integration",
 		IntegrationVersion: "test version",
-		Factory: func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		Factory: func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 			gotOptions = opts
-			return NewResolver(fake)
+			return testDesktopResolverWithSecrets(t, fake), nil
 		},
 	})
 
@@ -162,7 +162,7 @@ func TestDesktopPoolDescribeItemReturnsMetadata(t *testing.T) {
 	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
 		IntegrationName:    "test integration",
 		IntegrationVersion: "test version",
-		Factory: func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		Factory: func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 			gotOptions = opts
 			return testDesktopItemResolver(t, nil), nil
 		},
@@ -196,14 +196,14 @@ func TestDesktopPoolRefreshesClientAfterInvalidClientID(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "fixture.1password.com" {
 			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
 		}
 		if calls.Add(1) == 1 {
-			return NewResolver(&fakeSecretsAPI{err: errors.New("invalid client id")})
+			return testDesktopResolverWithSecrets(t, &fakeSecretsAPI{err: errors.New("invalid client id")}), nil
 		}
-		return NewResolver(&fakeSecretsAPI{value: "fresh-secret-value"})
+		return testDesktopResolverWithSecrets(t, &fakeSecretsAPI{value: "fresh-secret-value"}), nil
 	})
 
 	value, err := pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
@@ -233,7 +233,7 @@ func TestDesktopPoolDescribeItemRefreshesClientAfterInvalidClientID(t *testing.T
 	t.Parallel()
 
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "fixture.1password.com" {
 			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
 		}
@@ -264,12 +264,12 @@ func TestDesktopPoolResolvePreservesRefreshFailureContext(t *testing.T) {
 
 	refreshErr := errors.New("refresh unavailable")
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "fixture.1password.com" {
 			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
 		}
 		if calls.Add(1) == 1 {
-			return NewResolver(&fakeSecretsAPI{err: errors.New("invalid client id")})
+			return testDesktopResolverWithSecrets(t, &fakeSecretsAPI{err: errors.New("invalid client id")}), nil
 		}
 		return nil, refreshErr
 	})
@@ -291,7 +291,7 @@ func TestDesktopPoolDescribeItemPreservesRefreshFailureContext(t *testing.T) {
 
 	refreshErr := errors.New("refresh unavailable")
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "fixture.1password.com" {
 			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
 		}
@@ -321,14 +321,14 @@ func TestDesktopPoolRefreshesClientAfterVaultNotFound(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "fixture.1password.com" {
 			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
 		}
 		if calls.Add(1) == 1 {
-			return NewResolver(&fakeSecretsAPI{err: errors.New("no vault matched the secret reference query")})
+			return testDesktopResolverWithSecrets(t, &fakeSecretsAPI{err: errors.New("no vault matched the secret reference query")}), nil
 		}
-		return NewResolver(&fakeSecretsAPI{value: "fresh-secret-value"})
+		return testDesktopResolverWithSecrets(t, &fakeSecretsAPI{value: "fresh-secret-value"}), nil
 	})
 
 	value, err := pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
@@ -348,7 +348,7 @@ func TestDesktopPoolDoesNotRefreshClientForInvalidReference(t *testing.T) {
 
 	var calls atomic.Int32
 	resolver := testDesktopResolver(t)
-	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "fixture.1password.com" {
 			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
 		}
@@ -380,7 +380,7 @@ func TestDesktopPoolResolveWrapsWaiterCancellationOnce(t *testing.T) {
 	release := make(chan struct{})
 	resolver := testDesktopResolver(t)
 	var calls atomic.Int32
-	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*Resolver, error) {
+	pool := testDesktopPoolWithFactory(func(ctx context.Context, opts ClientOptions) (*ItemResolver, error) {
 		if opts.Account != "shared" {
 			return nil, fmt.Errorf("unexpected account %q", opts.Account)
 		}
@@ -448,21 +448,27 @@ func TestWaitForDesktopPoolInitReturnsContextError(t *testing.T) {
 }
 
 type clientResult struct {
-	resolver *Resolver
+	resolver *ItemResolver
 	err      error
 }
 
-func testDesktopResolver(t *testing.T) *Resolver {
+func testDesktopResolver(t *testing.T) *ItemResolver {
 	t.Helper()
 
-	resolver, err := NewResolver(&fakeSecretsAPI{value: "synthetic-secret-value"})
+	return testDesktopResolverWithSecrets(t, &fakeSecretsAPI{value: "synthetic-secret-value"})
+}
+
+func testDesktopResolverWithSecrets(t *testing.T, secrets SecretsAPI) *ItemResolver {
+	t.Helper()
+
+	resolver, err := NewResolverWithItemMetadata(secrets, &fakeVaultsAPI{}, &fakeItemsAPI{})
 	if err != nil {
-		t.Fatalf("NewResolver returned error: %v", err)
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
 	}
 	return resolver
 }
 
-func testDesktopItemResolver(t *testing.T, getErr error) *Resolver {
+func testDesktopItemResolver(t *testing.T, getErr error) *ItemResolver {
 	t.Helper()
 
 	resolver, err := NewResolverWithItemMetadata(
@@ -521,7 +527,7 @@ func receiveNoError(t *testing.T, ch <-chan error, message string) {
 	}
 }
 
-func receiveClientResult(t *testing.T, ch <-chan clientResult, message string) *Resolver {
+func receiveClientResult(t *testing.T, ch <-chan clientResult, message string) *ItemResolver {
 	t.Helper()
 
 	select {

@@ -15,7 +15,7 @@ const DefaultDesktopPoolInitTimeout = 30 * time.Second
 
 var ErrAccountRequired = errors.New("1Password account is required")
 
-type DesktopResolverFactory func(context.Context, ClientOptions) (*Resolver, error)
+type DesktopResolverFactory func(context.Context, ClientOptions) (*ItemResolver, error)
 
 type DesktopPoolOptions struct {
 	IntegrationName    string
@@ -29,19 +29,19 @@ type DesktopPool struct {
 	integrationName    string
 	integrationVersion string
 	initTimeout        time.Duration
-	clients            map[string]*Resolver
+	clients            map[string]*ItemResolver
 	inits              map[string]*desktopPoolInit
 	newDesktopResolver DesktopResolverFactory
 }
 
 type desktopPoolResult struct {
-	resolver *Resolver
+	resolver *ItemResolver
 	err      error
 }
 
 type desktopPoolInit struct {
 	done     chan struct{}
-	resolver *Resolver
+	resolver *ItemResolver
 	err      error
 }
 
@@ -62,7 +62,7 @@ func NewDesktopPoolWithOptions(opts DesktopPoolOptions) *DesktopPool {
 		integrationName:    strings.TrimSpace(opts.IntegrationName),
 		integrationVersion: strings.TrimSpace(opts.IntegrationVersion),
 		initTimeout:        initTimeout,
-		clients:            make(map[string]*Resolver),
+		clients:            make(map[string]*ItemResolver),
 		inits:              make(map[string]*desktopPoolInit),
 		newDesktopResolver: factory,
 	}
@@ -122,7 +122,7 @@ func (p *DesktopPool) resolveWithRefreshedClient(
 	ctx context.Context,
 	ref string,
 	account string,
-	stale *Resolver,
+	stale *ItemResolver,
 ) (string, error) {
 	p.evictClient(account, stale)
 	resolver, err := p.client(ctx, account)
@@ -140,7 +140,7 @@ func (p *DesktopPool) describeItemWithRefreshedClient(
 	ctx context.Context,
 	ref itemmetadata.Ref,
 	account string,
-	stale *Resolver,
+	stale *ItemResolver,
 ) (itemmetadata.Metadata, error) {
 	p.evictClient(account, stale)
 	resolver, err := p.client(ctx, account)
@@ -167,7 +167,7 @@ func shouldRefreshDesktopClient(err error) bool {
 		strings.Contains(message, "no vault matched the secret reference query")
 }
 
-func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*Resolver, error) {
+func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*ItemResolver, error) {
 	account := strings.TrimSpace(accountOverride)
 	if account == "" {
 		return nil, ErrAccountRequired
@@ -185,7 +185,7 @@ func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*Reso
 	return resolver, err
 }
 
-func (p *DesktopPool) startClientInit(account string) (*Resolver, *desktopPoolInit, bool) {
+func (p *DesktopPool) startClientInit(account string) (*ItemResolver, *desktopPoolInit, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if resolver := p.clients[account]; resolver != nil {
@@ -202,7 +202,7 @@ func (p *DesktopPool) startClientInit(account string) (*Resolver, *desktopPoolIn
 	return nil, init, true
 }
 
-func (p *DesktopPool) createClient(ctx context.Context, account string) (*Resolver, error) {
+func (p *DesktopPool) createClient(ctx context.Context, account string) (*ItemResolver, error) {
 	initCtx, cancel := context.WithTimeout(ctx, p.initTimeout)
 	defer cancel()
 	results := make(chan desktopPoolResult, 1)
@@ -234,7 +234,7 @@ func (p *DesktopPool) createClient(ctx context.Context, account string) (*Resolv
 	}
 }
 
-func (p *DesktopPool) finishClientInit(account string, init *desktopPoolInit, resolver *Resolver, err error) {
+func (p *DesktopPool) finishClientInit(account string, init *desktopPoolInit, resolver *ItemResolver, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -247,7 +247,7 @@ func (p *DesktopPool) finishClientInit(account string, init *desktopPoolInit, re
 	close(init.done)
 }
 
-func (p *DesktopPool) evictClient(account string, resolver *Resolver) {
+func (p *DesktopPool) evictClient(account string, resolver *ItemResolver) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.clients[account] == resolver {
@@ -255,7 +255,7 @@ func (p *DesktopPool) evictClient(account string, resolver *Resolver) {
 	}
 }
 
-func waitForDesktopPoolInit(ctx context.Context, init *desktopPoolInit) (*Resolver, error) {
+func waitForDesktopPoolInit(ctx context.Context, init *desktopPoolInit) (*ItemResolver, error) {
 	select {
 	case <-init.done:
 		return init.resolver, init.err

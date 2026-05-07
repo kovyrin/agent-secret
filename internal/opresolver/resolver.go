@@ -47,12 +47,17 @@ type ClientOptions struct {
 
 type Resolver struct {
 	secrets SecretsAPI
-	vaults  VaultsAPI
-	items   ItemsAPI
 	mu      sync.Mutex
 	// The 1Password SDK releases client IDs from a finalizer on its Client.
 	// Keep the owner reachable for as long as this resolver is cached.
 	keepAlive any
+}
+
+type ItemResolver struct {
+	*Resolver
+
+	vaults VaultsAPI
+	items  ItemsAPI
 }
 
 type Secret struct {
@@ -76,17 +81,30 @@ func newResolverWithKeepAlive(secrets SecretsAPI, keepAlive any) (*Resolver, err
 	return &Resolver{secrets: secrets, keepAlive: keepAlive}, nil
 }
 
-func NewResolverWithItemMetadata(secrets SecretsAPI, vaults VaultsAPI, items ItemsAPI) (*Resolver, error) {
+func NewResolverWithItemMetadata(secrets SecretsAPI, vaults VaultsAPI, items ItemsAPI) (*ItemResolver, error) {
+	return newItemResolverWithKeepAlive(secrets, vaults, items, nil)
+}
+
+func newItemResolverWithKeepAlive(
+	secrets SecretsAPI,
+	vaults VaultsAPI,
+	items ItemsAPI,
+	keepAlive any,
+) (*ItemResolver, error) {
 	if secrets == nil {
 		return nil, errors.New("secrets API is required")
 	}
 	if vaults == nil || items == nil {
 		return nil, ErrItemsUnavailable
 	}
-	return &Resolver{secrets: secrets, vaults: vaults, items: items}, nil
+	return &ItemResolver{
+		Resolver: &Resolver{secrets: secrets, keepAlive: keepAlive},
+		vaults:   vaults,
+		items:    items,
+	}, nil
 }
 
-func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, error) {
+func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*ItemResolver, error) {
 	normalized := normalizeDesktopOptions(opts)
 	account := desktopAccount(normalized.Account)
 
@@ -99,12 +117,7 @@ func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*Resolver, err
 		return nil, fmt.Errorf("create 1Password SDK client: %w", err)
 	}
 
-	return &Resolver{
-		secrets:   client.Secrets(),
-		vaults:    client.Vaults(),
-		items:     client.Items(),
-		keepAlive: client,
-	}, nil
+	return newItemResolverWithKeepAlive(client.Secrets(), client.Vaults(), client.Items(), client)
 }
 
 func desktopAccount(accountOverride string) string {
@@ -159,10 +172,7 @@ func (s Secret) Metadata() SecretMetadata {
 	}
 }
 
-func (r *Resolver) DescribeItem(ctx context.Context, ref itemmetadata.Ref, account string) (itemmetadata.Metadata, error) {
-	if r.vaults == nil || r.items == nil {
-		return itemmetadata.Metadata{}, ErrItemsUnavailable
-	}
+func (r *ItemResolver) DescribeItem(ctx context.Context, ref itemmetadata.Ref, account string) (itemmetadata.Metadata, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -174,7 +184,7 @@ func (r *Resolver) DescribeItem(ctx context.Context, ref itemmetadata.Ref, accou
 	return metadata, nil
 }
 
-func (r *Resolver) describeItemLocked(ctx context.Context, ref itemmetadata.Ref, account string) (itemmetadata.Metadata, error) {
+func (r *ItemResolver) describeItemLocked(ctx context.Context, ref itemmetadata.Ref, account string) (itemmetadata.Metadata, error) {
 	vault, err := r.findVault(ctx, ref.Vault)
 	if err != nil {
 		return itemmetadata.Metadata{}, err
@@ -190,7 +200,7 @@ func (r *Resolver) describeItemLocked(ctx context.Context, ref itemmetadata.Ref,
 	return itemMetadataFromSDK(account, vault, item), nil
 }
 
-func (r *Resolver) findVault(ctx context.Context, vaultRef string) (onepassword.VaultOverview, error) {
+func (r *ItemResolver) findVault(ctx context.Context, vaultRef string) (onepassword.VaultOverview, error) {
 	vaults, err := r.vaults.List(ctx)
 	if err != nil {
 		return onepassword.VaultOverview{}, fmt.Errorf("list 1Password vaults: %w", err)
@@ -211,7 +221,7 @@ func (r *Resolver) findVault(ctx context.Context, vaultRef string) (onepassword.
 	}
 }
 
-func (r *Resolver) findItem(ctx context.Context, vaultID string, itemRef string) (onepassword.ItemOverview, error) {
+func (r *ItemResolver) findItem(ctx context.Context, vaultID string, itemRef string) (onepassword.ItemOverview, error) {
 	items, err := r.items.List(ctx, vaultID)
 	if err != nil {
 		return onepassword.ItemOverview{}, fmt.Errorf("list 1Password items: %w", err)
