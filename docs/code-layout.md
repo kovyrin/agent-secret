@@ -15,6 +15,7 @@ agent-secret/
     agent-secretd/               # Go daemon entrypoint
   internal/                      # Private Go packages
     audit/                       # Metadata-only JSONL audit writer
+    buildinfo/                   # Version and revision display helpers
     cli/                         # CLI parsing, help text, and command runners
     daemon/                      # Socket protocol, broker, daemon lifecycle,
                                   # approver IPC, cache, and server handlers
@@ -22,9 +23,11 @@ agent-secret/
     execwrap/                    # CLI-owned child process execution and audit
     fileidentity/                # Executable identity capture and verification
     install/                     # User-level CLI and skill installation helpers
+    itemmetadata/                # Secret-safe 1Password item metadata models
     opaccount/                   # 1Password account selection defaults
     opref/                       # Shared 1Password reference grammar parser
     opresolver/                  # 1Password SDK desktop integration adapter
+    pathresolve/                 # Canonical path resolution helpers
     peercred/                    # macOS Unix socket peer credential lookup
     policy/                      # Request validation, reuse, TTL, nonces,
                                   # and value-free policy state
@@ -34,7 +37,7 @@ agent-secret/
     request/                     # Exec request model and secret ref parsing
     secretcache/                 # Reusable approval secret value cache
     secretmem/                   # In-memory secret value handling
-    testsupport/                 # Shared Go test support helpers
+    testsupport/                 # Shared Go test support helpers and fixtures
   approver/
     Sources/
       AgentSecretApprover/
@@ -94,9 +97,9 @@ start/status/stop flows, `peertrust` validates trusted CLI and daemon peers,
 `socket` owns Unix socket paths and listeners, and `trust` wraps platform
 signature/plist checks.
 
-`internal/request` defines the value-free request model shared by CLI, daemon,
+`internal/request` defines the value-free request DTOs shared by CLI, daemon,
 policy, audit, and protocol code. It parses and validates `op://` reference
-syntax but does not contact 1Password.
+syntax but does not contact 1Password or carry raw child environment values.
 
 `internal/fileidentity` captures and verifies executable identity metadata. The
 CLI records identities before exec, and daemon/policy code uses the same shape
@@ -112,9 +115,16 @@ and `internal/opresolver` both use it so account behavior has one source.
 `internal/opref` owns `op://` reference grammar. Request parsing and resolver
 validation both adapt that parser so syntax has one owner.
 
+`internal/itemmetadata` owns the secret-safe item metadata model, item-level
+reference parser, and env-alias rendering used by `agent-secret item describe`.
+It never carries field values.
+
 `internal/opresolver` is the only Go package that creates the 1Password SDK
 desktop-app integration client and resolves approved refs. Integration tests for
 live 1Password access remain opt-in.
+
+`internal/pathresolve` owns canonical path resolution used by request
+preparation, daemon peer trust, and installer paths.
 
 `internal/execwrap` owns child process execution from the CLI side. This keeps
 normal process supervision, passthrough stdio, signal handling, and
@@ -128,6 +138,9 @@ refs become normal request secrets.
 
 `internal/randid` generates random request, nonce, and reusable-approval
 identifiers for CLI and policy code.
+
+`internal/buildinfo` owns version and revision display text. Release builds must
+derive user-facing version output from the same metadata used by release checks.
 
 `internal/secretmem` holds in-memory secret value primitives used where raw
 values are unavoidable after approval. It is deliberately separate from policy
