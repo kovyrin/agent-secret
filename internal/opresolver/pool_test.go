@@ -259,6 +259,64 @@ func TestDesktopPoolDescribeItemRefreshesClientAfterInvalidClientID(t *testing.T
 	}
 }
 
+func TestDesktopPoolResolvePreservesRefreshFailureContext(t *testing.T) {
+	t.Parallel()
+
+	refreshErr := errors.New("refresh unavailable")
+	var calls atomic.Int32
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "fixture.1password.com" {
+			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
+		}
+		if calls.Add(1) == 1 {
+			return NewResolver(&fakeSecretsAPI{err: errors.New("invalid client id")})
+		}
+		return nil, refreshErr
+	})
+
+	_, err := pool.Resolve(context.Background(), "op://Fixture Infra/PlanetScale/token", "fixture.1password.com")
+	if err == nil {
+		t.Fatal("Resolve returned nil error")
+	}
+	if !strings.Contains(err.Error(), "invalid client id") {
+		t.Fatalf("Resolve error = %v, want original stale-client error", err)
+	}
+	if !errors.Is(err, refreshErr) {
+		t.Fatalf("Resolve error = %v, want refresh error", err)
+	}
+}
+
+func TestDesktopPoolDescribeItemPreservesRefreshFailureContext(t *testing.T) {
+	t.Parallel()
+
+	refreshErr := errors.New("refresh unavailable")
+	var calls atomic.Int32
+	pool := testDesktopPoolWithFactory(func(_ context.Context, opts ClientOptions) (*Resolver, error) {
+		if opts.Account != "fixture.1password.com" {
+			return nil, fmt.Errorf("account = %q, want fixture.1password.com", opts.Account)
+		}
+		if calls.Add(1) == 1 {
+			return testDesktopItemResolver(t, errors.New("invalid client id")), nil
+		}
+		return nil, refreshErr
+	})
+
+	_, err := pool.DescribeItem(
+		context.Background(),
+		mustItemRef(t, "op://Fixture Infra/Beta PlanetScale Introspection Probe"),
+		"fixture.1password.com",
+	)
+	if err == nil {
+		t.Fatal("DescribeItem returned nil error")
+	}
+	if !strings.Contains(err.Error(), "invalid client id") {
+		t.Fatalf("DescribeItem error = %v, want original stale-client error", err)
+	}
+	if !errors.Is(err, refreshErr) {
+		t.Fatalf("DescribeItem error = %v, want refresh error", err)
+	}
+}
+
 func TestDesktopPoolRefreshesClientAfterVaultNotFound(t *testing.T) {
 	t.Parallel()
 

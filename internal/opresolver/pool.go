@@ -79,8 +79,12 @@ func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (
 	}
 	secret, err := resolver.ResolveSecret(ctx, ref)
 	if err != nil {
-		if refreshed, refreshErr := p.resolveWithRefreshedClient(ctx, ref, account, resolver, err); refreshErr == nil {
-			return refreshed, nil
+		if shouldRefreshDesktopClient(err) {
+			refreshed, refreshErr := p.resolveWithRefreshedClient(ctx, ref, account, resolver)
+			if refreshErr == nil {
+				return refreshed, nil
+			}
+			return "", fmt.Errorf("resolve secret: %w", staleClientRefreshError(err, refreshErr))
 		}
 		return "", fmt.Errorf("resolve secret: %w", err)
 	}
@@ -102,8 +106,12 @@ func (p *DesktopPool) DescribeItem(
 	}
 	metadata, err := resolver.DescribeItem(ctx, ref, account)
 	if err != nil {
-		if refreshed, refreshErr := p.describeItemWithRefreshedClient(ctx, ref, account, resolver, err); refreshErr == nil {
-			return refreshed, nil
+		if shouldRefreshDesktopClient(err) {
+			refreshed, refreshErr := p.describeItemWithRefreshedClient(ctx, ref, account, resolver)
+			if refreshErr == nil {
+				return refreshed, nil
+			}
+			return itemmetadata.Metadata{}, fmt.Errorf("describe item metadata: %w", staleClientRefreshError(err, refreshErr))
 		}
 		return itemmetadata.Metadata{}, fmt.Errorf("describe item metadata: %w", err)
 	}
@@ -115,11 +123,7 @@ func (p *DesktopPool) resolveWithRefreshedClient(
 	ref string,
 	account string,
 	stale *Resolver,
-	resolveErr error,
 ) (string, error) {
-	if !shouldRefreshDesktopClient(resolveErr) {
-		return "", resolveErr
-	}
 	p.evictClient(account, stale)
 	resolver, err := p.client(ctx, account)
 	if err != nil {
@@ -137,11 +141,7 @@ func (p *DesktopPool) describeItemWithRefreshedClient(
 	ref itemmetadata.Ref,
 	account string,
 	stale *Resolver,
-	describeErr error,
 ) (itemmetadata.Metadata, error) {
-	if !shouldRefreshDesktopClient(describeErr) {
-		return itemmetadata.Metadata{}, describeErr
-	}
 	p.evictClient(account, stale)
 	resolver, err := p.client(ctx, account)
 	if err != nil {
@@ -152,6 +152,10 @@ func (p *DesktopPool) describeItemWithRefreshedClient(
 		return itemmetadata.Metadata{}, err
 	}
 	return metadata, nil
+}
+
+func staleClientRefreshError(originalErr error, refreshErr error) error {
+	return errors.Join(originalErr, fmt.Errorf("refresh stale 1Password client: %w", refreshErr))
 }
 
 func shouldRefreshDesktopClient(err error) bool {
