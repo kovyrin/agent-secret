@@ -350,20 +350,14 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 		name       string
 		opAccount  string
 		appAccount string
-		opScript   string
+		detected   string
 		want       string
 	}{
 		{name: "built-in", want: opaccount.DefaultDesktopAccount},
 		{
-			name: "detected 1Password CLI account",
-			opScript: `
-if [ "$1" = "account" ] && [ "$2" = "list" ] && [ "$3" = "--format=json" ]; then
-  printf '%s\n' '[{"url":"my.1password.ca"}]'
-  exit 0
-fi
-exit 64
-`,
-			want: "my.1password.ca",
+			name:     "detected 1Password CLI account",
+			detected: "my.1password.ca",
+			want:     "my.1password.ca",
 		},
 		{name: "op account", opAccount: " Personal ", want: "Personal"},
 		{name: "app account", opAccount: " Personal ", appAccount: " Work ", want: "Work"},
@@ -376,9 +370,6 @@ exit 64
 				t.Fatalf("create bin dir: %v", err)
 			}
 			writeExecutable(t, binDir, "tool")
-			if tt.opScript != "" {
-				writeExecutableBody(t, binDir, "op", tt.opScript)
-			}
 			t.Chdir(root)
 			t.Setenv("PATH", binDir)
 			if tt.opAccount != "" {
@@ -388,7 +379,8 @@ exit 64
 				t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", tt.appAccount)
 			}
 
-			command, err := NewParser().Parse([]string{
+			parser := Parser{detectSingleAccount: func() string { return tt.detected }}
+			command, err := parser.Parse([]string{
 				"exec", "--reason", "Account default",
 				"--secret", "TOKEN=op://Example/Item/token",
 				"--", "tool",

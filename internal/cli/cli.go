@@ -55,24 +55,27 @@ type Command struct {
 	VersionText         string
 }
 
-type Parser struct{}
+type Parser struct {
+	detectSingleAccount func() string
+}
 
 func NewParser() Parser {
-	return Parser{}
+	return Parser{detectSingleAccount: opaccount.DetectSingleCLIAccount}
 }
 
 type execFlags struct {
-	reason       string
-	cwd          string
-	ttl          time.Duration
-	profileName  string
-	configPath   string
-	account      string
-	overrideEnv  bool
-	forceRefresh bool
-	secrets      secretFlags
-	only         onlyFlags
-	envFiles     envFileFlags
+	reason              string
+	cwd                 string
+	ttl                 time.Duration
+	profileName         string
+	configPath          string
+	account             string
+	overrideEnv         bool
+	forceRefresh        bool
+	secrets             secretFlags
+	only                onlyFlags
+	envFiles            envFileFlags
+	detectSingleAccount func() string
 }
 
 type execInputs struct {
@@ -93,12 +96,13 @@ type execInputSources struct {
 }
 
 type itemDescribeFlags struct {
-	account    string
-	configPath string
-	format     string
-	prefix     string
-	reason     string
-	ttl        time.Duration
+	account             string
+	configPath          string
+	format              string
+	prefix              string
+	reason              string
+	ttl                 time.Duration
+	detectSingleAccount func() string
 }
 
 type filteredExecSecretSources struct {
@@ -402,6 +406,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
+	execOpts.detectSingleAccount = p.detectSingleAccount
 	if *jsonOutput {
 		return Command{}, ErrUnsupportedExecJSON
 	}
@@ -464,6 +469,7 @@ func (p Parser) parseItemDescribe(args []string, fullArgs []string) (Command, er
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
+	flags.detectSingleAccount = p.detectSingleAccount
 	if fs.NArg() != 1 {
 		return Command{}, fmt.Errorf("%w: item describe accepts exactly one op:// item reference", ErrInvalidArguments)
 	}
@@ -593,7 +599,7 @@ func assembleExecSecrets(
 }
 
 func execSecretAccountFallback(flags execFlags, sources execInputSources) string {
-	accountFallback := execAccountFallback(flags.account)
+	accountFallback := execAccountFallback(flags.account, flags.detectSingleAccount)
 	if !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
 		return sources.configAccount
 	}
@@ -684,14 +690,14 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 	return updated
 }
 
-func execAccountFallback(cliAccount string) string {
+func execAccountFallback(cliAccount string, detectSingleAccount func() string) string {
 	if account := strings.TrimSpace(cliAccount); account != "" {
 		return account
 	}
 	if account := strings.TrimSpace(os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")); account != "" {
 		return account
 	}
-	return opaccount.SelectDesktopAccount("", os.Getenv("OP_ACCOUNT"))
+	return opaccount.SelectDesktopAccountWithDetector("", os.Getenv("OP_ACCOUNT"), detectSingleAccount)
 }
 
 func resolveItemDescribeAccount(flags itemDescribeFlags) (string, error) {
@@ -705,10 +711,10 @@ func resolveItemDescribeAccount(flags itemDescribeFlags) (string, error) {
 		if account := strings.TrimSpace(metadata.Account); account != "" {
 			return account, nil
 		}
-		return execAccountFallback(flags.account), nil
+		return execAccountFallback(flags.account, flags.detectSingleAccount), nil
 	}
 	if flags.configPath == "" && errors.Is(err, profileconfig.ErrConfigNotFound) {
-		return execAccountFallback(flags.account), nil
+		return execAccountFallback(flags.account, flags.detectSingleAccount), nil
 	}
 	return "", fmt.Errorf("load config metadata: %w", err)
 }

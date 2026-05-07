@@ -18,19 +18,29 @@ type cliAccount struct {
 }
 
 func SelectDesktopAccount(accountOverride string, opAccount string) string {
+	return SelectDesktopAccountWithDetector(accountOverride, opAccount, DetectSingleCLIAccount)
+}
+
+func SelectDesktopAccountWithDetector(
+	accountOverride string,
+	opAccount string,
+	detectSingleAccount func() string,
+) string {
 	if account := strings.TrimSpace(accountOverride); account != "" {
 		return account
 	}
 	if account := strings.TrimSpace(opAccount); account != "" {
 		return account
 	}
-	if account := detectSingleCLIAccount(); account != "" {
-		return account
+	if detectSingleAccount != nil {
+		if account := strings.TrimSpace(detectSingleAccount()); account != "" {
+			return account
+		}
 	}
 	return DefaultDesktopAccount
 }
 
-func detectSingleCLIAccount() string {
+func DetectSingleCLIAccount() string {
 	opPath, err := exec.LookPath("op")
 	if err != nil {
 		return ""
@@ -46,6 +56,10 @@ func detectSingleCLIAccountJSON(opPath string) string {
 	if err != nil {
 		return ""
 	}
+	return singleCLIAccountFromJSON(output)
+}
+
+func singleCLIAccountFromJSON(output []byte) string {
 	var accounts []cliAccount
 	if err := json.Unmarshal(output, &accounts); err != nil {
 		return ""
@@ -66,7 +80,10 @@ func detectSingleCLIAccountTable(opPath string) string {
 	if err != nil {
 		return ""
 	}
+	return singleCLIAccountFromTable(output)
+}
 
+func singleCLIAccountFromTable(output []byte) string {
 	var accounts []string
 	for line := range strings.SplitSeq(string(output), "\n") {
 		line = strings.TrimSpace(line)
