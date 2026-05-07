@@ -329,49 +329,93 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 
 		state.resetReadTimeout()
 
-		//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
-		switch env.Type {
-		case protocol.TypeDaemonStatus:
-			s.handleDaemonStatus(encoder, env)
-		case protocol.TypeOnePasswordStatus:
-			s.handleOnePasswordStatus(ctx, conn, encoder, env)
-		case protocol.TypeDaemonStop:
-			if s.handleDaemonStop(ctx, conn, encoder, env) {
-				return
-			}
-		case protocol.TypeApprovalPending:
-			if payload, ok := s.handleApprovalPending(ctx, conn, encoder, env); ok {
-				state.setApprovalDecisionReadTimeout(s.approvalDecisionReadTimeout(payload.ExpiresAt))
-			}
-		case protocol.TypeApprovalDecision:
-			s.handleApprovalDecision(ctx, conn, encoder, env)
-		case protocol.TypeRequestExec:
-			if state.hasActiveRequest() {
-				_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
-				continue
-			}
-			if requestID := s.handleRequestExec(ctx, conn, encoder, env); requestID != "" {
-				state.beginExec(requestID)
-			}
-		case protocol.TypeItemDescribe:
-			s.handleItemDescribe(ctx, conn, encoder, env)
-		case protocol.TypeCommandStarted:
-			if !s.lifecycleRequestMatchesConnection(encoder, env, &state) {
-				continue
-			}
-			if s.handleCommandStarted(ctx, conn, encoder, env) {
-				state.markStarted()
-			}
-		case protocol.TypeCommandCompleted:
-			if !s.lifecycleRequestMatchesConnection(encoder, env, &state) {
-				continue
-			}
-			if s.handleCommandCompleted(ctx, conn, encoder, env) {
-				state.markCompleted()
-			}
-		default:
-			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
+		action := s.dispatchClientEnvelope(ctx, conn, encoder, env, &state)
+		if action.closeConnection {
+			return
 		}
+		if !action.accepted {
+			continue
+		}
+		action.apply(&state)
+	}
+}
+
+type connectionDispatchAction struct {
+	accepted                    bool
+	closeConnection             bool
+	approvalDecisionReadTimeout time.Duration
+	beginExecRequestID          string
+	markStarted                 bool
+	markCompleted               bool
+}
+
+func (a connectionDispatchAction) apply(state *connectionState) {
+	if a.approvalDecisionReadTimeout > 0 {
+		state.setApprovalDecisionReadTimeout(a.approvalDecisionReadTimeout)
+	}
+	if a.beginExecRequestID != "" {
+		state.beginExec(a.beginExecRequestID)
+	}
+	if a.markStarted {
+		state.markStarted()
+	}
+	if a.markCompleted {
+		state.markCompleted()
+	}
+}
+
+func (s *Server) dispatchClientEnvelope(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+	state *connectionState,
+) connectionDispatchAction {
+	//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
+	switch env.Type {
+	case protocol.TypeDaemonStatus:
+		s.handleDaemonStatus(encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeOnePasswordStatus:
+		s.handleOnePasswordStatus(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeDaemonStop:
+		return connectionDispatchAction{accepted: true, closeConnection: s.handleDaemonStop(ctx, conn, encoder, env)}
+	case protocol.TypeApprovalPending:
+		payload, ok := s.handleApprovalPending(ctx, conn, encoder, env)
+		if !ok {
+			return connectionDispatchAction{}
+		}
+		return connectionDispatchAction{
+			accepted:                    true,
+			approvalDecisionReadTimeout: s.approvalDecisionReadTimeout(payload.ExpiresAt),
+		}
+	case protocol.TypeApprovalDecision:
+		s.handleApprovalDecision(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeRequestExec:
+		if state.hasActiveRequest() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+			return connectionDispatchAction{}
+		}
+		requestID := s.handleRequestExec(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
+	case protocol.TypeItemDescribe:
+		s.handleItemDescribe(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeCommandStarted:
+		if !s.lifecycleRequestMatchesConnection(encoder, env, state) {
+			return connectionDispatchAction{}
+		}
+		return connectionDispatchAction{accepted: s.handleCommandStarted(ctx, conn, encoder, env), markStarted: true}
+	case protocol.TypeCommandCompleted:
+		if !s.lifecycleRequestMatchesConnection(encoder, env, state) {
+			return connectionDispatchAction{}
+		}
+		return connectionDispatchAction{accepted: s.handleCommandCompleted(ctx, conn, encoder, env), markCompleted: true}
+	default:
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadType, fmt.Errorf("%w: %s", protocol.ErrProtocolType, env.Type))
+		return connectionDispatchAction{}
 	}
 }
 
