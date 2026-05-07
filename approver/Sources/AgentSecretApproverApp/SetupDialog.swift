@@ -57,20 +57,24 @@ private func setupIntroText() -> String {
 }
 
 #if canImport(AppKit)
-    private let kSetupTerminalCommandWidth: CGFloat = 620
-    private let kSetupTerminalCommandPadding: CGFloat = 12
-    private let kSetupTerminalCommandFontSize: CGFloat = 12
-    private let kSetupTerminalBackgroundWhite: CGFloat = 0.07
-    private let kSetupTerminalBorderWhite: CGFloat = 0.22
-    private let kSetupTerminalBorderWidth: CGFloat = 1
-    private let kSetupTerminalCornerRadius: CGFloat = 8
-    private let kSetupTerminalTextWhite: CGFloat = 0.92
-    private let kSetupTerminalMinimumTextHeight: CGFloat = 42
-    private let kSetupTerminalMaximumTextHeight: CGFloat = 180
-    private let kSetupTerminalFrameOrigin: CGFloat = 0
-    private let kSetupTerminalOpaqueAlpha: CGFloat = 1
-    private let kSetupTerminalPaddingMultiplier: CGFloat = 2
-    private let kSetupTerminalUnlimitedLines = 0
+    private enum SetupDialog {
+        enum Metric {
+            static let commandWidth: CGFloat = 620
+            static let commandPadding: CGFloat = 12
+            static let commandFontSize: CGFloat = 12
+            static let backgroundWhite: CGFloat = 0.07
+            static let borderWhite: CGFloat = 0.22
+            static let borderWidth: CGFloat = 1
+            static let cornerRadius: CGFloat = 8
+            static let textWhite: CGFloat = 0.92
+            static let minimumTextHeight: CGFloat = 42
+            static let maximumTextHeight: CGFloat = 180
+            static let frameOrigin: CGFloat = 0
+            static let opaqueAlpha: CGFloat = 1
+            static let paddingMultiplier: CGFloat = 2
+            static let unlimitedLines = 0
+        }
+    }
 
     @MainActor
     private func showSetupResult(title: String, message: String, style: NSAlert.Style) {
@@ -103,26 +107,26 @@ private func setupIntroText() -> String {
 
     @MainActor
     private func terminalCommandView(_ command: String) -> NSView {
-        let width = kSetupTerminalCommandWidth
-        let padding = kSetupTerminalCommandPadding
-        let font = NSFont.monospacedSystemFont(ofSize: kSetupTerminalCommandFontSize, weight: .regular)
-        let textWidth = width - padding * kSetupTerminalPaddingMultiplier
+        let width = SetupDialog.Metric.commandWidth
+        let padding = SetupDialog.Metric.commandPadding
+        let font = NSFont.monospacedSystemFont(ofSize: SetupDialog.Metric.commandFontSize, weight: .regular)
+        let textWidth = width - padding * SetupDialog.Metric.paddingMultiplier
         let textHeight = terminalTextHeight(command, font: font, width: textWidth)
-        let height = textHeight + padding * kSetupTerminalPaddingMultiplier
+        let height = textHeight + padding * SetupDialog.Metric.paddingMultiplier
 
         let container = NSView(
             frame: NSRect(
-                x: kSetupTerminalFrameOrigin,
-                y: kSetupTerminalFrameOrigin,
+                x: SetupDialog.Metric.frameOrigin,
+                y: SetupDialog.Metric.frameOrigin,
                 width: width,
                 height: height
             )
         )
         container.wantsLayer = true
-        container.layer?.backgroundColor = terminalColor(kSetupTerminalBackgroundWhite).cgColor
-        container.layer?.borderColor = terminalColor(kSetupTerminalBorderWhite).cgColor
-        container.layer?.borderWidth = kSetupTerminalBorderWidth
-        container.layer?.cornerRadius = kSetupTerminalCornerRadius
+        container.layer?.backgroundColor = terminalColor(SetupDialog.Metric.backgroundWhite).cgColor
+        container.layer?.borderColor = terminalColor(SetupDialog.Metric.borderWhite).cgColor
+        container.layer?.borderWidth = SetupDialog.Metric.borderWidth
+        container.layer?.cornerRadius = SetupDialog.Metric.cornerRadius
 
         let commandField = NSTextField(wrappingLabelWithString: command)
         commandField.frame = NSRect(x: padding, y: padding, width: textWidth, height: textHeight)
@@ -130,8 +134,8 @@ private func setupIntroText() -> String {
         commandField.font = font
         commandField.isSelectable = true
         commandField.lineBreakMode = .byCharWrapping
-        commandField.maximumNumberOfLines = kSetupTerminalUnlimitedLines
-        commandField.textColor = terminalColor(kSetupTerminalTextWhite)
+        commandField.maximumNumberOfLines = SetupDialog.Metric.unlimitedLines
+        commandField.textColor = terminalColor(SetupDialog.Metric.textWhite)
         container.addSubview(commandField)
 
         return container
@@ -143,7 +147,7 @@ private func setupIntroText() -> String {
             with: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
-        return min(max(ceil(rect.height), kSetupTerminalMinimumTextHeight), kSetupTerminalMaximumTextHeight)
+        return min(max(ceil(rect.height), SetupDialog.Metric.minimumTextHeight), SetupDialog.Metric.maximumTextHeight)
     }
 
     private func replacingFirstLine(in text: String, with replacement: String) -> String {
@@ -154,7 +158,7 @@ private func setupIntroText() -> String {
     }
 
     private func terminalColor(_ white: CGFloat) -> NSColor {
-        NSColor(calibratedWhite: white, alpha: kSetupTerminalOpaqueAlpha)
+        NSColor(calibratedWhite: white, alpha: SetupDialog.Metric.opaqueAlpha)
     }
 #endif
 
