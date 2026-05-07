@@ -1,12 +1,34 @@
 import Foundation
 
 extension ApprovalRequestViewModel {
-    static func promptQuestion(secretCount: Int, isExpired: Bool) -> String {
-        promptQuestion(operation: .exec, secretCount: secretCount, isExpired: isExpired)
+    struct CopyPresentation {
+        let isExpired: Bool
+        let timeRemaining: String
+        let promptQuestion: String
+        let accessSummary: String
+        let scopeSummary: String
+        let allowReusableTitle: String
+        let footerMessage: String
     }
 
-    static func promptQuestion(for request: ApprovalRequest, secretCount: Int, isExpired: Bool) -> String {
-        promptQuestion(operation: request.operation, secretCount: secretCount, isExpired: isExpired)
+    static func copyPresentation(for request: ApprovalRequest, count: Int, now: Date) -> CopyPresentation {
+        let remaining: TimeInterval = request.expiresAt.timeIntervalSince(now)
+        let expired: Bool = Self.isExpired(remaining)
+        let remainingText: String = expired ? Self.expiredTimeRemaining() : Self.formatRemaining(remaining)
+        return CopyPresentation(
+            isExpired: expired,
+            timeRemaining: remainingText,
+            promptQuestion: Self.promptQuestion(operation: request.operation, secretCount: count, isExpired: expired),
+            accessSummary: Self.accessSummary(operation: request.operation, isExpired: expired),
+            scopeSummary: Self.scopeSummary(
+                uses: request.reusableUses,
+                remaining: remainingText,
+                expired: expired,
+                allowsReusable: request.allowsReusable
+            ),
+            allowReusableTitle: Self.reuseTitle(uses: request.reusableUses, remaining: remainingText, expired: expired),
+            footerMessage: Self.footerMessage(operation: request.operation, secretCount: count, expired: expired)
+        )
     }
 
     static func promptQuestion(operation: ApprovalOperation, secretCount: Int, isExpired: Bool) -> String {
@@ -28,10 +50,6 @@ extension ApprovalRequestViewModel {
         return "Allow this command to use the following \(secretCount) secrets?"
     }
 
-    static func accessSummary(isExpired: Bool) -> String {
-        accessSummary(operation: .exec, isExpired: isExpired)
-    }
-
     static func accessSummary(operation: ApprovalOperation, isExpired: Bool) -> String {
         if isExpired {
             return "can no longer receive access."
@@ -40,14 +58,6 @@ extension ApprovalRequestViewModel {
             return "wants item metadata access."
         }
         return "wants temporary access."
-    }
-
-    static func footerMessage(secretCount: Int, expired: Bool) -> String {
-        footerMessage(operation: .exec, secretCount: secretCount, expired: expired)
-    }
-
-    static func footerMessage(for request: ApprovalRequest, secretCount: Int, expired: Bool) -> String {
-        footerMessage(operation: request.operation, secretCount: secretCount, expired: expired)
     }
 
     static func footerMessage(operation: ApprovalOperation, secretCount: Int, expired: Bool) -> String {
@@ -66,19 +76,6 @@ extension ApprovalRequestViewModel {
         The \(noun) injected into the approved process only.
         \(pronoun) never shown to the agent or stored on disk.
         """
-    }
-
-    static func scopeSummary(uses: Int, remaining: String, expired: Bool) -> String {
-        scopeSummary(uses: uses, remaining: remaining, expired: expired, allowsReusable: true)
-    }
-
-    static func scopeSummary(for request: ApprovalRequest, remaining: String, expired: Bool) -> String {
-        scopeSummary(
-            uses: request.reusableUses,
-            remaining: remaining,
-            expired: expired,
-            allowsReusable: request.allowsReusable
-        )
     }
 
     static func scopeSummary(uses: Int, remaining: String, expired: Bool, allowsReusable: Bool) -> String {

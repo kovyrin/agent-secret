@@ -20,8 +20,4 @@ extension ApprovalRequestViewModel {
         }
         return "Requested secrets (\(secretCount))"
     }
-
-    static func requestedSecretsHeading(for request: ApprovalRequest, secretCount: Int) -> String {
-        requestedSecretsHeading(operation: request.operation, secretCount: secretCount)
-    }
 }

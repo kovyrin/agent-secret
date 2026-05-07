@@ -75,29 +75,29 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         resolvedExecutable = Self.sanitizedDisplayText(request.resolvedExecutable)
         let secretPresentation: SecretPresentation = Self.secretPresentation(for: request.secrets)
         requestedSecrets = secretPresentation.rows
-        requestedSecretsHeading = Self.requestedSecretsHeading(for: request, secretCount: secretPresentation.count)
+        requestedSecretsHeading = Self.requestedSecretsHeading(
+            operation: request.operation,
+            secretCount: secretPresentation.count
+        )
         secretRows = secretPresentation.rowText
         secretCount = secretPresentation.count
         vaultGroups = secretPresentation.vaultGroups
         vaultCount = secretPresentation.vaultCount
-        let remaining: TimeInterval = request.expiresAt.timeIntervalSince(now)
-        isExpired = Self.isExpired(remaining)
-        promptQuestion = Self.promptQuestion(for: request, secretCount: secretPresentation.count, isExpired: isExpired)
-        accessSummary = Self.accessSummary(operation: request.operation, isExpired: isExpired)
+        let copy: CopyPresentation = Self.copyPresentation(for: request, count: secretPresentation.count, now: now)
+        (isExpired, timeRemaining, compactTimeRemaining) = (copy.isExpired, copy.timeRemaining, copy.timeRemaining)
+        (promptQuestion, accessSummary) = (copy.promptQuestion, copy.accessSummary)
         highScopeWarning = request.operation == .exec && secretPresentation.count >= Self.highScopeSecretThreshold
-        timeRemaining = isExpired ? Self.expiredTimeRemaining() : Self.formatRemaining(remaining)
-        compactTimeRemaining = timeRemaining
-        reusableUses = request.reusableUses
-        allowsReusableApproval = request.allowsReusable
-        scopeSummary = Self.scopeSummary(for: request, remaining: timeRemaining, expired: isExpired)
-        allowReusableTitle = Self.reuseTitle(uses: request.reusableUses, remaining: timeRemaining, expired: isExpired)
+        (reusableUses, allowsReusableApproval) = (request.reusableUses, request.allowsReusable)
+        (scopeSummary, allowReusableTitle) = (copy.scopeSummary, copy.allowReusableTitle)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
-        printsEnvironmentWarning = warnings.printsEnvironment
+        (printsEnvironmentWarning, overrideWarning, cautionMessages) = (
+            warnings.printsEnvironment,
+            warnings.override,
+            warnings.cautionMessages
+        )
         overrideEnv = request.overrideEnv
         overriddenAliases = request.overriddenAliases.map(Self.sanitizedDisplayText)
-        overrideWarning = warnings.override
-        cautionMessages = warnings.cautionMessages
-        footerMessage = Self.footerMessage(for: request, secretCount: secretPresentation.count, expired: isExpired)
+        footerMessage = copy.footerMessage
         renderedText = Self.renderedText(
             for: request,
             viewModel: SelfRenderInput(
@@ -225,7 +225,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
         ApprovalDisplayTextSanitizer.sanitize(value)
     }
 
-    private static func formatRemaining(_ interval: TimeInterval) -> String {
+    static func formatRemaining(_ interval: TimeInterval) -> String {
         let seconds: Int = Self.visibleRemainingSeconds(interval)
         if seconds >= secondsPerMinute {
             let minutes: Int = seconds / secondsPerMinute
