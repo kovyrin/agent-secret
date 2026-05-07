@@ -266,8 +266,8 @@ development mode with local files:
 
 ```bash
 AGENT_SECRET_INSTALL_DEV_MODE=1 \
-AGENT_SECRET_DMG=./dist/Agent-Secret-v0.0.7-macos-arm64.dmg \
-AGENT_SECRET_CHECKSUMS_FILE=./dist/checksums.txt \
+AGENT_SECRET_DMG=./_dist/Agent-Secret-v0.0.7-macos-arm64.dmg \
+AGENT_SECRET_CHECKSUMS_FILE=./_dist/checksums.txt \
 AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
 ./install.sh
 ```
@@ -335,7 +335,7 @@ Local release artifact build:
 scripts/release/build-release.sh v0.0.0-dev
 ```
 
-That produces a DMG and `checksums.txt` in `dist/`. Local builds are ad-hoc
+That produces a DMG and `checksums.txt` in `_dist/`. Local builds are ad-hoc
 signed unless Developer ID signing and notarization settings are present, which
 makes the local command useful for layout, checksum, and installer smoke checks.
 

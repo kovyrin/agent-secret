@@ -458,8 +458,8 @@ Acceptance checks:
 
 ```bash
 scripts/release/build-release.sh v0.0.0-dev
-shasum -a 256 dist/*
-hdiutil verify dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
+shasum -a 256 _dist/*
+hdiutil verify _dist/Agent-Secret-v0.0.0-dev-macos-arm64.dmg
 ```
 
 ### Epic 4: Signed and Notarized Releases

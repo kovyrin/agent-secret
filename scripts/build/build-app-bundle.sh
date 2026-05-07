@@ -10,7 +10,7 @@ Build the macOS Agent Secret app bundle.
 
 Flags:
   --version VERSION    Bundle version. Defaults to AGENT_SECRET_VERSION or bundle metadata.
-  --output DIR         Output directory. Defaults to ./dist.
+  --output DIR         Output directory. Defaults to ./_dist.
   -h, --help           Show this help.
 USAGE
 }
@@ -33,7 +33,7 @@ if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
   fi
 fi
 
-output_dir="$project_root/dist"
+output_dir="$project_root/_dist"
 version="${AGENT_SECRET_VERSION:-}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 build_revision="${AGENT_SECRET_BUILD_REVISION:-}"

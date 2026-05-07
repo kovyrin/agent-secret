@@ -57,6 +57,8 @@ version numbers for public releases.
 
 - Documented the temporary 1Password SDK fork, its removal criteria, and the
   package boundary that keeps SDK access contained in `internal/opresolver`.
+- Local and CI release builds now default to `_dist/` so generated app bundles
+  stay out of Go package discovery.
 
 ## [0.0.7] - 2026-05-05
 

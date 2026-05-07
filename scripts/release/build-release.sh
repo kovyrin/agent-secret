@@ -9,7 +9,7 @@ Usage:
 Build a local macOS DMG release artifact and checksums.txt.
 
 Flags:
-  --output DIR                    Output directory. Defaults to ./dist.
+  --output DIR                    Output directory. Defaults to ./_dist.
   --require-production-signing    Require Developer ID signing and notarization.
   -h, --help                      Show this help.
 USAGE
@@ -22,7 +22,7 @@ if [[ "$script_dir_part" == "$script_path" ]]; then
 fi
 script_dir="$(cd -- "$script_dir_part" && pwd)"
 project_root="$(cd -- "$script_dir/../.." && pwd)"
-output_dir="$project_root/dist"
+output_dir="$project_root/_dist"
 require_production_signing=0
 
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then

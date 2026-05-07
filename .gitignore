@@ -1,6 +1,7 @@
 # Build outputs
 bin/
 dist/
+_dist/
 coverage.out
 coverage.*
 *.coverprofile
