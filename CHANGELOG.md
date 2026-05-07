@@ -149,7 +149,7 @@ local app, CLI, daemon, and bundled coding-agent skill.
   displaying secret values.
 - 1Password SDK resolver support with project config, profile-level account
   selection, per-secret account overrides, and opt-in live integration tests.
-- Environment-file support for wrapping legacy dotenv-style commands without
+- Environment-file support for wrapping dotenv-style commands without
   printing raw secret values.
 - Reusable approval windows with bounded use counts and short cache lifetimes.
 - CLI commands for installing the command shim and bundled agent skill:

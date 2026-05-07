@@ -414,7 +414,7 @@ agent-secret exec -- terraform plan
 
 agent-secret exec --profile terraform-cloudflare -- terraform plan
 
-agent-secret exec --reason "Run legacy dotenv deploy" \
+agent-secret exec --reason "Run dotenv-based deploy" \
   --env-file .env.deploy \
   -- npm run deploy
 ```

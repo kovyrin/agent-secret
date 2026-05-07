@@ -175,7 +175,7 @@ Common examples:
     --secret ANSIBLE_VAULT_PASSWORD=op://Example/Ansible/password \
     -- ansible-playbook site.yml
 
-  agent-secret exec --reason "Run legacy dotenv command" \
+  agent-secret exec --reason "Run dotenv-based deploy" \
     --env-file .env \
     -- npm run deploy
 
