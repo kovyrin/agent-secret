@@ -73,7 +73,7 @@ func run() int {
 	server, err := daemon.NewServer(daemon.ServerOptions{
 		Broker:           broker,
 		Approvals:        approver,
-		ExecValidator:    peertrust.NewExecutableValidator(defaultClientPaths),
+		ClientValidator:  peertrust.NewExecutableValidator(defaultClientPaths),
 		OnePasswordCheck: onePasswordDesktopIntegrationCheck(),
 		SelfCheck:        selfCheck,
 	})
