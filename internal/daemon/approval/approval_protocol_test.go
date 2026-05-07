@@ -11,7 +11,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
-func TestNewRequestPayloadCopiesProtocolFields(t *testing.T) {
+func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 	t.Parallel()
 
 	expiresAt := time.Now().Add(time.Minute).UTC()
@@ -34,7 +34,7 @@ func TestNewRequestPayloadCopiesProtocolFields(t *testing.T) {
 		OverriddenAliases: []string{"TOKEN"},
 	}
 
-	payload := NewRequestPayload(protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"}, req)
+	payload := NewExecPayload(protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"}, req)
 	req.Command[1] = "mutated"
 	req.OverriddenAliases[0] = "MUTATED"
 
@@ -65,10 +65,10 @@ func TestNewRequestPayloadCopiesProtocolFields(t *testing.T) {
 	}
 }
 
-func TestNewRequestPayloadUsesEmptyOverriddenAliasesSlice(t *testing.T) {
+func TestNewExecPayloadUsesEmptyOverriddenAliasesSlice(t *testing.T) {
 	t.Parallel()
 
-	payload := NewRequestPayload(protocol.Correlation{}, request.ExecRequest{})
+	payload := NewExecPayload(protocol.Correlation{}, request.ExecRequest{})
 	if payload.OverriddenAliases == nil {
 		t.Fatal("OverriddenAliases is nil, want empty slice")
 	}

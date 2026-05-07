@@ -188,7 +188,7 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	decision, err := b.grants.approver.ApproveExec(ctx, approval.NewItemDescribePayload(correlation, req))
+	decision, err := b.grants.approver.Approve(ctx, approval.NewItemDescribePayload(correlation, req))
 	if err != nil {
 		if auditErr := b.audit.Record(ctx, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr

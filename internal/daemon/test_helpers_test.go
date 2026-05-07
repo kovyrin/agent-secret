@@ -36,7 +36,7 @@ type mockApprover struct {
 	order    *[]string
 }
 
-func (m *mockApprover) ApproveExec(
+func (m *mockApprover) Approve(
 	_ context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
@@ -52,7 +52,7 @@ type recordingApprover struct {
 	seen     chan approval.ApprovalRequestPayload
 }
 
-func (r *recordingApprover) ApproveExec(
+func (r *recordingApprover) Approve(
 	_ context.Context,
 	payload approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {

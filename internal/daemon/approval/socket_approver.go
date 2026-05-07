@@ -55,7 +55,7 @@ func NewSocketApprover(socketPath string, launcher ApproverLauncher, now func() 
 	return approver, nil
 }
 
-func (a *SocketApprover) ApproveExec(
+func (a *SocketApprover) Approve(
 	ctx context.Context,
 	payload ApprovalRequestPayload,
 ) (Decision, error) {

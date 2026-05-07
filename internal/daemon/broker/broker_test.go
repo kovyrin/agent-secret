@@ -118,7 +118,7 @@ type mockApprover struct {
 	order    *[]string
 }
 
-func (m *mockApprover) ApproveExec(
+func (m *mockApprover) Approve(
 	_ context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
@@ -135,7 +135,7 @@ type afterApprovalApprover struct {
 	calls    int
 }
 
-func (a *afterApprovalApprover) ApproveExec(
+func (a *afterApprovalApprover) Approve(
 	_ context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
@@ -150,7 +150,7 @@ type contextExpiringApprover struct {
 	done chan struct{}
 }
 
-func (a *contextExpiringApprover) ApproveExec(
+func (a *contextExpiringApprover) Approve(
 	ctx context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
@@ -163,7 +163,7 @@ type contextDenyingApprover struct {
 	done chan struct{}
 }
 
-func (a *contextDenyingApprover) ApproveExec(
+func (a *contextDenyingApprover) Approve(
 	ctx context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
@@ -177,7 +177,7 @@ type blockingApprover struct {
 	canceled chan struct{}
 }
 
-func (a *blockingApprover) ApproveExec(
+func (a *blockingApprover) Approve(
 	ctx context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {

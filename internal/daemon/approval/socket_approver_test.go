@@ -26,7 +26,7 @@ func testCorrelation(requestID string, nonce string) protocol.Correlation {
 }
 
 func testApprovalPayload(correlation protocol.Correlation, req request.ExecRequest) approval.ApprovalRequestPayload {
-	return approval.NewRequestPayload(correlation, req)
+	return approval.NewExecPayload(correlation, req)
 }
 
 type recordingLauncher struct {
@@ -246,7 +246,7 @@ func TestApprovalFixturesDecodeInGo(t *testing.T) {
 func TestApprovalPayloadEncodesCurrentProtocolFields(t *testing.T) {
 	t.Parallel()
 
-	payload := approval.NewRequestPayload(testCorrelation("req_123", "nonce_456"), request.ExecRequest{
+	payload := approval.NewExecPayload(testCorrelation("req_123", "nonce_456"), request.ExecRequest{
 		Reason:    "Run tests",
 		Command:   []string{"/usr/bin/true"},
 		CWD:       "/tmp/project",
@@ -282,7 +282,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		if err != nil {
 			errCh <- err
 			return
@@ -319,7 +319,7 @@ func TestSocketApproverLaunchesAndAcceptsExpectedPeerDecision(t *testing.T) {
 			t.Fatalf("decision reusable uses = %d, want 2", decision.ReusableUses)
 		}
 	case err := <-errCh:
-		t.Fatalf("ApproveExec returned error: %v", err)
+		t.Fatalf("Approve returned error: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for approval result")
 	}
@@ -335,7 +335,7 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		if err != nil {
 			errCh <- err
 			return
@@ -381,7 +381,7 @@ func TestSocketApproverRejectsReusableUseCountMismatch(t *testing.T) {
 			t.Fatalf("unexpected approval result: %+v", decision)
 		}
 	case err := <-errCh:
-		t.Fatalf("ApproveExec returned error: %v", err)
+		t.Fatalf("Approve returned error: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for approval result")
 	}
@@ -397,7 +397,7 @@ func TestSocketApproverRejectsReusableUseCountOnNonReusableDecisions(t *testing.
 	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		if err != nil {
 			errCh <- err
 			return
@@ -437,7 +437,7 @@ func TestSocketApproverRejectsReusableUseCountOnNonReusableDecisions(t *testing.
 			t.Fatalf("unexpected approval result: %+v", decision)
 		}
 	case err := <-errCh:
-		t.Fatalf("ApproveExec returned error: %v", err)
+		t.Fatalf("Approve returned error: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for approval result")
 	}
@@ -453,7 +453,7 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		if err != nil {
 			errCh <- err
 			return
@@ -482,10 +482,10 @@ func TestSocketApproverRejectsWrongPeerAndStaleNonce(t *testing.T) {
 	select {
 	case decision := <-resultCh:
 		if decision.Approved || decision.DenialReason != approval.DenialReasonComputerLocked {
-			t.Fatalf("ApproveExec decision = %+v, want denial", decision)
+			t.Fatalf("Approve decision = %+v, want denial", decision)
 		}
 	case err := <-errCh:
-		t.Fatalf("ApproveExec returned error for denial: %v", err)
+		t.Fatalf("Approve returned error for denial: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for denial result")
 	}
@@ -521,7 +521,7 @@ func TestSocketApproverRejectsIncompleteExpectedApprover(t *testing.T) {
 			req := approvalTestRequest(t, time.Now().Add(time.Minute))
 			errCh := make(chan error, 1)
 			go func() {
-				_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+				_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 				errCh <- err
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -530,12 +530,12 @@ func TestSocketApproverRejectsIncompleteExpectedApprover(t *testing.T) {
 				t.Fatalf("approver launch was not observed: %v", err)
 			}
 
-			err := receiveApprovalError(t, errCh, "ApproveExec did not reject incomplete expected approver")
+			err := receiveApprovalError(t, errCh, "Approve did not reject incomplete expected approver")
 			if !errors.Is(err, approval.ErrApproverLaunchFailed) {
-				t.Fatalf("ApproveExec error = %v, want approver launch failure", err)
+				t.Fatalf("Approve error = %v, want approver launch failure", err)
 			}
 			if !strings.Contains(err.Error(), tc.wantText) {
-				t.Fatalf("ApproveExec error = %q, want %q", err.Error(), tc.wantText)
+				t.Fatalf("Approve error = %q, want %q", err.Error(), tc.wantText)
 			}
 			if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); !errors.Is(err, approval.ErrNoPendingApproval) {
 				t.Fatalf("FetchPending after invalid launch = %v, want no pending approval", err)
@@ -582,15 +582,15 @@ func TestSocketApproverPreservesLauncherErrorBoundaries(t *testing.T) {
 			launcher := &recordingLauncher{err: tc.launchErr}
 			approver := newSocketApproverForTest(t, launcher, time.Now)
 			req := approvalTestRequest(t, time.Now().Add(time.Minute))
-			_, err := approver.ApproveExec(
+			_, err := approver.Approve(
 				context.Background(),
 				testApprovalPayload(testCorrelation("req_1", "nonce_1"), req),
 			)
 			if !errors.Is(err, tc.want) {
-				t.Fatalf("ApproveExec error = %v, want %v", err, tc.want)
+				t.Fatalf("Approve error = %v, want %v", err, tc.want)
 			}
 			if tc.notWant != nil && errors.Is(err, tc.notWant) {
-				t.Fatalf("ApproveExec error = %v, should not match %v", err, tc.notWant)
+				t.Fatalf("Approve error = %v, should not match %v", err, tc.notWant)
 			}
 			if got := strings.Count(err.Error(), approval.ErrApproverLaunchFailed.Error()); got != tc.launchTextCount {
 				t.Fatalf("launch failure text count = %d in %q, want %d", got, err.Error(), tc.launchTextCount)
@@ -621,7 +621,7 @@ func TestSocketApproverRejectsFetchFromWrongApproverProcessSignature(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(ctx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(ctx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		errCh <- err
 	}()
 
@@ -632,7 +632,7 @@ func TestSocketApproverRejectsFetchFromWrongApproverProcessSignature(t *testing.
 
 	cancel()
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
-		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
+		t.Fatalf("Approve error = %v, want context cancellation", err)
 	}
 }
 
@@ -658,7 +658,7 @@ func TestSocketApproverRejectsDecisionFromWrongApproverProcessSignature(t *testi
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(ctx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(ctx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		errCh <- err
 	}()
 
@@ -678,7 +678,7 @@ func TestSocketApproverRejectsDecisionFromWrongApproverProcessSignature(t *testi
 
 	cancel()
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
-		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
+		t.Fatalf("Approve error = %v, want context cancellation", err)
 	}
 }
 
@@ -695,12 +695,12 @@ func TestSocketApproverFIFOAndQueuedExpiry(t *testing.T) {
 	firstErr := make(chan error, 1)
 	secondErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), first))
+		_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), first))
 		firstErr <- err
 	}()
 	payload := fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_2", "nonce_2"), expiredSecond))
+		_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_2", "nonce_2"), expiredSecond))
 		secondErr <- err
 	}()
 
@@ -734,9 +734,9 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 	approver := newSocketApproverForTest(t, launcher, func() time.Time { return now })
 	req := approvalTestRequest(t, now)
 
-	_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+	_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 	if !errors.Is(err, approval.ErrRequestExpired) {
-		t.Fatalf("ApproveExec error = %v, want expired", err)
+		t.Fatalf("Approve error = %v, want expired", err)
 	}
 }
 
@@ -753,7 +753,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		errCh <- err
 	}()
 	fetchPendingErrorForTest(t, launcher, approver, peerInfoForTest(t, os.Getpid()+1, exe), approval.ErrApproverPeerMismatch)
@@ -761,8 +761,8 @@ func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
 	exited <- errors.New("exit status 64")
 	close(exited)
 
-	if err := receiveApprovalError(t, errCh, "ApproveExec did not observe early approver exit"); !errors.Is(err, approval.ErrApproverLaunchFailed) {
-		t.Fatalf("ApproveExec error = %v, want launch failure", err)
+	if err := receiveApprovalError(t, errCh, "Approve did not observe early approver exit"); !errors.Is(err, approval.ErrApproverLaunchFailed) {
+		t.Fatalf("Approve error = %v, want launch failure", err)
 	}
 	if _, err := approver.FetchPending(context.Background(), peerInfoForTest(t, os.Getpid(), exe)); !errors.Is(err, approval.ErrNoPendingApproval) {
 		t.Fatalf("FetchPending after early exit = %v, want no pending approval", err)
@@ -783,7 +783,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		if err != nil {
 			errCh <- err
 			return
@@ -795,8 +795,8 @@ func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 	exited <- errors.New("exit status 64")
 	close(exited)
 
-	if err := receiveApprovalError(t, errCh, "ApproveExec did not observe post-fetch approver exit"); !errors.Is(err, approval.ErrApproverLaunchFailed) {
-		t.Fatalf("ApproveExec error = %v, want launch failure", err)
+	if err := receiveApprovalError(t, errCh, "Approve did not observe post-fetch approver exit"); !errors.Is(err, approval.ErrApproverLaunchFailed) {
+		t.Fatalf("Approve error = %v, want launch failure", err)
 	}
 	err := approver.SubmitDecision(context.Background(), peerInfoForTest(t, os.Getpid(), exe), approval.ApprovalDecisionPayload{
 		RequestID: "req_1",
@@ -808,7 +808,7 @@ func TestSocketApproverFailsWhenExpectedApproverExitsAfterFetch(t *testing.T) {
 	}
 	select {
 	case decision := <-resultCh:
-		t.Fatalf("ApproveExec returned decision after approver exit: %+v", decision)
+		t.Fatalf("Approve returned decision after approver exit: %+v", decision)
 	default:
 	}
 }
@@ -831,12 +831,12 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 	secondResult := make(chan approval.Decision, 1)
 	secondErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), firstReq))
+		_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), firstReq))
 		firstErr <- err
 	}()
 	payload := fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_2", "nonce_2"), secondReq))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_2", "nonce_2"), secondReq))
 		if err != nil {
 			secondErr <- err
 			return
@@ -849,8 +849,8 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 	}
 	firstExited <- errors.New("exit status 64")
 	close(firstExited)
-	if err := receiveApprovalError(t, firstErr, "first ApproveExec did not observe approver exit"); !errors.Is(err, approval.ErrApproverLaunchFailed) {
-		t.Fatalf("first ApproveExec error = %v, want launch failure", err)
+	if err := receiveApprovalError(t, firstErr, "first Approve did not observe approver exit"); !errors.Is(err, approval.ErrApproverLaunchFailed) {
+		t.Fatalf("first Approve error = %v, want launch failure", err)
 	}
 
 	payload = fetchPendingForTest(t, launcher, 2, approver, peerInfoForTest(t, os.Getpid(), exe))
@@ -870,7 +870,7 @@ func TestSocketApproverPromotesNextRequestWhenApproverExitsAfterFetch(t *testing
 			t.Fatalf("unexpected second approval result: %+v", decision)
 		}
 	case err := <-secondErr:
-		t.Fatalf("second ApproveExec returned error: %v", err)
+		t.Fatalf("second Approve returned error: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for second approval result")
 	}
@@ -888,7 +888,7 @@ func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		errCh <- err
 	}()
 	fetchPendingErrorForTest(t, launcher, approver, peerInfoForTest(t, os.Getpid()+1, exe), approval.ErrApproverPeerMismatch)
@@ -908,8 +908,8 @@ func TestSocketApproverLaunchContextLivesUntilApprovalCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubmitDecision returned error: %v", err)
 	}
-	if err := receiveApprovalError(t, errCh, "ApproveExec did not complete"); err != nil {
-		t.Fatalf("ApproveExec returned error: %v", err)
+	if err := receiveApprovalError(t, errCh, "Approve did not complete"); err != nil {
+		t.Fatalf("Approve returned error: %v", err)
 	}
 	receiveApprovalSignal(t, launcher.canceled, "launch context was not canceled after approval completed")
 }
@@ -925,7 +925,7 @@ func TestSocketApproverFetchPendingHonorsContextWhileApproverLaunchIsBlocked(t *
 	defer cancelApprove()
 	approveErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(approveCtx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(approveCtx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		approveErr <- err
 	}()
 	receiveApprovalSignal(t, launcher.started, "approver launch did not start")
@@ -942,8 +942,8 @@ func TestSocketApproverFetchPendingHonorsContextWhileApproverLaunchIsBlocked(t *
 	}
 
 	cancelApprove()
-	if err := receiveApprovalError(t, approveErr, "ApproveExec did not observe context cancellation"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
+	if err := receiveApprovalError(t, approveErr, "Approve did not observe context cancellation"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Approve error = %v, want context cancellation", err)
 	}
 }
 
@@ -958,7 +958,7 @@ func TestSocketApproverSubmitDecisionHonorsContextWhileApproverLaunchIsBlocked(t
 	defer cancelApprove()
 	approveErr := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(approveCtx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(approveCtx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		approveErr <- err
 	}()
 	receiveApprovalSignal(t, launcher.started, "approver launch did not start")
@@ -982,8 +982,8 @@ func TestSocketApproverSubmitDecisionHonorsContextWhileApproverLaunchIsBlocked(t
 	}
 
 	cancelApprove()
-	if err := receiveApprovalError(t, approveErr, "ApproveExec did not observe context cancellation"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("ApproveExec error = %v, want context cancellation", err)
+	if err := receiveApprovalError(t, approveErr, "Approve did not observe context cancellation"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Approve error = %v, want context cancellation", err)
 	}
 }
 
@@ -1007,7 +1007,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 	req := approvalTestRequest(t, time.Now().Add(time.Minute))
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		_, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		errCh <- err
 	}()
 	fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
@@ -1029,7 +1029,7 @@ func TestSocketApproverRejectsInvalidDecision(t *testing.T) {
 		t.Fatalf("timeout decision returned error: %v", err)
 	}
 	if err := <-errCh; !errors.Is(err, approval.ErrRequestExpired) {
-		t.Fatalf("ApproveExec error = %v, want expired", err)
+		t.Fatalf("Approve error = %v, want expired", err)
 	}
 }
 
@@ -1037,7 +1037,7 @@ func TestSocketApproverTreatsExpiredApprovalAsTimeout(t *testing.T) {
 	t.Parallel()
 
 	if _, err := submitExpiredDecisionForTest(t, approval.ApprovalDecisionApproveOnce); !errors.Is(err, approval.ErrRequestExpired) {
-		t.Fatalf("ApproveExec error = %v, want expired", err)
+		t.Fatalf("Approve error = %v, want expired", err)
 	}
 }
 
@@ -1046,10 +1046,10 @@ func TestSocketApproverPreservesExpiredDenial(t *testing.T) {
 
 	decision, err := submitExpiredDecisionForTest(t, approval.ApprovalDecisionDeny)
 	if err != nil {
-		t.Fatalf("ApproveExec returned error for denial: %v", err)
+		t.Fatalf("Approve returned error for denial: %v", err)
 	}
 	if decision.Approved {
-		t.Fatalf("ApproveExec decision = %+v, want denied", decision)
+		t.Fatalf("Approve decision = %+v, want denied", decision)
 	}
 }
 
@@ -1075,7 +1075,7 @@ func submitExpiredDecisionForTest(t *testing.T, decision approval.ApprovalDecisi
 	resultCh := make(chan approval.Decision, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		decision, err := approver.ApproveExec(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
+		decision, err := approver.Approve(context.Background(), testApprovalPayload(testCorrelation("req_1", "nonce_1"), req))
 		if err != nil {
 			errCh <- err
 			return

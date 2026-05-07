@@ -55,7 +55,7 @@ type ApprovalDecisionPayload struct {
 	DenialReason DenialReason         `json:"denial_reason,omitempty"`
 }
 
-func NewRequestPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
+func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) ApprovalRequestPayload {
 	secrets := make([]ApprovalRequestedSecret, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
 		secrets = append(secrets, ApprovalRequestedSecret{

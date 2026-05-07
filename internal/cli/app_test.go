@@ -1268,7 +1268,7 @@ type appApprover struct {
 	decision approval.Decision
 }
 
-func (a *appApprover) ApproveExec(
+func (a *appApprover) Approve(
 	_ context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {

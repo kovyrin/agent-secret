@@ -314,8 +314,8 @@ func (g *grantIssuer) freshGrant(
 	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
 		return issuedGrant{}, err
 	}
-	approvalPayload := approval.NewRequestPayload(correlation, req)
-	decision, err := g.approver.ApproveExec(ctx, approvalPayload)
+	approvalPayload := approval.NewExecPayload(correlation, req)
+	decision, err := g.approver.Approve(ctx, approvalPayload)
 	if err != nil {
 		if auditErr := g.recordApprovalError(ctx, correlation.RequestID, req, err); auditErr != nil {
 			return issuedGrant{}, auditErr

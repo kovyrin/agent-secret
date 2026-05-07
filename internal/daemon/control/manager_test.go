@@ -43,7 +43,7 @@ func (allowPeerValidator) Validate(_ *net.UnixConn) error {
 
 type managerApprover struct{}
 
-func (managerApprover) ApproveExec(
+func (managerApprover) Approve(
 	_ context.Context,
 	_ approval.ApprovalRequestPayload,
 ) (approval.Decision, error) {
