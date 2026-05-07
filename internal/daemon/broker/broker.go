@@ -46,6 +46,8 @@ type Broker struct {
 	mu       sync.Mutex
 	now      func() time.Time
 	grants   *grantIssuer
+	approver approval.Approver
+	resolver Resolver
 	audit    AuditSink
 	active   map[string]*activeExec
 	stopOnce sync.Once
@@ -96,10 +98,12 @@ func New(opts Options) (*Broker, error) {
 		fetchLimit = 4
 	}
 	broker := &Broker{
-		now:    now,
-		audit:  opts.Audit,
-		active: make(map[string]*activeExec),
-		stop:   make(chan struct{}),
+		now:      now,
+		approver: opts.Approver,
+		resolver: opts.Resolver,
+		audit:    opts.Audit,
+		active:   make(map[string]*activeExec),
+		stop:     make(chan struct{}),
 	}
 	broker.grants = newGrantIssuer(
 		now,
@@ -188,7 +192,7 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	decision, err := b.grants.approver.Approve(ctx, approval.NewItemDescribePayload(correlation, req))
+	decision, err := b.approver.Approve(ctx, approval.NewItemDescribePayload(correlation, req))
 	if err != nil {
 		if auditErr := b.audit.Record(ctx, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr
@@ -210,7 +214,7 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.audit.Record(ctx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchStarted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	metadata, err := b.grants.resolver.DescribeItem(ctx, req.Ref, req.Account)
+	metadata, err := b.resolver.DescribeItem(ctx, req.Ref, req.Account)
 	if err != nil {
 		failed := audit.FromItemDescribeRequest(audit.EventItemMetadataFetchFailed, correlation.RequestID, req)
 		failed.ErrorCode = audit.ErrorCode(secretFetchErrorCode(err))
