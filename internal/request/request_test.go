@@ -3,7 +3,6 @@ package request
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,16 +16,18 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	bin := writeExecutable(t, dir)
+	bin := filepath.Join(dir, "tool")
 	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	env := []string{"PATH=" + dir, "EXISTING=value"}
 
 	req, err := NewExec(ExecOptions{
-		Reason:     "  Run Terraform plan  ",
-		Command:    []string{"tool", "plan"},
-		CWD:        dir,
-		Env:        env,
-		ReceivedAt: receivedAt,
+		Reason:                 "  Run Terraform plan  ",
+		Command:                []string{"tool", "plan"},
+		CWD:                    dir,
+		ReceivedAt:             receivedAt,
+		ResolvedExecutable:     bin,
+		ExecutableIdentity:     testIdentity(),
+		EnvironmentFingerprint: EnvironmentFingerprint(env),
 		Secrets: []SecretSpec{
 			{Alias: "TOKEN", Ref: "op://Example Vault/Cloudflare/token", Account: " Fixture "},
 			{Alias: "TOKEN_COPY", Ref: "op://Example Vault/Cloudflare/token"},
@@ -51,8 +52,8 @@ func TestNewExecValidatesAndNormalizesRequest(t *testing.T) {
 	if req.ResolvedExecutable != bin {
 		t.Fatalf("resolved executable = %q, want %q", req.ResolvedExecutable, bin)
 	}
-	if req.ExecutableIdentity.IsZero() {
-		t.Fatal("executable identity was not captured")
+	if req.ExecutableIdentity != testIdentity() {
+		t.Fatalf("executable identity = %+v, want prepared identity", req.ExecutableIdentity)
 	}
 	if req.EnvironmentFingerprint == "" {
 		t.Fatal("environment fingerprint was not captured")
@@ -87,7 +88,6 @@ func TestNewExecLeavesReceiptTimesUnsetByDefault(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 
 	req, err := NewExec(baseOptions(dir, "reason"))
 	if err != nil {
@@ -102,7 +102,6 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 
 	tests := []struct {
 		name string
@@ -113,7 +112,13 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 		{name: "blank reason", opts: baseOptions(dir, " \t "), want: ErrInvalidReason},
 		{name: "long reason", opts: baseOptions(dir, strings.Repeat("x", MaxReasonLength+1)), want: ErrInvalidReason},
 		{name: "missing command", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.Command = nil }), want: ErrInvalidCommand},
-		{name: "unresolved command", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.Command = []string{"missing"} }), want: ErrInvalidCommand},
+		{name: "missing cwd", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.CWD = "" }), want: ErrInvalidRequest},
+		{name: "relative cwd", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.CWD = "project" }), want: ErrInvalidRequest},
+		{name: "missing resolved executable", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ResolvedExecutable = "" }), want: ErrInvalidRequest},
+		{name: "relative resolved executable", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ResolvedExecutable = "tool" }), want: ErrInvalidRequest},
+		{name: "missing executable identity", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ExecutableIdentity = fileidentity.Identity{} }), want: ErrInvalidRequest},
+		{name: "missing environment fingerprint", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.EnvironmentFingerprint = "" }), want: ErrInvalidRequest},
+		{name: "malformed environment fingerprint", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.EnvironmentFingerprint = "env-v1:not-hex" }), want: ErrInvalidRequest},
 		{name: "duplicate alias", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 			o.Secrets = append(o.Secrets, SecretSpec{Alias: "TOKEN", Ref: "op://Example Vault/Other/token"})
 		}), want: ErrInvalidAlias},
@@ -133,9 +138,7 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 		{name: "ttl too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.TTL = MaxRequestTTL + time.Second }), want: ErrInvalidTTL},
 		{name: "reusable uses too low", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = -1 }), want: ErrInvalidReusableUses},
 		{name: "reusable uses too high", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.ReusableUses = MaxReusableUses + 1 }), want: ErrInvalidReusableUses},
-		{name: "env conflict without override", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-			o.Env = append(o.Env, "TOKEN=already")
-		}), want: ErrInvalidAlias},
+		{name: "override alias without override", opts: mutate(baseOptions(dir, "reason"), func(o *ExecOptions) { o.OverriddenAliases = []string{"TOKEN"} }), want: ErrInvalidAlias},
 	}
 
 	for _, tt := range tests {
@@ -150,37 +153,14 @@ func TestNewExecRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
-func TestNewExecResolvesSlashPathRelativeToCWD(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	binDir := filepath.Join(dir, "bin")
-	if err := os.Mkdir(binDir, 0o750); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	bin := writeExecutable(t, binDir)
-
-	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-		o.Command = []string{"./bin/tool"}
-		o.Env = []string{"PATH=/nope"}
-	}))
-	if err != nil {
-		t.Fatalf("NewExec returned error: %v", err)
-	}
-	if req.ResolvedExecutable != bin {
-		t.Fatalf("resolved executable = %q, want %q", req.ResolvedExecutable, bin)
-	}
-}
-
 func TestNewExecRecordsOverrideAliases(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-		o.Env = append(o.Env, "TOKEN=already")
 		o.OverrideEnv = true
+		o.OverriddenAliases = []string{"TOKEN"}
 	}))
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
@@ -224,9 +204,8 @@ func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-		o.Env = append(o.Env, "CANARY_SECRET_ENV=do-not-serialize")
+		o.EnvironmentFingerprint = EnvironmentFingerprint([]string{"CANARY_SECRET_ENV=do-not-serialize"})
 	}))
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
@@ -276,11 +255,10 @@ func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
-		o.Env = append(o.Env, "TOKEN=already")
 		o.OverrideEnv = true
+		o.OverriddenAliases = []string{"TOKEN"}
 	}))
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
@@ -296,7 +274,6 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 	req, err := NewExec(baseOptions(dir, "reason"))
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
@@ -348,59 +325,10 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	}
 }
 
-func TestExecRequestValidateForDaemonRejectsSymlinkMetadata(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	writeExecutable(t, dir)
-	req, err := NewExec(baseOptions(dir, "reason"))
-	if err != nil {
-		t.Fatalf("NewExec returned error: %v", err)
-	}
-	req = req.WithReceiptTime(time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
-	req.Secrets[0].Account = "Work"
-
-	cwdLink := filepath.Join(t.TempDir(), "cwd-link")
-	if err := os.Symlink(req.CWD, cwdLink); err != nil {
-		t.Fatalf("create cwd symlink: %v", err)
-	}
-	executableLink := filepath.Join(t.TempDir(), "tool-link")
-	if err := os.Symlink(req.ResolvedExecutable, executableLink); err != nil {
-		t.Fatalf("create executable symlink: %v", err)
-	}
-	brokenLink := filepath.Join(t.TempDir(), "broken-link")
-	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), brokenLink); err != nil {
-		t.Fatalf("create broken symlink: %v", err)
-	}
-
-	tests := []struct {
-		name   string
-		mutate func(*ExecRequest)
-	}{
-		{name: "cwd symlink", mutate: func(r *ExecRequest) { r.CWD = cwdLink }},
-		{name: "executable symlink", mutate: func(r *ExecRequest) { r.ResolvedExecutable = executableLink }},
-		{name: "broken cwd symlink", mutate: func(r *ExecRequest) { r.CWD = brokenLink }},
-		{name: "broken executable symlink", mutate: func(r *ExecRequest) { r.ResolvedExecutable = brokenLink }},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := cloneRequest(req)
-			tt.mutate(&got)
-			if err := got.ValidateForDaemon(); !errors.Is(err, ErrInvalidRequest) {
-				t.Fatalf("ValidateForDaemon error = %v, want ErrInvalidRequest", err)
-			}
-		})
-	}
-}
-
 func TestExecRequestExpiryUsesDaemonReceiptTTL(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
@@ -422,7 +350,6 @@ func TestExecRequestWithReceiptTimeRebasesExpiry(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeExecutable(t, dir)
 	clientTime := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 	daemonTime := clientTime.Add(24 * time.Hour)
 
@@ -446,7 +373,7 @@ func TestNewItemDescribeValidatesAndNormalizesRequest(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	bin := writeExecutable(t, dir)
+	bin := filepath.Join(dir, "agent-secret")
 	receivedAt := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
 
 	req, err := NewItemDescribe(ItemDescribeOptions{
@@ -501,7 +428,7 @@ func TestNewItemDescribeLeavesReceiptTimesUnsetByDefault(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	bin := writeExecutable(t, dir)
+	bin := filepath.Join(dir, "agent-secret")
 
 	req, err := NewItemDescribe(ItemDescribeOptions{
 		Reason:             "Inspect item metadata",
@@ -531,7 +458,7 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	bin := writeExecutable(t, dir)
+	bin := filepath.Join(dir, "agent-secret")
 	base := ItemDescribeOptions{
 		Reason:             "Inspect item metadata",
 		CWD:                dir,
@@ -549,7 +476,11 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 		{name: "missing account", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Account = " \t " }), want: ErrInvalidReference},
 		{name: "ttl too low", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
 		{name: "ttl too high", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = MaxRequestTTL + time.Second }), want: ErrInvalidTTL},
-		{name: "missing resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "" }), want: ErrInvalidCommand},
+		{name: "missing cwd", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.CWD = "" }), want: ErrInvalidRequest},
+		{name: "relative cwd", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.CWD = "project" }), want: ErrInvalidRequest},
+		{name: "missing resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "" }), want: ErrInvalidRequest},
+		{name: "relative resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "agent-secret" }), want: ErrInvalidRequest},
+		{name: "blank command argv", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Command = []string{""} }), want: ErrInvalidCommand},
 	}
 
 	for _, tt := range tests {
@@ -568,7 +499,7 @@ func TestItemDescribeRequestValidateForDaemonRejectsFabricatedMetadata(t *testin
 	t.Parallel()
 
 	dir := t.TempDir()
-	bin := writeExecutable(t, dir)
+	bin := filepath.Join(dir, "agent-secret")
 	req, err := NewItemDescribe(ItemDescribeOptions{
 		Reason:             "Inspect item metadata",
 		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token"},
@@ -630,11 +561,14 @@ func TestParseSecretRef(t *testing.T) {
 }
 
 func baseOptions(dir string, reason string) ExecOptions {
+	env := []string{"PATH=" + dir}
 	return ExecOptions{
-		Reason:  reason,
-		Command: []string{"tool"},
-		CWD:     dir,
-		Env:     []string{"PATH=" + dir},
+		Reason:                 reason,
+		Command:                []string{"tool"},
+		ResolvedExecutable:     filepath.Join(dir, "tool"),
+		ExecutableIdentity:     testIdentity(),
+		CWD:                    dir,
+		EnvironmentFingerprint: EnvironmentFingerprint(env),
 		Secrets: []SecretSpec{
 			{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
 		},
@@ -663,17 +597,13 @@ func cloneItemDescribeRequest(req ItemDescribeRequest) ItemDescribeRequest {
 	return req
 }
 
-func writeExecutable(t *testing.T, dir string) string {
-	t.Helper()
-
-	path := filepath.Join(dir, "tool")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: request validation tests need a runnable fixture executable.
-		t.Fatalf("write executable: %v", err)
+func testIdentity() fileidentity.Identity {
+	return fileidentity.Identity{
+		Device:             1,
+		Inode:              2,
+		Mode:               0o755,
+		Size:               64,
+		ModTimeUnixNano:    3,
+		ChangeTimeUnixNano: 4,
 	}
-
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-	return resolved
 }

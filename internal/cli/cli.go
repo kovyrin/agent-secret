@@ -422,15 +422,15 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		return Command{}, err
 	}
 
-	req, err := request.NewExec(request.ExecOptions{
-		Reason:       inputs.reason,
-		Command:      command,
-		CWD:          execOpts.cwd,
-		Env:          inputs.env,
-		Secrets:      inputs.secrets,
-		TTL:          inputs.ttl,
-		OverrideEnv:  execOpts.overrideEnv,
-		ForceRefresh: execOpts.forceRefresh,
+	req, err := buildExecRequest(execRequestBuildOptions{
+		reason:       inputs.reason,
+		command:      command,
+		cwd:          execOpts.cwd,
+		env:          inputs.env,
+		secrets:      inputs.secrets,
+		ttl:          inputs.ttl,
+		overrideEnv:  execOpts.overrideEnv,
+		forceRefresh: execOpts.forceRefresh,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build exec request: %w", err)
@@ -485,17 +485,12 @@ func (p Parser) parseItemDescribe(args []string, fullArgs []string) (Command, er
 	if reason == "" {
 		reason = "Inspect 1Password item metadata"
 	}
-	resolvedExecutable, err := os.Executable()
-	if err != nil {
-		return Command{}, fmt.Errorf("resolve current executable: %w", err)
-	}
-	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
-		Reason:             reason,
-		Command:            append([]string{"agent-secret"}, fullArgs...),
-		ResolvedExecutable: resolvedExecutable,
-		Ref:                fs.Arg(0),
-		Account:            account,
-		TTL:                flags.ttl,
+	req, err := buildItemDescribeRequest(itemDescribeRequestBuildOptions{
+		reason:  reason,
+		command: append([]string{"agent-secret"}, fullArgs...),
+		ref:     fs.Arg(0),
+		account: account,
+		ttl:     flags.ttl,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build item describe request: %w", err)

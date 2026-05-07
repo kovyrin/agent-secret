@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -252,12 +253,19 @@ func TestFromExecRequestUsesValidatedTrimmedReason(t *testing.T) {
 
 	dir := t.TempDir()
 	writeExecutable(t, dir, "terraform")
+	executable := filepath.Join(dir, "terraform")
+	identity, err := fileidentity.Capture(executable)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
 	req, err := request.NewExec(request.ExecOptions{
-		Reason:     "  Run Terraform plan  ",
-		Command:    []string{"terraform", "plan"},
-		CWD:        dir,
-		Env:        []string{"PATH=" + dir},
-		ReceivedAt: time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),
+		Reason:                 "  Run Terraform plan  ",
+		Command:                []string{"terraform", "plan"},
+		CWD:                    dir,
+		ResolvedExecutable:     executable,
+		ExecutableIdentity:     identity,
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=" + dir}),
+		ReceivedAt:             time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),
 		Secrets: []request.SecretSpec{
 			{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
 		},

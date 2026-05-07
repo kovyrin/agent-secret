@@ -54,21 +54,18 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 	if ttl < MinRequestTTL || ttl > MaxRequestTTL {
 		return ItemDescribeRequest{}, fmt.Errorf("%w: must be between %s and %s", ErrInvalidTTL, MinRequestTTL, MaxRequestTTL)
 	}
-	cwd, err := normalizeCWD(opts.CWD)
-	if err != nil {
+	if err := validatePreparedPath("cwd", opts.CWD, false); err != nil {
 		return ItemDescribeRequest{}, err
 	}
-	resolvedExecutable := opts.ResolvedExecutable
-	if resolvedExecutable == "" {
-		return ItemDescribeRequest{}, fmt.Errorf("%w: resolved executable is required", ErrInvalidCommand)
-	}
-	resolvedExecutable, err = validateExecutable(resolvedExecutable)
-	if err != nil {
+	if err := validatePreparedPath("resolved executable", opts.ResolvedExecutable, true); err != nil {
 		return ItemDescribeRequest{}, err
 	}
 	command := slices.Clone(opts.Command)
 	if len(command) == 0 {
 		command = []string{"agent-secret", "item", "describe", opts.Ref}
+	}
+	if command[0] == "" {
+		return ItemDescribeRequest{}, fmt.Errorf("%w: argv is required", ErrInvalidCommand)
 	}
 	receivedAt := opts.ReceivedAt
 	expiresAt := time.Time{}
@@ -78,8 +75,8 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 	return ItemDescribeRequest{
 		Reason:             reason,
 		Command:            command,
-		ResolvedExecutable: resolvedExecutable,
-		CWD:                cwd,
+		ResolvedExecutable: opts.ResolvedExecutable,
+		CWD:                opts.CWD,
 		Ref:                ref,
 		Account:            account,
 		TTL:                ttl,

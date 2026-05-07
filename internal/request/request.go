@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/opref"
-	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 const (
@@ -59,16 +57,19 @@ type Secret struct {
 }
 
 type ExecOptions struct {
-	Reason       string
-	Command      []string
-	CWD          string
-	Env          []string
-	Secrets      []SecretSpec
-	TTL          time.Duration
-	ReceivedAt   time.Time
-	ReusableUses int
-	OverrideEnv  bool
-	ForceRefresh bool
+	Reason                 string
+	Command                []string
+	ResolvedExecutable     string
+	ExecutableIdentity     fileidentity.Identity
+	CWD                    string
+	EnvironmentFingerprint string
+	Secrets                []SecretSpec
+	TTL                    time.Duration
+	ReceivedAt             time.Time
+	ReusableUses           int
+	OverrideEnv            bool
+	OverriddenAliases      []string
+	ForceRefresh           bool
 }
 
 type ExecRequest struct {
@@ -164,10 +165,10 @@ func validateDaemonLifecycle(lifecycle daemonLifecycle) error {
 	if !lifecycle.ExpiresAt.Equal(lifecycle.ReceivedAt.Add(lifecycle.TTL)) {
 		return fmt.Errorf("%w: expires_at must equal received_at plus ttl", ErrInvalidTTL)
 	}
-	if err := validateDaemonPath("cwd", lifecycle.CWD, false); err != nil {
+	if err := validatePreparedPath("cwd", lifecycle.CWD, false); err != nil {
 		return err
 	}
-	if err := validateDaemonPath("resolved executable", lifecycle.ResolvedExecutable, true); err != nil {
+	if err := validatePreparedPath("resolved executable", lifecycle.ResolvedExecutable, true); err != nil {
 		return err
 	}
 	if len(lifecycle.Command) == 0 || lifecycle.Command[0] == "" {
@@ -201,38 +202,39 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		expiresAt = receivedAt.Add(ttl)
 	}
 
-	cwd, err := normalizeCWD(opts.CWD)
+	command := slices.Clone(opts.Command)
+	if len(command) == 0 || command[0] == "" {
+		return ExecRequest{}, fmt.Errorf("%w: argv is required", ErrInvalidCommand)
+	}
+	if err := validatePreparedPath("cwd", opts.CWD, false); err != nil {
+		return ExecRequest{}, err
+	}
+	if err := validatePreparedPath("resolved executable", opts.ResolvedExecutable, true); err != nil {
+		return ExecRequest{}, err
+	}
+	if opts.ExecutableIdentity.IsZero() {
+		return ExecRequest{}, fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
+	}
+	if err := validateEnvironmentFingerprint(opts.EnvironmentFingerprint); err != nil {
+		return ExecRequest{}, err
+	}
+	secrets, err := ParseSecrets(opts.Secrets)
 	if err != nil {
 		return ExecRequest{}, err
 	}
 
-	env := slices.Clone(opts.Env)
-
-	command, resolved, err := resolveCommand(cwd, env, opts.Command)
-	if err != nil {
-		return ExecRequest{}, err
-	}
-	executableIdentity, err := fileidentity.Capture(resolved)
-	if err != nil {
-		return ExecRequest{}, fmt.Errorf("%w: capture executable identity: %w", ErrInvalidCommand, err)
-	}
-	secrets, err := parseSecrets(opts.Secrets)
-	if err != nil {
-		return ExecRequest{}, err
-	}
-
-	overriddenAliases, err := detectOverrides(env, secrets, opts.OverrideEnv)
-	if err != nil {
+	overriddenAliases := slices.Clone(opts.OverriddenAliases)
+	if err := validateOverriddenAliases(secrets, overriddenAliases, opts.OverrideEnv); err != nil {
 		return ExecRequest{}, err
 	}
 
 	return ExecRequest{
 		Reason:                 reason,
 		Command:                command,
-		ResolvedExecutable:     resolved,
-		ExecutableIdentity:     executableIdentity,
-		CWD:                    cwd,
-		EnvironmentFingerprint: EnvironmentFingerprint(env),
+		ResolvedExecutable:     opts.ResolvedExecutable,
+		ExecutableIdentity:     opts.ExecutableIdentity,
+		CWD:                    opts.CWD,
+		EnvironmentFingerprint: opts.EnvironmentFingerprint,
 		Secrets:                secrets,
 		TTL:                    ttl,
 		ReceivedAt:             receivedAt,
@@ -275,6 +277,11 @@ func ParseSecretRef(ref string) (SecretRef, error) {
 	}, nil
 }
 
+func ValidateReason(reason string) error {
+	_, err := validateReason(reason)
+	return err
+}
+
 func validateReason(reason string) (string, error) {
 	trimmed := strings.TrimSpace(reason)
 	if trimmed == "" {
@@ -294,86 +301,7 @@ func validateReusableUses(uses int) error {
 	return nil
 }
 
-func normalizeCWD(cwd string) (string, error) {
-	if cwd == "" {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("get current working directory: %w", err)
-		}
-	}
-
-	resolved, err := pathresolve.Strict(cwd)
-	if err != nil {
-		return "", fmt.Errorf("resolve cwd: %w", err)
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return "", fmt.Errorf("stat cwd %q: %w", resolved, err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("cwd %q is not a directory", resolved)
-	}
-
-	return resolved, nil
-}
-
-func resolveCommand(cwd string, env []string, command []string) ([]string, string, error) {
-	if len(command) == 0 || command[0] == "" {
-		return nil, "", fmt.Errorf("%w: argv is required", ErrInvalidCommand)
-	}
-
-	argv := slices.Clone(command)
-	executable := argv[0]
-	var candidate string
-
-	if strings.ContainsRune(executable, '/') {
-		if filepath.IsAbs(executable) {
-			candidate = executable
-		} else {
-			candidate = filepath.Join(cwd, executable)
-		}
-		resolved, err := validateExecutable(candidate)
-		if err != nil {
-			return nil, "", err
-		}
-		return argv, resolved, nil
-	}
-
-	pathValue := lookupEnv(env, "PATH")
-	for _, dir := range filepath.SplitList(pathValue) {
-		if dir == "" {
-			dir = "."
-		}
-		candidate = filepath.Join(dir, executable)
-		if !filepath.IsAbs(candidate) {
-			candidate = filepath.Join(cwd, candidate)
-		}
-		resolved, err := validateExecutable(candidate)
-		if err == nil {
-			return argv, resolved, nil
-		}
-	}
-
-	return nil, "", fmt.Errorf("%w: executable %q not found in caller PATH", ErrInvalidCommand, executable)
-}
-
-func validateExecutable(path string) (string, error) {
-	resolved, err := pathresolve.Strict(path)
-	if err != nil {
-		return "", fmt.Errorf("%w: resolve executable %q: %w", ErrInvalidCommand, path, err)
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return "", fmt.Errorf("%w: stat executable %q: %w", ErrInvalidCommand, resolved, err)
-	}
-	if info.IsDir() || info.Mode().Perm()&0111 == 0 {
-		return "", fmt.Errorf("%w: %q is not executable", ErrInvalidCommand, resolved)
-	}
-	return resolved, nil
-}
-
-func validateDaemonPath(name string, path string, executable bool) error {
+func validatePreparedPath(name string, path string, executable bool) error {
 	if path == "" {
 		return fmt.Errorf("%w: %s is required", ErrInvalidRequest, name)
 	}
@@ -383,20 +311,13 @@ func validateDaemonPath(name string, path string, executable bool) error {
 	if filepath.Clean(path) != path {
 		return fmt.Errorf("%w: %s must be normalized", ErrInvalidRequest, name)
 	}
-	if executable && strings.HasSuffix(path, string(os.PathSeparator)) {
+	if executable && strings.HasSuffix(path, "/") {
 		return fmt.Errorf("%w: %s must name a file", ErrInvalidCommand, name)
-	}
-	resolved, err := pathresolve.Strict(path)
-	if err != nil {
-		return fmt.Errorf("%w: %s must resolve without symlink errors: %w", ErrInvalidRequest, name, err)
-	}
-	if resolved != path {
-		return fmt.Errorf("%w: %s must be canonical", ErrInvalidRequest, name)
 	}
 	return nil
 }
 
-func parseSecrets(specs []SecretSpec) ([]Secret, error) {
+func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("%w: at least one secret is required", ErrInvalidReference)
 	}
@@ -437,7 +358,7 @@ func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
 		}
 		specs = append(specs, SecretSpec{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
 	}
-	parsed, err := parseSecrets(specs)
+	parsed, err := ParseSecrets(specs)
 	if err != nil {
 		return nil, err
 	}
@@ -480,39 +401,6 @@ func validateOverriddenAliases(secrets []Secret, aliases []string, override bool
 		}
 	}
 	return nil
-}
-
-func detectOverrides(env []string, secrets []Secret, override bool) ([]string, error) {
-	present := make(map[string]struct{}, len(env))
-	for _, entry := range env {
-		key, _, ok := strings.Cut(entry, "=")
-		if ok {
-			present[key] = struct{}{}
-		}
-	}
-
-	overridden := make([]string, 0)
-	for _, secret := range secrets {
-		if _, exists := present[secret.Alias]; exists {
-			if !override {
-				return nil, fmt.Errorf("%w: existing environment variable %q requires override", ErrInvalidAlias, secret.Alias)
-			}
-			overridden = append(overridden, secret.Alias)
-		}
-	}
-	slices.Sort(overridden)
-
-	return overridden, nil
-}
-
-func lookupEnv(env []string, key string) string {
-	for _, entry := range env {
-		gotKey, value, ok := strings.Cut(entry, "=")
-		if ok && gotKey == key {
-			return value
-		}
-	}
-	return ""
 }
 
 func validateEnvironmentFingerprint(value string) error {
