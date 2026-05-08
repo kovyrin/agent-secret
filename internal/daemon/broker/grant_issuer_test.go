@@ -382,6 +382,49 @@ func TestBrokerApprovalTimeoutAuditIgnoresExpiredRequestContext(t *testing.T) {
 	})
 }
 
+func TestBrokerItemDescribeApprovalDeadlineNormalizesToRequestExpired(t *testing.T) {
+	t.Parallel()
+
+	approver := &blockingApprover{started: make(chan struct{}), canceled: make(chan struct{})}
+	resolver := &mockResolver{}
+	aud := &contextCheckingAudit{}
+	broker, err := New(Options{
+		Now:      time.Now,
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	now := time.Now()
+	req := testItemDescribeRequest(t)
+	req.TTL = 25 * time.Millisecond
+	req.ReceivedAt = now
+	req.ExpiresAt = now.Add(req.TTL)
+
+	_, err = broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	if !errors.Is(err, approval.ErrRequestExpired) {
+		t.Fatalf("HandleItemDescribe error = %v, want request expired", err)
+	}
+	receiveBrokerSignal(t, approver.canceled, "request deadline did not cancel pending item metadata approval")
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver called after expired item metadata approval: %v", calls)
+	}
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventItemMetadataRequested,
+		audit.EventApprovalTimedOut,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	if events[len(events)-1].ErrorCode != auditErrorCode(protocol.ErrorCodeRequestExpired) {
+		t.Fatalf("approval timeout error code = %q", events[len(events)-1].ErrorCode)
+	}
+}
+
 func TestBrokerLateDenialAuditsDenialWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 

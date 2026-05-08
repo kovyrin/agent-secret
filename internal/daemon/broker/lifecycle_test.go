@@ -61,6 +61,51 @@ func TestBrokerStopCancelsPendingApproval(t *testing.T) {
 	requireNoActiveRequest(t, broker, testCorrelation("req_1", ""), ErrDaemonStopped)
 }
 
+func TestBrokerStopCancelsPendingItemDescribeApproval(t *testing.T) {
+	t.Parallel()
+
+	approver := &blockingApprover{started: make(chan struct{}), canceled: make(chan struct{})}
+	resolver := &mockResolver{}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	req := testItemDescribeRequest(t)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		errCh <- err
+	}()
+	receiveBrokerSignal(t, approver.started, "item metadata approval was not requested before stop")
+
+	broker.StopWithAuditEvent(context.Background(), audit.Event{})
+
+	receiveBrokerSignal(t, approver.canceled, "stop did not cancel pending item metadata approval")
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, ErrDaemonStopped) {
+			t.Fatalf("HandleItemDescribe error = %v, want daemon stopped", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleItemDescribe did not return after daemon stop")
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver called after stopped pending item metadata approval: %v", calls)
+	}
+	events := aud.Events()
+	if !containsAuditEvent(events, audit.EventDaemonStop) {
+		t.Fatalf("daemon stop was not audited: %+v", events)
+	}
+	if containsAuditEvent(events, audit.EventItemMetadataGranted) ||
+		containsAuditEvent(events, audit.EventItemMetadataFetchStarted) ||
+		containsAuditEvent(events, audit.EventItemMetadataFetchFailed) {
+		t.Fatalf("stopped item metadata approval reached post-approval audit events: %+v", events)
+	}
+}
+
 func TestBrokerStopCancelsSecretResolution(t *testing.T) {
 	t.Parallel()
 

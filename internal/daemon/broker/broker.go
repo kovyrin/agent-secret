@@ -242,8 +242,11 @@ func (b *Broker) HandleItemDescribe(
 	}
 	decision, err := b.approver.Approve(itemCtx, approval.NewItemDescribePayload(correlation, req))
 	if err != nil {
-		if auditErr := recordTerminalRequiredAudit(ctx, b.audit, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
-			return protocol.ItemDescribeResponsePayload{}, auditErr
+		err = b.itemDescribeApprovalError(itemCtx, req, err)
+		if shouldAuditItemDescribeApprovalError(err) {
+			if auditErr := recordTerminalRequiredAudit(ctx, b.audit, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
+				return protocol.ItemDescribeResponsePayload{}, auditErr
+			}
 		}
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
@@ -311,6 +314,22 @@ func (b *Broker) itemDescribeRequestError(
 	return fmt.Errorf("%w: %w", ErrItemMetadataResolveFailed, err)
 }
 
+func (b *Broker) itemDescribeApprovalError(ctx context.Context, req request.ItemDescribeRequest, err error) error {
+	if errors.Is(err, approval.ErrRequestExpired) || errors.Is(err, approval.ErrApprovalDenied) {
+		return err
+	}
+	if activeErr := b.ensureItemDescribeActive(ctx, req); activeErr != nil {
+		if errors.Is(activeErr, ErrDaemonStopped) || errors.Is(activeErr, approval.ErrRequestExpired) {
+			return activeErr
+		}
+	}
+	return err
+}
+
+func shouldAuditItemDescribeApprovalError(err error) bool {
+	return !errors.Is(err, ErrDaemonStopped)
+}
+
 func (b *Broker) ensureItemDescribeActive(ctx context.Context, req request.ItemDescribeRequest) error {
 	if err := ctx.Err(); err != nil {
 		if errors.Is(context.Cause(ctx), ErrDaemonStopped) {
@@ -342,6 +361,9 @@ func itemDescribeErrorEvent(requestID string, req request.ItemDescribeRequest, e
 }
 
 func codeForItemDescribeError(err error) protocol.ErrorCode {
+	if errors.Is(err, ErrDaemonStopped) {
+		return protocol.ErrorCodeDaemonStopped
+	}
 	if errors.Is(err, context.Canceled) {
 		return protocol.ErrorCodeContextCanceled
 	}
