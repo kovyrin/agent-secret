@@ -378,6 +378,7 @@ func TestNewItemDescribeValidatesAndNormalizesRequest(t *testing.T) {
 
 	req, err := NewItemDescribe(ItemDescribeOptions{
 		Reason:             "  Inspect item metadata  ",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token/*"},
 		CWD:                dir,
 		ResolvedExecutable: bin,
 		Ref:                "op://Example Vault/Deploy Token/*",
@@ -409,9 +410,8 @@ func TestNewItemDescribeValidatesAndNormalizesRequest(t *testing.T) {
 	if req.ResolvedExecutable != bin {
 		t.Fatalf("resolved executable = %q, want %q", req.ResolvedExecutable, bin)
 	}
-	wantCommand := []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token/*"}
-	if !slices.Equal(req.Command, wantCommand) {
-		t.Fatalf("default command = %v, want %v", req.Command, wantCommand)
+	if !slices.Equal(req.Command, []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token/*"}) {
+		t.Fatalf("command = %v", req.Command)
 	}
 	if req.Expired(receivedAt.Add(time.Minute - time.Nanosecond)) {
 		t.Fatal("item describe request expired before TTL boundary")
@@ -432,6 +432,7 @@ func TestNewItemDescribeLeavesReceiptTimesUnsetByDefault(t *testing.T) {
 
 	req, err := NewItemDescribe(ItemDescribeOptions{
 		Reason:             "Inspect item metadata",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token"},
 		CWD:                dir,
 		ResolvedExecutable: bin,
 		Ref:                "op://Example Vault/Deploy Token",
@@ -461,6 +462,7 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 	bin := filepath.Join(dir, "agent-secret")
 	base := ItemDescribeOptions{
 		Reason:             "Inspect item metadata",
+		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token"},
 		CWD:                dir,
 		ResolvedExecutable: bin,
 		Ref:                "op://Example Vault/Deploy Token",
@@ -480,6 +482,7 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 		{name: "relative cwd", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.CWD = "project" }), want: ErrInvalidRequest},
 		{name: "missing resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "" }), want: ErrInvalidRequest},
 		{name: "relative resolved executable", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.ResolvedExecutable = "agent-secret" }), want: ErrInvalidRequest},
+		{name: "missing command argv", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Command = nil }), want: ErrInvalidCommand},
 		{name: "blank command argv", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Command = []string{""} }), want: ErrInvalidCommand},
 	}
 

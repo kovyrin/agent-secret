@@ -61,10 +61,7 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 		return ItemDescribeRequest{}, err
 	}
 	command := slices.Clone(opts.Command)
-	if len(command) == 0 {
-		command = []string{"agent-secret", "item", "describe", opts.Ref}
-	}
-	if command[0] == "" {
+	if len(command) == 0 || command[0] == "" {
 		return ItemDescribeRequest{}, fmt.Errorf("%w: argv is required", ErrInvalidCommand)
 	}
 	receivedAt := opts.ReceivedAt
