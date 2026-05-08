@@ -13,15 +13,25 @@ import (
 )
 
 type fakeSecretsAPI struct {
-	value string
-	ref   string
-	err   error
-	calls int
+	value  string
+	values map[string]string
+	ref    string
+	refs   []string
+	err    error
+	errs   map[string]error
+	calls  int
 }
 
 func (f *fakeSecretsAPI) Resolve(_ context.Context, ref string) (string, error) {
 	f.calls++
 	f.ref = ref
+	f.refs = append(f.refs, ref)
+	if err := f.errs[ref]; err != nil {
+		return "", err
+	}
+	if value, ok := f.values[ref]; ok {
+		return value, nil
+	}
 	if f.err != nil {
 		return "", f.err
 	}
@@ -176,6 +186,187 @@ func TestResolveSecretWrapsSDKError(t *testing.T) {
 	_, err = resolver.ResolveSecret(context.Background(), "op://Example Vault/Item/password")
 	if err == nil {
 		t.Fatal("expected resolve error")
+	}
+}
+
+func TestItemResolverResolveSecretCanonicalizesPersonalVaultAlias(t *testing.T) {
+	t.Parallel()
+
+	const (
+		inputRef     = "op://Employee/Fixture Control Plane/CONTROL_PLANE_PERSONAL_API_TOKEN"
+		canonicalRef = "op://vault_private/item_control/token_field"
+	)
+	sectionID := "add more"
+	fake := &fakeSecretsAPI{
+		values: map[string]string{canonicalRef: "synthetic-control-plane-token"},
+		errs: map[string]error{
+			inputRef: errors.New("error resolving secret reference: no vault matched the secret reference query"),
+		},
+	}
+	resolver, err := NewResolverWithItemMetadata(
+		fake,
+		&fakeVaultsAPI{vaults: []onepassword.VaultOverview{
+			{ID: "vault_private", Title: "Private", VaultType: onepassword.VaultTypePersonal},
+		}},
+		&fakeItemsAPI{
+			overviews: []onepassword.ItemOverview{
+				{ID: "item_control", Title: "Fixture Control Plane", VaultID: "vault_private"},
+			},
+			item: onepassword.Item{
+				ID:       "item_control",
+				Title:    "Fixture Control Plane",
+				Sections: []onepassword.ItemSection{{ID: sectionID, Title: "add more"}},
+				Fields: []onepassword.ItemField{
+					{
+						ID:        "token_field",
+						Title:     "CONTROL_PLANE_PERSONAL_API_TOKEN",
+						SectionID: &sectionID,
+						FieldType: onepassword.ItemFieldTypeConcealed,
+						Value:     "must-not-be-used",
+					},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+	}
+
+	secret, err := resolver.ResolveSecret(context.Background(), inputRef)
+	if err != nil {
+		t.Fatalf("ResolveSecret returned error: %v", err)
+	}
+	if secret.Value() != "synthetic-control-plane-token" {
+		t.Fatal("resolved value did not come from canonical ID ref")
+	}
+	if fake.calls != 2 {
+		t.Fatalf("Resolve calls = %d, want original plus canonical retry", fake.calls)
+	}
+	if got := fake.refs; len(got) != 2 || got[0] != inputRef || got[1] != canonicalRef {
+		t.Fatalf("resolved refs = %v, want [%q %q]", got, inputRef, canonicalRef)
+	}
+}
+
+func TestItemResolverResolveSecretCanonicalizesSectionQualifiedField(t *testing.T) {
+	t.Parallel()
+
+	const (
+		inputRef     = "op://Private/Fixture Control Plane/add more/CONTROL_PLANE_PERSONAL_API_TOKEN"
+		canonicalRef = "op://vault_private/item_control/token_field"
+	)
+	sectionID := "section_id"
+	fake := &fakeSecretsAPI{
+		values: map[string]string{canonicalRef: "synthetic-control-plane-token"},
+		errs: map[string]error{
+			inputRef: errors.New("error resolving secret reference: no matching sections"),
+		},
+	}
+	resolver, err := NewResolverWithItemMetadata(
+		fake,
+		&fakeVaultsAPI{vaults: []onepassword.VaultOverview{
+			{ID: "vault_private", Title: "Private", VaultType: onepassword.VaultTypePersonal},
+		}},
+		&fakeItemsAPI{
+			overviews: []onepassword.ItemOverview{
+				{ID: "item_control", Title: "Fixture Control Plane", VaultID: "vault_private"},
+			},
+			item: onepassword.Item{
+				ID:       "item_control",
+				Title:    "Fixture Control Plane",
+				Sections: []onepassword.ItemSection{{ID: sectionID, Title: "add more"}},
+				Fields: []onepassword.ItemField{
+					{
+						ID:        "token_field",
+						Title:     "CONTROL_PLANE_PERSONAL_API_TOKEN",
+						SectionID: &sectionID,
+						FieldType: onepassword.ItemFieldTypeConcealed,
+						Value:     "must-not-be-used",
+					},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+	}
+
+	secret, err := resolver.ResolveSecret(context.Background(), inputRef)
+	if err != nil {
+		t.Fatalf("ResolveSecret returned error: %v", err)
+	}
+	if secret.Value() != "synthetic-control-plane-token" {
+		t.Fatal("resolved value did not come from canonical ID ref")
+	}
+	if fake.ref != canonicalRef {
+		t.Fatalf("last resolved ref = %q, want %q", fake.ref, canonicalRef)
+	}
+}
+
+func TestItemResolverResolveSecretKeepsNonLookupError(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeSecretsAPI{err: errors.New("locked")}
+	resolver, err := NewResolverWithItemMetadata(
+		fake,
+		&fakeVaultsAPI{vaults: []onepassword.VaultOverview{
+			{ID: "vault_private", Title: "Private", VaultType: onepassword.VaultTypePersonal},
+		}},
+		&fakeItemsAPI{},
+	)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+	}
+
+	_, err = resolver.ResolveSecret(context.Background(), "op://Employee/Fixture Control Plane/token")
+	if err == nil {
+		t.Fatal("expected locked error")
+	}
+	if fake.calls != 1 {
+		t.Fatalf("Resolve calls = %d, want no canonical retry", fake.calls)
+	}
+}
+
+func TestItemResolverResolveSecretReportsAmbiguousOmittedSection(t *testing.T) {
+	t.Parallel()
+
+	const inputRef = "op://Private/Fixture Control Plane/API_TOKEN"
+	firstSection := "first"
+	secondSection := "second"
+	fake := &fakeSecretsAPI{
+		errs: map[string]error{
+			inputRef: errors.New("error resolving secret reference: no field matched the secret reference query"),
+		},
+	}
+	resolver, err := NewResolverWithItemMetadata(
+		fake,
+		&fakeVaultsAPI{vaults: []onepassword.VaultOverview{
+			{ID: "vault_private", Title: "Private", VaultType: onepassword.VaultTypePersonal},
+		}},
+		&fakeItemsAPI{
+			overviews: []onepassword.ItemOverview{
+				{ID: "item_control", Title: "Fixture Control Plane", VaultID: "vault_private"},
+			},
+			item: onepassword.Item{
+				ID:    "item_control",
+				Title: "Fixture Control Plane",
+				Sections: []onepassword.ItemSection{
+					{ID: firstSection, Title: "first"},
+					{ID: secondSection, Title: "second"},
+				},
+				Fields: []onepassword.ItemField{
+					{ID: "first_token", Title: "API_TOKEN", SectionID: &firstSection},
+					{ID: "second_token", Title: "API_TOKEN", SectionID: &secondSection},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+	}
+
+	_, err = resolver.ResolveSecret(context.Background(), inputRef)
+	if !errors.Is(err, ErrAmbiguousField) {
+		t.Fatalf("ResolveSecret error = %v, want ErrAmbiguousField", err)
 	}
 }
 
@@ -363,6 +554,50 @@ func TestDescribeItemReturnsMetadataWithoutValues(t *testing.T) {
 		if field.Ref == "synthetic-secret-value" || field.Ref == "synthetic-user-value" {
 			t.Fatalf("field metadata leaked value: %+v", field)
 		}
+	}
+}
+
+func TestDescribeItemAcceptsPersonalVaultAlias(t *testing.T) {
+	t.Parallel()
+
+	vaults := &fakeVaultsAPI{
+		vaults: []onepassword.VaultOverview{
+			{ID: "vault_private", Title: "Private", VaultType: onepassword.VaultTypePersonal},
+		},
+	}
+	items := &fakeItemsAPI{
+		overviews: []onepassword.ItemOverview{
+			{ID: "item_control", Title: "Fixture Control Plane", VaultID: "vault_private"},
+		},
+		item: onepassword.Item{
+			ID:       "item_control",
+			Title:    "Fixture Control Plane",
+			Category: onepassword.ItemCategoryLogin,
+			Fields: []onepassword.ItemField{
+				{
+					ID:        "username",
+					Title:     "username",
+					FieldType: onepassword.ItemFieldTypeText,
+					Value:     "synthetic-user-value",
+				},
+			},
+		},
+	}
+	resolver, err := NewResolverWithItemMetadata(&fakeSecretsAPI{}, vaults, items)
+	if err != nil {
+		t.Fatalf("NewResolverWithItemMetadata returned error: %v", err)
+	}
+
+	metadata, err := resolver.DescribeItem(
+		context.Background(),
+		mustItemRef(t, "op://Employee/Fixture Control Plane"),
+		"fixture.1password.com",
+	)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if metadata.Vault != "Private" || metadata.VaultID != "vault_private" {
+		t.Fatalf("metadata vault = %q/%q, want Private/vault_private", metadata.Vault, metadata.VaultID)
 	}
 }
 

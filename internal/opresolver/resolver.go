@@ -22,8 +22,10 @@ var (
 	ErrItemsUnavailable = errors.New("1Password item metadata API is unavailable")
 	ErrVaultNotFound    = errors.New("1Password vault not found")
 	ErrItemNotFound     = errors.New("1Password item not found")
+	ErrFieldNotFound    = errors.New("1Password field not found")
 	ErrAmbiguousVault   = errors.New("1Password vault reference is ambiguous")
 	ErrAmbiguousItem    = errors.New("1Password item reference is ambiguous")
+	ErrAmbiguousField   = errors.New("1Password field reference is ambiguous")
 )
 
 type SecretsAPI interface {
@@ -151,6 +153,35 @@ func (r *Resolver) ResolveSecret(ctx context.Context, ref string) (Secret, error
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.resolveSecretLocked(ctx, ref)
+}
+
+func (r *ItemResolver) ResolveSecret(ctx context.Context, ref string) (Secret, error) {
+	parsed, err := opref.Parse(ref)
+	if err != nil {
+		return Secret{}, fmt.Errorf("%w: %w", ErrInvalidReference, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	secret, err := r.resolveSecretLocked(ctx, ref)
+	if err == nil || !shouldCanonicalizeResolveError(err) {
+		return secret, err
+	}
+
+	canonicalRef, canonicalErr := r.canonicalSecretRefLocked(ctx, parsed)
+	if canonicalErr != nil {
+		return Secret{}, errors.Join(err, fmt.Errorf("canonicalize 1Password reference: %w", canonicalErr))
+	}
+	secret, retryErr := r.resolveSecretLocked(ctx, canonicalRef)
+	if retryErr != nil {
+		return Secret{}, errors.Join(err, fmt.Errorf("resolve canonical 1Password reference: %w", retryErr))
+	}
+	return secret, nil
+}
+
+func (r *Resolver) resolveSecretLocked(ctx context.Context, ref string) (Secret, error) {
 	value, err := r.secrets.Resolve(ctx, ref)
 	runtime.KeepAlive(r.keepAlive)
 	if err != nil {
@@ -207,7 +238,7 @@ func (r *ItemResolver) findVault(ctx context.Context, vaultRef string) (onepassw
 	}
 	var matches []onepassword.VaultOverview
 	for _, vault := range vaults {
-		if vault.ID == vaultRef || vault.Title == vaultRef {
+		if vaultMatchesRef(vault, vaultRef) {
 			matches = append(matches, vault)
 		}
 	}
@@ -219,6 +250,105 @@ func (r *ItemResolver) findVault(ctx context.Context, vaultRef string) (onepassw
 	default:
 		return onepassword.VaultOverview{}, fmt.Errorf("%w: %q matched %d vaults", ErrAmbiguousVault, vaultRef, len(matches))
 	}
+}
+
+func (r *ItemResolver) canonicalSecretRefLocked(ctx context.Context, parsed opref.Reference) (string, error) {
+	vault, err := r.findVault(ctx, parsed.Vault)
+	if err != nil {
+		return "", err
+	}
+	overview, err := r.findItem(ctx, vault.ID, parsed.Item)
+	if err != nil {
+		return "", err
+	}
+	item, err := r.items.Get(ctx, vault.ID, overview.ID)
+	if err != nil {
+		return "", fmt.Errorf("get 1Password item metadata: %w", err)
+	}
+	fieldID, err := findFieldID(item, parsed)
+	if err != nil {
+		return "", err
+	}
+	return itemmetadata.BuildFieldRef(vault.ID, item.ID, "", fieldID), nil
+}
+
+func findFieldID(item onepassword.Item, parsed opref.Reference) (string, error) {
+	sections := make(map[string]string, len(item.Sections))
+	for _, section := range item.Sections {
+		sections[section.ID] = section.Title
+	}
+
+	var matches []string
+	for _, field := range item.Fields {
+		if fieldMatchesRef(field.ID, field.Title, field.SectionID, sections, parsed) {
+			matches = append(matches, field.ID)
+		}
+	}
+	for _, file := range item.Files {
+		sectionID := file.SectionID
+		if fieldMatchesRef(file.FieldID, file.FieldID, &sectionID, sections, parsed) {
+			matches = append(matches, file.FieldID)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("%w: %q", ErrFieldNotFound, parsed.Field)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("%w: %q matched %d fields", ErrAmbiguousField, parsed.Field, len(matches))
+	}
+}
+
+func fieldMatchesRef(
+	fieldID string,
+	fieldTitle string,
+	sectionID *string,
+	sections map[string]string,
+	parsed opref.Reference,
+) bool {
+	label := fieldTitle
+	if label == "" {
+		label = fieldID
+	}
+	if fieldID != parsed.Field && label != parsed.Field {
+		return false
+	}
+	if parsed.Section == "" {
+		return true
+	}
+	if sectionID == nil || *sectionID == "" {
+		return false
+	}
+	return *sectionID == parsed.Section || sections[*sectionID] == parsed.Section
+}
+
+func vaultMatchesRef(vault onepassword.VaultOverview, vaultRef string) bool {
+	return vault.ID == vaultRef ||
+		vault.Title == vaultRef ||
+		vault.VaultType == onepassword.VaultTypePersonal && isPersonalVaultAlias(vaultRef)
+}
+
+func isPersonalVaultAlias(vaultRef string) bool {
+	switch strings.ToLower(strings.TrimSpace(vaultRef)) {
+	case "employee", "personal", "private":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldCanonicalizeResolveError(err error) bool {
+	if err == nil || errors.Is(err, ErrInvalidReference) {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no vault matched the secret reference query") ||
+		strings.Contains(message, "no item matched the secret reference query") ||
+		strings.Contains(message, "no field matched the secret reference query") ||
+		strings.Contains(message, "no matching sections") ||
+		strings.Contains(message, "field not found")
 }
 
 func (r *ItemResolver) findItem(ctx context.Context, vaultID string, itemRef string) (onepassword.ItemOverview, error) {

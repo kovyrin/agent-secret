@@ -46,6 +46,9 @@ version numbers for public releases.
 - Local development installs now report a changelog-aligned dev version with
   git revision, and bundle builds fail when the requested version does not
   match the latest `CHANGELOG.md` section.
+- Secret refs copied from 1Password for built-in personal vaults now resolve
+  when the desktop app and SDK disagree on whether the vault is named Employee,
+  Personal, or Private.
 - Profile commands that resolve multiple 1Password refs no longer fail because
   a stale cached 1Password desktop SDK client reports `invalid client id` or
   `no vault matched` while `agent-secret doctor` still looks healthy.
