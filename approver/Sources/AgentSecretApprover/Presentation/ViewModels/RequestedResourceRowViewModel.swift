@@ -1,23 +1,23 @@
 import Foundation
 
 /// One requested approval resource prepared for display without secret values.
-public struct RequestedResourceRowViewModel: Equatable, Sendable {
+struct RequestedResourceRowViewModel: Equatable {
     private static let emphasizedReferencePartCount: Int = 2
     private static let minimumEmphasizedReferencePartCount: Int = 3
     private static let opReferencePrefix: String = "op://"
 
-    public let alias: String
-    public let ref: String
+    let alias: String
+    let ref: String
     let refSegments: [RequestedResourceReferenceSegment]
-    public let account: String
-    public let accountLabel: String
-    public let vaultName: String
-    public let vaultScopeName: String
-    public let itemName: String?
-    public let fieldName: String?
-    public let symbolName: String
+    let account: String
+    let accountLabel: String
+    let vaultName: String
+    let vaultScopeName: String
+    let itemName: String?
+    let fieldName: String?
+    let symbolName: String
 
-    public init(alias: String, ref: String, account: String) {
+    init(alias: String, ref: String, account: String) {
         let parts: [String] = Self.referenceParts(ref)
         let normalizedAccount: String = account.trimmingCharacters(in: .whitespacesAndNewlines)
         self.alias = Self.sanitizedDisplayText(alias)

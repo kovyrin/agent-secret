@@ -1,7 +1,7 @@
 import Foundation
 
 /// Sanitized text prepared for the approval UI.
-public struct ApprovalRequestViewModel: Equatable, Sendable {
+struct ApprovalRequestViewModel: Equatable {
     private struct ResourcePresentation {
         let rows: [RequestedResourceRowViewModel]
         let rowText: [String]
@@ -27,43 +27,43 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     private static let commandInspectorThreshold: Int = 96
     private static let secondsPerMinute: Int = 60
 
-    public let title: String
+    let title: String
     let operation: ApprovalOperation
-    public let reason: String
-    public let command: String
-    public let commandNeedsInspector: Bool
-    public let commandInspectionText: String
+    let reason: String
+    let command: String
+    let commandNeedsInspector: Bool
+    let commandInspectionText: String
     let commandArguments: [CommandArgumentViewModel]
-    public let executable: String
-    public let cwd: String
-    public let projectFolder: String
-    public let resolvedExecutable: String
-    public let requestedResources: [RequestedResourceRowViewModel]
-    public let requestedResourcesHeading: String
-    public let resourceRows: [String]
-    public let resourceCount: Int
-    public let vaultGroups: [ResourceVaultGroupViewModel]
-    public let vaultCount: Int
-    public let promptQuestion: String
-    public let accessSummary: String
-    public let isExpired: Bool
-    public let highScopeWarning: Bool
-    public let timeRemaining: String
-    public let compactTimeRemaining: String
-    public let reusableUses: Int
-    public let allowsReusableApproval: Bool
-    public let scopeSummary: String
-    public let allowReusableTitle: String
-    public let printsEnvironmentWarning: Bool
-    public let overrideEnv: Bool
-    public let overriddenAliases: [String]
-    public let overrideWarning: String?
-    public let cautionMessages: [String]
-    public let footerMessage: String
-    public let renderedText: String
+    let executable: String
+    let cwd: String
+    let projectFolder: String
+    let resolvedExecutable: String
+    let requestedResources: [RequestedResourceRowViewModel]
+    let requestedResourcesHeading: String
+    let resourceRows: [String]
+    let resourceCount: Int
+    let vaultGroups: [ResourceVaultGroupViewModel]
+    let vaultCount: Int
+    let promptQuestion: String
+    let accessSummary: String
+    let isExpired: Bool
+    let highScopeWarning: Bool
+    let timeRemaining: String
+    let compactTimeRemaining: String
+    let reusableUses: Int
+    let allowsReusableApproval: Bool
+    let scopeSummary: String
+    let allowReusableTitle: String
+    let printsEnvironmentWarning: Bool
+    let overrideEnv: Bool
+    let overriddenAliases: [String]
+    let overrideWarning: String?
+    let cautionMessages: [String]
+    let footerMessage: String
+    let renderedText: String
 
     /// Builds a prompt view model without including raw secret values.
-    public init(request: ApprovalRequest, now: Date = Date()) {
+    init(request: ApprovalRequest, now: Date = Date()) {
         (operation, title) = (request.operation, Self.title(for: request.operation))
         reason = Self.sanitizedDisplayText(request.reason)
         executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable))
