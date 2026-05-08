@@ -9,6 +9,7 @@ import Foundation
         private typealias Palette = ApprovalPanelStyle.Palette
 
         let request: ApprovalRequest
+        let maxScrollableContentHeight: CGFloat
         let decide: (ApprovalDecisionKind) -> Void
 
         @State private var detailsExpanded = false
@@ -62,8 +63,8 @@ import Foundation
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxHeight: Metric.scrollableApprovalContentMaxHeight)
-            .scrollIndicators(.visible)
+            .frame(maxHeight: maxScrollableContentHeight)
+            .scrollIndicators(.automatic)
         }
 
         var viewModel: ApprovalRequestViewModel {
@@ -228,9 +229,11 @@ import Foundation
         init(
             request: ApprovalRequest,
             now: Date = Date(),
+            maxScrollableContentHeight: CGFloat = Metric.scrollableApprovalContentMaxHeight,
             decide: @escaping (ApprovalDecisionKind) -> Void
         ) {
             self.request = request
+            self.maxScrollableContentHeight = maxScrollableContentHeight
             self.decide = decide
             _now = State(initialValue: now)
         }

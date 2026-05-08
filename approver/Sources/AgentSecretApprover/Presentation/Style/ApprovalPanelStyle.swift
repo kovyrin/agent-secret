@@ -97,6 +97,10 @@ import Foundation
             static let minimumScaleFactor: CGFloat = 0.80
             static let outerPadding: CGFloat = 14
             static let panelCornerRadius: CGFloat = 12
+            static let panelFixedVerticalContentHeight: CGFloat = 200
+            static let panelMaximumHeight: CGFloat = 900
+            static let panelMinimumHeight: CGFloat = 720
+            static let panelVisibleFrameVerticalMargin: CGFloat = 80
             static let pillCornerRadius: CGFloat = 8
             static let pillFontSize: CGFloat = 13
             static let pillHorizontalPadding: CGFloat = 8

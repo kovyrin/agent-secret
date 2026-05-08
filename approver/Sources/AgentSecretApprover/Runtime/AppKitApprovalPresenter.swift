@@ -10,7 +10,8 @@ import Foundation
 /// AppKit-backed presenter that surfaces prompts on the main actor and fails closed outside AppKit.
 public final class AppKitApprovalPresenter: ApprovalPresenter {
     #if canImport(AppKit)
-        private static let panelHeight: CGFloat = 720
+        private typealias Metric = ApprovalPanelStyle.Metric
+
         private static let panelOrigin: CGFloat = 0
         private static let panelWidth: CGFloat = 912
 
@@ -46,6 +47,23 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
 
+        static func panelHeight(visibleScreenHeight: CGFloat?) -> CGFloat {
+            guard let visibleScreenHeight else {
+                return Metric.panelMinimumHeight
+            }
+
+            let usableHeight = max(0, visibleScreenHeight - Metric.panelVisibleFrameVerticalMargin)
+            let preferredHeight = max(Metric.panelMinimumHeight, usableHeight)
+            return min(preferredHeight, Metric.panelMaximumHeight)
+        }
+
+        static func scrollableContentHeight(forPanelHeight panelHeight: CGFloat) -> CGFloat {
+            max(
+                Metric.scrollableApprovalContentMaxHeight,
+                panelHeight - Metric.panelFixedVerticalContentHeight
+            )
+        }
+
         @MainActor
         static func preflightDecision(
             for request: ApprovalRequest,
@@ -76,12 +94,15 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             let logger = UnifiedApprovalLogger(category: "decisions")
             Self.activate(app)
             let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
+            let panelHeight = Self.panelHeight(
+                visibleScreenHeight: (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height
+            )
             let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: Self.panelOrigin,
                     y: Self.panelOrigin,
                     width: Self.panelWidth,
-                    height: Self.panelHeight
+                    height: panelHeight
                 ),
                 styleMask: [.borderless],
                 backing: .buffered,
@@ -92,7 +113,10 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.hasShadow = false
             window.isMovableByWindowBackground = true
             window.contentView = NSHostingView(
-                rootView: ApprovalRequestPanelView(request: request) { selectedDecision in
+                rootView: ApprovalRequestPanelView(
+                    request: request,
+                    maxScrollableContentHeight: Self.scrollableContentHeight(forPanelHeight: panelHeight)
+                ) { selectedDecision in
                     logger.record("approval_modal_decision_selected", requestID: request.requestID)
                     coordinator.complete(with: selectedDecision)
                 }

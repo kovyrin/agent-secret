@@ -99,5 +99,26 @@ import XCTest
             XCTAssertTrue(window.canBecomeKey)
             XCTAssertTrue(window.canBecomeMain)
         }
+
+        @MainActor
+        func testPanelHeightFallsBackToMinimumWhenScreenHeightIsUnavailable() {
+            XCTAssertEqual(AppKitApprovalPresenter.panelHeight(visibleScreenHeight: nil), 720)
+        }
+
+        @MainActor
+        func testPanelHeightExpandsForTallerVisibleScreens() {
+            XCTAssertEqual(AppKitApprovalPresenter.panelHeight(visibleScreenHeight: 920), 840)
+        }
+
+        @MainActor
+        func testPanelHeightCapsAtMaximumForVeryTallVisibleScreens() {
+            XCTAssertEqual(AppKitApprovalPresenter.panelHeight(visibleScreenHeight: 900 + 500), 900)
+        }
+
+        @MainActor
+        func testScrollableContentHeightExpandsWithPanelHeight() {
+            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 720), 520)
+            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 900), 700)
+        }
     }
 #endif

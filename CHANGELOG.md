@@ -20,7 +20,7 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
-## [0.0.8] - Pending
+## [0.0.8] - 2026-05-08
 
 ### Added
 
@@ -55,6 +55,8 @@ version numbers for public releases.
 - Long-running daemon sessions can now resolve secrets from different
   1Password desktop accounts in one process instead of reusing the first
   account selected by the SDK.
+- The approval dialog now expands on taller displays and avoids showing an
+  internal scrollbar when the full request can fit.
 
 ### Internal
 
