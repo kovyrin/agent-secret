@@ -126,7 +126,7 @@ func TestManagerStartsDaemonAndStopsItExplicitly(t *testing.T) {
 	}
 	defer func() { _ = output.Close() }()
 	manager := Manager{
-		SocketPath:     socketPath,
+		socketPath:     socketPath,
 		DaemonPath:     os.Args[0],
 		DaemonArgs:     []string{"-test.run=TestManagerStartsDaemonAndStopsItExplicitly", "--", "--socket", "{socket}"},
 		StartupTimeout: 2 * time.Second,
@@ -221,7 +221,7 @@ func runDaemonManagerHelper(t *testing.T) {
 func TestManagerStatusUnavailableAcceptsOnlyUnavailableDaemon(t *testing.T) {
 	t.Parallel()
 
-	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
 
 	unavailable, err := manager.statusUnavailable(context.Background())
 	if err != nil {
@@ -244,7 +244,7 @@ func currentExecutableClientPaths(t *testing.T) []string {
 func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {
 	t.Parallel()
 
-	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
 
 	if _, err := manager.Status(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
 		t.Fatalf("Status error = %v, want daemon unavailable", err)
@@ -260,7 +260,7 @@ func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {
 func TestManagerWaitUntilReadyPreservesStartupDeadline(t *testing.T) {
 	t.Parallel()
 
-	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 
@@ -276,7 +276,7 @@ func TestManagerWaitUntilReadyPreservesStartupDeadline(t *testing.T) {
 func TestManagerWaitUntilUnavailableReturnsForMissingSocket(t *testing.T) {
 	t.Parallel()
 
-	manager := Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
 
 	if err := manager.waitUntilUnavailable(context.Background(), 0); err != nil {
 		t.Fatalf("waitUntilUnavailable returned error: %v", err)
@@ -291,7 +291,7 @@ func TestManagerStartRequiresDaemonPathAfterSocketPreparation(t *testing.T) {
 		t.Fatalf("chmod custom dir: %v", err)
 	}
 	manager := Manager{
-		SocketPath:     filepath.Join(dir, "agent-secretd.sock"),
+		socketPath:     filepath.Join(dir, "agent-secretd.sock"),
 		StartupTimeout: time.Millisecond,
 	}
 
@@ -310,7 +310,7 @@ func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	path, stop := startFakeExecDaemon(t)
 	defer stop()
 	manager := Manager{
-		SocketPath: path,
+		socketPath: path,
 		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
 	}
 
@@ -329,7 +329,7 @@ func TestManagerStatusUnavailableTreatsRetiringDaemonAsStillRunning(t *testing.T
 	path, stop := startFakeStatusErrorDaemon(t, protocol.ErrorCodeDaemonStopped)
 	defer stop()
 	manager := Manager{
-		SocketPath: path,
+		socketPath: path,
 		DaemonPath: os.Args[0],
 	}
 
@@ -348,7 +348,7 @@ func TestManagerStatusRejectsUntrustedDaemonPeer(t *testing.T) {
 	path, stop := startFakeExecDaemon(t)
 	defer stop()
 	manager := Manager{
-		SocketPath: path,
+		socketPath: path,
 		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
 	}
 
@@ -368,8 +368,8 @@ func TestNewManagerIgnoresDaemonPathEnvironmentOverride(t *testing.T) {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
 	wantSocket := filepath.Join(home, "Library", "Application Support", "agent-secret", "agent-secretd.sock")
-	if manager.SocketPath != wantSocket {
-		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath, wantSocket)
+	if manager.SocketPath() != wantSocket {
+		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath(), wantSocket)
 	}
 	if manager.DaemonPath == "/tmp/agent-secretd-test" {
 		t.Fatalf("DaemonPath honored requester-controlled env override: %q", manager.DaemonPath)
@@ -387,8 +387,8 @@ func TestNewManagerUsesExplicitSocketPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager returned error: %v", err)
 	}
-	if manager.SocketPath != socketPath {
-		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath, socketPath)
+	if manager.SocketPath() != socketPath {
+		t.Fatalf("SocketPath = %q, want %q", manager.SocketPath(), socketPath)
 	}
 	if manager.DaemonPath == "" {
 		t.Fatal("DaemonPath is empty")
@@ -398,7 +398,7 @@ func TestNewManagerUsesExplicitSocketPath(t *testing.T) {
 func TestManagerDaemonArgsReplaceSocketPlaceholder(t *testing.T) {
 	t.Parallel()
 
-	manager := Manager{SocketPath: "/tmp/agent-secret.sock"}
+	manager := Manager{socketPath: "/tmp/agent-secret.sock"}
 	if got := manager.daemonArgs(); !slices.Equal(got, []string{"--socket", "/tmp/agent-secret.sock"}) {
 		t.Fatalf("default daemon args = %v", got)
 	}
@@ -441,7 +441,7 @@ func TestManagerRejectsPermissiveCustomSocketParentWithoutChmod(t *testing.T) {
 		t.Fatalf("chmod custom dir: %v", err)
 	}
 	manager := Manager{
-		SocketPath:     filepath.Join(dir, "agent-secretd.sock"),
+		socketPath:     filepath.Join(dir, "agent-secretd.sock"),
 		DaemonPath:     filepath.Join(t.TempDir(), "missing-agent-secretd"),
 		StartupTimeout: time.Millisecond,
 	}
@@ -467,7 +467,7 @@ func TestManagerRejectsSymlinkedCustomSocketAncestorBeforeMkdirAll(t *testing.T)
 		t.Fatalf("symlink socket ancestor: %v", err)
 	}
 	manager := Manager{
-		SocketPath:     filepath.Join(link, "nested", "agent-secretd.sock"),
+		socketPath:     filepath.Join(link, "nested", "agent-secretd.sock"),
 		DaemonPath:     filepath.Join(t.TempDir(), "missing-agent-secretd"),
 		StartupTimeout: time.Millisecond,
 	}
@@ -487,7 +487,7 @@ func TestManagerStartRejectsUntrustedLiveSocket(t *testing.T) {
 	path, stop := startFakeExecDaemon(t)
 	defer stop()
 	manager := Manager{
-		SocketPath:     path,
+		socketPath:     path,
 		DaemonPath:     writeDaemonExecutableAt(t, t.TempDir()),
 		StartupTimeout: time.Millisecond,
 	}
@@ -510,7 +510,7 @@ func TestManagerStartPropagatesStaleSocketCleanupError(t *testing.T) {
 		t.Fatalf("write fake socket path: %v", err)
 	}
 	manager := Manager{
-		SocketPath:     path,
+		socketPath:     path,
 		DaemonPath:     os.Args[0],
 		StartupTimeout: time.Millisecond,
 	}

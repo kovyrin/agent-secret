@@ -616,10 +616,9 @@ func TestAppDaemonStatusReportsStoppedAfterRequestCancellation(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{
-		SocketPath: client.SocketPath,
-		DaemonPath: os.Args[0],
-	}, &stdout, &stderr)
+	manager := control.NewManagerWithSocketPath(client.SocketPath)
+	manager.DaemonPath = os.Args[0]
+	app := newTestApp(manager, &stdout, &stderr)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
@@ -879,7 +878,11 @@ func runInstallCommandTest(t *testing.T, args []string, configure func(*App), st
 func TestAppReportsParseErrorsAndStoppedDaemonStatus(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{SocketPath: filepath.Join(t.TempDir(), "missing.sock")}, &stdout, &stderr)
+	app := newTestApp(
+		control.NewManagerWithSocketPath(filepath.Join(t.TempDir(), "missing.sock")),
+		&stdout,
+		&stderr,
+	)
 
 	if code := app.Run(context.Background(), []string{"bananas"}); code != 2 {
 		t.Fatalf("unknown command exit=%d, want 2", code)
@@ -972,9 +975,11 @@ account: fixture.1password.com
 func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{
-		SocketPath: filepath.Join(t.TempDir(), "missing.sock"),
-	}, &stdout, &stderr)
+	app := newTestApp(
+		control.NewManagerWithSocketPath(filepath.Join(t.TempDir(), "missing.sock")),
+		&stdout,
+		&stderr,
+	)
 
 	code := app.Run(context.Background(), []string{
 		"exec",
@@ -1261,7 +1266,9 @@ func (b *lockedBuffer) String() string {
 }
 
 func appTestManager(client appTestClient) control.Manager {
-	return control.Manager{SocketPath: client.SocketPath, DaemonPath: os.Args[0]}
+	manager := control.NewManagerWithSocketPath(client.SocketPath)
+	manager.DaemonPath = os.Args[0]
+	return manager
 }
 
 type appApprover struct {

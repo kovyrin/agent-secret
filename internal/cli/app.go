@@ -56,35 +56,11 @@ type daemonClient interface {
 }
 
 type daemonControlManager struct {
-	manager control.Manager
-}
-
-func (m daemonControlManager) EnsureRunning(ctx context.Context) error {
-	return m.manager.EnsureRunning(ctx)
+	control.Manager
 }
 
 func (m daemonControlManager) Connect(ctx context.Context) (daemonClient, error) {
-	return m.manager.Connect(ctx)
-}
-
-func (m daemonControlManager) Status(ctx context.Context) (protocol.StatusPayload, error) {
-	return m.manager.Status(ctx)
-}
-
-func (m daemonControlManager) Start(ctx context.Context) error {
-	return m.manager.Start(ctx)
-}
-
-func (m daemonControlManager) Stop(ctx context.Context) error {
-	return m.manager.Stop(ctx)
-}
-
-func (m daemonControlManager) CheckOnePassword(ctx context.Context, account string) error {
-	return m.manager.CheckOnePassword(ctx, account)
-}
-
-func (m daemonControlManager) SocketPath() string {
-	return m.manager.SocketPath
+	return m.Manager.Connect(ctx)
 }
 
 func NewApp(newManager ControlManagerFactory, stdout io.Writer, stderr io.Writer) App {
@@ -106,24 +82,24 @@ func NewApp(newManager ControlManagerFactory, stdout io.Writer, stderr io.Writer
 		RandomReader:   rand.Reader,
 		Stdout:         stdout,
 		Stderr:         stderr,
-		managerFactory: newDaemonControlManagerFactory(newManager),
+		managerFactory: newDaemonManagerFactory(newManager),
 	}
 }
 
-func newDaemonControlManagerFactory(newManager ControlManagerFactory) daemonManagerFactory {
+func newDaemonManagerFactory(newManager ControlManagerFactory) daemonManagerFactory {
 	return func() (daemonManager, error) {
 		manager, err := newManager()
 		if err != nil {
 			return nil, err
 		}
-		return daemonControlManager{manager: manager}, nil
+		return daemonControlManager{Manager: manager}, nil
 	}
 }
 
 func (a App) daemonManager() (daemonManager, error) {
 	factory := a.managerFactory
 	if factory == nil {
-		factory = newDaemonControlManagerFactory(func() (control.Manager, error) {
+		factory = newDaemonManagerFactory(func() (control.Manager, error) {
 			return control.NewManager("")
 		})
 	}

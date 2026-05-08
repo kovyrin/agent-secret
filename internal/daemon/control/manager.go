@@ -18,7 +18,7 @@ import (
 var ErrDaemonStillRunning = errors.New("daemon still running")
 
 type Manager struct {
-	SocketPath      string
+	socketPath      string
 	DaemonPath      string
 	DaemonArgs      []string
 	StartupTimeout  time.Duration
@@ -39,11 +39,20 @@ func NewManager(socketPath string) (Manager, error) {
 	if err != nil {
 		return Manager{}, err
 	}
+	manager := NewManagerWithSocketPath(socketPath)
+	manager.DaemonPath = daemonPath
+	return manager, nil
+}
+
+func NewManagerWithSocketPath(socketPath string) Manager {
 	return Manager{
-		SocketPath:     socketPath,
-		DaemonPath:     daemonPath,
+		socketPath:     socketPath,
 		StartupTimeout: 3 * time.Second,
-	}, nil
+	}
+}
+
+func (m Manager) SocketPath() string {
+	return m.socketPath
 }
 
 func (m Manager) EnsureRunning(ctx context.Context) error {
@@ -75,10 +84,10 @@ func (m Manager) Start(ctx context.Context) error {
 	if m.DaemonPath == "" {
 		return errors.New("daemon path is required")
 	}
-	if err := socket.PrepareDirectory(m.SocketPath); err != nil {
+	if err := socket.PrepareDirectory(m.socketPath); err != nil {
 		return err
 	}
-	if err := socket.CleanupStale(m.SocketPath); err != nil {
+	if err := socket.CleanupStale(m.socketPath); err != nil {
 		return err
 	}
 
@@ -166,7 +175,7 @@ func (m Manager) Connect(ctx context.Context) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := ConnectWithPeerValidator(ctx, m.SocketPath, peertrust.NewDaemonValidator(trustedPaths))
+	client, err := ConnectWithPeerValidator(ctx, m.socketPath, peertrust.NewDaemonValidator(trustedPaths))
 	if err != nil {
 		return nil, err
 	}
@@ -279,11 +288,11 @@ func isRetiringDaemon(err error) bool {
 
 func (m Manager) daemonArgs() []string {
 	if len(m.DaemonArgs) == 0 {
-		return []string{"--socket", m.SocketPath}
+		return []string{"--socket", m.socketPath}
 	}
 	args := make([]string, 0, len(m.DaemonArgs))
 	for _, arg := range m.DaemonArgs {
-		args = append(args, strings.ReplaceAll(arg, "{socket}", m.SocketPath))
+		args = append(args, strings.ReplaceAll(arg, "{socket}", m.socketPath))
 	}
 	return args
 }
