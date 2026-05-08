@@ -313,6 +313,24 @@ func (r *deadlineObservingResolver) DescribeItem(
 	return defaultItemMetadata(ref, account), nil
 }
 
+type itemDescribeDeadlineObservingResolver struct {
+	done chan struct{}
+}
+
+func (r *itemDescribeDeadlineObservingResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
+	return canarySecretValue, nil
+}
+
+func (r *itemDescribeDeadlineObservingResolver) DescribeItem(
+	ctx context.Context,
+	_ itemmetadata.Ref,
+	_ string,
+) (itemmetadata.Metadata, error) {
+	<-ctx.Done()
+	close(r.done)
+	return itemmetadata.Metadata{}, ctx.Err()
+}
+
 type blockingResolver struct {
 	started  chan struct{}
 	canceled chan struct{}
@@ -350,6 +368,25 @@ func (r *contextIgnoringResolver) DescribeItem(
 	account string,
 ) (itemmetadata.Metadata, error) {
 	return defaultItemMetadata(ref, account), nil
+}
+
+type itemDescribeContextIgnoringResolver struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r *itemDescribeContextIgnoringResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
+	return canarySecretValue, nil
+}
+
+func (r *itemDescribeContextIgnoringResolver) DescribeItem(
+	ctx context.Context,
+	_ itemmetadata.Ref,
+	_ string,
+) (itemmetadata.Metadata, error) {
+	close(r.started)
+	<-r.release
+	return itemmetadata.Metadata{}, ctx.Err()
 }
 
 type advancingResolver struct {

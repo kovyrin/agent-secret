@@ -195,6 +195,102 @@ func TestBrokerItemDescribeAuditFailuresAreRequired(t *testing.T) {
 	}
 }
 
+func TestBrokerItemDescribeRequestDeadlineCancelsSlowMetadataLookup(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	req := testItemDescribeRequest(t)
+	req.TTL = 50 * time.Millisecond
+	req.ReceivedAt = now
+	req.ExpiresAt = now.Add(req.TTL)
+	resolver := &itemDescribeDeadlineObservingResolver{done: make(chan struct{})}
+	aud := &contextCheckingAudit{}
+	broker, err := New(Options{
+		Now:      time.Now,
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	if !errors.Is(err, approval.ErrRequestExpired) {
+		t.Fatalf("HandleItemDescribe error = %v, want request expired", err)
+	}
+	receiveBrokerSignal(t, resolver.done, "metadata resolver did not observe request deadline")
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventItemMetadataRequested,
+		audit.EventItemMetadataGranted,
+		audit.EventItemMetadataFetchStarted,
+		audit.EventItemMetadataFetchFailed,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	if events[len(events)-1].ErrorCode != auditErrorCode(protocol.ErrorCodeContextDeadlineExceeded) {
+		t.Fatalf("fetch failure error code = %q", events[len(events)-1].ErrorCode)
+	}
+}
+
+func TestBrokerItemDescribeRequestDeadlineReturnsWhenResolverIgnoresCancellation(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	req := testItemDescribeRequest(t)
+	req.TTL = 50 * time.Millisecond
+	req.ReceivedAt = now
+	req.ExpiresAt = now.Add(req.TTL)
+	resolver := &itemDescribeContextIgnoringResolver{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	defer close(resolver.release)
+	aud := &contextCheckingAudit{}
+	broker, err := New(Options{
+		Now:      time.Now,
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: resolver,
+		Audit:    aud,
+	})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		errCh <- err
+	}()
+	receiveBrokerSignal(t, resolver.started, "metadata resolution did not start before request deadline")
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, approval.ErrRequestExpired) {
+			t.Fatalf("HandleItemDescribe error = %v, want request expired", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HandleItemDescribe did not return after request deadline when resolver ignored cancellation")
+	}
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventItemMetadataRequested,
+		audit.EventItemMetadataGranted,
+		audit.EventItemMetadataFetchStarted,
+		audit.EventItemMetadataFetchFailed,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	if events[len(events)-1].ErrorCode != auditErrorCode(protocol.ErrorCodeContextDeadlineExceeded) {
+		t.Fatalf("fetch failure error code = %q", events[len(events)-1].ErrorCode)
+	}
+}
+
 func TestBrokerDenialAuditsOutcomeWithoutResolveOrCommandStart(t *testing.T) {
 	t.Parallel()
 
