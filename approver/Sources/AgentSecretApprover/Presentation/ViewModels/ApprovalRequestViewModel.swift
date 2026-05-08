@@ -28,6 +28,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
     private static let secondsPerMinute: Int = 60
 
     public let title: String
+    let operation: ApprovalOperation
     public let reason: String
     public let command: String
     public let commandNeedsInspector: Bool
@@ -63,7 +64,7 @@ public struct ApprovalRequestViewModel: Equatable, Sendable {
 
     /// Builds a prompt view model without including raw secret values.
     public init(request: ApprovalRequest, now: Date = Date()) {
-        title = Self.title(for: request.operation)
+        (operation, title) = (request.operation, Self.title(for: request.operation))
         reason = Self.sanitizedDisplayText(request.reason)
         executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable))
         commandArguments = Self.commandArguments(request.command)

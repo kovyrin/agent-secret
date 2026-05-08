@@ -11,7 +11,7 @@ extension ApprovalRequestViewModel {
                 resolvedExecutable: resolvedExecutable,
                 overrideEnv: overrideEnv,
                 overriddenAliases: overriddenAliases,
-                resourceSectionTitle: Self.inspectionResourceSectionTitle(for: requestedResourcesHeading),
+                resourceSectionTitle: Self.inspectionResourceSectionTitle(for: operation),
                 resourceRows: resourceRows,
                 scopeSummary: scopeSummary,
                 timeRemaining: timeRemaining
@@ -34,10 +34,14 @@ extension ApprovalRequestViewModel {
         let timeRemaining: String
     }
 
-    private static func inspectionResourceSectionTitle(for heading: String) -> String {
-        heading == requestedResourcesHeading(operation: .itemDescribe, resourceCount: 1)
-            ? "Item metadata:"
-            : "Secrets:"
+    private static func inspectionResourceSectionTitle(for operation: ApprovalOperation) -> String {
+        switch operation {
+        case .exec:
+            "Secrets:"
+
+        case .itemDescribe:
+            "Item metadata:"
+        }
     }
 
     private static func requestInspectionText(_ input: RequestInspectionInput) -> String {
