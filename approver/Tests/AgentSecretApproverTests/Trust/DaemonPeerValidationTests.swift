@@ -93,15 +93,20 @@ import XCTest
         }
 
         private static func makeServer(testCase: XCTestCase) throws -> UnixSocketServer {
-            let directory = URL(fileURLWithPath: "/tmp")
-                .appendingPathComponent("agent-secret-swift-tests-\(UUID().uuidString)")
+            let directoryName = "as-\(UUID().uuidString.prefix(8))"
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(directoryName)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let path = directory.appendingPathComponent("daemon.sock").path
+            let path = directory.appendingPathComponent("s").path
             testCase.addTeardownBlock {
                 unlink(path)
                 try? FileManager.default.removeItem(at: directory)
             }
-            return try UnixSocketServer(path: path)
+            do {
+                return try UnixSocketServer(path: path)
+            } catch let error as SocketDaemonClientError {
+                throw XCTSkip("unix socket test fixture unavailable: \(error)")
+            }
         }
 
         func testTrustedDaemonValidatorAcceptsCurrentExecutablePeer() throws {

@@ -7,8 +7,9 @@ import XCTest
 
     final class DaemonPeerValidationIdentityTests: XCTestCase {
         private static func makeExecutable(testCase: XCTestCase) throws -> String {
-            let directory = URL(fileURLWithPath: "/tmp")
-                .appendingPathComponent("agent-secret-swift-executable-\(UUID().uuidString)")
+            let directoryName = "as-exe-\(UUID().uuidString.prefix(8))"
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(directoryName)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let executable = directory.appendingPathComponent("agent-secretd")
             try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: false, encoding: .utf8)

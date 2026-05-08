@@ -24,8 +24,9 @@ import XCTest
         }
 
         private static func makeAppBundleExecutable(testCase: XCTestCase) throws -> String {
-            let appDirectory = URL(fileURLWithPath: "/tmp")
-                .appendingPathComponent("agent-secret-swift-app-\(UUID().uuidString)")
+            let appName = "as-app-\(UUID().uuidString.prefix(8))"
+            let appDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(appName)
                 .appendingPathExtension("app")
             let executableDirectory = appDirectory
                 .appendingPathComponent("Contents")
