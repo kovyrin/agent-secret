@@ -222,18 +222,7 @@ func classifyLauncherError(err error) error {
 
 func (a *SocketApprover) complete(job *approvalJob, result approvalResult) {
 	job.cancel()
-	a.mu.Lock()
-	if a.active == job {
-		a.active = nil
-	}
-	a.cond.Broadcast()
-	a.mu.Unlock()
-
-	select {
-	case job.result <- result:
-	default:
-	}
-	go a.promoteNext()
+	a.finish(job, result)
 }
 
 func (a *SocketApprover) cancel(job *approvalJob, err error) {
@@ -246,6 +235,12 @@ func (a *SocketApprover) cancel(job *approvalJob, err error) {
 			return
 		}
 	}
+	a.mu.Unlock()
+	a.finish(job, approvalResult{err: err})
+}
+
+func (a *SocketApprover) finish(job *approvalJob, result approvalResult) {
+	a.mu.Lock()
 	if a.active == job {
 		a.active = nil
 	}
@@ -253,7 +248,7 @@ func (a *SocketApprover) cancel(job *approvalJob, err error) {
 	a.mu.Unlock()
 
 	select {
-	case job.result <- approvalResult{err: err}:
+	case job.result <- result:
 	default:
 	}
 	go a.promoteNext()
