@@ -66,11 +66,22 @@ package_floor() {
   esac
 }
 
-while read -r _status package_name rest; do
-  case "$rest" in
+while IFS= read -r line; do
+  case "$line" in
     *"coverage:"*)
       coverage_lines=$((coverage_lines + 1))
-      percent="$(printf '%s\n' "$rest" | sed -E 's/.*coverage: ([0-9.]+)%.*/\1/')"
+      read -r -a line_fields <<<"$line"
+      if [ "${line_fields[0]:-}" = "ok" ]; then
+        package_name="${line_fields[1]:-}"
+      else
+        package_name="${line_fields[0]:-}"
+      fi
+      if [ -z "$package_name" ]; then
+        echo "coverage: could not parse package from go test line: $line" >&2
+        failures=$((failures + 1))
+        continue
+      fi
+      percent="$(printf '%s\n' "$line" | sed -E 's/.*coverage: ([0-9.]+)%.*/\1/')"
       minimum="$(package_floor "$package_name")"
       if is_less_than "$percent" "$minimum"; then
         echo "coverage: ${package_name} is ${percent}%, below package floor ${minimum}%" >&2
