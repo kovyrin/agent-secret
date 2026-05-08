@@ -56,19 +56,7 @@ func (m Manager) SocketPath() string {
 }
 
 func (m Manager) EnsureRunning(ctx context.Context) error {
-	if err := m.statusBeforeStart(ctx); err == nil {
-		return nil
-	} else if isRetiringDaemon(err) {
-		if err := m.waitUntilUnavailable(ctx, 25*time.Millisecond); err != nil {
-			return err
-		}
-	} else if !errors.Is(err, socket.ErrDaemonUnavailable) {
-		return err
-	}
-	if err := m.Start(ctx); err != nil {
-		return err
-	}
-	return nil
+	return m.Start(ctx)
 }
 
 func (m Manager) Start(ctx context.Context) error {
