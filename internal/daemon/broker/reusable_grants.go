@@ -83,10 +83,7 @@ func recordReuseAudit(ctx context.Context, sink AuditSink, metadata policy.Reuse
 		RemainingTTLMillis: &remainingTTL,
 		RemainingUses:      &remainingUses,
 	}
-	if err := sink.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
+	return recordRequiredAudit(ctx, sink, event)
 }
 
 func (m *reusableGrantManager) finishDelivery(approvalID string, result policy.DeliveryResult) error {

@@ -144,7 +144,7 @@ func (b *Broker) PrepareExecDelivery(
 	if b.stopped() {
 		return nil, ErrDaemonStopped
 	}
-	if err := b.grants.preflightAudit(ctx); err != nil {
+	if err := preflightRequiredAudit(ctx, b.audit); err != nil {
 		return nil, err
 	}
 	if req.Expired(b.now()) {
@@ -227,7 +227,7 @@ func (b *Broker) HandleItemDescribe(
 	if b.stopped() {
 		return protocol.ItemDescribeResponsePayload{}, ErrDaemonStopped
 	}
-	if err := b.preflightRequiredAudit(ctx); err != nil {
+	if err := preflightRequiredAudit(ctx, b.audit); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	if req.Expired(b.now()) {
@@ -236,18 +236,18 @@ func (b *Broker) HandleItemDescribe(
 	itemCtx, cancelItem := b.requestContext(ctx, req.ExpiresAt)
 	defer cancelItem()
 
-	if err := b.recordRequiredAudit(itemCtx, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(itemCtx, b.audit, audit.FromItemDescribeRequest(audit.EventItemMetadataRequested, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	decision, err := b.approver.Approve(itemCtx, approval.NewItemDescribePayload(correlation, req))
 	if err != nil {
-		if auditErr := b.recordTerminalRequiredAudit(ctx, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
+		if auditErr := recordTerminalRequiredAudit(ctx, b.audit, itemDescribeErrorEvent(correlation.RequestID, req, err)); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr
 		}
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	if !decision.Approved {
-		if err := b.recordTerminalRequiredAudit(ctx, audit.FromItemDescribeRequest(audit.EventApprovalDenied, correlation.RequestID, req)); err != nil {
+		if err := recordTerminalRequiredAudit(ctx, b.audit, audit.FromItemDescribeRequest(audit.EventApprovalDenied, correlation.RequestID, req)); err != nil {
 			return protocol.ItemDescribeResponsePayload{}, err
 		}
 		return protocol.ItemDescribeResponsePayload{}, approval.DenialError(decision.DenialReason)
@@ -255,17 +255,17 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.ensureItemDescribeActive(itemCtx, req); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	if err := b.recordRequiredAudit(itemCtx, audit.FromItemDescribeRequest(audit.EventItemMetadataGranted, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(itemCtx, b.audit, audit.FromItemDescribeRequest(audit.EventItemMetadataGranted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	if err := b.recordRequiredAudit(itemCtx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchStarted, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(itemCtx, b.audit, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchStarted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	metadata, err := b.describeItem(itemCtx, req)
 	if err != nil {
 		failed := audit.FromItemDescribeRequest(audit.EventItemMetadataFetchFailed, correlation.RequestID, req)
 		failed.ErrorCode = audit.ErrorCode(secretFetchErrorCode(err))
-		if auditErr := b.recordTerminalRequiredAudit(ctx, failed); auditErr != nil {
+		if auditErr := recordTerminalRequiredAudit(ctx, b.audit, failed); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr
 		}
 		return protocol.ItemDescribeResponsePayload{}, b.itemDescribeRequestError(itemCtx, req, err)
@@ -273,30 +273,10 @@ func (b *Broker) HandleItemDescribe(
 	if err := b.ensureItemDescribeActive(itemCtx, req); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
-	if err := b.recordRequiredAudit(itemCtx, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchCompleted, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(itemCtx, b.audit, audit.FromItemDescribeRequest(audit.EventItemMetadataFetchCompleted, correlation.RequestID, req)); err != nil {
 		return protocol.ItemDescribeResponsePayload{}, err
 	}
 	return protocol.ItemDescribeResponsePayload{Item: metadata}, nil
-}
-
-func (b *Broker) preflightRequiredAudit(ctx context.Context) error {
-	if err := b.audit.Preflight(ctx); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
-}
-
-func (b *Broker) recordRequiredAudit(ctx context.Context, event audit.Event) error {
-	if err := b.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
-}
-
-func (b *Broker) recordTerminalRequiredAudit(ctx context.Context, event audit.Event) error {
-	auditCtx, cancel := terminalAuditContext(ctx)
-	defer cancel()
-	return b.recordRequiredAudit(auditCtx, event)
 }
 
 func (b *Broker) describeItem(ctx context.Context, req request.ItemDescribeRequest) (itemmetadata.Metadata, error) {
@@ -425,7 +405,7 @@ func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correla
 	event := audit.FromExecRequest(audit.EventCommandStarted, correlation.RequestID, active.req)
 	pid := childPID
 	event.ChildPID = &pid
-	if err := b.grants.recordRequiredAudit(ctx, event); err != nil {
+	if err := recordRequiredAudit(ctx, b.audit, event); err != nil {
 		return err
 	}
 
@@ -447,7 +427,7 @@ func (b *Broker) ReportCompleted(ctx context.Context, correlation protocol.Corre
 	event := audit.FromExecRequest(audit.EventCommandCompleted, correlation.RequestID, active.req)
 	event.ExitCode = new(exitCode)
 	event.Signal = signal
-	if err := b.grants.recordRequiredAudit(ctx, event); err != nil {
+	if err := recordRequiredAudit(ctx, b.audit, event); err != nil {
 		return err
 	}
 

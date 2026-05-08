@@ -133,7 +133,7 @@ func (g *grantIssuer) issue(
 	issued.grant.payloadExpiresAt = grantPayloadExpiresAt(req, issued.delivery.expiresAt)
 
 	event := audit.FromExecRequest(audit.EventCommandStarting, correlation.RequestID, req)
-	if err := g.recordRequiredAudit(ctx, event); err != nil {
+	if err := recordRequiredAudit(ctx, g.audit, event); err != nil {
 		g.rollbackDelivery(issued.delivery)
 		return issuedGrant{}, err
 	}
@@ -271,7 +271,7 @@ func (g *grantIssuer) recordReusableRefresh(
 ) error {
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 	event.ApprovalID = approval.ID
-	return g.recordRequiredAudit(ctx, event)
+	return recordRequiredAudit(ctx, g.audit, event)
 }
 
 func (g *grantIssuer) refreshedReusableValues(
@@ -299,19 +299,12 @@ func (g *grantIssuer) refreshedReusableValues(
 	return values, nil
 }
 
-func (g *grantIssuer) preflightAudit(ctx context.Context) error {
-	if err := g.audit.Preflight(ctx); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
-}
-
 func (g *grantIssuer) freshGrant(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.ExecRequest,
 ) (issuedGrant, error) {
-	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(ctx, g.audit, audit.FromExecRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
 		return issuedGrant{}, err
 	}
 	approvalPayload := approval.NewExecPayload(correlation, req)
@@ -331,7 +324,7 @@ func (g *grantIssuer) freshGrant(
 	if err := g.ensureRequestActive(ctx, req); err != nil {
 		return issuedGrant{}, err
 	}
-	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventApprovalGranted, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(ctx, g.audit, audit.FromExecRequest(audit.EventApprovalGranted, correlation.RequestID, req)); err != nil {
 		return issuedGrant{}, err
 	}
 	if err := g.ensureRequestActive(ctx, req); err != nil {
@@ -382,7 +375,7 @@ func (g *grantIssuer) resolveUniqueRefs(
 	secrets := req.Secrets
 	identities := uniqueSecretIdentities(secrets)
 
-	if err := g.recordRequiredAudit(ctx, audit.FromExecRequest(audit.EventSecretFetchStarted, requestID, req)); err != nil {
+	if err := recordRequiredAudit(ctx, g.audit, audit.FromExecRequest(audit.EventSecretFetchStarted, requestID, req)); err != nil {
 		return nil, err
 	}
 
@@ -463,13 +456,6 @@ func (g *grantIssuer) fetchUniqueRefs(ctx context.Context, identities []secretId
 	return uniqueRefFetch{resolved: resolved}
 }
 
-func (g *grantIssuer) recordRequiredAudit(ctx context.Context, event audit.Event) error {
-	if err := g.audit.Record(ctx, event); err != nil {
-		return fmt.Errorf("%w: %w", ErrAuditRequired, err)
-	}
-	return nil
-}
-
 func (g *grantIssuer) recordApprovalError(
 	ctx context.Context,
 	requestID string,
@@ -480,9 +466,7 @@ func (g *grantIssuer) recordApprovalError(
 	case errors.Is(err, approval.ErrRequestExpired):
 		event := audit.FromExecRequest(audit.EventApprovalTimedOut, requestID, req)
 		event.ErrorCode = auditErrorCode(protocol.ErrorCodeRequestExpired)
-		auditCtx, cancel := terminalAuditContext(ctx)
-		defer cancel()
-		return g.recordRequiredAudit(auditCtx, event)
+		return recordTerminalRequiredAudit(ctx, g.audit, event)
 	default:
 		return nil
 	}
@@ -491,9 +475,7 @@ func (g *grantIssuer) recordApprovalError(
 func (g *grantIssuer) recordApprovalDenied(ctx context.Context, requestID string, req request.ExecRequest) error {
 	event := audit.FromExecRequest(audit.EventApprovalDenied, requestID, req)
 	event.ErrorCode = auditErrorCode(protocol.ErrorCodeApprovalDenied)
-	auditCtx, cancel := terminalAuditContext(ctx)
-	defer cancel()
-	return g.recordRequiredAudit(auditCtx, event)
+	return recordTerminalRequiredAudit(ctx, g.audit, event)
 }
 
 func (g *grantIssuer) recordSecretFetchFailed(
@@ -528,7 +510,5 @@ func (g *grantIssuer) recordSecretFetchFailureEvent(
 		SecretRefs: refs,
 		ErrorCode:  auditErrorCode(secretFetchErrorCode(err)),
 	}
-	auditCtx, cancel := terminalAuditContext(ctx)
-	defer cancel()
-	return g.recordRequiredAudit(auditCtx, event)
+	return recordTerminalRequiredAudit(ctx, g.audit, event)
 }
