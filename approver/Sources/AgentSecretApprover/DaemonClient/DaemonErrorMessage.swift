@@ -23,7 +23,7 @@ enum DaemonErrorMessage {
         .requestActive: "connection already has an active request",
         .requestExpired: "request expired",
         .requestFailed: "daemon request failed",
-        .resolveFailed: "daemon failed to resolve approved secret",
+        .resolveFailed: "daemon failed to resolve 1Password data",
         .staleApproval: "stale approval response",
         .untrustedClient: "daemon rejected untrusted client"
     ]

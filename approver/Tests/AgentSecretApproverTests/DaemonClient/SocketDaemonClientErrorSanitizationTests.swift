@@ -124,7 +124,7 @@ final class SocketDaemonClientErrorSanitizationTests: XCTestCase {
         XCTAssertEqual(DaemonErrorMessage.message(for: .requestFailed), "daemon request failed")
         XCTAssertEqual(DaemonErrorMessage.message(for: .contextCanceled), "daemon request was canceled")
         XCTAssertEqual(DaemonErrorMessage.message(for: .contextDeadlineExceeded), "daemon request deadline expired")
-        XCTAssertEqual(DaemonErrorMessage.message(for: .resolveFailed), "daemon failed to resolve approved secret")
+        XCTAssertEqual(DaemonErrorMessage.message(for: .resolveFailed), "daemon failed to resolve 1Password data")
     }
 
     func testUnexpectedResponseTypeDoesNotEchoDaemonText() throws {
