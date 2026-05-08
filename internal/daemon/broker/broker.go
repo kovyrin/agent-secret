@@ -17,12 +17,13 @@ import (
 )
 
 var (
-	ErrAuditRequired       = errors.New("audit required")
-	ErrMissingCache        = errors.New("approved secret cache entry missing")
-	ErrNoResolver          = errors.New("secret resolver unavailable")
-	ErrSecretResolveFailed = errors.New("secret resolve failed")
-	ErrDaemonStopped       = errors.New("daemon stopped")
-	ErrUnknownRequest      = errors.New("unknown request")
+	ErrAuditRequired             = errors.New("audit required")
+	ErrMissingCache              = errors.New("approved secret cache entry missing")
+	ErrNoResolver                = errors.New("secret resolver unavailable")
+	ErrSecretResolveFailed       = errors.New("secret resolve failed")
+	ErrItemMetadataResolveFailed = errors.New("item metadata resolve failed")
+	ErrDaemonStopped             = errors.New("daemon stopped")
+	ErrUnknownRequest            = errors.New("unknown request")
 )
 
 type Resolver interface {
@@ -264,7 +265,7 @@ func (b *Broker) HandleItemDescribe(
 	metadata, err := b.describeItem(itemCtx, req)
 	if err != nil {
 		failed := audit.FromItemDescribeRequest(audit.EventItemMetadataFetchFailed, correlation.RequestID, req)
-		failed.ErrorCode = audit.ErrorCode(secretFetchErrorCode(err))
+		failed.ErrorCode = audit.ErrorCode(itemMetadataResolveErrorCode(err))
 		if auditErr := recordTerminalRequiredAudit(ctx, b.audit, failed); auditErr != nil {
 			return protocol.ItemDescribeResponsePayload{}, auditErr
 		}
@@ -307,7 +308,7 @@ func (b *Broker) itemDescribeRequestError(
 			return activeErr
 		}
 	}
-	return fmt.Errorf("%w: %w", ErrSecretResolveFailed, err)
+	return fmt.Errorf("%w: %w", ErrItemMetadataResolveFailed, err)
 }
 
 func (b *Broker) ensureItemDescribeActive(ctx context.Context, req request.ItemDescribeRequest) error {
@@ -483,6 +484,14 @@ func terminalAuditContext(ctx context.Context) (context.Context, context.CancelF
 }
 
 func secretFetchErrorCode(err error) protocol.ErrorCode {
+	return resolveFailureErrorCode(err)
+}
+
+func itemMetadataResolveErrorCode(err error) protocol.ErrorCode {
+	return resolveFailureErrorCode(err)
+}
+
+func resolveFailureErrorCode(err error) protocol.ErrorCode {
 	if errors.Is(err, ErrDaemonStopped) {
 		return protocol.ErrorCodeDaemonStopped
 	}

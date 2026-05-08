@@ -783,7 +783,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeContextCanceled
 	case errors.Is(err, context.DeadlineExceeded):
 		return protocol.ErrorCodeContextDeadlineExceeded
-	case errors.Is(err, daemonbroker.ErrSecretResolveFailed):
+	case errors.Is(err, daemonbroker.ErrSecretResolveFailed), errors.Is(err, daemonbroker.ErrItemMetadataResolveFailed):
 		return protocol.ErrorCodeResolveFailed
 	default:
 		return protocol.ErrorCodeRequestFailed

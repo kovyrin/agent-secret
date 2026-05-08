@@ -1677,6 +1677,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
 		{err: context.DeadlineExceeded, want: protocol.ErrorCodeContextDeadlineExceeded},
 		{err: daemonbroker.ErrSecretResolveFailed, want: protocol.ErrorCodeResolveFailed},
+		{err: daemonbroker.ErrItemMetadataResolveFailed, want: protocol.ErrorCodeResolveFailed},
 		{err: errors.New("other"), want: protocol.ErrorCodeRequestFailed},
 	}
 	for _, tt := range tests {

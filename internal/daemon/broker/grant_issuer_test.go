@@ -88,6 +88,43 @@ func TestBrokerItemDescribeApprovesBeforeMetadataLookupAndAudits(t *testing.T) {
 	assertAuditEventsValueFree(t, events)
 }
 
+func TestBrokerItemDescribeResolveFailureUsesMetadataError(t *testing.T) {
+	t.Parallel()
+
+	req := testItemDescribeRequest(t)
+	resolveErr := errors.New("metadata resolver unavailable")
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{errs: map[string]error{
+			resolverCallKey(req.Ref.Raw, req.Account): resolveErr,
+		}},
+		Audit: aud,
+	})
+
+	_, err := broker.HandleItemDescribe(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+	if !errors.Is(err, ErrItemMetadataResolveFailed) {
+		t.Fatalf("HandleItemDescribe error = %v, want %v", err, ErrItemMetadataResolveFailed)
+	}
+	if errors.Is(err, ErrSecretResolveFailed) {
+		t.Fatalf("HandleItemDescribe error = %v, should not use secret resolve sentinel", err)
+	}
+
+	events := aud.Events()
+	want := []audit.EventType{
+		audit.EventItemMetadataRequested,
+		audit.EventItemMetadataGranted,
+		audit.EventItemMetadataFetchStarted,
+		audit.EventItemMetadataFetchFailed,
+	}
+	if got := auditEventTypes(events); !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+	if events[len(events)-1].ErrorCode != auditErrorCode(protocol.ErrorCodeResolveFailed) {
+		t.Fatalf("fetch failure error code = %q", events[len(events)-1].ErrorCode)
+	}
+}
+
 func TestBrokerItemDescribeAuditFailuresAreRequired(t *testing.T) {
 	t.Parallel()
 
