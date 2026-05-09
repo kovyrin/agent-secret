@@ -1,237 +1,19 @@
-# Agent Secret Broker
+# Agent Secret
 
-Agent Secret Broker is a local, macOS-first secret access broker for coding
-agents. It lets an agent request exact 1Password-backed secrets with a stated
-reason, a bounded command, and a short approval window. A trusted local
-broker shows the user a native approval prompt, fetches only the approved
-secrets through the official 1Password SDK, and avoids returning raw values to
-the agent by default.
+Agent Secret is a local macOS approval broker for coding-agent secrets. It lets
+an agent request exact 1Password refs, shows you a native approval prompt with
+the command and reason, then injects approved values only into that child
+process.
 
-This repository is designed as a standalone open-source project.
+## Install
 
-![Agent Secret approval prompt](docs/images/approval-request.png)
+Requirements:
 
-![Agent Secret item metadata request prompt](docs/images/item-metadata-request.png)
+- macOS on Apple Silicon.
+- 1Password desktop app with Developer Tools integration enabled.
+- 1Password CLI signed in to the account that owns the refs you want to use.
 
-## Status
-
-Agent Secret is in a macOS Apple Silicon release-candidate stage. The shipped
-surface is the local app bundle, `agent-secret exec`, `agent-secret item
-describe`, the per-user daemon, native approval UI, project profiles, env-file
-migration path, install and uninstall scripts, bundled coding-agent skill, and
-signed/notarized GitHub Release artifacts.
-
-The current public release target is intentionally narrow. Agent Secret is not
-yet a cross-platform secret manager, background updater, session-handle service,
-or general credential-helper framework.
-
-## Current Support Boundaries
-
-- macOS only.
-- Apple Silicon release artifacts only.
-- 1Password is the only secret backend.
-- The only shipped secret delivery mode is CLI-supervised `agent-secret exec`
-  with environment injection.
-- Session handles, `with-session`, credential helpers, file-descriptor delivery,
-  and socket value reads are not shipped.
-- Linux and Windows are not supported.
-- There is no automatic updater. Upgrade by installing a newer release over the
-  existing app.
-
-## Project Documents
-
-- [Changelog](CHANGELOG.md)
-- [Security Policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
-- [Configuration Reference](docs/configuration.md)
-- [Release Process](docs/release-process.md)
-- [Threat Model](docs/threat-model.md)
-
-## Project Boundary
-
-- Code and docs for this project live in this repository.
-- Do not import code, scripts, configuration, credentials, or runtime helpers
-  from unrelated external projects.
-- Keep examples generic or explicitly marked as examples. Do not include real
-  secret values, private vault contents, or personal 1Password item names.
-- Prefer standard Go, Swift, and macOS APIs over external project tooling.
-
-## Intended Shape
-
-```text
-agent-secret/
-  cmd/agent-secret/              # Go CLI
-  cmd/agent-secretd/             # Go daemon
-  internal/                      # Go broker, policy, socket, audit packages
-  approver/                      # Swift macOS approval/setup app
-  docs/                          # Product, architecture, and implementation docs
-```
-
-The repository boundary and module path should remain stable.
-
-## Current Verification
-
-The default local checks match pull request CI:
-
-```bash
-mise run setup
-mise run lint
-mise run build
-mise run test:smoke
-```
-
-`mise run lint` runs the normal static and test gates:
-
-```bash
-scripts/lint.sh
-go test ./...
-go test -race ./...
-scripts/checks/check-go-coverage.sh
-govulncheck ./...
-gitleaks dir . --redact --no-banner
-shellcheck install.sh uninstall.sh \
-  $(find scripts approver/scripts -type f -name '*.sh' | sort)
-actionlint .github/workflows/*.yml
-swiftlint lint --strict --no-cache
-npx --no-install markdownlint '**/*.md'
-cd approver && swift test
-```
-
-`mise run build` runs the app bundle build:
-
-```bash
-scripts/build/build-app-bundle.sh
-```
-
-`mise run test:smoke` runs the non-secret install, uninstall, build signing
-contract, release configuration, release ancestry, release notes, release
-publication, release version, release docs, public docs, and approver smoke
-checks:
-
-```bash
-AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
-AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
-AGENT_SECRET_IN_MISE=1 scripts/build/test-build-entitlements.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-release-publish.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-release-version.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
-AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
-AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
-cd approver && swift run agent-secret-app-smoke
-```
-
-The approver smoke executable can also be run directly:
-
-```bash
-swift run agent-secret-app-smoke
-```
-
-Live 1Password integration tests are intentionally opt-in and are not part of
-normal pull request CI. Run them only with a test-only reference and Desktop App
-Integration enabled:
-
-```bash
-AGENT_SECRET_LIVE_REF="op://Test Vault/Test Item/token" \
-  go test -tags integration ./...
-```
-
-Set `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT` only when you want to
-force a specific 1Password account instead of the detected single signed-in
-1Password CLI account. Project config accounts override those defaults for the
-secrets that declare them.
-
-Release artifact verification is separate from pull request CI. For a local
-release-candidate check, run:
-
-```bash
-scripts/release/build-release.sh v0.0.0-dev
-```
-
-## Development Toolchain
-
-The project uses `mise` as the toolchain entrypoint. Install `mise`, then run:
-
-```bash
-mise run setup
-```
-
-This installs the pinned Go, Node/npm/npx, and shellcheck versions from
-`mise.toml`, installs npm dependencies from `package-lock.json`, and configures
-the repository's tracked pre-commit hook.
-Swift, `codesign`, `iconutil`, and `sips` still come from the macOS/Xcode
-command line tools.
-
-Project scripts run through `mise` by default, so these work from a normal
-shell after setup:
-
-```bash
-mise format
-scripts/lint.sh
-scripts/lint-go.sh
-mise exec -- golangci-lint run --timeout 5m
-mise run lint:swift
-mise run lint:shell
-mise run lint:toml
-mise run lint:secrets
-mise run lint:vuln
-scripts/lint-smart.sh --staged
-mise run test:race
-mise run test:coverage
-```
-
-## Install From A Release
-
-The intended macOS install shape is one app bundle:
-
-```text
-/Applications/Agent Secret.app
-  Contents/MacOS/Agent Secret
-  Contents/Library/Helpers/AgentSecretDaemon.app
-  Contents/Resources/bin/agent-secret
-  Contents/Resources/skills/agent-secret
-```
-
-The command-line entry point is a user-level symlink:
-
-```text
-~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
-```
-
-The bundled coding-agent skill is installed as a user-level symlink:
-
-```text
-~/.agents/skills/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
-```
-
-Human install flow:
-
-1. Download `Agent-Secret-vX.Y.Z-macos-arm64.dmg` from GitHub Releases.
-2. Open the DMG and drag `Agent Secret.app` into `/Applications`.
-3. Open `Agent Secret.app`.
-4. Click `Install Command Line Tool`.
-5. If the app warns that `~/.local/bin` is not on `PATH`, add the shown
-   one-liner in Terminal.
-6. Run:
-
-   ```bash
-   agent-secret doctor
-   ```
-
-Unattended install and upgrade use the same script. Pin the bootstrap script to
-the same immutable release tag as `AGENT_SECRET_VERSION`:
-
-```bash
-version="v0.0.7"
-base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
-curl -fsSL "$base_url/${version}/install.sh" |
-  AGENT_SECRET_VERSION="$version" sh
-```
-
-For a latest-release install, resolve the release tag first and fetch
-`install.sh` from that tag, not from `main`:
+Install the latest signed and notarized release:
 
 ```bash
 version="$(
@@ -244,35 +26,131 @@ curl -fsSL "$base_url/${version}/install.sh" |
   AGENT_SECRET_VERSION="$version" sh
 ```
 
-Useful installer environment variables:
+Then verify the install:
 
 ```bash
-AGENT_SECRET_VERSION=v0.0.7
-AGENT_SECRET_APP_DIR="$HOME/Applications"
-AGENT_SECRET_BIN_DIR="$HOME/.local/bin"
-AGENT_SECRET_SKILLS_DIR="$HOME/.agents/skills"
-AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1
+agent-secret doctor
 ```
 
-Agent Secret releases currently support Apple Silicon Macs only. The unattended
-installer verifies the DMG checksum, DMG code signature,
-Developer ID Team ID, Gatekeeper assessment, notarization ticket, mounted app
-bundle ID, daemon helper bundle ID, and bundled CLI signature before copying
-anything into place. Maintainer releases are expected to use Team ID
-`B6L7QLWTZW`. Release trust roots such as the GitHub host, repository, Team ID,
-bundle IDs, unsigned mode, and notarization mode are pinned for production
-installs. Local unsigned or intentionally unstapled artifacts require explicit
-development mode with local files:
+The installer copies `Agent Secret.app` into `/Applications`, installs
+`~/.local/bin/agent-secret`, installs the bundled Codex skill at
+`~/.agents/skills/agent-secret`, and runs diagnostics. If `~/.local/bin` is not
+on your shell `PATH`, the installer prints a copy-pasteable command to add it.
+
+You can also install manually from the DMG on the
+[latest GitHub Release](https://github.com/kovyrin/agent-secret/releases/latest):
+open the DMG, drag `Agent Secret.app` into `/Applications`, open the app, and
+click `Install Command Line Tool`.
+
+## Quick Start
+
+Run a command with an explicitly approved secret:
 
 ```bash
-AGENT_SECRET_INSTALL_DEV_MODE=1 \
-AGENT_SECRET_DMG=./_dist/Agent-Secret-v0.0.7-macos-arm64.dmg \
-AGENT_SECRET_CHECKSUMS_FILE=./_dist/checksums.txt \
-AGENT_SECRET_ALLOW_UNSIGNED_INSTALL=1 \
-./install.sh
+agent-secret exec --reason "Run Terraform plan" \
+  --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
+  -- terraform plan
 ```
 
-Unattended uninstall:
+Use a project profile:
+
+```bash
+agent-secret exec --profile terraform-cloudflare -- terraform plan
+```
+
+Inspect item metadata without revealing values:
+
+```bash
+agent-secret item describe "op://Example Infra/Database Credentials"
+agent-secret item describe --format env-refs --prefix DATABASE \
+  "op://Example Infra/Database Credentials"
+```
+
+## What You Approve
+
+![Agent Secret approval prompt](docs/images/approval-request.png)
+
+The approval UI emphasizes the reason for the request, the command, the working
+directory, the approval scope, the requested aliases, and the exact 1Password
+refs. Secret values are not shown in the UI and are not returned to the agent.
+
+Metadata inspection has its own approval prompt:
+
+![Agent Secret item metadata request prompt](docs/images/item-metadata-request.png)
+
+## Project Profiles
+
+Projects can store reusable secret mappings in `agent-secret.yml` or
+`.agent-secret.yml`. The file contains 1Password refs and request metadata only,
+never resolved values.
+
+```yaml
+version: 1
+account: my.1password.com
+default_profile: terraform-cloudflare
+
+profiles:
+  terraform-cloudflare:
+    reason: Terraform DNS management
+    ttl: 10m
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+```
+
+With `default_profile`, this works from the project directory:
+
+```bash
+agent-secret exec -- terraform plan
+```
+
+See [Configuration Reference](docs/configuration.md) for includes, account
+precedence, env-file migration, and the full schema.
+
+## Commands
+
+- `agent-secret exec -- COMMAND [ARG...]`: run a command with approved secrets.
+- `agent-secret item describe REF`: inspect 1Password item fields without
+  values.
+- `agent-secret doctor`: print non-secret setup diagnostics.
+- `agent-secret daemon status|start|stop`: inspect or control the per-user
+  daemon.
+- `agent-secret install-cli`: repair the command symlink for the current user.
+- `agent-secret skill-install`: repair the bundled coding-agent skill symlink.
+
+Run `agent-secret --help` or `agent-secret exec --help` for the full command
+reference.
+
+## Security Model
+
+Agent Secret is a local approval broker, not a sandbox. The approved child
+process receives the secret in its environment and can use or leak it like any
+other process with that value.
+
+What Agent Secret does protect:
+
+- Project configs and command flags carry `op://` refs, not resolved values.
+- The daemon fetches only refs approved for the current request.
+- Audit logs contain metadata only, not raw secret values.
+- Reusable approvals are bounded by command, cwd, refs, account, TTL, and use
+  count.
+- Reusable cached values are kept in daemon memory and cleared when their scope
+  is replaced, refreshed, expired, or when the daemon stops.
+
+Out of scope:
+
+- Root, the kernel, a compromised macOS user session, a compromised 1Password
+  app, or a malicious approved child process.
+- Hiding env vars from the operating-system APIs needed to launch the approved
+  child process.
+- Cross-platform secret management, background updates, session handles,
+  credential helpers, file-descriptor delivery, or socket value reads.
+
+Read [Threat Model](docs/threat-model.md) for the detailed model and review
+ledger.
+
+## Uninstall
+
+Uninstall the latest release:
 
 ```bash
 version="$(
@@ -284,397 +162,51 @@ base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
 curl -fsSL "$base_url/${version}/uninstall.sh" | sh
 ```
 
-By default uninstall removes the app, CLI symlink, skill symlink, and known
-application support files, but leaves `~/Library/Logs/agent-secret` audit logs
-in place. Set `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` to remove those logs too.
-App bundle removal is gated by the expected bundle identifiers and Developer ID
-Team ID. If the target app cannot be verified, uninstall leaves it in place
-unless `AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1` is set.
-To pin an uninstall to a specific installed release, set `version` to that
-release tag instead of resolving the latest release.
-Custom app, command, skill, support, or audit paths require
-`AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1`; the script refuses broad,
-relative, or symlinked destination roots, and support/audit paths must end in
-`agent-secret`.
+By default, uninstall removes the app, command symlink, skill symlink, and known
+application support files. It leaves `~/Library/Logs/agent-secret` audit logs in
+place unless `AGENT_SECRET_REMOVE_AUDIT_LOGS=1` is set.
 
-## Development Install
+## Development
 
-To use the current development build from any project on the same machine:
+Use `mise` as the project toolchain entrypoint:
+
+```bash
+mise run setup
+mise run lint
+mise run build
+mise run test:smoke
+```
+
+Install the current development build on this machine:
 
 ```bash
 mise dev:install
 ```
 
-By default this installs:
+The dev installer places the app in `~/Applications/Agent Secret.app` by
+default and refreshes the CLI and skill symlinks. It is for local development;
+use the release installer above for normal installs.
 
-- `~/Applications/Agent Secret.app`.
-- `~/.local/bin/agent-secret` as a symlink into the app bundle.
-- `~/.agents/skills/agent-secret` as a symlink to the bundled Agent Secret
-  skill.
+## Maintainer Notes
 
-Override the install locations with `--bin-dir`, `--app-dir`,
-`AGENT_SECRET_INSTALL_BIN_DIR`, or `AGENT_SECRET_INSTALL_APP_DIR`. To pass
-one-off flags, run `./scripts/dev-install.sh` directly. The dev installer
-replaces the app bundle and recreates the command and skill symlinks.
+- Release notes come from [Changelog](CHANGELOG.md).
+- The maintainer release checklist lives in
+  [Release Process](docs/release-process.md).
+- Release artifacts are GitHub Releases backed by signed and notarized macOS
+  DMGs.
+- Tag-triggered GitHub releases require production signing and notarization.
 
-By default, `agent-secret` uses the single signed-in 1Password CLI account when
-it can detect one, then falls back to `my.1password.com`. Set `OP_ACCOUNT` or
-`AGENT_SECRET_1PASSWORD_ACCOUNT` in the shell that will run `agent-secret exec`
-only when you want to force a specific account; the CLI binds that account into
-the approval request so already-running daemons resolve the same account the
-approver sees. Project config can also set `account` globally, per profile, or
-per secret, and those config values take precedence for the affected secret
-refs. On macOS, `agent-secret` starts the daemon through the nested
-`AgentSecretDaemon.app` inside `Agent Secret.app` so
-1Password sees the SDK caller as Agent Secret instead of the terminal or agent
-desktop app that launched the CLI.
-
-Local release artifact build:
+Local release-candidate artifact build:
 
 ```bash
 scripts/release/build-release.sh v0.0.0-dev
 ```
 
-That produces a DMG and `checksums.txt` in `_dist/`. Local builds are ad-hoc
-signed unless Developer ID signing and notarization settings are present, which
-makes the local command useful for layout, checksum, and installer smoke checks.
+## Documentation
 
-Tag pushes matching `v*` run the GitHub release workflow and attach artifacts
-to a draft GitHub Release. Tag-triggered GitHub releases require production
-signing: CI runs `scripts/release/check-release-signing-env.sh`, imports the Developer
-ID certificate, and then calls `scripts/release/build-release.sh "$GITHUB_REF_NAME"
---require-production-signing`. Missing certificate, Developer ID identity,
-`AGENT_SECRET_NOTARIZE=1`, or notary credentials fail the tag workflow instead
-of publishing ad-hoc artifacts.
-
-The maintainer release checklist is documented in
-[Release Process](docs/release-process.md), and release notes are copied from
-the matching section in [Changelog](CHANGELOG.md).
-
-Developer ID signing and notarization are optional for local release-candidate
-builds and required for this repository's tag-triggered maintainer releases.
-The maintainer preflight enforces Team ID `B6L7QLWTZW`, so runnable maintainer
-release examples must use that identity:
-
-```bash
-AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
-AGENT_SECRET_NOTARIZE=1
-AGENT_SECRET_NOTARY_KEY="$(cat AuthKey_KEYID.p8)"
-AGENT_SECRET_NOTARY_KEY_ID=KEYID
-AGENT_SECRET_NOTARY_ISSUER_ID=ISSUER_UUID
-scripts/release/check-release-signing-env.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.0.7 --require-production-signing
-```
-
-`AGENT_SECRET_NOTARY_KEY` may also point at a local `.p8` file. Notarization is
-only attempted when `AGENT_SECRET_NOTARIZE=1`. Signed local release builds must
-run from the project toolchain. Without Apple Developer ID and App Store Connect
-API key credentials, local release artifacts remain ad-hoc signed.
-
-For this repository's maintainer releases, the current Developer ID identity is:
-
-```text
-Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)
-```
-
-GitHub release signing also needs the Developer ID certificate exported from
-Keychain Access as a password-protected `.p12` and saved as secrets:
-
-```bash
-identity="Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
-base64 -i AgentSecretDeveloperID.p12 | gh secret set AGENT_SECRET_CODESIGN_CERT_P12_BASE64
-gh secret set AGENT_SECRET_CODESIGN_CERT_PASSWORD --body "$P12_PASSWORD"
-gh secret set AGENT_SECRET_CODESIGN_IDENTITY --body "$identity"
-gh secret set AGENT_SECRET_NOTARIZE --body "1"
-gh secret set AGENT_SECRET_NOTARY_KEY < AuthKey_KEYID.p8
-gh secret set AGENT_SECRET_NOTARY_KEY_ID --body "KEYID"
-gh secret set AGENT_SECRET_NOTARY_ISSUER_ID --body "ISSUER_UUID"
-```
-
-The CI release job imports the `.p12` into a temporary keychain before signing
-and deletes that keychain after the release artifact step.
-
-## Command Usage
-
-The main command is `exec`, which asks the daemon for approved secrets and then
-runs the child process:
-
-```bash
-agent-secret exec [flags] -- COMMAND [ARG...]
-```
-
-Common forms:
-
-```bash
-agent-secret exec --reason "Terraform plan" \
-  --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
-  -- terraform plan
-
-agent-secret exec -- terraform plan
-
-agent-secret exec --profile terraform-cloudflare -- terraform plan
-
-agent-secret exec --reason "Run dotenv-based deploy" \
-  --env-file .env.deploy \
-  -- npm run deploy
-```
-
-Current `exec` flags:
-
-- `--reason TEXT`: reason shown to the approver. Required unless the selected
-  profile provides `reason`.
-- `--secret ALIAS=op://vault/item[/section]/field-or-text-file`: explicit
-  secret mapping. Repeat for multiple secrets.
-- `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
-  with `op://` become approved secret refs; other values are passed to the
-  child process as plain environment entries. Repeat for multiple files.
-- `--profile NAME`: load a named project profile.
-- `--only ALIAS[,ALIAS...]`: filter loaded profile secrets and env-file secret
-  refs to selected aliases. Repeat to add more aliases. Deliberate one-off
-  `--secret` refs are not filtered.
-- `--account ACCOUNT`: default 1Password account for refs that do not already
-  have a config/profile account.
-- `--config PATH`: use a specific config file instead of upward discovery.
-- `--cwd DIR`: run the child process from `DIR`.
-- `--ttl DURATION`: approval TTL. Defaults to profile `ttl` or `2m`; allowed
-  range is `10s` through `10m`.
-- `--override-env`: allow approved aliases to replace existing child
-  environment variables.
-- `--force-refresh`: for reusable approvals, refetch approved refs before
-  delivery.
-
-The command to run must appear after `--` as argv. `agent-secret exec` has no
-`--json` mode and does not parse shell strings.
-
-1Password file attachments and Document items are supported when the SDK can
-resolve them as text. For example, a ref such as
-`op://Example/GitHub App/key.pem` injects the file contents into the alias env
-var, preserving multiline text such as PEM keys. Agent Secret does not write the
-value to a temp file and does not print it. Binary attachments with NUL bytes
-are not supported by env-var delivery.
-
-### Item Metadata Inspection
-
-`agent-secret item describe` lets an agent ask what fields an item exposes
-without receiving any secret values:
-
-```bash
-agent-secret item describe "op://Example Infra/Database Credentials"
-agent-secret item describe --format env-refs --prefix DATABASE \
-  "op://Example Infra/Database Credentials"
-agent-secret item describe --format json \
-  "op://Example Infra/Database Credentials/*"
-```
-
-The command accepts item-level refs only: `op://vault/item` and
-`op://vault/item/*`. It rejects field refs because it is for discovery before
-exact secret mappings are known.
-
-Output includes metadata such as item title, category, field labels, field
-types, section names, concealment flags, account, and canonical `op://` field
-refs. It does not include field values, even for non-concealed 1Password
-fields. The metadata lookup is still approval-gated in the native approver, and
-the approval is one metadata lookup only.
-
-`--format env-refs` prints shell-quoted `ALIAS='op://...'` mappings that can be
-copied into an env file or converted into `agent-secret.yml` profile entries.
-`--account` overrides account selection for the inspection request; otherwise
-the command uses the discovered project config account, environment account
-overrides, one detected signed-in 1Password CLI account, then
-`my.1password.com`.
-
-Daemon management and diagnostics:
-
-```bash
-agent-secret daemon status
-agent-secret daemon start
-agent-secret daemon stop
-agent-secret doctor
-agent-secret install-cli
-agent-secret skill-install
-```
-
-`agent-secret install-cli` installs or repairs the `agent-secret` symlink for
-the current user. It leaves an existing target symlink in place, refuses
-directories, and replaces an existing regular file or different symlink only
-when `--force` is passed.
-
-`agent-secret skill-install` installs or repairs the bundled coding-agent skill
-for the current user:
-
-```bash
-agent-secret skill-install
-agent-secret skill-install --skills-dir "$HOME/.agents/skills"
-agent-secret skill-install --force
-```
-
-The skill covers general Agent Secret usage, profiles, env files, safe
-verification, and migration from direct 1Password CLI usage. It is bundled in
-the app so upgrades keep the installed skill in sync with the installed CLI.
-The installer leaves an existing target symlink in place, refuses directories,
-and replaces an existing regular file or different symlink only when `--force`
-is passed.
-
-## Project Profiles
-
-Projects can keep reusable secret bundles in `agent-secret.yml` or
-`.agent-secret.yml`. The file contains only 1Password refs and metadata, never
-resolved values. `agent-secret exec --profile NAME` discovers the config from
-the current directory or a parent. If `default_profile` is set, `agent-secret
-exec -- COMMAND` uses that profile when no `--profile`, `--secret`, or
-`--env-file` flags are provided.
-
-```yaml
-version: 1
-
-account: my.1password.com
-default_profile: terraform-cloudflare
-
-profiles:
-  terraform-cloudflare:
-    account: Example Corp
-    reason: Terraform DNS management
-    ttl: 10m
-    secrets:
-      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
-      PREVIEW_TOKEN:
-        ref: op://Example/Preview/token
-        account: Example Preview
-
-  ansible:
-    include:
-      - terraform-cloudflare
-    reason: Run Ansible playbook
-    secrets:
-      ANSIBLE_BECOME_PASSWORD: op://Example/Ansible/password
-      CADDY_TOKEN: op://Example/Caddy/token
-```
-
-Profiles may include other profiles with `include`. Included profiles are
-resolved in order; later includes and the selected profile override earlier
-secrets with the same alias. The selected profile's `reason` and `ttl` become
-request defaults. Its `account` applies to its own secrets and CLI `--secret`
-additions. Included secrets keep the account selected by the profile that
-defined them unless the selected profile overrides that secret alias.
-
-`account` is optional. The precedence is per-secret `account`, then profile
-`account`, then top-level `account`, then CLI `--account`, then `OP_ACCOUNT` /
-`AGENT_SECRET_1PASSWORD_ACCOUNT`, then one detected signed-in 1Password CLI
-account, then `my.1password.com`.
-
-Run a profile with:
-
-```bash
-agent-secret exec -- terraform plan
-agent-secret exec --profile terraform-cloudflare -- terraform plan
-agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- \
-  ansible-playbook site.yml
-```
-
-`--secret` flags can be combined with a profile for one-off additional refs; in
-that mode, explicit secrets inherit the loaded profile account. Invocations with
-explicit `--secret` or `--env-file` sources do not load `default_profile` unless
-`--profile` is provided, but still inherit a discovered or explicit config's
-top-level `account`. CLI `--reason` and `--ttl` override profile defaults. CLI
-`--account` supplies a default account for refs that do not already have a
-config/profile account. `--only` filters profile-loaded aliases and env-file
-secret refs before one-off `--secret` refs are added.
-
-`--env-file` is the migration path for commands that currently use
-`op run --env-file`. It parses dotenv-style entries before approval. Secret refs
-such as `TOKEN=op://Example/Service/token` are requested from the daemon, while
-plain entries such as `RAILS_ENV=production` are passed only to the child
-process. Later env files override earlier files. Env-file keys override the
-caller environment for that child, and env-file secret aliases are removed from
-the base child environment before approved values are injected. `--only` can be
-used with env files to request a subset of their `op://` refs, for example when
-one file contains both beta and production refs.
-
-See [Configuration Reference](docs/configuration.md) for the full config schema,
-discovery rules, account precedence, and command reference.
-
-## Security Model
-
-Agent Secret is designed to keep raw secret values away from coding agents while
-still letting a human approve narrowly scoped commands. It is a local broker, not
-a sandbox. The approved child process receives the secret and can use, print, or
-forward it like any other process environment value.
-
-### Limitations
-
-- Agent Secret does not protect against root, the kernel, a compromised
-  1Password app, or a fully compromised macOS user session.
-- Same-UID local processes are in scope for specific trust-boundary checks, but
-  Agent Secret is not a sandbox for all activity by the logged-in user.
-- Approved child processes receive raw secrets by design through their
-  environment and can leak them after launch.
-- Audit logs contain metadata such as command argv, cwd, reason, aliases,
-  `op://` refs, accounts, timing, decisions, and child status. They do not
-  contain raw secret values.
-- Live 1Password integration tests are opt-in and must use test-only refs. They
-  may trigger 1Password Desktop authorization prompts.
-
-### Trusted Components
-
-- 1Password remains the source of truth for secret storage and account
-  authentication.
-- `agent-secretd` owns approvals, policy checks, 1Password SDK access, and
-  reusable in-memory secret cache entries.
-- The native macOS approver is trusted UI. It shows the command name, full
-  command details, working directory, reason, requested refs, TTL, and reusable
-  approval scope before a value is fetched.
-- The CLI is a trusted launcher. In `exec` mode it asks the daemon for approved
-  values, starts the child process, and passes stdout/stderr through unchanged.
-
-### What Is Protected
-
-- Project config and command flags contain 1Password refs only, never resolved
-  values.
-- Audit logs contain metadata only: command, cwd, reason, aliases, refs, policy
-  decision, PID, exit status, and timing. They never contain secret values.
-- The daemon and CLI disable core dumps on startup with `RLIMIT_CORE=0`. Child
-  commands launched through `agent-secret exec` inherit that no-core-dump limit.
-- Reusable approval cache values are stored in daemon memory backed by anonymous
-  `mmap`, pinned with `mlock`, and zeroed before `munlock`/`munmap`.
-- Reusable approvals fail closed if the daemon cannot put a cached secret into
-  locked memory. The daemon does not silently fall back to a plain Go string
-  cache.
-- Cached values are cleared when their reusable approval scope is replaced,
-  cleared, refreshed, or when the daemon stops.
-
-### Remaining Plaintext Boundaries
-
-Some plaintext copies are still unavoidable in the current `exec` design:
-
-- The 1Password Go SDK returns resolved values as Go strings.
-- The daemon protocol currently serializes approved env values to the CLI.
-- `exec.Cmd.Env` ultimately needs `KEY=value` strings so the operating system
-  can give the child process its environment.
-- Once the child starts, the child process and its descendants can read the
-  approved environment values.
-
-The locked-memory cache reduces the lifetime and swap/core-dump exposure of
-daemon-held reusable values. It does not make Go string copies, JSON protocol
-payloads, or child-process environments magically secret.
-
-### Out Of Scope
-
-- A compromised macOS user session, root account, kernel, 1Password app, or
-  approved child process can still exfiltrate secrets.
-- Agent Secret does not police what an approved command does after launch.
-- Agent Secret does not hide values from the operating system APIs required to
-  create the approved child environment.
-- Agent Secret does not persist approval state or secret values. The audit log is
-  the only durable state.
-
-## Default Safety Posture
-
-- Default delivery is CLI-supervised `exec` mode.
-- Raw secret output is not provided by the broker.
-- The macOS approver emits non-secret diagnostics to Apple Unified Logging for
-  local troubleshooting.
-- `agent-secret --help` is detailed enough for coding agents to discover safe
-  usage without reading these docs.
-- Future Go code must be covered by project lint and pre-commit paths.
-- Integration tests must use real captured API and OS error shapes, but captured
-  fixtures must not contain secret values.
+- [Configuration Reference](docs/configuration.md)
+- [Threat Model](docs/threat-model.md)
+- [Release Process](docs/release-process.md)
+- [Security Policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)

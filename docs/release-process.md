@@ -154,7 +154,29 @@ user account or VM:
 Record evidence in the public release prep issue before treating the candidate
 as public-announcement ready.
 
+## Local Release Smoke Scripts
+
+The public docs and release automation contracts are covered by these smoke
+scripts:
+
+```bash
+AGENT_SECRET_IN_MISE=1 scripts/test-install.sh
+AGENT_SECRET_IN_MISE=1 scripts/test-uninstall.sh
+AGENT_SECRET_IN_MISE=1 scripts/build/test-build-entitlements.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-publish.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-version.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
+cd approver && swift run agent-secret-app-smoke
+```
+
 ## Signing Preconditions
+
+Tag-triggered GitHub releases require production signing and notarization.
 
 The tag-triggered release job needs these repository secrets configured:
 
@@ -171,6 +193,21 @@ AGENT_SECRET_NOTARY_ISSUER_ID
 Do not print, commit, paste, or attach `.p8`, `.p12`, private key, or password
 material. If a notary API key must be recreated, use an App Store Connect Team
 Key and store the downloaded `.p8` directly in GitHub Secrets.
+
+For this repository's maintainer releases, the current Developer ID identity is:
+
+```text
+Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)
+```
+
+Validate local production signing configuration before any signed local release
+build:
+
+```bash
+scripts/release/check-release-signing-env.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.0.0 \
+  --require-production-signing
+```
 
 ## Installer Bootstrap Documentation
 
