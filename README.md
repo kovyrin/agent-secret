@@ -30,9 +30,11 @@ agent-secret doctor
 ```
 
 The installer copies `Agent Secret.app` into `/Applications`, installs
-`~/.local/bin/agent-secret`, installs the bundled Codex skill at
-`~/.agents/skills/agent-secret`, and runs diagnostics. If `~/.local/bin` is not
-on your shell `PATH`, the installer prints a copy-pasteable command to add it.
+`agent-secret` into `~/bin` when that directory already exists and is on your
+shell `PATH`, otherwise installs it into `~/.local/bin`, installs the bundled
+Codex skill at `~/.agents/skills/agent-secret`, and runs diagnostics. If the
+chosen command directory is not on `PATH`, the installer prints a
+copy-pasteable command to add it.
 
 You can also install manually from the DMG on the
 [latest GitHub Release](https://github.com/kovyrin/agent-secret/releases/latest):

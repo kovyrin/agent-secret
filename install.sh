@@ -207,9 +207,52 @@ production_expected_team_id="B6L7QLWTZW"
 production_expected_app_bundle_id="com.kovyrin.agent-secret"
 production_expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
 default_app_dir="/Applications"
-default_bin_dir="$HOME/.local/bin"
+default_home_bin_dir="$HOME/bin"
+default_local_bin_dir="$HOME/.local/bin"
 default_skills_dir="$HOME/.agents/skills"
 release_asset_version=""
+
+path_contains_dir() {
+  path_value="$1"
+  dir="$(strip_trailing_slashes "$2")"
+
+  [ -n "$path_value" ] || return 1
+
+  remaining="$path_value"
+  while :; do
+    case "$remaining" in
+      *:*)
+        entry="${remaining%%:*}"
+        remaining="${remaining#*:}"
+        ;;
+      *)
+        entry="$remaining"
+        remaining=""
+        ;;
+    esac
+    case "$entry" in
+      "~"/*)
+        entry="$HOME/${entry#"~/"}"
+        ;;
+    esac
+    entry="$(strip_trailing_slashes "$entry")"
+    if [ "$entry" = "$dir" ]; then
+      return 0
+    fi
+    [ -n "$remaining" ] || break
+  done
+  return 1
+}
+
+select_default_bin_dir() {
+  if [ -d "$default_home_bin_dir" ] && path_contains_dir "$caller_path" "$default_home_bin_dir"; then
+    printf '%s\n' "$default_home_bin_dir"
+    return
+  fi
+  printf '%s\n' "$default_local_bin_dir"
+}
+
+default_bin_dir="$(select_default_bin_dir)"
 
 install_dev_mode="${AGENT_SECRET_INSTALL_DEV_MODE:-0}"
 case "$install_dev_mode" in

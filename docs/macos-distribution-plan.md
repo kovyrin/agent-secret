@@ -46,7 +46,7 @@ The product should feel like one app:
 The CLI shim is a symlink:
 
 ```text
-~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
+~/bin/agent-secret or ~/.local/bin/agent-secret -> /Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
 ```
 
 The bundled coding-agent skill is also a symlink:
@@ -66,7 +66,8 @@ approval UI, daemon, and CLI together.
 2. User opens the DMG and drags `Agent Secret.app` into `/Applications`.
 3. User launches `Agent Secret.app`.
 4. App shows setup status and offers an `Install Command Line Tool` action.
-5. The action creates or refreshes the `~/.local/bin/agent-secret` symlink.
+5. The action creates or refreshes the command symlink in `~/bin` when that
+   directory exists and is on `PATH`, otherwise in `~/.local/bin`.
 6. App verifies the shim and shows the command to run:
 
    ```bash
@@ -101,7 +102,8 @@ The installer should:
    ID, and bundled CLI signature.
 5. Stop the old per-user daemon if it is running.
 6. Copy `Agent Secret.app` to `/Applications` by default.
-7. Create or refresh the CLI symlink in `~/.local/bin`.
+7. Create or refresh the CLI symlink in `~/bin` when that directory exists and
+   is on `PATH`, otherwise in `~/.local/bin`.
 8. Run `agent-secret doctor`.
 
 Useful installer options:
@@ -295,7 +297,8 @@ agent-secret skill-install
 - Create parent directory for the target symlink.
 - Replace an existing Agent Secret symlink.
 - Refuse to overwrite an unrelated regular file unless `--force` is passed.
-- Default target: `~/.local/bin/agent-secret`.
+- Default target: `~/bin/agent-secret` when `~/bin` exists and is on `PATH`,
+  otherwise `~/.local/bin/agent-secret`.
 - Support:
 
   ```bash

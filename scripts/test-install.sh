@@ -513,6 +513,71 @@ test_default_user_destinations_reject_symlinks_outside_home() {
   fi
 }
 
+test_default_bin_prefers_home_bin_when_it_exists_on_path() {
+  local run_dir="$tmp_dir/default-bin-prefers-home-bin"
+  local fake_bin="$run_dir/bin"
+  local log="$run_dir/tools.log"
+  local home="$run_dir/home"
+  local artifact="$run_dir/Agent-Secret-test-macos-arm64.dmg"
+  local checksums="$run_dir/checksums.txt"
+
+  make_fixture "$run_dir"
+  write_fake_tools "$fake_bin"
+  mkdir -p "$home/bin" "$home/.local/bin"
+  : >"$log"
+
+  env \
+    PATH="$home/bin:$fake_bin:$PATH" \
+    HOME="$home" \
+    AGENT_SECRET_APP_DIR="$run_dir/apps" \
+    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 \
+    AGENT_SECRET_NO_STOP_DAEMON=1 \
+    AGENT_SECRET_DMG="$artifact" \
+    AGENT_SECRET_CHECKSUMS_FILE="$checksums" \
+    AGENT_SECRET_INSTALL_DEV_MODE=1 \
+    AGENT_SECRET_INSTALL_TOOL_DIR="$fake_bin" \
+    AGENT_SECRET_INSTALL_TEST_LOG="$log" \
+    "$project_root/install.sh"
+
+  if [ ! -f "$home/bin/agent-secret" ]; then
+    fail "installer did not install CLI into existing ~/bin on PATH"
+  fi
+}
+
+test_default_bin_falls_back_to_local_bin_when_home_bin_is_not_on_path() {
+  local run_dir="$tmp_dir/default-bin-falls-back-to-local-bin"
+  local fake_bin="$run_dir/bin"
+  local log="$run_dir/tools.log"
+  local home="$run_dir/home"
+  local artifact="$run_dir/Agent-Secret-test-macos-arm64.dmg"
+  local checksums="$run_dir/checksums.txt"
+
+  make_fixture "$run_dir"
+  write_fake_tools "$fake_bin"
+  mkdir -p "$home/bin" "$home/.local/bin"
+  : >"$log"
+
+  env \
+    PATH="$fake_bin:$PATH" \
+    HOME="$home" \
+    AGENT_SECRET_APP_DIR="$run_dir/apps" \
+    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 \
+    AGENT_SECRET_NO_STOP_DAEMON=1 \
+    AGENT_SECRET_DMG="$artifact" \
+    AGENT_SECRET_CHECKSUMS_FILE="$checksums" \
+    AGENT_SECRET_INSTALL_DEV_MODE=1 \
+    AGENT_SECRET_INSTALL_TOOL_DIR="$fake_bin" \
+    AGENT_SECRET_INSTALL_TEST_LOG="$log" \
+    "$project_root/install.sh"
+
+  if [ ! -f "$home/.local/bin/agent-secret" ]; then
+    fail "installer did not fall back to ~/.local/bin when ~/bin was absent from PATH"
+  fi
+  if [ -e "$home/bin/agent-secret" ]; then
+    fail "installer used ~/bin even though it was not on PATH"
+  fi
+}
+
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
   run_installer unsigned-allowed \
     AGENT_SECRET_INSTALL_DEV_MODE=1 \
@@ -573,6 +638,8 @@ test_destination_validation_rejects_bad_paths
 test_destination_validation_rejects_symlinked_parent_dirs
 test_default_user_destinations_allow_symlinked_home_parents
 test_default_user_destinations_reject_symlinks_outside_home
+test_default_bin_prefers_home_bin_when_it_exists_on_path
+test_default_bin_falls_back_to_local_bin_when_home_bin_is_not_on_path
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 test_untrusted_existing_cli_is_not_used_for_daemon_stop
 test_install_cli_receives_original_path_before_sanitization

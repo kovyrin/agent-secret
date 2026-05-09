@@ -114,6 +114,44 @@ func TestInstallCLIUsesDefaultBinDirAndCurrentExecutable(t *testing.T) {
 	assertInstallPathMode(t, filepath.Dir(result.LinkPath), 0o755)
 }
 
+func TestInstallCLIUsesHomeBinDefaultWhenItExistsOnPath(t *testing.T) {
+	home := t.TempDir()
+	homeBin := filepath.Join(home, "bin")
+	if err := os.Mkdir(homeBin, 0o750); err != nil {
+		t.Fatalf("create home bin: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", homeBin+string(os.PathListSeparator)+filepath.Join(t.TempDir(), "other-bin"))
+
+	result, err := InstallCLI(CLIOptions{})
+	if err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	wantLinkPath := filepath.Join(homeBin, CommandName)
+	if result.LinkPath != wantLinkPath {
+		t.Fatalf("link path = %q, want %q", result.LinkPath, wantLinkPath)
+	}
+}
+
+func TestInstallCLIUsesLocalBinDefaultWhenHomeBinIsNotOnPath(t *testing.T) {
+	home := t.TempDir()
+	homeBin := filepath.Join(home, "bin")
+	if err := os.Mkdir(homeBin, 0o750); err != nil {
+		t.Fatalf("create home bin: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "other-bin"))
+
+	result, err := InstallCLI(CLIOptions{})
+	if err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	wantLinkPath := filepath.Join(home, ".local", "bin", CommandName)
+	if result.LinkPath != wantLinkPath {
+		t.Fatalf("link path = %q, want %q", result.LinkPath, wantLinkPath)
+	}
+}
+
 func TestInstallCLIRejectsNonExecutableTarget(t *testing.T) {
 	t.Parallel()
 
