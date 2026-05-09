@@ -212,6 +212,40 @@ symlinked_dirs_are_rejected() {
   fi
 }
 
+default_user_destinations_allow_symlinked_home_parents() {
+  local run_dir="$tmp_dir/default-user-symlinked-parents"
+  local home="$run_dir/home"
+  local local_target="$home/dotfiles/local"
+  local agents_target="$home/dotfiles/agents"
+  local app_dir="$run_dir/apps"
+  local app="$app_dir/Agent Secret.app"
+
+  mkdir -p \
+    "$local_target/bin" \
+    "$agents_target/skills" \
+    "$app/Contents/Resources/bin" \
+    "$app/Contents/Resources/skills/agent-secret" \
+    "$home"
+  make_symlink "dotfiles/local" "$home/.local"
+  make_symlink "dotfiles/agents" "$home/.agents"
+  touch "$app/Contents/Resources/bin/agent-secret"
+  ln -s "$app/Contents/Resources/bin/agent-secret" "$local_target/bin/agent-secret"
+  ln -s "$app/Contents/Resources/skills/agent-secret" "$agents_target/skills/agent-secret"
+
+  run_uninstall \
+    default-user-symlinked-parents \
+    HOME="$home" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 \
+    AGENT_SECRET_APP_DIR="$app_dir"
+
+  for path in "$local_target/bin/agent-secret" "$agents_target/skills/agent-secret"; do
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      fail "safe uninstall left expected removed path in place: $path"
+    fi
+  done
+}
+
 safe_custom_paths_remove_only_known_files() {
   local run_dir="$tmp_dir/safe"
   local home="$run_dir/home"
@@ -479,6 +513,7 @@ dangerous_paths_are_rejected_even_with_guard
 dangerous_destination_paths_are_rejected_even_with_guard
 symlinked_parent_dirs_are_rejected
 symlinked_dirs_are_rejected
+default_user_destinations_allow_symlinked_home_parents
 safe_custom_paths_remove_only_known_files
 untrusted_app_is_left_in_place_by_default
 force_removes_untrusted_app_explicitly

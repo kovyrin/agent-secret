@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.9] - 2026-05-08
+
+### Fixed
+
+- The release installer and uninstaller now tolerate default user paths such as
+  `~/.local/bin` when a dotfiles-managed parent symlink resolves inside the
+  user's home directory.
+
 ## [0.0.8] - 2026-05-08
 
 ### Added

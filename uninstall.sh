@@ -215,6 +215,48 @@ reject_symlinked_parent_dirs() {
   done
 }
 
+deepest_existing_path() {
+  path="$1"
+  current="$path"
+
+  while [ ! -e "$current" ]; do
+    next="${current%/*}"
+    if [ "$next" = "$current" ] || [ "$next" = "" ]; then
+      current="/"
+      break
+    fi
+    current="$next"
+  done
+
+  printf '%s\n' "$current"
+}
+
+default_user_destination_allows_symlinks() {
+  label="$1"
+  path="$2"
+
+  case "$label:$path" in
+    "bin:$default_bin_dir" | "skills:$default_skills_dir") ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  existing="$(deepest_existing_path "$path")"
+  [ -d "$existing" ] || return 1
+  home_physical="$(cd "$HOME" && pwd -P)" || return 1
+  existing_physical="$(cd "$existing" && pwd -P)" || return 1
+
+  case "$existing_physical" in
+    "$home_physical" | "$home_physical"/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 validate_agent_secret_dir() {
   label="$1"
   path="$(strip_trailing_slashes "$2")"
@@ -278,9 +320,11 @@ validate_destination_dir() {
       ;;
   esac
 
-  reject_symlinked_parent_dirs "$label" "$path"
-  if [ -L "$path" ]; then
-    fail "$label path must not be a symlink: $path"
+  if ! default_user_destination_allows_symlinks "$label" "$path"; then
+    reject_symlinked_parent_dirs "$label" "$path"
+    if [ -L "$path" ]; then
+      fail "$label path must not be a symlink: $path"
+    fi
   fi
   if [ -e "$path" ] && [ ! -d "$path" ]; then
     fail "$label path is not a directory: $path"

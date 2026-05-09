@@ -441,6 +441,78 @@ test_destination_validation_rejects_symlinked_parent_dirs() {
   fi
 }
 
+test_default_user_destinations_allow_symlinked_home_parents() {
+  local run_dir="$tmp_dir/default-user-symlinked-parents"
+  local fake_bin="$run_dir/bin"
+  local log="$run_dir/tools.log"
+  local home="$run_dir/home"
+  local local_target="$home/dotfiles/local"
+  local agents_target="$home/dotfiles/agents"
+  local artifact="$run_dir/Agent-Secret-test-macos-arm64.dmg"
+  local checksums="$run_dir/checksums.txt"
+
+  make_fixture "$run_dir"
+  write_fake_tools "$fake_bin"
+  mkdir -p "$local_target/bin" "$agents_target/skills"
+  ln -s "dotfiles/local" "$home/.local"
+  ln -s "dotfiles/agents" "$home/.agents"
+  : >"$log"
+
+  env \
+    PATH="$fake_bin:$PATH" \
+    HOME="$home" \
+    AGENT_SECRET_APP_DIR="$run_dir/apps" \
+    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 \
+    AGENT_SECRET_NO_STOP_DAEMON=1 \
+    AGENT_SECRET_DMG="$artifact" \
+    AGENT_SECRET_CHECKSUMS_FILE="$checksums" \
+    AGENT_SECRET_INSTALL_DEV_MODE=1 \
+    AGENT_SECRET_INSTALL_TOOL_DIR="$fake_bin" \
+    AGENT_SECRET_INSTALL_TEST_LOG="$log" \
+    "$project_root/install.sh"
+
+  if [ ! -f "$local_target/bin/agent-secret" ]; then
+    fail "installer did not install CLI through symlinked default ~/.local"
+  fi
+  if [ ! -d "$agents_target/skills/agent-secret" ]; then
+    fail "installer did not install skill through symlinked default ~/.agents"
+  fi
+}
+
+test_default_user_destinations_reject_symlinks_outside_home() {
+  local run_dir="$tmp_dir/default-user-symlink-outside-home"
+  local fake_bin="$run_dir/bin"
+  local log="$run_dir/tools.log"
+  local home="$run_dir/home"
+  local outside="$run_dir/outside-local"
+  local artifact="$run_dir/Agent-Secret-test-macos-arm64.dmg"
+  local checksums="$run_dir/checksums.txt"
+
+  make_fixture "$run_dir"
+  write_fake_tools "$fake_bin"
+  mkdir -p "$home" "$outside"
+  ln -s "$outside" "$home/.local"
+  : >"$log"
+
+  if env \
+    PATH="$fake_bin:$PATH" \
+    HOME="$home" \
+    AGENT_SECRET_APP_DIR="$run_dir/apps" \
+    AGENT_SECRET_ALLOW_CUSTOM_INSTALL_PATHS=1 \
+    AGENT_SECRET_NO_STOP_DAEMON=1 \
+    AGENT_SECRET_DMG="$artifact" \
+    AGENT_SECRET_CHECKSUMS_FILE="$checksums" \
+    AGENT_SECRET_INSTALL_DEV_MODE=1 \
+    AGENT_SECRET_INSTALL_TOOL_DIR="$fake_bin" \
+    AGENT_SECRET_INSTALL_TEST_LOG="$log" \
+    "$project_root/install.sh"; then
+    fail "installer accepted default ~/.local symlink resolving outside HOME"
+  fi
+  if grep -F "ditto " "$log" >/dev/null; then
+    fail "installer copied app before rejecting unsafe default ~/.local symlink"
+  fi
+}
+
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts() {
   run_installer unsigned-allowed \
     AGENT_SECRET_INSTALL_DEV_MODE=1 \
@@ -499,6 +571,8 @@ test_production_mode_ignores_fake_path_tools
 test_destination_overrides_require_guard
 test_destination_validation_rejects_bad_paths
 test_destination_validation_rejects_symlinked_parent_dirs
+test_default_user_destinations_allow_symlinked_home_parents
+test_default_user_destinations_reject_symlinks_outside_home
 test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 test_untrusted_existing_cli_is_not_used_for_daemon_stop
 test_install_cli_receives_original_path_before_sanitization
