@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/../.." && pwd)"
 publish_script="$project_root/scripts/release/publish-draft-release.sh"
+prepare_script="$project_root/scripts/release/prepare-bootstrap-scripts.sh"
 workflow="$project_root/.github/workflows/ci.yml"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-publish-test.XXXXXX")"
@@ -86,8 +87,18 @@ chmod +x "$stub_dir/gh"
 artifact_arm="$tmp_dir/Agent-Secret-v1.0.0-macos-arm64.dmg"
 checksums="$tmp_dir/checksums.txt"
 notes_file="$tmp_dir/release-notes.md"
+bootstrap_install="$tmp_dir/bootstrap/install.sh"
+bootstrap_uninstall="$tmp_dir/bootstrap/uninstall.sh"
 touch "$artifact_arm" "$checksums"
 printf 'Release notes from changelog.\n' >"$notes_file"
+
+"$prepare_script" v1.0.0 "$tmp_dir/bootstrap"
+if ! grep -F -- 'release_asset_version="v1.0.0"' "$bootstrap_install" >/dev/null; then
+  fail "prepared install.sh did not bake release version"
+fi
+if [ ! -x "$bootstrap_install" ] || [ ! -x "$bootstrap_uninstall" ]; then
+  fail "prepared bootstrap scripts are not executable"
+fi
 
 run_publish() {
   local state="$1"
@@ -97,19 +108,19 @@ run_publish() {
     AGENT_SECRET_RELEASE_NOTES_FILE="$notes_file" \
     GITHUB_SHA=abc123 \
     PATH="$stub_dir:$PATH" \
-    "$publish_script" v1.0.0 "$artifact_arm" "$checksums"
+    "$publish_script" v1.0.0 "$artifact_arm" "$checksums" "$bootstrap_install" "$bootstrap_uninstall"
 }
 
 : >"$tmp_dir/gh.log"
 run_publish missing
 expect_log "release view v1.0.0"
-expect_log "release create v1.0.0 $artifact_arm $checksums --draft --verify-tag --title v1.0.0 --notes-file $notes_file"
+expect_log "release create v1.0.0 $artifact_arm $checksums $bootstrap_install $bootstrap_uninstall --draft --verify-tag --title v1.0.0 --notes-file $notes_file"
 
 : >"$tmp_dir/gh.log"
 run_publish draft
 expect_log "release view v1.0.0 --json isDraft --jq .isDraft"
 expect_log "release edit v1.0.0 --title v1.0.0 --notes-file $notes_file"
-expect_log "release upload v1.0.0 $artifact_arm $checksums --clobber"
+expect_log "release upload v1.0.0 $artifact_arm $checksums $bootstrap_install $bootstrap_uninstall --clobber"
 
 expect_failure "release v1.0.0 is already published; refusing to replace assets" run_publish published
 if grep -F -- "release upload" "$tmp_dir/gh.log" >/dev/null; then
@@ -127,6 +138,15 @@ if ! grep -F -- "scripts/release/publish-draft-release.sh" "$workflow" >/dev/nul
 fi
 if ! grep -F -- "scripts/release/extract-release-notes.sh" "$workflow" >/dev/null; then
   fail "workflow does not extract changelog-backed release notes"
+fi
+if ! grep -F -- "scripts/release/prepare-bootstrap-scripts.sh" "$workflow" >/dev/null; then
+  fail "workflow does not prepare release bootstrap scripts"
+fi
+if ! grep -F -- "_dist/install.sh" "$workflow" >/dev/null; then
+  fail "workflow does not upload install.sh as a release asset"
+fi
+if ! grep -F -- "_dist/uninstall.sh" "$workflow" >/dev/null; then
+  fail "workflow does not upload uninstall.sh as a release asset"
 fi
 if ! grep -F -- "AGENT_SECRET_RELEASE_NOTES_FILE" "$workflow" >/dev/null; then
   fail "workflow does not pass release notes file to publisher"

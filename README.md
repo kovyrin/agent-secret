@@ -15,16 +15,13 @@ Requirements:
 
 Install the latest signed and notarized release:
 
+<!-- markdownlint-disable MD013 -->
+
 ```bash
-version="$(
-  curl -fsSL https://api.github.com/repos/kovyrin/agent-secret/releases/latest |
-    awk -F'"' '/"tag_name":/ { print $4; exit }'
-)"
-test -n "$version"
-base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
-curl -fsSL "$base_url/${version}/install.sh" |
-  AGENT_SECRET_VERSION="$version" sh
+curl -fsSL https://github.com/kovyrin/agent-secret/releases/latest/download/install.sh | sh
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 Then verify the install:
 
@@ -152,15 +149,13 @@ ledger.
 
 Uninstall the latest release:
 
+<!-- markdownlint-disable MD013 -->
+
 ```bash
-version="$(
-  curl -fsSL https://api.github.com/repos/kovyrin/agent-secret/releases/latest |
-    awk -F'"' '/"tag_name":/ { print $4; exit }'
-)"
-test -n "$version"
-base_url="https://raw.githubusercontent.com/kovyrin/agent-secret"
-curl -fsSL "$base_url/${version}/uninstall.sh" | sh
+curl -fsSL https://github.com/kovyrin/agent-secret/releases/latest/download/uninstall.sh | sh
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 By default, uninstall removes the app, command symlink, skill symlink, and known
 application support files. It leaves `~/Library/Logs/agent-secret` audit logs in

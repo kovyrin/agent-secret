@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.10] - Pending
+
+### Changed
+
+- Release artifacts now include stamped `install.sh` and `uninstall.sh`
+  bootstrap scripts, so public install docs can use a simple `curl | sh`
+  command without manual version discovery or environment variables.
+
 ## [0.0.9] - 2026-05-08
 
 ### Fixed

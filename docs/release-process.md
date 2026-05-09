@@ -144,7 +144,8 @@ user account or VM:
 2. Open the app, install command-line tools, and run `agent-secret doctor`.
 3. Approve 1Password Desktop SDK authorization and run one test-only
    `agent-secret exec` flow that does not print secret values.
-4. Install or upgrade through the pinned `install.sh` flow for the same tag.
+4. Install or upgrade through the pinned release-asset `install.sh` flow for
+   the same tag.
 5. Confirm `agent-secret doctor`, `agent-secret skill-install`, and the bundled
    skill symlink work after upgrade.
 6. Run the pinned `uninstall.sh` flow and confirm it removes the app, command
@@ -211,11 +212,34 @@ AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.0.0 \
 
 ## Installer Bootstrap Documentation
 
-Unattended install and uninstall examples must fetch `install.sh` or
-`uninstall.sh` from an immutable release tag. Pinned installs set
-`AGENT_SECRET_VERSION` to that same tag. Latest installs and uninstalls resolve
-the latest release tag first, then fetch the script from that tag. Do not pipe
-`main/install.sh` or `main/uninstall.sh` into a shell.
+Unattended install and uninstall examples should use release-asset bootstrap
+scripts:
+
+<!-- markdownlint-disable MD013 -->
+
+```bash
+curl -fsSL https://github.com/kovyrin/agent-secret/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/kovyrin/agent-secret/releases/latest/download/uninstall.sh | sh
+```
+
+<!-- markdownlint-enable MD013 -->
+
+For pinned installs, fetch the script from the release tag:
+
+<!-- markdownlint-disable MD013 -->
+
+```bash
+curl -fsSL https://github.com/kovyrin/agent-secret/releases/download/v0.0.0/install.sh | sh
+```
+
+<!-- markdownlint-enable MD013 -->
+
+The tag-triggered release workflow runs
+`scripts/release/prepare-bootstrap-scripts.sh` so the published `install.sh`
+asset has the release tag baked in and does not require callers to pass
+`AGENT_SECRET_VERSION`. Do not pipe `main/install.sh`, `main/uninstall.sh`,
+`main` raw GitHub URLs, or branch raw GitHub URLs into a shell for public
+install instructions.
 
 ## Toolchain Pin Maintenance
 

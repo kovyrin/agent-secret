@@ -167,6 +167,7 @@ jobs:
           mkdir -p _dist
           cp "_dist/release-artifacts/release-arm64/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" _dist/
           cp "_dist/release-artifacts/release-arm64/checksums.txt" _dist/checksums.txt
+          scripts/release/prepare-bootstrap-scripts.sh "$GITHUB_REF_NAME" _dist
 
       - name: Extract changelog release notes
         run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" _dist/release-notes.md
@@ -178,4 +179,6 @@ jobs:
         run: |
           scripts/release/publish-draft-release.sh "$GITHUB_REF_NAME" \
             "_dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \
-            "_dist/checksums.txt"
+            "_dist/checksums.txt" \
+            "_dist/install.sh" \
+            "_dist/uninstall.sh"

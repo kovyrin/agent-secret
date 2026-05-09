@@ -209,6 +209,7 @@ production_expected_daemon_bundle_id="com.kovyrin.agent-secret.daemon"
 default_app_dir="/Applications"
 default_bin_dir="$HOME/.local/bin"
 default_skills_dir="$HOME/.agents/skills"
+release_asset_version=""
 
 install_dev_mode="${AGENT_SECRET_INSTALL_DEV_MODE:-0}"
 case "$install_dev_mode" in
@@ -250,7 +251,7 @@ fi
 app_dir="${AGENT_SECRET_APP_DIR:-$default_app_dir}"
 bin_dir="${AGENT_SECRET_BIN_DIR:-$default_bin_dir}"
 skills_dir="${AGENT_SECRET_SKILLS_DIR:-$default_skills_dir}"
-version="${AGENT_SECRET_VERSION:-}"
+version="${AGENT_SECRET_VERSION:-$release_asset_version}"
 local_dmg="${AGENT_SECRET_DMG:-}"
 local_checksums="${AGENT_SECRET_CHECKSUMS_FILE:-}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
