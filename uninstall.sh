@@ -1,13 +1,14 @@
 #!/bin/sh
 set -eu
-caller_path="${PATH-}"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 
 default_app_dir="/Applications"
-default_home_bin_dir="$HOME/bin"
-default_local_bin_dir="$HOME/.local/bin"
+default_bin_dir="$HOME/.local/bin"
 default_skills_dir="$HOME/.agents/skills"
+app_dir="${AGENT_SECRET_APP_DIR:-$default_app_dir}"
+bin_dir="${AGENT_SECRET_BIN_DIR:-$default_bin_dir}"
+skills_dir="${AGENT_SECRET_SKILLS_DIR:-$default_skills_dir}"
 remove_audit_logs="${AGENT_SECRET_REMOVE_AUDIT_LOGS:-0}"
 no_stop_daemon="${AGENT_SECRET_NO_STOP_DAEMON:-0}"
 allow_custom_uninstall_paths="${AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS:-0}"
@@ -163,46 +164,6 @@ strip_trailing_slashes() {
     value="${value%/}"
   done
   printf '%s\n' "$value"
-}
-
-path_contains_dir() {
-  path_value="$1"
-  dir="$(strip_trailing_slashes "$2")"
-
-  [ -n "$path_value" ] || return 1
-
-  remaining="$path_value"
-  while :; do
-    case "$remaining" in
-      *:*)
-        entry="${remaining%%:*}"
-        remaining="${remaining#*:}"
-        ;;
-      *)
-        entry="$remaining"
-        remaining=""
-        ;;
-    esac
-    case "$entry" in
-      "~"/*)
-        entry="$HOME/${entry#"~/"}"
-        ;;
-    esac
-    entry="$(strip_trailing_slashes "$entry")"
-    if [ "$entry" = "$dir" ]; then
-      return 0
-    fi
-    [ -n "$remaining" ] || break
-  done
-  return 1
-}
-
-select_default_bin_dir() {
-  if [ -d "$default_home_bin_dir" ] && path_contains_dir "$caller_path" "$default_home_bin_dir"; then
-    printf '%s\n' "$default_home_bin_dir"
-    return
-  fi
-  printf '%s\n' "$default_local_bin_dir"
 }
 
 require_custom_path_guard() {
@@ -409,11 +370,6 @@ validate_uninstall_paths() {
   bin_dir="$(strip_trailing_slashes "$bin_dir")"
   skills_dir="$(strip_trailing_slashes "$skills_dir")"
 }
-
-default_bin_dir="$(select_default_bin_dir)"
-app_dir="${AGENT_SECRET_APP_DIR:-$default_app_dir}"
-bin_dir="${AGENT_SECRET_BIN_DIR:-$default_bin_dir}"
-skills_dir="${AGENT_SECRET_SKILLS_DIR:-$default_skills_dir}"
 
 validate_uninstall_paths
 target_app="$app_dir/Agent Secret.app"

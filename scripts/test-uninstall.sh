@@ -246,53 +246,6 @@ default_user_destinations_allow_symlinked_home_parents() {
   done
 }
 
-default_bin_prefers_home_bin_when_it_exists_on_path() {
-  local run_dir="$tmp_dir/default-bin-prefers-home-bin"
-  local home="$run_dir/home"
-  local app_dir="$run_dir/apps"
-  local app="$app_dir/Agent Secret.app"
-
-  mkdir -p "$home/bin"
-  ln -s "$app/Contents/Resources/bin/agent-secret" "$home/bin/agent-secret"
-
-  run_uninstall \
-    default-bin-prefers-home-bin \
-    HOME="$home" \
-    PATH="$home/bin:$PATH" \
-    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
-    AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 \
-    AGENT_SECRET_APP_DIR="$app_dir"
-
-  if [ -e "$home/bin/agent-secret" ] || [ -L "$home/bin/agent-secret" ]; then
-    fail "uninstaller did not remove CLI from existing ~/bin on PATH"
-  fi
-}
-
-default_bin_falls_back_to_local_bin_when_home_bin_is_not_on_path() {
-  local run_dir="$tmp_dir/default-bin-falls-back-to-local-bin"
-  local home="$run_dir/home"
-  local app_dir="$run_dir/apps"
-  local app="$app_dir/Agent Secret.app"
-
-  mkdir -p "$home/bin" "$home/.local/bin"
-  ln -s "$app/Contents/Resources/bin/agent-secret" "$home/bin/agent-secret"
-  ln -s "$app/Contents/Resources/bin/agent-secret" "$home/.local/bin/agent-secret"
-
-  run_uninstall \
-    default-bin-falls-back-to-local-bin \
-    HOME="$home" \
-    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
-    AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 \
-    AGENT_SECRET_APP_DIR="$app_dir"
-
-  if [ -e "$home/.local/bin/agent-secret" ] || [ -L "$home/.local/bin/agent-secret" ]; then
-    fail "uninstaller did not remove CLI from ~/.local/bin fallback"
-  fi
-  if [ ! -L "$home/bin/agent-secret" ]; then
-    fail "uninstaller removed ~/bin even though it was not on PATH"
-  fi
-}
-
 safe_custom_paths_remove_only_known_files() {
   local run_dir="$tmp_dir/safe"
   local home="$run_dir/home"
@@ -561,8 +514,6 @@ dangerous_destination_paths_are_rejected_even_with_guard
 symlinked_parent_dirs_are_rejected
 symlinked_dirs_are_rejected
 default_user_destinations_allow_symlinked_home_parents
-default_bin_prefers_home_bin_when_it_exists_on_path
-default_bin_falls_back_to_local_bin_when_home_bin_is_not_on_path
 safe_custom_paths_remove_only_known_files
 untrusted_app_is_left_in_place_by_default
 force_removes_untrusted_app_explicitly

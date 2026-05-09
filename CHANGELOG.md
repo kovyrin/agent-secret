@@ -20,16 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
-## [0.0.10] - 2026-05-09
+## [0.0.10] - Pending
 
 ### Changed
 
 - Release artifacts now include stamped `install.sh` and `uninstall.sh`
   bootstrap scripts, so public install docs can use a simple `curl | sh`
   command without manual version discovery or environment variables.
-- The installer and `agent-secret install-cli` now prefer `~/bin` when it
-  already exists and is on `PATH`, falling back to `~/.local/bin` only when
-  needed.
 
 ## [0.0.9] - 2026-05-08
 

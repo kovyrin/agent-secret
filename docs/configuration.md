@@ -280,8 +280,6 @@ agent-secret install-cli --force
 ```
 
 `install-cli` creates or repairs the user-level `agent-secret` command symlink.
-By default, it uses `~/bin` when that directory already exists and is on `PATH`;
-otherwise it uses `~/.local/bin`.
 It leaves an existing target symlink in place, refuses directories, and replaces
 an existing regular file or different symlink only when `--force` is passed.
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
@@ -43,35 +42,7 @@ func DefaultBinDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("find home directory: %w", err)
 	}
-	homeBin := filepath.Join(home, "bin")
-	if isDir(homeBin) && pathContainsDir(os.Getenv("PATH"), homeBin, home) {
-		return homeBin, nil
-	}
 	return filepath.Join(home, ".local", "bin"), nil
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
-
-func pathContainsDir(pathValue string, dir string, home string) bool {
-	if pathValue == "" || dir == "" {
-		return false
-	}
-	want := filepath.Clean(dir)
-	for _, entry := range filepath.SplitList(pathValue) {
-		if entry == "" {
-			continue
-		}
-		if suffix, ok := strings.CutPrefix(entry, "~/"); ok {
-			entry = filepath.Join(home, suffix)
-		}
-		if filepath.Clean(entry) == want {
-			return true
-		}
-	}
-	return false
 }
 
 func DefaultSkillsDir() (string, error) {

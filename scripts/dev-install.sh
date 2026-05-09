@@ -10,7 +10,7 @@ Build and install the current development version for the current macOS user.
 
 Defaults:
   app:      ~/Applications/Agent Secret.app
-  command:  ~/bin when it exists on PATH, otherwise ~/.local/bin
+  command:  ~/.local/bin/agent-secret -> ~/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret
   skill:    ~/.agents/skills/agent-secret -> ~/Applications/Agent Secret.app/Contents/Resources/skills/agent-secret
 
 Flags:
@@ -40,39 +40,7 @@ if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
   fi
 fi
 
-path_contains_dir() {
-  local path_value="$1"
-  local dir="${2%/}"
-  local old_ifs="$IFS"
-  local entries=()
-  local entry
-
-  [[ -n "$path_value" ]] || return 1
-  IFS=:
-  read -r -a entries <<<"$path_value"
-  IFS="$old_ifs"
-  for entry in "${entries[@]}"; do
-    entry="${entry%/}"
-    if [[ "${entry:0:1}" == "~" && "${entry:1:1}" == "/" ]]; then
-      entry="$HOME/${entry#"~/"}"
-    fi
-    if [[ "$entry" == "$dir" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-default_bin_dir() {
-  local home_bin="$HOME/bin"
-  if [[ -d "$home_bin" ]] && path_contains_dir "${PATH-}" "$home_bin"; then
-    printf '%s\n' "$home_bin"
-    return
-  fi
-  printf '%s\n' "$HOME/.local/bin"
-}
-
-bin_dir="${AGENT_SECRET_INSTALL_BIN_DIR:-$(default_bin_dir)}"
+bin_dir="${AGENT_SECRET_INSTALL_BIN_DIR:-$HOME/.local/bin}"
 app_dir="${AGENT_SECRET_INSTALL_APP_DIR:-$HOME/Applications}"
 stop_daemon=1
 
