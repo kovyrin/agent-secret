@@ -108,9 +108,11 @@ import Foundation
                         lineLimit: nil
                     )
                     .fixedSize(horizontal: false, vertical: true)
-                    Text(resource.accountLabel)
-                        .font(.system(size: Metric.groupExpandedRefFontSize))
-                        .foregroundStyle(.secondary)
+                    if !resource.accountLabel.isEmpty {
+                        Text(resource.accountLabel)
+                            .font(.system(size: Metric.groupExpandedRefFontSize))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

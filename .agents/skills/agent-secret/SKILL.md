@@ -121,10 +121,11 @@ agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- \
 
 Account precedence is per-secret `account`, profile `account`, top-level
 `account`, CLI `--account`, `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`,
-then a detected single signed-in 1Password CLI account, then the Agent Secret
-default. Prefer config accounts over shell environment when a project needs a
-specific 1Password account. Use `--account` for one-off wrappers or env-file
-migrations that should not require a project config yet.
+then the default personal 1Password desktop account, falling back to the only
+active desktop account for single-account users. Prefer config accounts over
+shell environment when a project needs a specific 1Password account. Use
+`--account` for one-off wrappers or env-file migrations that should not require
+a project config yet.
 
 ## Env Files
 

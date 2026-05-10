@@ -44,9 +44,6 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 		return ItemDescribeRequest{}, fmt.Errorf("%w: %w", ErrInvalidReference, err)
 	}
 	account := strings.TrimSpace(opts.Account)
-	if account == "" {
-		return ItemDescribeRequest{}, fmt.Errorf("%w: item account is required", ErrInvalidReference)
-	}
 	ttl := opts.TTL
 	if ttl == 0 {
 		ttl = DefaultItemDescribeTTL
@@ -111,8 +108,8 @@ func (r ItemDescribeRequest) ValidateForDaemon() error {
 	if parsed != r.Ref {
 		return fmt.Errorf("%w: item reference metadata must be pre-normalized", ErrInvalidReference)
 	}
-	if strings.TrimSpace(r.Account) != r.Account || r.Account == "" {
-		return fmt.Errorf("%w: item account is required", ErrInvalidReference)
+	if strings.TrimSpace(r.Account) != r.Account {
+		return fmt.Errorf("%w: item account must be trimmed", ErrInvalidReference)
 	}
 	return nil
 }

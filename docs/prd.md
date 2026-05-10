@@ -71,7 +71,8 @@ policy and reuse keys but not shown in the approval prompt.
 
 - Replace 1Password as the secret store.
 - Reverse-engineer private 1Password desktop protocols.
-- Shell out to `op read` as a fallback secret resolver.
+- Shell out to the 1Password CLI as a fallback secret resolver or account
+  discovery mechanism.
 - Build a cloud service or remote agent access path in v1.
 - Build a general enterprise secret manager.
 - Sync approvals across machines.
@@ -144,7 +145,6 @@ The first release-ready config workflow is project-local profiles. A checked-in
 ```yaml
 version: 1
 
-account: my.1password.com
 default_profile: terraform-cloudflare
 
 profiles:
@@ -169,7 +169,9 @@ profiles:
 `account` is optional and may be set at the top level, profile level, or secret
 level. The precedence is per-secret `account`, then profile `account`, then
 top-level `account`, then `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`, then
-one detected signed-in 1Password CLI account, then `my.1password.com`.
+the default personal 1Password desktop account, falling back to the only active
+desktop account for single-account users. Agent Secret does not require the
+1Password CLI and does not use it for account discovery.
 
 Profiles may include other profiles. Includes are resolved in order; later
 includes and the selected profile override earlier secrets with the same alias.

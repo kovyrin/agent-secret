@@ -13,8 +13,6 @@ import (
 
 const DefaultDesktopPoolInitTimeout = 30 * time.Second
 
-var ErrAccountRequired = errors.New("1Password account is required")
-
 type DesktopResolverFactory func(context.Context, ClientOptions) (*ItemResolver, error)
 
 type DesktopPoolOptions struct {
@@ -70,9 +68,6 @@ func NewDesktopPoolWithOptions(opts DesktopPoolOptions) *DesktopPool {
 
 func (p *DesktopPool) Resolve(ctx context.Context, ref string, account string) (string, error) {
 	account = strings.TrimSpace(account)
-	if account == "" {
-		return "", ErrAccountRequired
-	}
 	resolver, err := p.client(ctx, account)
 	if err != nil {
 		return "", fmt.Errorf("create 1Password resolver: %w", err)
@@ -97,9 +92,6 @@ func (p *DesktopPool) DescribeItem(
 	account string,
 ) (itemmetadata.Metadata, error) {
 	account = strings.TrimSpace(account)
-	if account == "" {
-		return itemmetadata.Metadata{}, ErrAccountRequired
-	}
 	resolver, err := p.client(ctx, account)
 	if err != nil {
 		return itemmetadata.Metadata{}, fmt.Errorf("create 1Password resolver: %w", err)
@@ -169,9 +161,6 @@ func shouldRefreshDesktopClient(err error) bool {
 
 func (p *DesktopPool) client(ctx context.Context, accountOverride string) (*ItemResolver, error) {
 	account := strings.TrimSpace(accountOverride)
-	if account == "" {
-		return nil, ErrAccountRequired
-	}
 	resolver, init, owner := p.startClientInit(account)
 	if resolver != nil {
 		return resolver, nil

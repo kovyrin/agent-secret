@@ -82,7 +82,6 @@ const DefaultProtocolReadTimeout = 30 * time.Second
 var (
 	ErrRequestAlreadyActive        = errors.New("connection already has an active exec request")
 	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
-	ErrOnePasswordAccountRequired  = errors.New("1Password account is required")
 	errClientValidatorRequired     = errors.New("client validator is required")
 )
 
@@ -493,11 +492,7 @@ func (s *Server) handleOnePasswordStatus(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return
 	}
-	if strings.TrimSpace(payload.Account) == "" {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, ErrOnePasswordAccountRequired)
-		return
-	}
-	if err := s.onePasswordCheck(ctx, payload.Account); err != nil {
+	if err := s.onePasswordCheck(ctx, strings.TrimSpace(payload.Account)); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeResolveFailed, err)
 		return
 	}

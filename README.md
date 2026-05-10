@@ -10,8 +10,8 @@ process.
 Requirements:
 
 - macOS on Apple Silicon.
-- 1Password desktop app with Developer Tools integration enabled.
-- 1Password CLI signed in to the account that owns the refs you want to use.
+- 1Password desktop app signed in, unlocked, and with Developer Tools
+  integration enabled.
 
 Install the latest signed and notarized release:
 
@@ -83,7 +83,6 @@ never resolved values.
 
 ```yaml
 version: 1
-account: my.1password.com
 default_profile: terraform-cloudflare
 
 profiles:

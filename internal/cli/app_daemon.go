@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -114,7 +115,7 @@ func (a App) runDoctor(ctx context.Context) int {
 	if configSource != "" {
 		a.stdoutf("project config: %s\n", configSource)
 	}
-	a.stdoutf("1password account: %s\n", account)
+	a.stdoutf("1password account: %s\n", displayOnePasswordAccount(account))
 	if err := manager.CheckOnePassword(ctx, account); err != nil {
 		healthy = false
 		a.stdoutf("1password desktop integration: failed (%v)\n", err)
@@ -146,6 +147,13 @@ func defaultOnePasswordAccount() string {
 		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
 		os.Getenv("OP_ACCOUNT"),
 	)
+}
+
+func displayOnePasswordAccount(account string) string {
+	if strings.TrimSpace(account) == "" {
+		return "auto-detect default 1Password desktop account"
+	}
+	return account
 }
 
 func checkAuditLogWritable(ctx context.Context) (string, error) {

@@ -27,6 +27,15 @@ version numbers for public releases.
 - Release artifacts now include stamped `install.sh` and `uninstall.sh`
   bootstrap scripts, so public install docs can use a simple `curl | sh`
   command without manual version discovery or environment variables.
+- Agent Secret no longer shells out to the 1Password CLI for account discovery.
+  When no account override is configured, it selects the default personal
+  1Password desktop account, falling back to the only active desktop account for
+  single-account users, without requiring `op`.
+
+### Fixed
+
+- Single-account approvals and diagnostics no longer expose 1Password account
+  names or IDs when the user has not configured an explicit account.
 
 ## [0.0.9] - 2026-05-08
 
@@ -113,8 +122,8 @@ version numbers for public releases.
 - Account selection is now bound into each `agent-secret exec` request, so
   `--account`, project config changes, and account environment variables take
   effect even when the per-user daemon is already running.
-- With no explicit account, `agent-secret` now detects the single signed-in
-  1Password CLI account before falling back to `my.1password.com`.
+- With no explicit account, `agent-secret` now attempts local account
+  autodetection before falling back to its built-in account default.
 - The unattended installer now runs post-install diagnostics with the caller's
   original `PATH`, allowing diagnostics to see the same `op` command as the
   user's shell.

@@ -1,8 +1,6 @@
 package opaccount
 
 import (
-	"errors"
-	"slices"
 	"testing"
 )
 
@@ -20,7 +18,7 @@ func TestSelectDesktopAccountPrecedence(t *testing.T) {
 			want:            "Fixture",
 		},
 		{
-			name:      "op account fallback",
+			name:      "OP_ACCOUNT fallback",
 			opAccount: " EnvAccount ",
 			want:      "EnvAccount",
 		},
@@ -32,7 +30,7 @@ func TestSelectDesktopAccountPrecedence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SelectDesktopAccountWithDetector(tt.accountOverride, tt.opAccount, nil)
+			got := SelectDesktopAccount(tt.accountOverride, tt.opAccount)
 			if got != tt.want {
 				t.Fatalf("account = %q, want %q", got, tt.want)
 			}
@@ -40,85 +38,108 @@ func TestSelectDesktopAccountPrecedence(t *testing.T) {
 	}
 }
 
-func TestSelectDesktopAccountUsesProductionDetectorFallback(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-
+func TestSelectDesktopAccountUsesDesktopDefaultWhenUnset(t *testing.T) {
 	got := SelectDesktopAccount("", "")
 	if got != DefaultDesktopAccount {
 		t.Fatalf("account = %q, want default account", got)
 	}
 }
 
-func TestSelectDesktopAccountDetectsSingleJSONAccount(t *testing.T) {
-	got := SelectDesktopAccountWithDetector("", "", func() string {
-		return singleCLIAccountFromJSON([]byte(`[{"url":"my.1password.ca","email":"testing-user1@example.test"}]`))
-	})
-	if got != "my.1password.ca" {
-		t.Fatalf("account = %q, want detected account", got)
+func TestSelectSingleAccount(t *testing.T) {
+	tests := []struct {
+		name     string
+		accounts []string
+		want     string
+	}{
+		{name: "none", accounts: nil, want: ""},
+		{name: "blank", accounts: []string{" \t "}, want: ""},
+		{name: "single", accounts: []string{" AccountUUID "}, want: "AccountUUID"},
+		{name: "multiple", accounts: []string{"AccountA", "AccountB"}, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectSingleAccount(tt.accounts)
+			if got != tt.want {
+				t.Fatalf("account = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestSelectDesktopAccountDetectsSingleTableAccount(t *testing.T) {
-	got := SelectDesktopAccountWithDetector("", "", func() string {
-		return singleCLIAccountFromTable([]byte(
-			"URL                EMAIL                             USER ID\n" +
-				"my.1password.ca    testing-user1@example.test       4POXGBG34RAQBMLPYCV42CSF4M\n",
-		))
-	})
-	if got != "my.1password.ca" {
-		t.Fatalf("account = %q, want detected account", got)
+func TestSelectDefaultDesktopAccountPrefersPersonalAccount(t *testing.T) {
+	accounts := []DesktopAccount{
+		{
+			UUID:      "BusinessUUID",
+			State:     "A",
+			UserState: "A",
+			Type:      "B",
+			SignInURL: "https://fixture.1password.com/",
+		},
+		{
+			UUID:      "PersonalUUID",
+			State:     "A",
+			UserState: "A",
+			Type:      "F",
+			SignInURL: "https://my.1password.com/",
+		},
+	}
+
+	got := SelectDefaultDesktopAccount(accounts)
+	if got != "PersonalUUID" {
+		t.Fatalf("account = %q, want personal account", got)
 	}
 }
 
-func TestSelectDesktopAccountFallsBackWhenCLIDetectionIsAmbiguous(t *testing.T) {
-	got := SelectDesktopAccountWithDetector("", "", func() string {
-		return singleCLIAccountFromJSON([]byte(`[{"url":"my.1password.com"},{"url":"my.1password.ca"}]`))
-	})
-	if got != DefaultDesktopAccount {
-		t.Fatalf("account = %q, want default account", got)
+func TestSelectDefaultDesktopAccountFallsBackToSingleActiveAccount(t *testing.T) {
+	accounts := []DesktopAccount{
+		{
+			UUID:      "BusinessUUID",
+			State:     "A",
+			UserState: "A",
+			Type:      "B",
+			SignInURL: "https://fixture.1password.com/",
+		},
+	}
+
+	got := SelectDefaultDesktopAccount(accounts)
+	if got != "BusinessUUID" {
+		t.Fatalf("account = %q, want only active account", got)
 	}
 }
 
-func TestDetectSingleCLIAccountUsesJSONBeforeTable(t *testing.T) {
-	var calls [][]string
-	run := func(args ...string) ([]byte, error) {
-		calls = append(calls, slices.Clone(args))
-		if slices.Equal(args, []string{"--format=json"}) {
-			return []byte(`[{"url":"json.1password.example"}]`), nil
-		}
-		return []byte(
-			"URL                EMAIL                             USER ID\n" +
-				"table.1password.example testing-user1@example.test   USERID\n",
-		), nil
+func TestSelectDefaultDesktopAccountRejectsAmbiguousBusinessAccounts(t *testing.T) {
+	accounts := []DesktopAccount{
+		{UUID: "BusinessOne", State: "A", UserState: "A", Type: "B"},
+		{UUID: "BusinessTwo", State: "A", UserState: "A", Type: "B"},
 	}
 
-	got := detectSingleCLIAccountWithRunner(run)
-	if got != "json.1password.example" {
-		t.Fatalf("account = %q, want JSON account", got)
-	}
-	if len(calls) != 1 || !slices.Equal(calls[0], []string{"--format=json"}) {
-		t.Fatalf("calls = %#v, want only JSON account list", calls)
+	got := SelectDefaultDesktopAccount(accounts)
+	if got != "" {
+		t.Fatalf("account = %q, want no default account", got)
 	}
 }
 
-func TestDetectSingleCLIAccountFallsBackToTable(t *testing.T) {
-	var calls [][]string
-	run := func(args ...string) ([]byte, error) {
-		calls = append(calls, slices.Clone(args))
-		if slices.Equal(args, []string{"--format=json"}) {
-			return nil, errors.New("json format unavailable")
-		}
-		return []byte(
-			"URL                EMAIL                             USER ID\n" +
-				"table.1password.example testing-user1@example.test   USERID\n",
-		), nil
+func TestSelectDefaultDesktopAccountIgnoresInactiveAccounts(t *testing.T) {
+	accounts := []DesktopAccount{
+		{
+			UUID:      "InactivePersonal",
+			State:     "S",
+			UserState: "A",
+			Type:      "F",
+			SignInURL: "https://my.1password.com/",
+		},
+		{
+			UUID:      "BusinessUUID",
+			State:     "A",
+			UserState: "A",
+			Type:      "B",
+			SignInURL: "https://fixture.1password.com/",
+		},
 	}
 
-	got := detectSingleCLIAccountWithRunner(run)
-	if got != "table.1password.example" {
-		t.Fatalf("account = %q, want table account", got)
-	}
-	if len(calls) != 2 || !slices.Equal(calls[0], []string{"--format=json"}) || len(calls[1]) != 0 {
-		t.Fatalf("calls = %#v, want JSON then table account list", calls)
+	got := SelectDefaultDesktopAccount(accounts)
+	if got != "BusinessUUID" {
+		t.Fatalf("account = %q, want only active account", got)
 	}
 }

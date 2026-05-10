@@ -44,7 +44,6 @@ agent-secret exec --profile terraform-cloudflare -- terraform plan
 
 ```yaml
 version: 1
-account: my.1password.com
 default_profile: terraform-cloudflare
 
 profiles:
@@ -147,14 +146,16 @@ Agent Secret chooses the account for each secret independently:
 3. Top-level `account`.
 4. CLI `--account`.
 5. `OP_ACCOUNT` or `AGENT_SECRET_1PASSWORD_ACCOUNT`.
-6. The single signed-in 1Password CLI account, when one can be detected.
-7. Built-in default `my.1password.com`.
+6. The default personal 1Password desktop account, or the only active desktop
+   account for single-account users.
 
 The account is part of the secret identity used for resolution, reusable
 approval matching, and in-memory caching. The same `op://` reference in two
-different accounts is treated as two different secrets. Environment and built-in
-defaults are bound into each exec request so the approval UI, audit event, reuse
-key, and resolver use the same account scope.
+different accounts is treated as two different secrets. Agent Secret does not
+call the 1Password CLI for account discovery; with no override, it reads only
+non-secret local 1Password desktop account metadata and auto-selects the active
+personal account. If no personal account is present, it auto-selects only when
+exactly one active desktop account is present.
 
 ## Exec Command Options
 
@@ -249,8 +250,7 @@ Formats:
 
 `--account` overrides account selection for this inspection command. Without
 `--account`, the command uses the discovered project config account, then
-environment account overrides, one detected signed-in 1Password CLI account,
-then `my.1password.com`.
+environment account overrides, then default desktop account detection.
 
 ## Other Commands
 

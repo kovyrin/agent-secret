@@ -17,18 +17,17 @@ import (
 )
 
 type execFlags struct {
-	reason              string
-	cwd                 string
-	ttl                 time.Duration
-	profileName         string
-	configPath          string
-	account             string
-	overrideEnv         bool
-	forceRefresh        bool
-	secrets             secretFlags
-	only                onlyFlags
-	envFiles            envFileFlags
-	detectSingleAccount func() string
+	reason       string
+	cwd          string
+	ttl          time.Duration
+	profileName  string
+	configPath   string
+	account      string
+	overrideEnv  bool
+	forceRefresh bool
+	secrets      secretFlags
+	only         onlyFlags
+	envFiles     envFileFlags
 }
 
 type execInputs struct {
@@ -89,7 +88,6 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
-	execOpts.detectSingleAccount = p.detectSingleAccount
 	if *jsonOutput {
 		return Command{}, ErrUnsupportedExecJSON
 	}
@@ -213,7 +211,7 @@ func assembleExecSecrets(
 }
 
 func execSecretAccountFallback(flags execFlags, sources execInputSources) string {
-	accountFallback := execAccountFallback(flags.account, flags.detectSingleAccount)
+	accountFallback := execAccountFallback(flags.account)
 	if !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
 		return sources.configAccount
 	}
@@ -304,14 +302,14 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 	return updated
 }
 
-func execAccountFallback(cliAccount string, detectSingleAccount func() string) string {
+func execAccountFallback(cliAccount string) string {
 	if account := strings.TrimSpace(cliAccount); account != "" {
 		return account
 	}
 	if account := strings.TrimSpace(os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")); account != "" {
 		return account
 	}
-	return opaccount.SelectDesktopAccountWithDetector("", os.Getenv("OP_ACCOUNT"), detectSingleAccount)
+	return opaccount.SelectDesktopAccount("", os.Getenv("OP_ACCOUNT"))
 }
 
 func newOnlySet(aliases []string) map[string]struct{} {

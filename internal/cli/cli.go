@@ -7,7 +7,6 @@ import (
 	"github.com/kovyrin/agent-secret/internal/buildinfo"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
-	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -47,12 +46,10 @@ type Command struct {
 	VersionText         string
 }
 
-type Parser struct {
-	detectSingleAccount func() string
-}
+type Parser struct{}
 
 func NewParser() Parser {
-	return Parser{detectSingleAccount: opaccount.DetectSingleCLIAccount}
+	return Parser{}
 }
 
 func (p Parser) Parse(args []string) (Command, error) {

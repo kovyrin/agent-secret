@@ -26,6 +26,7 @@ var (
 	ErrAmbiguousVault   = errors.New("1Password vault reference is ambiguous")
 	ErrAmbiguousItem    = errors.New("1Password item reference is ambiguous")
 	ErrAmbiguousField   = errors.New("1Password field reference is ambiguous")
+	ErrAccountUnknown   = errors.New("1Password account is not configured and Agent Secret could not find a default 1Password desktop account")
 )
 
 type SecretsAPI interface {
@@ -108,7 +109,10 @@ func newItemResolverWithKeepAlive(
 
 func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*ItemResolver, error) {
 	normalized := normalizeDesktopOptions(opts)
-	account := desktopAccount(normalized.Account)
+	account, err := desktopAccount(normalized.Account)
+	if err != nil {
+		return nil, err
+	}
 
 	client, err := onepassword.NewClient(
 		ctx,
@@ -122,8 +126,27 @@ func NewDesktopResolver(ctx context.Context, opts ClientOptions) (*ItemResolver,
 	return newItemResolverWithKeepAlive(client.Secrets(), client.Vaults(), client.Items(), client)
 }
 
-func desktopAccount(accountOverride string) string {
-	return opaccount.SelectDesktopAccount(accountOverride, os.Getenv("OP_ACCOUNT"))
+func desktopAccount(accountOverride string) (string, error) {
+	return desktopAccountWithDetector(accountOverride, os.Getenv("OP_ACCOUNT"), opaccount.DetectDefaultDesktopAccount)
+}
+
+func desktopAccountWithDetector(
+	accountOverride string,
+	opAccount string,
+	detectDefaultAccount func() string,
+) (string, error) {
+	account := opaccount.SelectDesktopAccount(accountOverride, opAccount)
+	if account != "" {
+		return account, nil
+	}
+	if detectDefaultAccount == nil {
+		return "", ErrAccountUnknown
+	}
+	account = strings.TrimSpace(detectDefaultAccount())
+	if account == "" {
+		return "", ErrAccountUnknown
+	}
+	return account, nil
 }
 
 func normalizeDesktopOptions(opts ClientOptions) ClientOptions {
