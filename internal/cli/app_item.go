@@ -86,8 +86,10 @@ func (a App) renderItemDescribeText(metadata itemmetadata.Metadata) error {
 	if _, err := fmt.Fprintf(writer, "vault:\t%s\n", metadata.Vault); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "account:\t%s\n", metadata.Account); err != nil {
-		return err
+	if metadata.Account != "" {
+		if _, err := fmt.Fprintf(writer, "account:\t%s\n", metadata.Account); err != nil {
+			return err
+		}
 	}
 	if _, err := fmt.Fprintln(writer, "fields:"); err != nil {
 		return err

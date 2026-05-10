@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/opaccount"
 )
 
 func TestLiveDesktopResolveSecret(t *testing.T) {
@@ -36,6 +38,26 @@ func TestLiveDesktopResolveSecret(t *testing.T) {
 
 	metadata := secret.Metadata()
 	t.Logf("resolved 1Password reference metadata: length=%d sha256=%s", metadata.Length, metadata.SHA256)
+}
+
+func TestLiveDesktopDefaultAccountInitializes(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_LIVE_DEFAULT_ACCOUNT_CHECK") != "1" {
+		t.Skip("set AGENT_SECRET_LIVE_DEFAULT_ACCOUNT_CHECK=1 to run live default-account SDK initialization test")
+	}
+	if account := opaccount.DetectDefaultDesktopAccount(); account == "" {
+		t.Skip("1Password desktop account metadata did not contain a default account")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	if _, err := NewDesktopResolver(ctx, ClientOptions{
+		Account:            "",
+		IntegrationName:    "Agent Secret Broker SDK Default Account Check",
+		IntegrationVersion: "dev",
+	}); err != nil {
+		t.Fatalf("create desktop resolver with default account: %v", err)
+	}
 }
 
 func TestLiveDesktopPoolResolveSecret(t *testing.T) {

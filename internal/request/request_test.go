@@ -297,7 +297,6 @@ func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 		{name: "malformed environment fingerprint", mutate: func(r *ExecRequest) { r.EnvironmentFingerprint = "env-v1:not-hex" }, want: ErrInvalidRequest},
 		{name: "missing command", mutate: func(r *ExecRequest) { r.Command = nil }, want: ErrInvalidCommand},
 		{name: "tampered ref metadata", mutate: func(r *ExecRequest) { r.Secrets[0].Ref.Field = "other" }, want: ErrInvalidReference},
-		{name: "empty account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = "" }, want: ErrInvalidReference},
 		{name: "blank account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = " \t " }, want: ErrInvalidReference},
 		{name: "unnormalized account", mutate: func(r *ExecRequest) { r.Secrets[0].Account = " Work " }, want: ErrInvalidReference},
 		{name: "duplicate alias", mutate: func(r *ExecRequest) {
@@ -475,7 +474,6 @@ func TestNewItemDescribeRejectsInvalidInputs(t *testing.T) {
 	}{
 		{name: "missing reason", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Reason = "" }), want: ErrInvalidReason},
 		{name: "field ref", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Ref = "op://Example Vault/Deploy Token/password" }), want: ErrInvalidReference},
-		{name: "missing account", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.Account = " \t " }), want: ErrInvalidReference},
 		{name: "ttl too low", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = time.Second }), want: ErrInvalidTTL},
 		{name: "ttl too high", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.TTL = MaxRequestTTL + time.Second }), want: ErrInvalidTTL},
 		{name: "missing cwd", opts: mutateItemDescribeOptions(base, func(o *ItemDescribeOptions) { o.CWD = "" }), want: ErrInvalidRequest},
@@ -533,7 +531,6 @@ func TestItemDescribeRequestValidateForDaemonRejectsFabricatedMetadata(t *testin
 		{name: "tampered ref vault", mutate: func(r *ItemDescribeRequest) { r.Ref.Vault = "Other Vault" }, want: ErrInvalidReference},
 		{name: "tampered ref item", mutate: func(r *ItemDescribeRequest) { r.Ref.Item = "Other Token" }, want: ErrInvalidReference},
 		{name: "unnormalized ref raw", mutate: func(r *ItemDescribeRequest) { r.Ref.Raw = "op://Example Vault/Deploy Token/*" }, want: ErrInvalidReference},
-		{name: "empty account", mutate: func(r *ItemDescribeRequest) { r.Account = "" }, want: ErrInvalidReference},
 		{name: "blank account", mutate: func(r *ItemDescribeRequest) { r.Account = " \t " }, want: ErrInvalidReference},
 		{name: "unnormalized account", mutate: func(r *ItemDescribeRequest) { r.Account = " Work " }, want: ErrInvalidReference},
 	}

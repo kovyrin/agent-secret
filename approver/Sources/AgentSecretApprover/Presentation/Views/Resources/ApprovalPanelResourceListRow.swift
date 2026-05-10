@@ -24,10 +24,12 @@ import Foundation
                     )
                     .lineLimit(Metric.singleLineLimit)
                     .truncationMode(.middle)
-                    Text(resource.accountLabel)
-                        .font(.system(size: Metric.resourceListRefFontSize))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(Metric.singleLineLimit)
+                    if !resource.accountLabel.isEmpty {
+                        Text(resource.accountLabel)
+                            .font(.system(size: Metric.resourceListRefFontSize))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(Metric.singleLineLimit)
+                    }
                 }
                 .layoutPriority(Metric.refLayoutPriority)
             }

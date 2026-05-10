@@ -1,124 +1,67 @@
 package opaccount
 
 import (
-	"context"
-	"encoding/json"
-	"os/exec"
+	"net/url"
 	"strings"
-	"time"
 )
 
-const DefaultDesktopAccount = "my.1password.com"
+const DefaultDesktopAccount = ""
 
-type cliAccount struct {
-	URL         string `json:"url"`
-	Name        string `json:"name"`
-	Shorthand   string `json:"shorthand"`
-	AccountUUID string `json:"account_uuid"`
+type DesktopAccount struct {
+	UUID      string
+	State     string
+	UserState string
+	Type      string
+	SignInURL string
 }
-
-type accountListRunner func(args ...string) ([]byte, error)
 
 func SelectDesktopAccount(accountOverride string, opAccount string) string {
-	return SelectDesktopAccountWithDetector(accountOverride, opAccount, DetectSingleCLIAccount)
-}
-
-func SelectDesktopAccountWithDetector(
-	accountOverride string,
-	opAccount string,
-	detectSingleAccount func() string,
-) string {
 	if account := strings.TrimSpace(accountOverride); account != "" {
 		return account
 	}
 	if account := strings.TrimSpace(opAccount); account != "" {
 		return account
 	}
-	if detectSingleAccount != nil {
-		if account := strings.TrimSpace(detectSingleAccount()); account != "" {
-			return account
-		}
-	}
 	return DefaultDesktopAccount
 }
 
-func DetectSingleCLIAccount() string {
-	opPath, err := exec.LookPath("op")
-	if err != nil {
-		return ""
-	}
-	return detectSingleCLIAccountWithRunner(func(args ...string) ([]byte, error) {
-		return runOPAccountList(opPath, args...)
-	})
-}
-
-func detectSingleCLIAccountWithRunner(run accountListRunner) string {
-	if account := detectSingleCLIAccountJSON(run); account != "" {
+func SelectDefaultDesktopAccount(accounts []DesktopAccount) string {
+	activeAccounts := activeDesktopAccounts(accounts)
+	if account := selectDesktopAccount(activeAccounts, isPersonalSignInURLAccount); account != "" {
 		return account
 	}
-	return detectSingleCLIAccountTable(run)
-}
-
-func detectSingleCLIAccountJSON(run accountListRunner) string {
-	output, err := run("--format=json")
-	if err != nil {
-		return ""
+	if account := selectDesktopAccount(activeAccounts, isPersonalTypeAccount); account != "" {
+		return account
 	}
-	return singleCLIAccountFromJSON(output)
+	return selectSingleDesktopAccount(activeAccounts)
 }
 
-func singleCLIAccountFromJSON(output []byte) string {
-	var accounts []cliAccount
-	if err := json.Unmarshal(output, &accounts); err != nil {
-		return ""
-	}
-
-	return singleAccountName(accounts, func(account cliAccount) string {
-		for _, candidate := range []string{account.URL, account.Name, account.Shorthand, account.AccountUUID} {
-			if value := strings.TrimSpace(candidate); value != "" {
-				return value
-			}
-		}
-		return ""
-	})
-}
-
-func detectSingleCLIAccountTable(run accountListRunner) string {
-	output, err := run()
-	if err != nil {
-		return ""
-	}
-	return singleCLIAccountFromTable(output)
-}
-
-func singleCLIAccountFromTable(output []byte) string {
-	var accounts []string
-	for line := range strings.SplitSeq(string(output), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "URL ") {
+func activeDesktopAccounts(accounts []DesktopAccount) []DesktopAccount {
+	var active []DesktopAccount
+	for _, account := range accounts {
+		account.UUID = strings.TrimSpace(account.UUID)
+		if account.UUID == "" {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		if state := strings.TrimSpace(account.State); state != "" && !strings.EqualFold(state, "A") {
 			continue
 		}
-		accounts = append(accounts, fields[0])
+		if userState := strings.TrimSpace(account.UserState); userState != "" && !strings.EqualFold(userState, "A") {
+			continue
+		}
+		active = append(active, account)
 	}
-	if len(accounts) != 1 {
-		return ""
-	}
-	return accounts[0]
+	return active
 }
 
-func singleAccountName[T any](accounts []T, name func(T) string) string {
+func selectDesktopAccount(accounts []DesktopAccount, match func(DesktopAccount) bool) string {
 	var selected string
 	count := 0
 	for _, account := range accounts {
-		candidate := strings.TrimSpace(name(account))
-		if candidate == "" {
+		if !match(account) {
 			continue
 		}
-		selected = candidate
+		selected = account.UUID
 		count++
 	}
 	if count != 1 {
@@ -127,10 +70,48 @@ func singleAccountName[T any](accounts []T, name func(T) string) string {
 	return selected
 }
 
-func runOPAccountList(opPath string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+func selectSingleDesktopAccount(accounts []DesktopAccount) string {
+	var accountUUIDs []string
+	for _, account := range accounts {
+		accountUUIDs = append(accountUUIDs, account.UUID)
+	}
+	return selectSingleAccount(accountUUIDs)
+}
 
-	commandArgs := append([]string{"account", "list"}, args...)
-	return exec.CommandContext(ctx, opPath, commandArgs...).Output() //nolint:gosec // G204: opPath is the user's 1Password CLI and this command reads only account metadata.
+func isPersonalSignInURLAccount(account DesktopAccount) bool {
+	signInURL := strings.TrimSpace(account.SignInURL)
+	if signInURL == "" {
+		return false
+	}
+	parsed, err := url.Parse(signInURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "my.1password.com")
+}
+
+func isPersonalTypeAccount(account DesktopAccount) bool {
+	switch strings.ToUpper(strings.TrimSpace(account.Type)) {
+	case "F", "I", "P":
+		return true
+	default:
+		return false
+	}
+}
+
+func selectSingleAccount(accounts []string) string {
+	var selected string
+	count := 0
+	for _, account := range accounts {
+		account = strings.TrimSpace(account)
+		if account == "" {
+			continue
+		}
+		selected = account
+		count++
+	}
+	if count != 1 {
+		return ""
+	}
+	return selected
 }

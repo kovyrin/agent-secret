@@ -13,13 +13,12 @@ import (
 )
 
 type itemDescribeFlags struct {
-	account             string
-	configPath          string
-	format              string
-	prefix              string
-	reason              string
-	ttl                 time.Duration
-	detectSingleAccount func() string
+	account    string
+	configPath string
+	format     string
+	prefix     string
+	reason     string
+	ttl        time.Duration
 }
 
 func (p Parser) parseItem(args []string, fullArgs []string) (Command, error) {
@@ -52,7 +51,6 @@ func (p Parser) parseItemDescribe(args []string, fullArgs []string) (Command, er
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
-	flags.detectSingleAccount = p.detectSingleAccount
 	if fs.NArg() != 1 {
 		return Command{}, fmt.Errorf("%w: item describe accepts exactly one op:// item reference", ErrInvalidArguments)
 	}
@@ -97,10 +95,10 @@ func resolveItemDescribeAccount(flags itemDescribeFlags) (string, error) {
 		if account := strings.TrimSpace(metadata.Account); account != "" {
 			return account, nil
 		}
-		return execAccountFallback(flags.account, flags.detectSingleAccount), nil
+		return execAccountFallback(flags.account), nil
 	}
 	if flags.configPath == "" && errors.Is(err, profileconfig.ErrConfigNotFound) {
-		return execAccountFallback(flags.account, flags.detectSingleAccount), nil
+		return execAccountFallback(flags.account), nil
 	}
 	return "", fmt.Errorf("load config metadata: %w", err)
 }

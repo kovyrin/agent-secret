@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
-	"github.com/kovyrin/agent-secret/internal/opaccount"
 	onepassword "github.com/kovyrin/onepassword-sdk-go"
 )
 
@@ -672,27 +671,39 @@ func TestNormalizeDesktopOptionsAllowsDefaultAccount(t *testing.T) {
 }
 
 func TestDesktopAccountUsesExplicitOverride(t *testing.T) {
-	t.Setenv("OP_ACCOUNT", "FromEnv")
-	account := desktopAccount(" Fixture ")
+	account, err := desktopAccountWithDetector(" Fixture ", "FromEnv", func() string { return "Detected" })
+	if err != nil {
+		t.Fatalf("desktopAccountWithDetector returned error: %v", err)
+	}
 	if account != "Fixture" {
 		t.Fatalf("account = %q, want explicit override", account)
 	}
 }
 
 func TestDesktopAccountUsesOPAccountEnvironment(t *testing.T) {
-	t.Setenv("OP_ACCOUNT", " Fixture ")
-	account := desktopAccount("")
+	account, err := desktopAccountWithDetector("", " Fixture ", func() string { return "Detected" })
+	if err != nil {
+		t.Fatalf("desktopAccountWithDetector returned error: %v", err)
+	}
 	if account != "Fixture" {
 		t.Fatalf("account = %q, want OP_ACCOUNT", account)
 	}
 }
 
-func TestDesktopAccountUsesSDKDefaultWhenUnset(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+func TestDesktopAccountUsesDetectedDesktopAccountWhenUnset(t *testing.T) {
+	account, err := desktopAccountWithDetector("", "", func() string { return " Detected " })
+	if err != nil {
+		t.Fatalf("desktopAccountWithDetector returned error: %v", err)
+	}
+	if account != "Detected" {
+		t.Fatalf("account = %q, want detected desktop account", account)
+	}
+}
 
-	account := opaccount.SelectDesktopAccount("", "")
-	if account != opaccount.DefaultDesktopAccount {
-		t.Fatalf("account = %q, want default account", account)
+func TestDesktopAccountRequiresAccountWhenDetectionIsUnavailable(t *testing.T) {
+	_, err := desktopAccountWithDetector("", "", func() string { return " \t " })
+	if !errors.Is(err, ErrAccountUnknown) {
+		t.Fatalf("desktopAccountWithDetector error = %v, want ErrAccountUnknown", err)
 	}
 }
 

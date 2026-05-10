@@ -12,23 +12,46 @@ import (
 	onepassword "github.com/kovyrin/onepassword-sdk-go"
 )
 
-func TestDesktopPoolResolveRequiresRequestAccount(t *testing.T) {
+func TestDesktopPoolResolveAllowsDesktopDefaultAccount(t *testing.T) {
 	t.Parallel()
 
-	pool := NewDesktopPool()
-	_, err := pool.Resolve(context.Background(), "op://Example Vault/Item/password", " \t ")
-	if !errors.Is(err, ErrAccountRequired) {
-		t.Fatalf("Resolve error = %v, want ErrAccountRequired", err)
+	var gotOptions ClientOptions
+	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
+		Factory: func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
+			gotOptions = opts
+			return testDesktopResolver(t), nil
+		},
+	})
+
+	if _, err := pool.Resolve(context.Background(), "op://Example Vault/Item/password", " \t "); err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if gotOptions.Account != "" {
+		t.Fatalf("account = %q, want desktop default account", gotOptions.Account)
 	}
 }
 
-func TestDesktopPoolDescribeItemRequiresRequestAccount(t *testing.T) {
+func TestDesktopPoolDescribeItemAllowsDesktopDefaultAccount(t *testing.T) {
 	t.Parallel()
 
-	pool := NewDesktopPool()
-	_, err := pool.DescribeItem(context.Background(), mustItemRef(t, "op://Example Vault/Item"), " \t ")
-	if !errors.Is(err, ErrAccountRequired) {
-		t.Fatalf("DescribeItem error = %v, want ErrAccountRequired", err)
+	var gotOptions ClientOptions
+	pool := NewDesktopPoolWithOptions(DesktopPoolOptions{
+		Factory: func(_ context.Context, opts ClientOptions) (*ItemResolver, error) {
+			gotOptions = opts
+			return testDesktopItemResolver(t, nil), nil
+		},
+	})
+
+	_, err := pool.DescribeItem(
+		context.Background(),
+		mustItemRef(t, "op://Fixture Infra/Beta PlanetScale Introspection Probe"),
+		" \t ",
+	)
+	if err != nil {
+		t.Fatalf("DescribeItem returned error: %v", err)
+	}
+	if gotOptions.Account != "" {
+		t.Fatalf("account = %q, want desktop default account", gotOptions.Account)
 	}
 }
 

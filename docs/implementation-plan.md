@@ -762,9 +762,8 @@ Status: Complete
   daemon socket messages instead of stdin/stdout, argv/env payloads, or temp
   files in the product path.
 - Wired `agent-secretd` to use the official 1Password SDK lazily after approval,
-  with explicit account overrides plus single-account 1Password CLI detection
-  before the `my.1password.com` fallback, preserving approval-before-fetch
-  ordering.
+  with explicit account overrides and single-account 1Password desktop metadata
+  detection, preserving approval-before-fetch ordering.
 - Added a redacted Swift approval view model showing reason, command, cwd,
   resolved binary, refs, time remaining, override warning, reusable-use limit,
   and memory-caching note without request IDs, nonces, or secret values.

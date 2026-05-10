@@ -150,7 +150,10 @@ struct ApprovalRequestViewModel: Equatable {
     }
 
     private static func resourceRowText(_ resource: RequestedResourceRowViewModel) -> String {
-        "\(resource.alias) [\(resource.accountLabel)] -> \(resource.ref)"
+        if resource.accountLabel.isEmpty {
+            return "\(resource.alias) -> \(resource.ref)"
+        }
+        return "\(resource.alias) [\(resource.accountLabel)] -> \(resource.ref)"
     }
 
     private static func renderedText(

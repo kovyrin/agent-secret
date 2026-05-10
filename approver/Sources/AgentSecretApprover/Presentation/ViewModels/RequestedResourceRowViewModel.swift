@@ -24,9 +24,14 @@ struct RequestedResourceRowViewModel: Equatable {
         self.ref = Self.sanitizedDisplayText(ref)
         refSegments = Self.referenceSegments(ref)
         self.account = Self.sanitizedDisplayText(normalizedAccount)
-        accountLabel = "Account: \(self.account)"
         vaultName = Self.sanitizedDisplayText(parts.first ?? "Unknown vault")
-        vaultScopeName = "\(self.account) / \(vaultName)"
+        if self.account.isEmpty {
+            accountLabel = ""
+            vaultScopeName = vaultName
+        } else {
+            accountLabel = "Account: \(self.account)"
+            vaultScopeName = "\(self.account) / \(vaultName)"
+        }
         itemName = parts.dropFirst().first.map(Self.sanitizedDisplayText)
         fieldName = parts.dropFirst().dropFirst().first.map(Self.sanitizedDisplayText)
         symbolName = Self.symbolName(alias: alias, ref: ref)

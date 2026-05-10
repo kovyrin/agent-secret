@@ -23,10 +23,10 @@ Environment:
   AGENT_SECRET_INSTALL_BIN_DIR  Default command symlink directory.
   AGENT_SECRET_INSTALL_APP_DIR  Default app install directory.
 
-By default agent-secret uses the single signed-in 1Password CLI account when it
-can detect one, then falls back to my.1password.com. OP_ACCOUNT,
-AGENT_SECRET_1PASSWORD_ACCOUNT, --account, or project config can choose a
-specific account.
+By default agent-secret auto-selects the local personal 1Password desktop
+account, falling back to the only active desktop account for single-account
+users. OP_ACCOUNT, AGENT_SECRET_1PASSWORD_ACCOUNT, --account, or project config
+can choose a specific account.
 USAGE
 }
 

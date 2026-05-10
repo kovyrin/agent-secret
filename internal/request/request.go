@@ -346,8 +346,8 @@ func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
 	specs := make([]SecretSpec, 0, len(secrets))
 	for _, secret := range secrets {
-		if strings.TrimSpace(secret.Account) == "" {
-			return nil, fmt.Errorf("%w: secret %q account is required", ErrInvalidReference, secret.Alias)
+		if strings.TrimSpace(secret.Account) != secret.Account {
+			return nil, fmt.Errorf("%w: secret %q account must be trimmed", ErrInvalidReference, secret.Alias)
 		}
 		parsed, err := ParseSecretRef(secret.Ref.Raw)
 		if err != nil {

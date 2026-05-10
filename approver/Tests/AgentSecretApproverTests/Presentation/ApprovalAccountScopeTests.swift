@@ -35,4 +35,29 @@ final class ApprovalAccountScopeTests: XCTestCase {
         )
         XCTAssertTrue(viewModel.renderedText.contains("WORK_TOKEN [Account: Work] -> op://Shared/Deploy/token"))
     }
+
+    func testViewModelOmitsAccountChromeForDesktopDefaultAccount() {
+        let request = ApprovalRequest(
+            requestID: "req_default_account",
+            nonce: "nonce_default_account",
+            reason: "Run deploy",
+            command: ["/usr/bin/env", "deploy"],
+            cwd: "/tmp/project",
+            expiresAt: Date(timeIntervalSince1970: Self.sampleExpiration),
+            resources: [
+                RequestedResource(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "")
+            ],
+            resolvedExecutable: "/usr/bin/env"
+        )
+        let viewModel = ApprovalRequestViewModel(
+            request: request,
+            now: Date(timeIntervalSince1970: Self.viewModelNow)
+        )
+
+        XCTAssertEqual(viewModel.requestedResources.map(\.account), [""])
+        XCTAssertEqual(viewModel.requestedResources.map(\.accountLabel), [""])
+        XCTAssertEqual(viewModel.vaultGroups.map(\.vaultName), ["Shared"])
+        XCTAssertTrue(viewModel.renderedText.contains("DEPLOY_TOKEN -> op://Shared/Deploy/token"))
+        XCTAssertFalse(viewModel.renderedText.contains("[Account:"))
+    }
 }

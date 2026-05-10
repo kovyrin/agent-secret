@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
-	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -350,16 +349,10 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 		name       string
 		opAccount  string
 		appAccount string
-		detected   string
 		want       string
 	}{
-		{name: "built-in", want: opaccount.DefaultDesktopAccount},
-		{
-			name:     "detected 1Password CLI account",
-			detected: "my.1password.ca",
-			want:     "my.1password.ca",
-		},
-		{name: "op account", opAccount: " Personal ", want: "Personal"},
+		{name: "desktop default", want: ""},
+		{name: "OP_ACCOUNT", opAccount: " Personal ", want: "Personal"},
 		{name: "app account", opAccount: " Personal ", appAccount: " Work ", want: "Work"},
 	}
 	for _, tt := range tests {
@@ -379,8 +372,7 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 				t.Setenv("AGENT_SECRET_1PASSWORD_ACCOUNT", tt.appAccount)
 			}
 
-			parser := Parser{detectSingleAccount: func() string { return tt.detected }}
-			command, err := parser.Parse([]string{
+			command, err := NewParser().Parse([]string{
 				"exec", "--reason", "Account default",
 				"--secret", "TOKEN=op://Example/Item/token",
 				"--", "tool",
@@ -971,7 +963,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "exec", "item", "install-cli", "skill-install", "daemon", "doctor", "version", "my.1password.com"},
+			wants: []string{"agent-secret controls", "exec", "item", "install-cli", "skill-install", "daemon", "doctor", "version", "desktop account"},
 		},
 		{
 			name:  "item",

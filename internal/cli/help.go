@@ -62,7 +62,7 @@ Safety rules:
   - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
   - --account sets a default 1Password account for CLI-provided refs when config does not already provide one.
   - ALIAS must look like an environment variable name, for example API_TOKEN.
-  - With no account override, agent-secret detects one signed-in 1Password CLI account before falling back to my.1password.com.
+  - With no account override, agent-secret auto-selects the local personal 1Password desktop account.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - exec has no --json mode and never prints secret values.
   - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
@@ -99,7 +99,7 @@ Usage:
 
 Flags:
 
-  --account ACCOUNT   1Password account override. Defaults to project config, environment, one detected CLI account, then my.1password.com.
+  --account ACCOUNT   1Password account override. Defaults to project config, environment, then the default desktop account.
   --config PATH       Profile config path. Defaults to upward discovery from the current directory.
   --format FORMAT     Output format: text, json, or env-refs. Defaults to text.
   --prefix PREFIX     Prefix env aliases in env-refs output.
@@ -151,7 +151,7 @@ Project profiles:
   Put agent-secret.yml or .agent-secret.yml at the project root:
 
     version: 1
-    account: my.1password.com
+    account: Example Account
     default_profile: terraform-cloudflare
     profiles:
       terraform-cloudflare:
@@ -191,8 +191,8 @@ Project profiles:
   default_profile unless --profile is provided.
   CLI --reason and --ttl override profile defaults.
   Account precedence is per-secret account, profile account, top-level account,
-  --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, one detected signed-in
-  1Password CLI account, then my.1password.com.
+  --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then the default
+  personal 1Password desktop account.
   Included profiles are resolved in order. Later includes and the selected
   profile override earlier secrets with the same alias.
   1Password text file/document refs are resolved into the alias env value with
@@ -202,12 +202,13 @@ Project profiles:
 Environment:
 
   OP_ACCOUNT                      Optional 1Password account sign-in address, name, or UUID override.
-  AGENT_SECRET_1PASSWORD_ACCOUNT  Optional 1Password account sign-in address, name, or UUID override. Empty uses OP_ACCOUNT, then detection.
+  AGENT_SECRET_1PASSWORD_ACCOUNT  Optional 1Password account sign-in address, name, or UUID override. Empty uses OP_ACCOUNT, then default desktop account detection.
 
 Default account:
 
-  When no override is set, agent-secret uses the single signed-in 1Password CLI
-  account when one can be detected, then falls back to my.1password.com.
+  When no override is set, agent-secret does not call the 1Password CLI. It uses
+  non-secret local 1Password desktop account metadata. It auto-selects the
+  active personal account, or the only active account for single-account users.
 
 Unsupported by design:
 

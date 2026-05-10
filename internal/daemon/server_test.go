@@ -828,11 +828,12 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 	}
 }
 
-func TestServerOnePasswordStatusRejectsBlankAccountBeforeCheck(t *testing.T) {
+func TestServerOnePasswordStatusAllowsDesktopDefaultAccount(t *testing.T) {
 	t.Parallel()
 
 	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
 	checkCalls := 0
+	var checkedAccount string
 	server, err := NewServer(ServerOptions{
 		Broker: newTestBroker(t, daemonbroker.Options{
 			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
@@ -841,8 +842,9 @@ func TestServerOnePasswordStatusRejectsBlankAccountBeforeCheck(t *testing.T) {
 		}),
 		Validator:       staticPeerValidator{info: peer},
 		ClientValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
-		OnePasswordCheck: func(context.Context, string) error {
+		OnePasswordCheck: func(_ context.Context, account string) error {
 			checkCalls++
+			checkedAccount = account
 			return nil
 		},
 	})
@@ -869,11 +871,14 @@ func TestServerOnePasswordStatusRejectsBlankAccountBeforeCheck(t *testing.T) {
 	client := control.NewClient(clientConn)
 	defer func() { _ = client.Close() }()
 	err = client.CheckOnePassword(context.Background(), " \t ")
-	if !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
-		t.Fatalf("CheckOnePassword error = %v, want bad_request", err)
+	if err != nil {
+		t.Fatalf("CheckOnePassword returned error: %v", err)
 	}
-	if checkCalls != 0 {
-		t.Fatalf("one password check calls = %d, want 0", checkCalls)
+	if checkCalls != 1 {
+		t.Fatalf("one password check calls = %d, want 1", checkCalls)
+	}
+	if checkedAccount != "" {
+		t.Fatalf("one password check account = %q, want desktop default account", checkedAccount)
 	}
 }
 
@@ -1467,7 +1472,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	}
 }
 
-func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
+func TestServerAllowsDesktopDefaultAccountExecRequest(t *testing.T) {
 	t.Parallel()
 
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
@@ -1480,14 +1485,14 @@ func TestServerRejectsAccountlessExecRequestBeforeApproval(t *testing.T) {
 	defer cleanup()
 
 	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
-		t.Fatalf("expected bad_request protocol error, got %v", err)
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err != nil {
+		t.Fatalf("RequestExec returned error: %v", err)
 	}
-	if approver.calls != 0 {
-		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	if approver.calls != 1 {
+		t.Fatalf("approver calls = %d, want 1", approver.calls)
 	}
-	if calls := resolver.Calls(); len(calls) != 0 {
-		t.Fatalf("resolver calls = %v, want none", calls)
+	if calls := resolver.Calls(); len(calls) != 1 || calls[0] != "op://Example/Item/token" {
+		t.Fatalf("resolver calls = %v, want default account ref", calls)
 	}
 }
 
