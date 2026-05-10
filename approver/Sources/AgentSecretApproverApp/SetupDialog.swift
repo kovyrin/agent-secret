@@ -25,11 +25,15 @@ func runSetupDialog() {
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 let result = runBundledAgentSecret(arguments: ["install-cli"])
-                showSetupResult(
-                    title: result.succeeded ? "Command Line Tool Installed" : "Command Line Tool Install Failed",
-                    message: result.output,
-                    style: result.succeeded ? .informational : .warning
-                )
+                if result.succeeded {
+                    showSuccessfulCommandLineToolInstall()
+                } else {
+                    showSetupResult(
+                        title: "Command Line Tool Install Failed",
+                        message: result.output,
+                        style: .warning
+                    )
+                }
                 if result.succeeded {
                     shouldContinue = false
                 }
@@ -74,6 +78,22 @@ private func setupIntroText() -> String {
             static let paddingMultiplier: CGFloat = 2
             static let unlimitedLines = 0
         }
+    }
+
+    @MainActor
+    private func showSuccessfulCommandLineToolInstall() {
+        let alert = NSAlert()
+        alert.messageText = "Command Line Tool Installed"
+        alert.informativeText = """
+        agent-secret command installed.
+
+        Make sure ~/.local/bin is on PATH so agent-secret works by command name in Terminal.
+        For zsh, run this one-liner:
+        """
+        alert.alertStyle = .informational
+        alert.accessoryView = terminalCommandView(zshPathSetupCommand())
+        alert.addButton(withTitle: "Close")
+        alert.runModal()
     }
 
     @MainActor
@@ -155,6 +175,12 @@ private func setupIntroText() -> String {
             return replacement
         }
         return replacement + text[newline...]
+    }
+
+    private func zshPathSetupCommand() -> String {
+        "grep -qxF 'export PATH=\"$HOME/.local/bin:$PATH\"' \"$HOME/.zprofile\" 2>/dev/null || " +
+            "printf '\\n%s\\n' 'export PATH=\"$HOME/.local/bin:$PATH\"' >> \"$HOME/.zprofile\"; " +
+            "exec zsh -l"
     }
 
     private func terminalColor(_ white: CGFloat) -> NSColor {
