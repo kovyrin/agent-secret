@@ -121,6 +121,12 @@ func (g *grantIssuer) issue(
 		return issuedGrant{}, g.requestError(ctx, req, err)
 	}
 	if issued.grant.Env == nil {
+		if req.ReuseOnly {
+			if err := g.recordReusableMiss(ctx, correlation.RequestID, req); err != nil {
+				return issuedGrant{}, g.requestError(ctx, req, err)
+			}
+			return issuedGrant{}, ErrNoReusableApproval
+		}
 		issued, err = g.freshGrant(ctx, correlation, req)
 		if err != nil {
 			return issuedGrant{}, g.requestError(ctx, req, err)
@@ -271,6 +277,12 @@ func (g *grantIssuer) recordReusableRefresh(
 ) error {
 	event := audit.FromExecRequest(audit.EventApprovalRefreshed, "", req)
 	event.ApprovalID = approval.ID
+	return recordRequiredAudit(ctx, g.audit, event)
+}
+
+func (g *grantIssuer) recordReusableMiss(ctx context.Context, requestID string, req request.ExecRequest) error {
+	event := audit.FromExecRequest(audit.EventApprovalReuseMissed, requestID, req)
+	event.ErrorCode = auditErrorCode(protocol.ErrorCodeNoReusableApproval)
 	return recordRequiredAudit(ctx, g.audit, event)
 }
 

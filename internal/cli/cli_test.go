@@ -837,6 +837,9 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 		{args: []string{"daemon", "start"}, want: KindDaemonStart},
 		{args: []string{"daemon", "stop"}, want: KindDaemonStop},
 		{args: []string{"doctor"}, want: KindDoctor},
+		{args: []string{"agent-context", "--json"}, want: KindAgentContext},
+		{args: []string{"profile", "list", "--json"}, want: KindProfileList},
+		{args: []string{"profile", "show", "--json"}, want: KindProfileShow},
 		{args: []string{"install-cli"}, want: KindInstallCLI},
 		{args: []string{"skill-install"}, want: KindSkillInstall},
 		{args: []string{"--version"}, want: KindVersion},
@@ -849,6 +852,46 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 		if command.Kind != tt.want {
 			t.Fatalf("Parse(%v) kind = %s, want %s", tt.args, command.Kind, tt.want)
 		}
+	}
+}
+
+func TestParseMachineReadableFlags(t *testing.T) {
+	dir := t.TempDir()
+	writeExecutable(t, dir, "tool")
+	parser := NewParser()
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--dry-run",
+		"--json",
+		"--reuse-only",
+		"--reason", "Preflight",
+		"--cwd", dir,
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"./tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse exec dry-run returned error: %v", err)
+	}
+	if command.Kind != KindExec || !command.ExecDryRun || !command.OutputJSON || !command.ExecRequest.ReuseOnly {
+		t.Fatalf("unexpected dry-run command: %+v", command)
+	}
+
+	command, err = parser.Parse([]string{"daemon", "status", "--json"})
+	if err != nil {
+		t.Fatalf("Parse daemon status json returned error: %v", err)
+	}
+	if command.Kind != KindDaemonStatus || !command.OutputJSON {
+		t.Fatalf("daemon status json command = %+v", command)
+	}
+
+	command, err = parser.Parse([]string{"version", "--json"})
+	if err != nil {
+		t.Fatalf("Parse version json returned error: %v", err)
+	}
+	if command.Kind != KindVersion || !command.OutputJSON {
+		t.Fatalf("version json command = %+v", command)
 	}
 }
 
@@ -963,7 +1006,12 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "exec", "item", "install-cli", "skill-install", "daemon", "doctor", "version", "desktop account"},
+			wants: []string{"agent-secret controls", "agent-context", "exec", "item", "profile", "install-cli", "skill-install", "daemon", "doctor", "version", "desktop account"},
+		},
+		{
+			name:  "agent-context",
+			args:  []string{"agent-context", "--help"},
+			wants: []string{"agent-context", "--config", "--json", "never resolves"},
 		},
 		{
 			name:  "item",
@@ -978,7 +1026,22 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "--account", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "--account", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "--dry-run", "--reuse-only", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+		},
+		{
+			name:  "profile",
+			args:  []string{"profile", "--help"},
+			wants: []string{"profile", "list", "show", "without resolving secret values"},
+		},
+		{
+			name:  "profile list",
+			args:  []string{"profile", "list", "--help"},
+			wants: []string{"profile list", "--config", "--json"},
+		},
+		{
+			name:  "profile show",
+			args:  []string{"profile", "show", "--help"},
+			wants: []string{"profile show", "default_profile", "--config", "--json"},
 		},
 		{
 			name:  "daemon",
@@ -988,7 +1051,12 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "doctor",
 			args:  []string{"doctor", "--help"},
-			wants: []string{"non-secret local diagnostics", "1Password"},
+			wants: []string{"non-secret local diagnostics", "1Password", "--json"},
+		},
+		{
+			name:  "version",
+			args:  []string{"version", "--help"},
+			wants: []string{"version", "--json"},
 		},
 		{
 			name:  "install-cli",

@@ -42,6 +42,7 @@ Confirm the tool is available:
 
 ```bash
 agent-secret --help
+agent-secret agent-context --json
 agent-secret doctor
 ```
 
@@ -66,6 +67,25 @@ If the project has `default_profile`, the profile can be implicit:
 agent-secret exec -- terraform plan
 ```
 
+Inspect project profiles without resolving values:
+
+```bash
+agent-secret profile list --json
+agent-secret profile show --json terraform-cloudflare
+```
+
+Validate a request without prompting, resolving values, or spawning the child:
+
+```bash
+agent-secret exec --dry-run --json --profile terraform-cloudflare -- terraform plan
+```
+
+Use an existing reusable approval without opening a new prompt:
+
+```bash
+agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
+```
+
 Use a shell only when the shell is the command you actually want approved:
 
 ```bash
@@ -76,7 +96,9 @@ agent-secret exec \
 ```
 
 The wrapped command must appear after `--` as argv. Agent Secret does not parse
-shell strings and does not have an `exec --json` mode.
+shell strings. Normal `exec` does not have JSON output because child
+stdin/stdout/stderr pass through unchanged; only `exec --dry-run --json`
+returns JSON.
 
 ## Project Profiles
 

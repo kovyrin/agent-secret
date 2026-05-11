@@ -78,6 +78,51 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	}
 }
 
+func TestBrokerReuseOnlyUsesExistingApprovalOrFailsWithoutPrompt(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 3}}
+	resolver := &mockResolver{values: map[string]string{ref: "first"}}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{Approver: approver, Resolver: resolver, Audit: aud})
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref}})
+
+	reuseOnly := req
+	reuseOnly.ReuseOnly = true
+	if _, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_1", "nonce_1"), reuseOnly); !errors.Is(err, ErrNoReusableApproval) {
+		t.Fatalf("reuse-only without match error = %v, want ErrNoReusableApproval", err)
+	}
+	if approver.calls != 0 {
+		t.Fatalf("reuse-only miss opened approval prompt; calls = %d", approver.calls)
+	}
+	if len(resolver.Calls()) != 0 {
+		t.Fatalf("reuse-only miss resolved secrets: %v", resolver.Calls())
+	}
+	if !containsAuditEvent(aud.Events(), audit.EventApprovalReuseMissed) {
+		t.Fatalf("reuse-only miss did not emit audit event: %+v", aud.Events())
+	}
+
+	first, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_2", "nonce_2"), req)
+	if err != nil {
+		t.Fatalf("normal reusable approval returned error: %v", err)
+	}
+	if first.approvalID == "" {
+		t.Fatal("expected reusable approval id")
+	}
+	resolver.values[ref] = "second"
+	second, err := deliverExecForTest(context.Background(), broker, testCorrelation("req_3", "nonce_3"), reuseOnly)
+	if err != nil {
+		t.Fatalf("reuse-only match returned error: %v", err)
+	}
+	if second.Env["TOKEN"] != "first" {
+		t.Fatalf("reuse-only did not use cached value: %+v", second.Env)
+	}
+	if approver.calls != 1 {
+		t.Fatalf("reuse-only match opened another approval prompt; calls = %d", approver.calls)
+	}
+}
+
 func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 	t.Parallel()
 

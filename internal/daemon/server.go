@@ -764,6 +764,8 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeApproverIdentityMismatch
 	case errors.Is(err, approval.ErrNoPendingApproval):
 		return protocol.ErrorCodeNoPendingApproval
+	case errors.Is(err, daemonbroker.ErrNoReusableApproval):
+		return protocol.ErrorCodeNoReusableApproval
 	case errors.Is(err, ErrRequestAlreadyActive):
 		return protocol.ErrorCodeRequestActive
 	case errors.Is(err, daemonbroker.ErrDaemonStopped):

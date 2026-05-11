@@ -34,6 +34,24 @@ type Metadata struct {
 	Account    string
 }
 
+type ConfigInfo struct {
+	SourcePath     string        `json:"source_path"`
+	Version        int           `json:"version"`
+	Account        string        `json:"account,omitempty"`
+	DefaultProfile string        `json:"default_profile,omitempty"`
+	Profiles       []ProfileInfo `json:"profiles"`
+}
+
+type ProfileInfo struct {
+	Name    string               `json:"name"`
+	Default bool                 `json:"default"`
+	Account string               `json:"account,omitempty"`
+	Reason  string               `json:"reason,omitempty"`
+	TTL     string               `json:"ttl,omitempty"`
+	Include []string             `json:"include,omitempty"`
+	Secrets []request.SecretSpec `json:"secrets,omitempty"`
+}
+
 type Profile struct {
 	Name       string
 	SourcePath string
@@ -157,6 +175,50 @@ func LoadMetadata(opts LoadOptions) (Metadata, error) {
 		SourcePath: path,
 		Account:    strings.TrimSpace(doc.Account),
 	}, nil
+}
+
+func Inspect(opts LoadOptions) (ConfigInfo, error) {
+	path, doc, err := loadConfigFile(opts)
+	if err != nil {
+		return ConfigInfo{}, err
+	}
+
+	info := ConfigInfo{
+		SourcePath:     path,
+		Version:        doc.Version,
+		Account:        strings.TrimSpace(doc.Account),
+		DefaultProfile: strings.TrimSpace(doc.DefaultProfile),
+		Profiles:       make([]ProfileInfo, 0, len(doc.Profiles)),
+	}
+	names := make([]string, 0, len(doc.Profiles))
+	for name := range doc.Profiles {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		rawProfile := doc.Profiles[name]
+		resolved, err := resolveProfile(doc, path, name, nil)
+		if err != nil {
+			return ConfigInfo{}, err
+		}
+		secrets, err := sortedSecrets(resolved.secrets, path, name)
+		if err != nil {
+			return ConfigInfo{}, err
+		}
+		profile := ProfileInfo{
+			Name:    name,
+			Default: name == info.DefaultProfile,
+			Account: resolved.account,
+			Reason:  resolved.reason,
+			Include: trimmedList(rawProfile.Include),
+			Secrets: secrets,
+		}
+		if resolved.ttl != 0 {
+			profile.TTL = resolved.ttl.String()
+		}
+		info.Profiles = append(info.Profiles, profile)
+	}
+	return info, nil
 }
 
 func loadConfigFile(opts LoadOptions) (string, configFile, error) {
@@ -344,4 +406,14 @@ func effectiveAccount(defaultAccount string, overrideAccount string) string {
 		return override
 	}
 	return strings.TrimSpace(defaultAccount)
+}
+
+func trimmedList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

@@ -50,6 +50,7 @@ const (
 	ErrorCodeFrameTooLarge            ErrorCode = "frame_too_large"
 	ErrorCodeInvalidNonce             ErrorCode = "invalid_nonce"
 	ErrorCodeNoPendingApproval        ErrorCode = "no_pending_approval"
+	ErrorCodeNoReusableApproval       ErrorCode = "no_reusable_approval"
 	ErrorCodePeerRejected             ErrorCode = "peer_rejected"
 	ErrorCodeRequestActive            ErrorCode = "request_active"
 	ErrorCodeRequestExpired           ErrorCode = "request_expired"

@@ -1674,6 +1674,7 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: approval.ErrApproverPeerMismatch, want: protocol.ErrorCodeApproverPeerMismatch},
 		{err: approval.ErrApproverIdentity, want: protocol.ErrorCodeApproverIdentityMismatch},
 		{err: approval.ErrNoPendingApproval, want: protocol.ErrorCodeNoPendingApproval},
+		{err: daemonbroker.ErrNoReusableApproval, want: protocol.ErrorCodeNoReusableApproval},
 		{err: ErrRequestAlreadyActive, want: protocol.ErrorCodeRequestActive},
 		{err: daemonbroker.ErrDaemonStopped, want: protocol.ErrorCodeDaemonStopped},
 		{err: approval.ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},

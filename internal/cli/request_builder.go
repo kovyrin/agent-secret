@@ -22,6 +22,7 @@ type execRequestBuildOptions struct {
 	ttl          time.Duration
 	overrideEnv  bool
 	forceRefresh bool
+	reuseOnly    bool
 }
 
 func buildExecRequest(opts execRequestBuildOptions) (request.ExecRequest, error) {
@@ -63,6 +64,7 @@ func buildExecRequest(opts execRequestBuildOptions) (request.ExecRequest, error)
 		OverrideEnv:            opts.overrideEnv,
 		OverriddenAliases:      overriddenAliases,
 		ForceRefresh:           opts.forceRefresh,
+		ReuseOnly:              opts.reuseOnly,
 	})
 }
 

@@ -58,7 +58,7 @@ func ParseFormat(value string) (Format, error) {
 	case FormatJSON, FormatEnvRefs:
 		return format, nil
 	default:
-		return "", fmt.Errorf("%w: %q", ErrInvalidFormat, value)
+		return "", fmt.Errorf("%w: must be one of: text, json, env-refs (got: %q)", ErrInvalidFormat, value)
 	}
 }
 

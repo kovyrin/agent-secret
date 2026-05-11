@@ -55,12 +55,33 @@ Use a project profile:
 agent-secret exec --profile terraform-cloudflare -- terraform plan
 ```
 
+Validate what an agent is about to request without prompting or running the
+child:
+
+```bash
+agent-secret exec --dry-run --json --profile terraform-cloudflare -- terraform plan
+```
+
+Use an existing reusable approval without opening a new prompt:
+
+```bash
+agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
+```
+
 Inspect item metadata without revealing values:
 
 ```bash
 agent-secret item describe "op://Example Infra/Database Credentials"
 agent-secret item describe --format env-refs --prefix DATABASE \
   "op://Example Infra/Database Credentials"
+```
+
+Inspect the agent-facing CLI surface or project profiles:
+
+```bash
+agent-secret agent-context --json
+agent-secret profile list --json
+agent-secret profile show --json terraform-cloudflare
 ```
 
 ## What You Approve
@@ -106,6 +127,10 @@ precedence, env-file migration, and the full schema.
 
 - `agent-secret exec -- COMMAND [ARG...]`: run a command with approved secrets.
 - `agent-secret item describe REF`: inspect 1Password item fields without
+  values.
+- `agent-secret agent-context --json`: print a machine-readable command and
+  config discovery schema for coding agents.
+- `agent-secret profile list|show`: inspect project profiles without resolving
   values.
 - `agent-secret doctor`: print non-secret setup diagnostics.
 - `agent-secret daemon status|start|stop`: inspect or control the per-user

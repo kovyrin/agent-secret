@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -13,119 +14,306 @@ import (
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 )
 
-func (a App) runDaemonStatus(ctx context.Context) int {
+type daemonStatusOutput struct {
+	SchemaVersion string `json:"schema_version"`
+	Running       bool   `json:"running"`
+	PID           int    `json:"pid,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+type daemonStopOutput struct {
+	SchemaVersion string `json:"schema_version"`
+	Stopped       bool   `json:"stopped"`
+	Error         string `json:"error,omitempty"`
+}
+
+type doctorOutput struct {
+	SchemaVersion string        `json:"schema_version"`
+	OK            bool          `json:"ok"`
+	Platform      string        `json:"platform"`
+	DaemonSocket  string        `json:"daemon_socket"`
+	Checks        []doctorCheck `json:"checks"`
+}
+
+type doctorCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Path    string `json:"path,omitempty"`
+	PID     int    `json:"pid,omitempty"`
+	Account string `json:"account,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (a App) runDaemonStatusWithOutput(ctx context.Context, jsonOutput bool) int {
 	manager, err := a.daemonManager()
 	if err != nil {
+		if jsonOutput {
+			return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: false, Error: err.Error()}, 1)
+		}
 		a.stdoutf("agent-secretd: stopped (%v)\n", err)
 		return 1
 	}
 	status, err := manager.Status(ctx)
 	if err != nil {
+		if jsonOutput {
+			return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: false, Error: err.Error()}, 1)
+		}
 		a.stdoutf("agent-secretd: stopped (%v)\n", err)
 		return 1
+	}
+	if jsonOutput {
+		return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: true, PID: status.PID}, 0)
 	}
 	a.stdoutf("agent-secretd: running pid=%d\n", status.PID)
 	return 0
 }
 
-func (a App) runDaemonStart(ctx context.Context) int {
+func (a App) runDaemonStart(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
+		if command.OutputJSON {
+			return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: false, Error: err.Error()}, 1)
+		}
 		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
 		return 1
 	}
 	if err := manager.Start(ctx); err != nil {
+		if command.OutputJSON {
+			return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: false, Error: err.Error()}, 1)
+		}
 		a.stderrf("agent-secret: start daemon: %v\n", err)
 		return 1
 	}
 	status, err := manager.Status(ctx)
 	if err != nil {
+		if command.OutputJSON {
+			return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: false, Error: err.Error()}, 1)
+		}
 		a.stderrf("agent-secret: daemon started but status failed: %v\n", err)
 		return 1
+	}
+	if command.OutputJSON {
+		return a.writeDaemonStatusJSON(daemonStatusOutput{SchemaVersion: "1", Running: true, PID: status.PID}, 0)
 	}
 	a.stdoutf("agent-secretd: running pid=%d\n", status.PID)
 	return 0
 }
 
-func (a App) runDaemonStop(ctx context.Context) int {
+func (a App) runDaemonStop(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
+		if command.OutputJSON {
+			return a.writeDaemonStopJSON(daemonStopOutput{SchemaVersion: "1", Stopped: false, Error: err.Error()}, 1)
+		}
 		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
 		return 1
 	}
 	if err := manager.Stop(ctx); err != nil {
+		if command.OutputJSON {
+			return a.writeDaemonStopJSON(daemonStopOutput{SchemaVersion: "1", Stopped: false, Error: err.Error()}, 1)
+		}
 		a.stderrf("agent-secret: stop daemon: %v\n", err)
 		return 1
+	}
+	if command.OutputJSON {
+		return a.writeDaemonStopJSON(daemonStopOutput{SchemaVersion: "1", Stopped: true}, 0)
 	}
 	a.stdoutln("agent-secretd: stopped")
 	return 0
 }
 
-func (a App) runDoctor(ctx context.Context) int {
+func (a App) runDoctor(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
+		if command.OutputJSON {
+			return a.writeJSONError("initialize daemon manager", err)
+		}
 		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
 		return 1
 	}
 	healthy := true
-	a.stdoutln("agent-secret doctor")
-	a.stdoutf("platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	a.stdoutf("daemon socket: %s\n", manager.SocketPath())
-	if auditPath, err := checkAuditLogWritable(ctx); err != nil {
-		healthy = false
-		if auditPath == "" {
-			a.stdoutf("audit log: failed (%v)\n", err)
-		} else {
-			a.stdoutf("audit log: failed %s (%v)\n", auditPath, err)
-		}
-	} else {
-		a.stdoutf("audit log: writable %s\n", auditPath)
+	checks := make([]doctorCheck, 0, 8)
+	platform := runtime.GOOS + "/" + runtime.GOARCH
+	jsonOutput := command.OutputJSON
+	if !jsonOutput {
+		a.stdoutln("agent-secret doctor")
+		a.stdoutf("platform: %s\n", platform)
+		a.stdoutf("daemon socket: %s\n", manager.SocketPath())
 	}
-	if err := manager.EnsureRunning(ctx); err != nil {
-		healthy = false
-		a.stdoutf("daemon startup: failed (%v)\n", err)
-	} else {
-		a.stdoutln("daemon startup: ok")
-	}
-	if status, err := manager.Status(ctx); err == nil {
-		a.stdoutf("daemon: running pid=%d\n", status.PID)
-	} else {
-		healthy = false
-		a.stdoutf("daemon: failed (%v)\n", err)
-	}
-	if err := socket.ValidateSocketDirectoryForPath(manager.SocketPath()); err != nil {
-		healthy = false
-		a.stdoutf("socket directory: failed (%v)\n", err)
-	} else {
-		a.stdoutln("socket directory: private")
-	}
+
+	var check doctorCheck
+	var checkOK bool
+	check, checkOK = a.auditLogDoctorCheck(ctx, jsonOutput)
+	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
+	check, checkOK = a.daemonStartupDoctorCheck(ctx, manager, jsonOutput)
+	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
+	check, checkOK = a.daemonStatusDoctorCheck(ctx, manager, jsonOutput)
+	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
+	check, checkOK = a.socketDirectoryDoctorCheck(manager, jsonOutput)
+	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
 	if check := a.DoctorApproverCheck; check != nil {
-		if err := check(ctx); err != nil {
-			healthy = false
-			a.stdoutf("native approver: failed (%v)\n", err)
-		} else {
-			a.stdoutln("native approver: ok")
-		}
+		check, checkOK := a.nativeApproverDoctorCheck(ctx, check, jsonOutput)
+		checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
 	}
+
 	account, configSource, err := doctorOnePasswordAccount()
 	if err != nil {
 		healthy = false
-		a.stdoutf("project config: failed (%v)\n", err)
+		checks = append(checks, doctorCheck{Name: "project_config", Status: "failed", Error: err.Error()})
+		if !jsonOutput {
+			a.stdoutf("project config: failed (%v)\n", err)
+		}
 	}
 	if configSource != "" {
-		a.stdoutf("project config: %s\n", configSource)
+		checks = append(checks, doctorCheck{Name: "project_config", Status: "ok", Path: configSource})
+		if !jsonOutput {
+			a.stdoutf("project config: %s\n", configSource)
+		}
 	}
-	a.stdoutf("1password account: %s\n", displayOnePasswordAccount(account))
-	if err := manager.CheckOnePassword(ctx, account); err != nil {
-		healthy = false
-		a.stdoutf("1password desktop integration: failed (%v)\n", err)
-	} else {
-		a.stdoutln("1password desktop integration: ok")
+	displayAccount := displayOnePasswordAccount(account)
+	if !jsonOutput {
+		a.stdoutf("1password account: %s\n", displayAccount)
+	}
+	check, checkOK = a.onePasswordDoctorCheck(ctx, manager, account, displayAccount, jsonOutput)
+	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
+	if jsonOutput {
+		if err := a.writeJSON(doctorOutput{
+			SchemaVersion: "1",
+			OK:            healthy,
+			Platform:      platform,
+			DaemonSocket:  manager.SocketPath(),
+			Checks:        checks,
+		}); err != nil {
+			a.stderrf("agent-secret: write doctor json: %v\n", err)
+			return 1
+		}
 	}
 	if !healthy {
 		return 1
 	}
 	return 0
+}
+
+func appendDoctorCheck(checks []doctorCheck, healthy bool, check doctorCheck, checkOK bool) ([]doctorCheck, bool) {
+	if !checkOK {
+		healthy = false
+	}
+	return append(checks, check), healthy
+}
+
+func (a App) auditLogDoctorCheck(ctx context.Context, jsonOutput bool) (doctorCheck, bool) {
+	auditPath, err := checkAuditLogWritable(ctx)
+	if err != nil {
+		status := fmt.Sprintf("failed (%v)", err)
+		if auditPath != "" {
+			status = fmt.Sprintf("failed %s (%v)", auditPath, err)
+		}
+		if !jsonOutput {
+			a.stdoutf("audit log: %s\n", status)
+		}
+		return doctorCheck{Name: "audit_log", Status: "failed", Path: auditPath, Error: err.Error()}, false
+	}
+	if !jsonOutput {
+		a.stdoutf("audit log: writable %s\n", auditPath)
+	}
+	return doctorCheck{Name: "audit_log", Status: "ok", Path: auditPath}, true
+}
+
+func (a App) daemonStartupDoctorCheck(ctx context.Context, manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
+	if err := manager.EnsureRunning(ctx); err != nil {
+		if !jsonOutput {
+			a.stdoutf("daemon startup: failed (%v)\n", err)
+		}
+		return doctorCheck{Name: "daemon_startup", Status: "failed", Error: err.Error()}, false
+	}
+	if !jsonOutput {
+		a.stdoutln("daemon startup: ok")
+	}
+	return doctorCheck{Name: "daemon_startup", Status: "ok"}, true
+}
+
+func (a App) daemonStatusDoctorCheck(ctx context.Context, manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
+	status, err := manager.Status(ctx)
+	if err != nil {
+		if !jsonOutput {
+			a.stdoutf("daemon: failed (%v)\n", err)
+		}
+		return doctorCheck{Name: "daemon_status", Status: "failed", Error: err.Error()}, false
+	}
+	if !jsonOutput {
+		a.stdoutf("daemon: running pid=%d\n", status.PID)
+	}
+	return doctorCheck{Name: "daemon_status", Status: "ok", PID: status.PID}, true
+}
+
+func (a App) socketDirectoryDoctorCheck(manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
+	if err := socket.ValidateSocketDirectoryForPath(manager.SocketPath()); err != nil {
+		if !jsonOutput {
+			a.stdoutf("socket directory: failed (%v)\n", err)
+		}
+		return doctorCheck{Name: "socket_directory", Status: "failed", Error: err.Error()}, false
+	}
+	if !jsonOutput {
+		a.stdoutln("socket directory: private")
+	}
+	return doctorCheck{Name: "socket_directory", Status: "ok"}, true
+}
+
+func (a App) nativeApproverDoctorCheck(
+	ctx context.Context,
+	check func(context.Context) error,
+	jsonOutput bool,
+) (doctorCheck, bool) {
+	if err := check(ctx); err != nil {
+		if !jsonOutput {
+			a.stdoutf("native approver: failed (%v)\n", err)
+		}
+		return doctorCheck{Name: "native_approver", Status: "failed", Error: err.Error()}, false
+	}
+	if !jsonOutput {
+		a.stdoutln("native approver: ok")
+	}
+	return doctorCheck{Name: "native_approver", Status: "ok"}, true
+}
+
+func (a App) onePasswordDoctorCheck(
+	ctx context.Context,
+	manager daemonManager,
+	account string,
+	displayAccount string,
+	jsonOutput bool,
+) (doctorCheck, bool) {
+	if err := manager.CheckOnePassword(ctx, account); err != nil {
+		if !jsonOutput {
+			a.stdoutf("1password desktop integration: failed (%v)\n", err)
+		}
+		return doctorCheck{
+			Name:    "1password_desktop_integration",
+			Status:  "failed",
+			Account: displayAccount,
+			Error:   err.Error(),
+		}, false
+	}
+	if !jsonOutput {
+		a.stdoutln("1password desktop integration: ok")
+	}
+	return doctorCheck{Name: "1password_desktop_integration", Status: "ok", Account: displayAccount}, true
+}
+
+func (a App) writeDaemonStatusJSON(output daemonStatusOutput, code int) int {
+	if err := a.writeJSON(output); err != nil {
+		a.stderrf("agent-secret: write daemon status json: %v\n", err)
+		return 1
+	}
+	return code
+}
+
+func (a App) writeDaemonStopJSON(output daemonStopOutput, code int) int {
+	if err := a.writeJSON(output); err != nil {
+		a.stderrf("agent-secret: write daemon stop json: %v\n", err)
+		return 1
+	}
+	return code
 }
 
 func doctorOnePasswordAccount() (string, string, error) {

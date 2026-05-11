@@ -31,6 +31,7 @@ const (
 	EventApprovalDenied                     EventType = "approval_denied"
 	EventApprovalTimedOut                   EventType = "approval_timed_out"
 	EventApprovalReused                     EventType = "approval_reused"
+	EventApprovalReuseMissed                EventType = "approval_reuse_missed"
 	EventApprovalRefreshed                  EventType = "approval_refreshed"
 	EventSecretFetchStarted                 EventType = "secret_fetch_started"
 	EventSecretFetchFailed                  EventType = "secret_fetch_failed"
@@ -75,6 +76,7 @@ type Event struct {
 	RemainingTTLMillis *int64      `json:"remaining_ttl_ms,omitempty"`
 	RemainingUses      *int        `json:"remaining_uses,omitempty"`
 	ForceRefresh       bool        `json:"force_refresh,omitempty"`
+	ReuseOnly          bool        `json:"reuse_only,omitempty"`
 	OverrideEnv        bool        `json:"override_env,omitempty"`
 	OverriddenAliases  []string    `json:"overridden_aliases,omitempty"`
 }
@@ -111,6 +113,7 @@ func FromExecRequest(eventType EventType, requestID string, req request.ExecRequ
 		CWD:                req.CWD,
 		SecretRefs:         secretRefs(req.Secrets),
 		ForceRefresh:       req.ForceRefresh,
+		ReuseOnly:          req.ReuseOnly,
 		OverrideEnv:        req.OverrideEnv,
 		OverriddenAliases:  slices.Clone(req.OverriddenAliases),
 	}

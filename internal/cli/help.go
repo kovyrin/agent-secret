@@ -16,8 +16,10 @@ Secrets are never printed by agent-secret and are never written to disk. The nor
 
 Commands:
 
+  agent-context Print a machine-readable command and config discovery schema.
   exec       Run a command with approved secrets injected as environment variables.
   item       Inspect 1Password item metadata without revealing secret values.
+  profile    Inspect project profiles without resolving secret values.
   install-cli Install or repair the agent-secret command symlink for this user.
   skill-install Install or repair the Agent Secret agent skill for this user.
   daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
@@ -50,6 +52,8 @@ Common examples:
 
   agent-secret item describe "op://Example/Cloudflare Token"
   agent-secret item describe --format env-refs --prefix CLOUDFLARE "op://Example/Cloudflare Token"
+  agent-secret profile list --json
+  agent-secret exec --dry-run --json --profile terraform-cloudflare -- terraform plan
 
 Safety rules:
 
@@ -64,7 +68,9 @@ Safety rules:
   - ALIAS must look like an environment variable name, for example API_TOKEN.
   - With no account override, agent-secret auto-selects the local personal 1Password desktop account.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
-  - exec has no --json mode and never prints secret values.
+  - normal exec has no --json mode and never prints secret values.
+  - exec --dry-run --json validates locally without starting the daemon, prompting, resolving values, or spawning the child.
+  - exec --reuse-only uses a matching reusable approval or fails without opening a new approval prompt.
   - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
   - item describe requires approval and prints item metadata only: field labels, types, concealment flags, and refs.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
@@ -72,7 +78,21 @@ Safety rules:
   - Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
   - Non-zero child exits are returned as child exits, not as broker failures.
 
-Run agent-secret exec --help for flags and more examples.
+	Run agent-secret exec --help for flags and more examples.
+`)
+}
+
+func AgentContextHelp() string {
+	return strings.TrimSpace(`
+agent-secret agent-context prints a versioned JSON schema for agent introspection.
+
+Usage:
+
+  agent-secret agent-context [--config PATH] [--json]
+
+The output describes commands, flags, supported output formats, config discovery,
+and any profiles available from the discovered project config. It never resolves
+1Password refs or prints secret values.
 `)
 }
 
@@ -117,6 +137,53 @@ Examples:
 `)
 }
 
+func ProfileHelp() string {
+	return strings.TrimSpace(`
+agent-secret profile inspects project profile configuration without resolving secret values.
+
+Commands:
+
+  list  List profile names from agent-secret.yml or .agent-secret.yml.
+  show  Show one resolved profile, defaulting to default_profile.
+
+Run agent-secret profile list --help or agent-secret profile show --help for flags.
+`)
+}
+
+func ProfileListHelp() string {
+	return strings.TrimSpace(`
+agent-secret profile list lists profile names from the discovered project config.
+
+Usage:
+
+  agent-secret profile list [--config PATH] [--json]
+
+Flags:
+
+  --config PATH  Profile config path. Defaults to upward discovery from the current directory.
+  --json         Print machine-readable profile names and default profile metadata.
+  -h, --help     Show this help.
+`)
+}
+
+func ProfileShowHelp() string {
+	return strings.TrimSpace(`
+agent-secret profile show prints one resolved project profile without resolving secret values.
+
+Usage:
+
+  agent-secret profile show [--config PATH] [--json] [NAME]
+
+If NAME is omitted, default_profile from the config is used.
+
+Flags:
+
+  --config PATH  Profile config path. Defaults to upward discovery from the current directory.
+  --json         Print machine-readable profile details.
+  -h, --help     Show this help.
+`)
+}
+
 func ExecHelp() string {
 	return strings.TrimSpace(`
 agent-secret exec validates a command request, asks the local daemon for approved secrets, and then runs the wrapped command.
@@ -144,6 +211,9 @@ Flags:
   --ttl DURATION      Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
   --override-env      Allow approved aliases to replace existing child environment variables.
   --force-refresh     For matching reusable approvals, refetch approved refs before delivery.
+  --dry-run           Validate request and print preflight output without prompting or spawning.
+  --reuse-only        Use an existing reusable approval or fail without prompting.
+  --json              Print JSON output. Only valid with --dry-run.
   -h, --help          Show this help.
 
 Project profiles:
@@ -212,7 +282,6 @@ Default account:
 
 Unsupported by design:
 
-  --json              exec passes stdin/stdout/stderr through unchanged and has no JSON mode.
   --reuse             The approver decides whether an approval is reusable.
 
 Examples:
@@ -228,9 +297,14 @@ Examples:
     --secret DNS_TOKEN=op://Example/DNS/token \
     -- sh -c 'terraform plan && terraform apply'
 
+  agent-secret exec --dry-run --json --profile terraform-cloudflare -- terraform plan
+
+  agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
+
 Exit behavior:
 
   If approval, audit, daemon connection, or secret fetch fails before payload delivery, the child is not spawned.
+  If --reuse-only has no matching reusable approval, the child is not spawned and no new approval prompt opens.
   After the child starts, stdin, stdout, and stderr are passed through. The wrapper returns the child exit status.
   Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
 `)
@@ -242,9 +316,9 @@ agent-secret daemon is for troubleshooting the hidden per-user daemon.
 
 Usage:
 
-  agent-secret daemon status
-  agent-secret daemon start
-  agent-secret daemon stop
+  agent-secret daemon status [--json]
+  agent-secret daemon start [--json]
+  agent-secret daemon stop [--json]
 
 Normal agent-secret exec use starts the daemon automatically and does not print daemon lifecycle details unless something fails.
 Daemon stop clears daemon-owned in-memory reusable approvals, use counters, nonces, and cached values. It does not signal or manage already-running child processes.
@@ -255,6 +329,21 @@ func DoctorHelp() string {
 	return strings.TrimSpace(`
 agent-secret doctor starts the daemon if needed and prints non-secret local diagnostics: platform, socket directory privacy, audit log writability, daemon status, native approver health, and 1Password desktop integration readiness.
 It never prints secret values or resolves 1Password item references.
+
+Usage:
+
+  agent-secret doctor [--json]
+`)
+}
+
+func VersionHelp() string {
+	return strings.TrimSpace(`
+agent-secret version prints the installed agent-secret version.
+
+Usage:
+
+  agent-secret version [--json]
+  agent-secret --version
 `)
 }
 
@@ -282,6 +371,7 @@ Flags:
 
   --bin-dir DIR  Directory that should contain the agent-secret command. Defaults to ~/.local/bin.
   --force        Replace an existing regular file or different symlink at DIR/agent-secret.
+  --json         Print machine-readable install result.
 `)
 }
 
@@ -309,5 +399,6 @@ Flags:
 
   --skills-dir DIR  Directory that should contain the agent-secret skill. Defaults to ~/.agents/skills.
   --force           Replace an existing regular file or different symlink at DIR/agent-secret.
+  --json            Print machine-readable install result.
 `)
 }
