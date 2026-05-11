@@ -59,6 +59,15 @@ You can also install manually from the DMG on the
 open the DMG, drag `Agent Secret.app` into `/Applications`, open the app, and
 click `Install Command Line Tool`.
 
+## Enable 1Password SDK Integration
+
+Agent Secret uses the 1Password desktop app SDK integration. In 1Password, open
+`Settings -> Developer`, then under `Integrate with the 1Password SDKs` enable
+`Integrate with other apps`. If the Developer section is hidden, enable
+`Show 1Password Developer experience` first.
+
+![1Password Developer settings with SDK integration enabled](docs/images/1password-sdk-integration.png)
+
 ## Quick Start
 
 Run a command with an explicitly approved secret:
