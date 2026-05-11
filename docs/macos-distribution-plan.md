@@ -368,25 +368,30 @@ The first release epic can still produce unsigned local artifacts to prove the
 bundle layout and installer flow. The first release intended for team use should
 complete signing, notarization, stapling, and Gatekeeper verification.
 
-## Homebrew Later
+## Homebrew Cask
 
-Homebrew should come after GitHub Releases are reliable.
+Homebrew installs use the same signed and notarized DMG artifacts published to
+GitHub Releases. The source repository carries the tap cask at
+`Casks/agent-secret.rb`, so a separate tap repository is not required.
 
-Preferred shape:
+Install shape:
 
 ```bash
-brew tap kovyrin/agent-secret
+brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
 brew install --cask agent-secret
-brew upgrade agent-secret
+agent-secret skill-install
+agent-secret doctor
+brew upgrade --cask agent-secret
 ```
 
-The cask should install the same signed/notarized app bundle from GitHub
-Releases and run the CLI symlink step as a post-install action only if Homebrew
-allows it cleanly. If that becomes messy, the cask can install only the app and
-the README can tell users to run:
+The cask installs the app bundle and uses Homebrew's native `binary` artifact to
+link `agent-secret` from inside `Agent Secret.app`. It does not run
+`agent-secret install-cli`; Homebrew owns the command symlink for cask installs.
+The user still runs the explicit skill installer because that writes to the
+user's coding-agent skill directory:
 
 ```bash
-agent-secret install-cli
+agent-secret skill-install
 ```
 
 ## Implementation Epics
@@ -567,20 +572,22 @@ test ! -e ~/.local/bin/agent-secret
 
 ### Epic 6: Homebrew Cask
 
-Status: Deferred
+Status: Implemented
 
 Deliverables:
 
-- Public tap or cask formula.
+- Cask at `Casks/agent-secret.rb`.
 - README installation section.
 - Upgrade instructions.
 
 Acceptance checks:
 
 ```bash
+brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
+brew audit --cask --strict --tap=kovyrin/agent-secret agent-secret
 brew install --cask kovyrin/agent-secret/agent-secret
 agent-secret doctor
-brew upgrade agent-secret
+brew upgrade --cask agent-secret
 ```
 
 ## Risks and Decisions

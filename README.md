@@ -13,7 +13,27 @@ Requirements:
 - 1Password desktop app signed in, unlocked, and with Developer Tools
   integration enabled.
 
-Install the latest signed and notarized release:
+Install the latest signed and notarized release with Homebrew:
+
+```bash
+brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
+brew install --cask agent-secret
+agent-secret skill-install
+agent-secret doctor
+```
+
+Upgrade later with:
+
+```bash
+brew update
+brew upgrade --cask agent-secret
+```
+
+The Homebrew cask installs `Agent Secret.app` into `/Applications` and links the
+bundled `agent-secret` command into Homebrew's `bin` directory. `skill-install`
+adds or repairs the bundled Codex skill symlink for the current user.
+
+You can also install without Homebrew:
 
 <!-- markdownlint-disable MD013 -->
 
@@ -29,7 +49,7 @@ Then verify the install:
 agent-secret doctor
 ```
 
-The installer copies `Agent Secret.app` into `/Applications`, installs
+The unattended installer copies `Agent Secret.app` into `/Applications`, installs
 `~/.local/bin/agent-secret`, installs the bundled Codex skill at
 `~/.agents/skills/agent-secret`, and runs diagnostics. If `~/.local/bin` is not
 on your shell `PATH`, the installer prints a copy-pasteable command to add it.

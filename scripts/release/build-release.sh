@@ -163,6 +163,9 @@ if [[ "$notarize" == "1" ]]; then
   require_tool xcrun "$tool_xcrun"
 fi
 
+"$tool_mkdir" -p "$output_dir"
+output_dir="$(cd -- "$output_dir" && pwd)"
+
 tmp_dir="$("$tool_mktemp" -d "${TMPDIR:-/tmp}/agent-secret-release.XXXXXX")"
 cleanup() {
   "$tool_rm" -rf "$tmp_dir"

@@ -37,12 +37,19 @@ version numbers for public releases.
 - Added `agent-secret exec --reuse-only` for no-prompt execution that uses an
   existing matching reusable approval or fails without opening a new approval
   prompt.
+- Added a Homebrew cask so users can install and upgrade Agent Secret with
+  Homebrew while still using the signed and notarized GitHub Release DMG.
 
 ### Changed
 
 - CLI validation errors now include valid choices or examples for unknown
   commands, unknown subcommands, invalid item metadata formats, invalid aliases,
   and malformed `--secret` mappings.
+
+### Fixed
+
+- Release builds now handle relative `--output` directories when writing
+  `checksums.txt`.
 
 ## [0.0.11] - 2026-05-10
 

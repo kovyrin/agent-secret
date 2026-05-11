@@ -134,6 +134,24 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
 12. Confirm the published release page shows the expected notes and assets.
 
+13. Update the Homebrew cask to the published release. Use the SHA-256 digest
+    for the `Agent-Secret-vX.Y.Z-macos-arm64.dmg` asset:
+
+    ```bash
+    version="0.0.1"
+    artifact="Agent-Secret-v${version}-macos-arm64.dmg"
+    gh release download "v$version" --pattern "$artifact" --dir "$RUNNER_TEMP"
+    shasum -a 256 "$RUNNER_TEMP/$artifact"
+    ```
+
+    Then update `Casks/agent-secret.rb`, run the cask checks, and push the cask
+    bump:
+
+    ```bash
+    brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
+    brew audit --cask --strict --online --tap=kovyrin/agent-secret agent-secret
+    ```
+
 ## Clean-Machine Release Candidate Drill
 
 Before public announcement, test the latest release candidate on a clean macOS
@@ -173,6 +191,12 @@ AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 cd approver && swift run agent-secret-app-smoke
+```
+
+The Homebrew cask should also be checked after every cask bump:
+
+```bash
+brew audit --cask --strict --online --tap=kovyrin/agent-secret agent-secret
 ```
 
 ## Signing Preconditions
