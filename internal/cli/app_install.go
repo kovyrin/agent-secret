@@ -9,6 +9,19 @@ import (
 	"github.com/kovyrin/agent-secret/internal/install"
 )
 
+type installOutput struct {
+	SchemaVersion string       `json:"schema_version"`
+	Installed     bool         `json:"installed"`
+	LinkPath      string       `json:"link_path"`
+	TargetPath    string       `json:"target_path"`
+	PathWarning   *pathWarning `json:"path_warning,omitempty"`
+}
+
+type pathWarning struct {
+	Directory string `json:"directory"`
+	Command   string `json:"command"`
+}
+
 func (a App) runInstallCLI(command Command) int {
 	installCLI := a.InstallCLI
 	if installCLI == nil {
@@ -16,8 +29,28 @@ func (a App) runInstallCLI(command Command) int {
 	}
 	result, err := installCLI(command.InstallCLIOptions)
 	if err != nil {
+		if command.OutputJSON {
+			return a.writeJSONError("install-cli", err)
+		}
 		a.stderrf("agent-secret: install-cli: %v\n", err)
 		return 1
+	}
+	if command.OutputJSON {
+		output := installOutput{
+			SchemaVersion: "1",
+			Installed:     true,
+			LinkPath:      result.LinkPath,
+			TargetPath:    result.TargetPath,
+		}
+		binDir := filepath.Dir(result.LinkPath)
+		if !pathContainsDir(os.Getenv("PATH"), binDir) {
+			output.PathWarning = &pathWarning{Directory: displayHomePath(binDir), Command: zshPathSetupCommand(binDir)}
+		}
+		if err := a.writeJSON(output); err != nil {
+			a.stderrf("agent-secret: write install-cli json: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	a.stdoutf("agent-secret command installed: %s -> %s\n", result.LinkPath, result.TargetPath)
 	a.warnIfCommandDirMissingFromPath(filepath.Dir(result.LinkPath))
@@ -31,8 +64,23 @@ func (a App) runSkillInstall(command Command) int {
 	}
 	result, err := installSkill(command.InstallSkillOptions)
 	if err != nil {
+		if command.OutputJSON {
+			return a.writeJSONError("skill-install", err)
+		}
 		a.stderrf("agent-secret: skill-install: %v\n", err)
 		return 1
+	}
+	if command.OutputJSON {
+		if err := a.writeJSON(installOutput{
+			SchemaVersion: "1",
+			Installed:     true,
+			LinkPath:      result.LinkPath,
+			TargetPath:    result.TargetPath,
+		}); err != nil {
+			a.stderrf("agent-secret: write skill-install json: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	a.stdoutf("agent-secret skill installed: %s -> %s\n", result.LinkPath, result.TargetPath)
 	return 0

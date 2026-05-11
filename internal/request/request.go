@@ -70,6 +70,7 @@ type ExecOptions struct {
 	OverrideEnv            bool
 	OverriddenAliases      []string
 	ForceRefresh           bool
+	ReuseOnly              bool
 }
 
 type ExecRequest struct {
@@ -87,6 +88,7 @@ type ExecRequest struct {
 	OverrideEnv            bool                  `json:"override_env"`
 	OverriddenAliases      []string              `json:"overridden_aliases"`
 	ForceRefresh           bool                  `json:"force_refresh"`
+	ReuseOnly              bool                  `json:"reuse_only,omitempty"`
 }
 
 func SecretAliases(secrets []Secret) []string {
@@ -243,6 +245,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		OverrideEnv:            opts.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,
 		ForceRefresh:           opts.ForceRefresh,
+		ReuseOnly:              opts.ReuseOnly,
 	}, nil
 }
 
@@ -326,7 +329,7 @@ func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 	secrets := make([]Secret, 0, len(specs))
 	for _, spec := range specs {
 		if !aliasPattern.MatchString(spec.Alias) {
-			return nil, fmt.Errorf("%w: %q", ErrInvalidAlias, spec.Alias)
+			return nil, fmt.Errorf("%w: alias must match [A-Z_][A-Z0-9_]*, for example API_TOKEN (got: %q)", ErrInvalidAlias, spec.Alias)
 		}
 		if _, exists := seenAliases[spec.Alias]; exists {
 			return nil, fmt.Errorf("%w: duplicate alias %q", ErrInvalidAlias, spec.Alias)

@@ -20,6 +20,30 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.12] - Pending
+
+### Added
+
+- Added `agent-secret agent-context --json` for coding agents that need a
+  machine-readable summary of commands, flags, output formats, config
+  discovery, and available project profiles.
+- Added JSON output for `doctor`, `daemon status|start|stop`, `version`,
+  `install-cli`, and `skill-install`.
+- Added `agent-secret profile list|show` to inspect resolved project profiles
+  without resolving or printing secret values.
+- Added `agent-secret exec --dry-run --json` to validate an exec request
+  without starting the daemon, prompting for approval, resolving values, or
+  spawning the child command.
+- Added `agent-secret exec --reuse-only` for no-prompt execution that uses an
+  existing matching reusable approval or fails without opening a new approval
+  prompt.
+
+### Changed
+
+- CLI validation errors now include valid choices or examples for unknown
+  commands, unknown subcommands, invalid item metadata formats, invalid aliases,
+  and malformed `--secret` mappings.
+
 ## [0.0.11] - 2026-05-10
 
 ### Changed

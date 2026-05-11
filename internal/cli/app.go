@@ -122,20 +122,25 @@ func (a App) Run(ctx context.Context, args []string) int {
 		a.stdoutln(command.HelpText)
 		return 0
 	case KindVersion:
-		a.stdoutln(command.VersionText)
-		return 0
+		return a.runVersion(command)
+	case KindAgentContext:
+		return a.runAgentContext(command)
 	case KindExec:
 		return a.runExec(ctx, command)
 	case KindItemDescribe:
 		return a.runItemDescribe(ctx, command)
+	case KindProfileList:
+		return a.runProfileList(command)
+	case KindProfileShow:
+		return a.runProfileShow(command)
 	case KindDaemonStatus:
-		return a.runDaemonStatus(ctx)
+		return a.runDaemonStatusWithOutput(ctx, command.OutputJSON)
 	case KindDaemonStart:
-		return a.runDaemonStart(ctx)
+		return a.runDaemonStart(ctx, command)
 	case KindDaemonStop:
-		return a.runDaemonStop(ctx)
+		return a.runDaemonStop(ctx, command)
 	case KindDoctor:
-		return a.runDoctor(ctx)
+		return a.runDoctor(ctx, command)
 	case KindInstallCLI:
 		return a.runInstallCLI(command)
 	case KindSkillInstall:

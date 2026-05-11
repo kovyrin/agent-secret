@@ -25,6 +25,8 @@ type execFlags struct {
 	account      string
 	overrideEnv  bool
 	forceRefresh bool
+	dryRun       bool
+	reuseOnly    bool
 	secrets      secretFlags
 	only         onlyFlags
 	envFiles     envFileFlags
@@ -80,6 +82,8 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	fs.StringVar(&execOpts.account, "account", "", "1Password account")
 	fs.BoolVar(&execOpts.overrideEnv, "override-env", false, "override existing env aliases")
 	fs.BoolVar(&execOpts.forceRefresh, "force-refresh", false, "refresh reusable approval values")
+	fs.BoolVar(&execOpts.dryRun, "dry-run", false, "validate request and print preflight output without prompting or spawning")
+	fs.BoolVar(&execOpts.reuseOnly, "reuse-only", false, "use an existing reusable approval or fail without prompting")
 	jsonOutput := fs.Bool("json", false, "unsupported")
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&execOpts.secrets, "secret", "secret mapping")
@@ -88,7 +92,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
-	if *jsonOutput {
+	if *jsonOutput && !execOpts.dryRun {
 		return Command{}, ErrUnsupportedExecJSON
 	}
 	if *reuse {
@@ -112,12 +116,13 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		ttl:          inputs.ttl,
 		overrideEnv:  execOpts.overrideEnv,
 		forceRefresh: execOpts.forceRefresh,
+		reuseOnly:    execOpts.reuseOnly,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build exec request: %w", err)
 	}
 
-	return Command{Kind: KindExec, ExecRequest: req, ExecEnv: inputs.env}, nil
+	return Command{Kind: KindExec, OutputJSON: *jsonOutput, ExecRequest: req, ExecEnv: inputs.env, ExecDryRun: execOpts.dryRun}, nil
 }
 
 func resolveExecInputs(flags execFlags) (execInputs, error) {

@@ -586,6 +586,146 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 		!strings.Contains(stdout.String(), "1password desktop integration: ok") {
 		t.Fatalf("doctor output missing diagnostics: %q", stdout.String())
 	}
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"daemon", "status", "--json"}); code != 0 {
+		t.Fatalf("daemon status json exit=%d stderr=%q", code, stderr.String())
+	}
+	var status daemonStatusOutput
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("daemon status json did not decode: %v\n%s", err, stdout.String())
+	}
+	if !status.Running || status.PID == 0 {
+		t.Fatalf("daemon status json = %+v", status)
+	}
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"doctor", "--json"}); code != 0 {
+		t.Fatalf("doctor json exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var doctor doctorOutput
+	if err := json.Unmarshal(stdout.Bytes(), &doctor); err != nil {
+		t.Fatalf("doctor json did not decode: %v\n%s", err, stdout.String())
+	}
+	if !doctor.OK || doctor.Platform == "" || len(doctor.Checks) == 0 {
+		t.Fatalf("doctor json = %+v", doctor)
+	}
+}
+
+func TestAppDaemonJSONStartStopAndFailures(t *testing.T) {
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		status:     protocol.StatusPayload{PID: 4321},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"daemon", "start", "--json"}); code != 0 {
+		t.Fatalf("daemon start json exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var status daemonStatusOutput
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("daemon start json did not decode: %v\n%s", err, stdout.String())
+	}
+	if !status.Running || status.PID != 4321 || manager.startCalls != 1 || manager.statusCalls != 1 {
+		t.Fatalf("daemon start json = %+v manager=%+v", status, manager)
+	}
+
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"daemon", "stop", "--json"}); code != 0 {
+		t.Fatalf("daemon stop json exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var stop daemonStopOutput
+	if err := json.Unmarshal(stdout.Bytes(), &stop); err != nil {
+		t.Fatalf("daemon stop json did not decode: %v\n%s", err, stdout.String())
+	}
+	if !stop.Stopped || manager.stopCalls != 1 {
+		t.Fatalf("daemon stop json = %+v manager=%+v", stop, manager)
+	}
+
+	stdout.Reset()
+	manager.statusErr = errors.New("status unavailable")
+	if code := app.Run(context.Background(), []string{"daemon", "status", "--json"}); code != 1 {
+		t.Fatalf("daemon status failure exit=%d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("daemon status failure json did not decode: %v\n%s", err, stdout.String())
+	}
+	if status.Running || !strings.Contains(status.Error, "status unavailable") {
+		t.Fatalf("daemon status failure json = %+v", status)
+	}
+
+	stdout.Reset()
+	manager.startErr = errors.New("start unavailable")
+	if code := app.Run(context.Background(), []string{"daemon", "start", "--json"}); code != 1 {
+		t.Fatalf("daemon start failure exit=%d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("daemon start failure json did not decode: %v\n%s", err, stdout.String())
+	}
+	if status.Running || !strings.Contains(status.Error, "start unavailable") {
+		t.Fatalf("daemon start failure json = %+v", status)
+	}
+
+	stdout.Reset()
+	manager.stopErr = errors.New("stop unavailable")
+	if code := app.Run(context.Background(), []string{"daemon", "stop", "--json"}); code != 1 {
+		t.Fatalf("daemon stop failure exit=%d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &stop); err != nil {
+		t.Fatalf("daemon stop failure json did not decode: %v\n%s", err, stdout.String())
+	}
+	if stop.Stopped || !strings.Contains(stop.Error, "stop unavailable") {
+		t.Fatalf("daemon stop failure json = %+v", stop)
+	}
+}
+
+func TestAppDoctorReportsJSONDependencyFailures(t *testing.T) {
+	homeFile := filepath.Join(t.TempDir(), "home")
+	if err := os.WriteFile(homeFile, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write home file: %v", err)
+	}
+	t.Setenv("HOME", homeFile)
+	socketDir := filepath.Join(t.TempDir(), "insecure-socket-dir")
+	//nolint:gosec // G301: intentionally creates an insecure socket dir for doctor failure coverage.
+	if err := os.Mkdir(socketDir, 0o755); err != nil {
+		t.Fatalf("mkdir socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		ensureErr:  errors.New("startup unavailable"),
+		statusErr:  errors.New("status unavailable"),
+		checkErr:   errors.New("desktop unavailable"),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.DoctorApproverCheck = func(context.Context) error { return errors.New("approver unavailable") }
+
+	if code := app.Run(context.Background(), []string{"doctor", "--json"}); code != 1 {
+		t.Fatalf("doctor json failure exit=%d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var output doctorOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("doctor json failure did not decode: %v\n%s", err, stdout.String())
+	}
+	for _, name := range []string{
+		"audit_log",
+		"daemon_startup",
+		"daemon_status",
+		"socket_directory",
+		"native_approver",
+		"1password_desktop_integration",
+	} {
+		check, found := findDoctorCheck(output.Checks, name)
+		if !found || check.Status != "failed" || check.Error == "" {
+			t.Fatalf("doctor check %s = %+v found=%t output=%+v", name, check, found, output)
+		}
+	}
 }
 
 func TestAppVersionDoesNotStartDaemon(t *testing.T) {
@@ -607,6 +747,253 @@ func TestAppVersionDoesNotStartDaemon(t *testing.T) {
 			manager.connectCalls,
 			manager.statusCalls,
 		)
+	}
+
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"version", "--json"}); code != 0 {
+		t.Fatalf("version json exit=%d stderr=%q", code, stderr.String())
+	}
+	var output versionOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("version json did not decode: %v\n%s", err, stdout.String())
+	}
+	if output.SchemaVersion != "1" || output.CLI != "agent-secret" || output.Display != "agent-secret dev" {
+		t.Fatalf("version json output = %+v", output)
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 || manager.statusCalls != 0 {
+		t.Fatalf("version json touched daemon manager")
+	}
+}
+
+func TestAppExecDryRunJSONDoesNotStartDaemonPromptOrSpawn(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+	manager := &appFakeDaemonManager{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--dry-run",
+		"--json",
+		"--reuse-only",
+		"--reason", "Preflight deploy",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool",
+	})
+	if code != 0 {
+		t.Fatalf("dry-run exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var output execDryRunOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("dry-run json did not decode: %v\n%s", err, stdout.String())
+	}
+	if !output.OK || output.WouldPrompt || output.WouldSpawn {
+		t.Fatalf("unexpected dry-run booleans: %+v", output)
+	}
+	if output.Request.Reason != "Preflight deploy" ||
+		output.Request.Secrets[0].Ref != "op://Example/Item/token" ||
+		!output.Request.ReuseOnly {
+		t.Fatalf("unexpected dry-run request: %+v", output.Request)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("dry-run leaked secret-looking canary")
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 || manager.statusCalls != 0 {
+		t.Fatalf("dry-run touched daemon manager: %+v", manager)
+	}
+}
+
+func TestAppExecDryRunTextDescribesPromptAndCommand(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+	manager := &appFakeDaemonManager{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--dry-run",
+		"--reason", "Preflight deploy",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool", "arg with space", "plain",
+	})
+	if code != 0 {
+		t.Fatalf("dry-run exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"agent-secret exec dry run: ok",
+		"would prompt: true",
+		"would spawn: false",
+		"command: '",
+		"'arg with space'",
+		"TOKEN=op://Example/Item/token account=(default desktop account)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("dry-run stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 || manager.statusCalls != 0 {
+		t.Fatalf("dry-run touched daemon manager: %+v", manager)
+	}
+}
+
+func TestAppAgentContextAndProfilesJSON(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: deploy
+profiles:
+  base:
+    reason: Base
+    secrets:
+      BASE_TOKEN: op://Example/Base/token
+  deploy:
+    include:
+      - base
+    reason: Deploy
+    secrets:
+      DEPLOY_TOKEN: op://Example/Deploy/token
+`)
+	t.Chdir(root)
+	manager := &appFakeDaemonManager{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"agent-context", "--json"}); code != 0 {
+		t.Fatalf("agent-context exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var contextOutput agentContextOutput
+	if err := json.Unmarshal(stdout.Bytes(), &contextOutput); err != nil {
+		t.Fatalf("agent-context json did not decode: %v\n%s", err, stdout.String())
+	}
+	if contextOutput.SchemaVersion != "1" ||
+		contextOutput.Available.ProfileConfig == nil ||
+		contextOutput.Available.ProfileConfig.DefaultProfile != "deploy" ||
+		contextOutput.Commands["exec"].Summary == "" {
+		t.Fatalf("unexpected agent-context output: %+v", contextOutput)
+	}
+
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"profile", "list", "--json"}); code != 0 {
+		t.Fatalf("profile list exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var listOutput profileListOutput
+	if err := json.Unmarshal(stdout.Bytes(), &listOutput); err != nil {
+		t.Fatalf("profile list json did not decode: %v\n%s", err, stdout.String())
+	}
+	if listOutput.DefaultProfile != "deploy" || len(listOutput.Profiles) != 2 || !listOutput.Profiles[1].Default {
+		t.Fatalf("unexpected profile list output: %+v", listOutput)
+	}
+
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"profile", "show", "--json"}); code != 0 {
+		t.Fatalf("profile show exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var showOutput profileShowOutput
+	if err := json.Unmarshal(stdout.Bytes(), &showOutput); err != nil {
+		t.Fatalf("profile show json did not decode: %v\n%s", err, stdout.String())
+	}
+	if showOutput.Profile.Name != "deploy" || len(showOutput.Profile.Secrets) != 2 {
+		t.Fatalf("unexpected profile show output: %+v", showOutput)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("profile output leaked secret-looking canary")
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 || manager.statusCalls != 0 {
+		t.Fatalf("agent metadata commands touched daemon manager: %+v", manager)
+	}
+}
+
+func TestAppProfilesTextAndErrors(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: deploy
+profiles:
+  base:
+    reason: Base
+    secrets:
+      BASE_TOKEN:
+        ref: op://Example/Base/token
+        account: base.1password.com
+  deploy:
+    include:
+      - base
+    account: deploy.1password.com
+    reason: Deploy
+    ttl: 30m
+    secrets:
+      DEPLOY_TOKEN: op://Example/Deploy/token
+`)
+	t.Chdir(root)
+	manager := &appFakeDaemonManager{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"profile", "list"}); code != 0 {
+		t.Fatalf("profile list exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{"default_profile:", "deploy", "base", "deploy (default)"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("profile list stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+
+	stdout.Reset()
+	if code := app.Run(context.Background(), []string{"profile", "show", "deploy"}); code != 0 {
+		t.Fatalf("profile show exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"profile:", "deploy",
+		"account:", "deploy.1password.com",
+		"reason:", "Deploy",
+		"ttl:", "30m",
+		"include:", "base",
+		"DEPLOY_TOKEN",
+		"BASE_TOKEN",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("profile show stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"profile", "show", "missing"}); code != 1 {
+		t.Fatalf("profile show missing exit=%d, want 1; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "valid profiles: base, deploy") {
+		t.Fatalf("profile show missing stderr = %q", stderr.String())
+	}
+
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"profile", "show", "--json", "missing"}); code != 1 {
+		t.Fatalf("profile show missing json exit=%d, want 1; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var errOutput struct {
+		SchemaVersion string `json:"schema_version"`
+		OK            bool   `json:"ok"`
+		Context       string `json:"context"`
+		Error         string `json:"error"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &errOutput); err != nil {
+		t.Fatalf("profile error json did not decode: %v\n%s", err, stdout.String())
+	}
+	if errOutput.SchemaVersion != "1" || errOutput.OK || errOutput.Context != "select profile" ||
+		!strings.Contains(errOutput.Error, "select profile") ||
+		!strings.Contains(errOutput.Error, "valid profiles") {
+		t.Fatalf("profile error json = %+v", errOutput)
 	}
 }
 
@@ -667,6 +1054,15 @@ func TestAppDoctorReportsFailureWithoutSecretValues(t *testing.T) {
 	if strings.Contains(stdout.String(), "synthetic-secret-value") || strings.Contains(stderr.String(), "synthetic-secret-value") {
 		t.Fatalf("doctor leaked secret: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
+}
+
+func findDoctorCheck(checks []doctorCheck, name string) (doctorCheck, bool) {
+	for _, check := range checks {
+		if check.Name == name {
+			return check, true
+		}
+	}
+	return doctorCheck{}, false
 }
 
 func TestAppDaemonStartAndStopCommands(t *testing.T) {
@@ -765,6 +1161,30 @@ func TestAppInstallCommands(t *testing.T) {
 		if gotOptions.SkillsDir != "/tmp/skills" || !gotOptions.Force {
 			t.Fatalf("skill-install options = %+v", gotOptions)
 		}
+	})
+}
+
+func TestAppInstallCommandsJSON(t *testing.T) {
+	t.Run("cli", func(t *testing.T) {
+		runInstallCommandJSONTest(t, []string{"install-cli", "--bin-dir", "/tmp/bin", "--json"}, func(app *App) {
+			app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+				return install.CLIResult{
+					LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+					TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+				}, nil
+			}
+		}, "/tmp/bin/agent-secret")
+	})
+
+	t.Run("skill", func(t *testing.T) {
+		runInstallCommandJSONTest(t, []string{"skill-install", "--skills-dir", "/tmp/skills", "--json"}, func(app *App) {
+			app.InstallSkill = func(options install.SkillOptions) (install.SkillResult, error) {
+				return install.SkillResult{
+					LinkPath:   filepath.Join(options.SkillsDir, "agent-secret"),
+					TargetPath: "/Applications/Agent Secret.app/Contents/Resources/skills/agent-secret",
+				}, nil
+			}
+		}, "/tmp/skills/agent-secret")
 	})
 }
 
@@ -872,6 +1292,26 @@ func runInstallCommandTest(t *testing.T, args []string, configure func(*App), st
 	}
 	if !strings.Contains(stdout.String(), stdoutWant) {
 		t.Fatalf("%v stdout = %q, want %q", args, stdout.String(), stdoutWant)
+	}
+}
+
+func runInstallCommandJSONTest(t *testing.T, args []string, configure func(*App), linkPath string) {
+	t.Helper()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	configure(&app)
+
+	if code := app.Run(context.Background(), args); code != 0 {
+		t.Fatalf("%v exit=%d stderr=%q stdout=%q", args, code, stderr.String(), stdout.String())
+	}
+	var output installOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("%v json did not decode: %v\n%s", args, err, stdout.String())
+	}
+	if !output.Installed || output.LinkPath != linkPath {
+		t.Fatalf("%v json = %+v", args, output)
 	}
 }
 

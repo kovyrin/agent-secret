@@ -19,6 +19,7 @@ import (
 var (
 	ErrAuditRequired             = errors.New("audit required")
 	ErrMissingCache              = errors.New("approved secret cache entry missing")
+	ErrNoReusableApproval        = errors.New("no reusable approval matches request")
 	ErrNoResolver                = errors.New("secret resolver unavailable")
 	ErrSecretResolveFailed       = errors.New("secret resolve failed")
 	ErrItemMetadataResolveFailed = errors.New("item metadata resolve failed")

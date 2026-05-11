@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/kovyrin/agent-secret/internal/buildinfo"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -13,7 +12,7 @@ import (
 var (
 	ErrHelpRequested       = errors.New("help requested")
 	ErrInvalidArguments    = errors.New("invalid arguments")
-	ErrUnsupportedExecJSON = errors.New("exec does not support json output")
+	ErrUnsupportedExecJSON = errors.New("exec supports --json only with --dry-run")
 	ErrUnsupportedReuse    = errors.New("reusable approvals are chosen in the approver")
 	ErrShellStringCommand  = errors.New("command must be argv after --")
 )
@@ -23,8 +22,11 @@ type Kind string
 const (
 	KindHelp         Kind = "help"
 	KindVersion      Kind = "version"
+	KindAgentContext Kind = "agent_context"
 	KindExec         Kind = "exec"
 	KindItemDescribe Kind = "item_describe"
+	KindProfileList  Kind = "profile_list"
+	KindProfileShow  Kind = "profile_show"
 	KindDoctor       Kind = "doctor"
 	KindInstallCLI   Kind = "install_cli"
 	KindSkillInstall Kind = "skill_install"
@@ -35,11 +37,15 @@ const (
 
 type Command struct {
 	Kind                Kind
+	OutputJSON          bool
 	ExecRequest         request.ExecRequest
 	ExecEnv             []string
+	ExecDryRun          bool
 	ItemDescribeRequest request.ItemDescribeRequest
 	ItemDescribeFormat  itemmetadata.Format
 	ItemDescribePrefix  string
+	AgentContextOptions ConfigCommandOptions
+	ProfileOptions      ProfileCommandOptions
 	InstallCLIOptions   install.CLIOptions
 	InstallSkillOptions install.SkillOptions
 	HelpText            string
@@ -61,11 +67,15 @@ func (p Parser) Parse(args []string) (Command, error) {
 	case "-h", "--help", "help":
 		return Command{Kind: KindHelp, HelpText: TopHelp()}, ErrHelpRequested
 	case "-v", "--version", "version":
-		return Command{Kind: KindVersion, VersionText: buildinfo.DisplayVersion()}, nil
+		return parseVersion(args[1:])
+	case "agent-context":
+		return parseAgentContext(args[1:])
 	case "exec":
 		return p.parseExec(args[1:])
 	case "item":
 		return p.parseItem(args[1:], args)
+	case "profile":
+		return parseProfile(args[1:])
 	case "daemon":
 		return parseDaemon(args[1:])
 	case "doctor":
@@ -75,6 +85,10 @@ func (p Parser) Parse(args []string) (Command, error) {
 	case "skill-install":
 		return parseSkillInstall(args[1:])
 	default:
-		return Command{}, fmt.Errorf("%w: unknown command %q", ErrInvalidArguments, args[0])
+		return Command{}, fmt.Errorf(
+			"%w: unknown command %q; expected one of: agent-context, daemon, doctor, exec, help, install-cli, item, profile, skill-install, version",
+			ErrInvalidArguments,
+			args[0],
+		)
 	}
 }

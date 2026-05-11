@@ -245,6 +245,55 @@ profiles:
 	}
 }
 
+func TestInspectReturnsResolvedProfilesWithoutValues(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+account: Default Account
+default_profile: deploy
+profiles:
+  base:
+    reason: Base reason
+    ttl: 5m
+    secrets:
+      BASE_TOKEN: op://Example/Base/token
+  deploy:
+    include:
+      - base
+    account: Deploy Account
+    reason: Deploy reason
+    secrets:
+      DEPLOY_TOKEN: op://Example/Deploy/token
+`)
+
+	info, err := Inspect(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	if info.SourcePath != filepath.Join(root, "agent-secret.yml") || info.DefaultProfile != "deploy" {
+		t.Fatalf("unexpected config info: %+v", info)
+	}
+	if len(info.Profiles) != 2 || info.Profiles[0].Name != "base" || info.Profiles[1].Name != "deploy" {
+		t.Fatalf("profiles not sorted: %+v", info.Profiles)
+	}
+	deploy := info.Profiles[1]
+	if !deploy.Default || deploy.Account != "Deploy Account" || deploy.Reason != "Deploy reason" {
+		t.Fatalf("deploy profile metadata mismatch: %+v", deploy)
+	}
+	if len(deploy.Include) != 1 || deploy.Include[0] != "base" {
+		t.Fatalf("include metadata mismatch: %+v", deploy.Include)
+	}
+	if len(deploy.Secrets) != 2 {
+		t.Fatalf("deploy secrets = %+v", deploy.Secrets)
+	}
+	if deploy.Secrets[0].Alias != "BASE_TOKEN" || deploy.Secrets[0].Ref != "op://Example/Base/token" {
+		t.Fatalf("included secret missing: %+v", deploy.Secrets)
+	}
+	if deploy.Secrets[1].Alias != "DEPLOY_TOKEN" || deploy.Secrets[1].Account != "Deploy Account" {
+		t.Fatalf("local secret mismatch: %+v", deploy.Secrets)
+	}
+}
+
 func TestLoadUsesExplicitConfigPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom.yml")
 	writeConfig(t, path, `

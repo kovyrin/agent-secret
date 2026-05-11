@@ -29,7 +29,11 @@ func (p Parser) parseItem(args []string, fullArgs []string) (Command, error) {
 		return Command{Kind: KindHelp, HelpText: ItemHelp()}, ErrHelpRequested
 	}
 	if args[0] != "describe" {
-		return Command{}, fmt.Errorf("%w: unknown item subcommand %q", ErrInvalidArguments, args[0])
+		return Command{}, fmt.Errorf(
+			"%w: unknown item subcommand %q; expected one of: describe",
+			ErrInvalidArguments,
+			args[0],
+		)
 	}
 	return p.parseItemDescribe(args[1:], fullArgs)
 }

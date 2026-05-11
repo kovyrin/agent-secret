@@ -206,6 +206,7 @@ func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
 	dir := t.TempDir()
 	req, err := NewExec(mutate(baseOptions(dir, "reason"), func(o *ExecOptions) {
 		o.EnvironmentFingerprint = EnvironmentFingerprint([]string{"CANARY_SECRET_ENV=do-not-serialize"})
+		o.ReuseOnly = true
 	}))
 	if err != nil {
 		t.Fatalf("NewExec returned error: %v", err)
@@ -235,6 +236,7 @@ func TestExecRequestJSONOmitsRawEnvironmentValues(t *testing.T) {
 		"override_env",
 		"overridden_aliases",
 		"force_refresh",
+		"reuse_only",
 	} {
 		if _, ok := fields[field]; !ok {
 			t.Fatalf("request JSON omitted snake_case field %q: %s", field, raw)

@@ -189,11 +189,16 @@ Current flags:
   environment variables in the child process.
 - `--force-refresh`: when a reusable approval matches, refetch approved refs
   before delivering them to the child.
+- `--dry-run`: validate the request and print preflight output without starting
+  the daemon, prompting for approval, resolving values, or spawning the child.
+- `--reuse-only`: use an existing matching reusable approval or fail without
+  opening a new approval prompt.
+- `--json`: print machine-readable preflight output. Only valid with
+  `--dry-run`.
 - `-h`, `--help`: print detailed `exec` help.
 
 Unsupported by design:
 
-- `--json`: `exec` passes stdin, stdout, and stderr through unchanged.
 - `--reuse`: reusable approvals are chosen in the approval UI.
 
 Explicit `--secret` flags may be combined with `--profile` for one-off
@@ -226,6 +231,47 @@ The resolved file contents are injected into the alias environment variable
 with multiline text preserved. Agent Secret does not create a temp file for the
 value and env-var delivery does not support binary attachments with NUL bytes.
 
+## Agent-Friendly Introspection
+
+Agents can ask Agent Secret for a machine-readable summary of the current CLI
+surface:
+
+```bash
+agent-secret agent-context --json
+```
+
+The output includes command names, flags, output formats, safety conventions,
+config discovery filenames, and any profiles found in the current project. It
+does not resolve 1Password references or print secret values.
+
+Use `--config PATH` when the config is not discoverable from the current
+directory:
+
+```bash
+agent-secret agent-context --config ./agent-secret.yml --json
+```
+
+## Profile Inspection
+
+Use `profile list` and `profile show` when an agent needs to discover available
+project profiles without parsing YAML itself:
+
+```bash
+agent-secret profile list --json
+agent-secret profile show --json terraform-cloudflare
+```
+
+If `profile show` is called without a profile name, it shows the config's
+`default_profile`. Output contains resolved aliases, refs, account metadata,
+reason, TTL, and includes. It never fetches or prints secret values.
+
+Text output is available for humans:
+
+```bash
+agent-secret profile list
+agent-secret profile show terraform-cloudflare
+```
+
 ## Item Metadata Inspection
 
 Use `agent-secret item describe` when an agent has an item-level ref but does
@@ -257,15 +303,15 @@ environment account overrides, then default desktop account detection.
 Daemon management:
 
 ```bash
-agent-secret daemon status
-agent-secret daemon start
-agent-secret daemon stop
+agent-secret daemon status [--json]
+agent-secret daemon start [--json]
+agent-secret daemon stop [--json]
 ```
 
 Diagnostics:
 
 ```bash
-agent-secret doctor
+agent-secret doctor [--json]
 ```
 
 `doctor` prints non-secret setup diagnostics. It should not require or resolve
@@ -274,7 +320,8 @@ real secret values.
 CLI installation:
 
 ```bash
-agent-secret install-cli
+agent-secret version [--json]
+agent-secret install-cli [--json]
 agent-secret install-cli --bin-dir "$HOME/.local/bin"
 agent-secret install-cli --force
 ```
@@ -286,7 +333,7 @@ an existing regular file or different symlink only when `--force` is passed.
 Skill installation:
 
 ```bash
-agent-secret skill-install
+agent-secret skill-install [--json]
 agent-secret skill-install --skills-dir "$HOME/.agents/skills"
 agent-secret skill-install --force
 ```
