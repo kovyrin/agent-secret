@@ -182,13 +182,7 @@ struct ApprovalRequestViewModel: Equatable {
         }
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
         lines.append("Mutable executable allowed: \(viewModel.allowMutableExecutable ? "yes" : "no")")
-        if operation == .itemDescribe {
-            lines.append("Item metadata:")
-        } else if operation == .sessionCreate {
-            lines.append("Session secrets:")
-        } else {
-            lines.append("Secrets:")
-        }
+        lines.append(Self.inspectionResourceHeading(for: operation))
         lines.append(contentsOf: viewModel.resourceRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
         if allowsReusableApproval {
@@ -264,5 +258,21 @@ struct ApprovalRequestViewModel: Equatable {
 
     private static func visibleRemainingSeconds(_ interval: TimeInterval) -> Int {
         max(0, Int(interval.rounded(.up)))
+    }
+
+    private static func inspectionResourceHeading(for operation: ApprovalOperation) -> String {
+        switch operation {
+        case .itemDescribe:
+            "Item metadata:"
+
+        case .sessionCreate:
+            "Session secrets:"
+
+        case .gcpExec, .gcpSessionCreate:
+            "GCP access:"
+
+        case .exec:
+            "Secrets:"
+        }
     }
 }

@@ -400,6 +400,130 @@ func TestFromSessionRequestsUseMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestFromGCPExecRequestCapturesCapabilityMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	req := request.GCPExecRequest{
+		Reason:             "Inspect logs",
+		Command:            []string{"gcloud", "logging", "read", "severity>=ERROR"},
+		ResolvedExecutable: "/opt/homebrew/bin/gcloud",
+		CWD:                "/tmp/project",
+		GoogleAccount:      "work",
+		Project:            "fixture-beta",
+		ServiceAccount:     "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:             []string{"https://www.googleapis.com/auth/cloud-platform"},
+		ProfileName:        "beta-logs",
+		ConfigRoot:         "/tmp/project",
+		DeliveryMode:       request.GCPDeliveryModeTokenFile,
+		ReuseOnly:          true,
+	}
+	event := FromGCPExecRequest(EventApprovalRequested, "req_gcp", req)
+	if event.Provider != "gcp" ||
+		event.Operation != string(EventApprovalRequested) ||
+		event.Project != req.Project ||
+		event.ServiceAccount != req.ServiceAccount ||
+		event.ProjectRoot != req.ConfigRoot ||
+		!event.ReuseOnly {
+		t.Fatalf("unexpected GCP exec event: %+v", event)
+	}
+	event.OAuthScopes[0] = "changed"
+	if req.Scopes[0] == "changed" {
+		t.Fatal("event reused mutable request scope slice")
+	}
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal GCP exec event: %v", err)
+	}
+	if bytes.Contains(encoded, []byte(canaryValue)) ||
+		bytes.Contains(encoded, []byte("synthetic-access-token")) {
+		t.Fatalf("GCP exec event leaked value material: %s", encoded)
+	}
+}
+
+func TestFromGCPSessionAndTokenEventsCaptureStableAuditMetadata(t *testing.T) {
+	t.Parallel()
+
+	access := request.GCPAccess{
+		GoogleAccount:  "work",
+		Project:        "fixture-prod",
+		ServiceAccount: "agent-bench@fixture-prod.iam.gserviceaccount.com",
+		Scopes:         []string{"https://www.googleapis.com/auth/cloud-platform"},
+	}
+	sessionReq := request.GCPSessionCreateRequest{
+		Reason:           "Run benchmark",
+		GoogleAccount:    access.GoogleAccount,
+		Project:          access.Project,
+		ServiceAccount:   access.ServiceAccount,
+		Scopes:           access.Scopes,
+		ProfileName:      "fixture-prod-benchmark-run",
+		ProjectRoot:      "/tmp/project",
+		DeliveryMode:     request.GCPDeliveryModeTokenFile,
+		MaxCommandStarts: 12,
+	}
+	created := FromGCPSessionCreateRequest(EventGCPSessionCreated, "req_create", sessionReq, "asess:deadbeef")
+	if created.Operation != "session_created" ||
+		created.GCPSessionID != "asess:deadbeef" ||
+		created.MaxCommandStarts == nil ||
+		*created.MaxCommandStarts != 12 {
+		t.Fatalf("unexpected session created event: %+v", created)
+	}
+
+	command := fakeGCPSessionAuditCommand{
+		access:             access,
+		sessionAuditID:     "asess:deadbeef",
+		reason:             "Run benchmark",
+		profileName:        "fixture-prod-benchmark-run",
+		projectRoot:        "/tmp/project",
+		command:            []string{"gcloud", "compute", "instances", "list"},
+		resolvedExecutable: "/opt/homebrew/bin/gcloud",
+		cwd:                "/tmp/project",
+		deliveryMode:       request.GCPDeliveryModeTokenFile,
+	}
+	started := FromGCPSessionCommand(EventCommandStarted, "req_use", command)
+	if started.Operation != "command_started" ||
+		started.GCPSessionID != "asess:deadbeef" ||
+		started.Command[0] != "gcloud" ||
+		started.ProjectRoot != "/tmp/project" {
+		t.Fatalf("unexpected session command event: %+v", started)
+	}
+	command.command[0] = "changed"
+	if started.Command[0] == "changed" {
+		t.Fatal("session command event reused mutable command slice")
+	}
+
+	minted := FromGCPTokenMint(EventGCPTokenMintCompleted, "req_token", access, "Run benchmark", 2*time.Minute, request.GCPDeliveryModeTokenFile, "asess:deadbeef")
+	if minted.Operation != "mint_access_token" ||
+		minted.TokenLifetimeMillis == nil ||
+		*minted.TokenLifetimeMillis != 120_000 {
+		t.Fatalf("unexpected token mint event: %+v", minted)
+	}
+	encoded, err := json.Marshal([]Event{created, started, minted})
+	if err != nil {
+		t.Fatalf("marshal GCP session events: %v", err)
+	}
+	if bytes.Contains(encoded, []byte(canaryValue)) ||
+		bytes.Contains(encoded, []byte("synthetic-access-token")) {
+		t.Fatalf("GCP session events leaked value material: %s", encoded)
+	}
+}
+
+func TestGCPOperationMappingFallsBackToEventName(t *testing.T) {
+	t.Parallel()
+
+	tests := map[EventType]string{
+		EventGCPTokenMintStarted: "mint_access_token",
+		EventGCPTokenReused:      "token_reused",
+		EventGCPSessionDestroyed: "session_destroyed",
+		EventCommandCompleted:    "command_completed",
+		EventApprovalRequested:   "approval_requested",
+	}
+	for eventType, want := range tests {
+		if got := gcpOperationForEvent(eventType); got != want {
+			t.Fatalf("operation for %s = %q, want %q", eventType, got, want)
+		}
+	}
+}
+
 func TestWriterRejectsInvalidEventsAndClosedUse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -575,4 +699,52 @@ func writeExecutable(t *testing.T, dir string, name string) {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: audit tests need a runnable fixture executable in command metadata.
 		t.Fatalf("write executable: %v", err)
 	}
+}
+
+type fakeGCPSessionAuditCommand struct {
+	access             request.GCPAccess
+	sessionAuditID     string
+	reason             string
+	profileName        string
+	projectRoot        string
+	command            []string
+	resolvedExecutable string
+	cwd                string
+	deliveryMode       string
+}
+
+func (c fakeGCPSessionAuditCommand) SessionAuditIDValue() string {
+	return c.sessionAuditID
+}
+
+func (c fakeGCPSessionAuditCommand) ReasonValue() string {
+	return c.reason
+}
+
+func (c fakeGCPSessionAuditCommand) ProfileNameValue() string {
+	return c.profileName
+}
+
+func (c fakeGCPSessionAuditCommand) ProjectRootValue() string {
+	return c.projectRoot
+}
+
+func (c fakeGCPSessionAuditCommand) AccessValue() request.GCPAccess {
+	return c.access
+}
+
+func (c fakeGCPSessionAuditCommand) CommandValue() []string {
+	return c.command
+}
+
+func (c fakeGCPSessionAuditCommand) ResolvedExecutableValue() string {
+	return c.resolvedExecutable
+}
+
+func (c fakeGCPSessionAuditCommand) CWDValue() string {
+	return c.cwd
+}
+
+func (c fakeGCPSessionAuditCommand) DeliveryModeValue() string {
+	return c.deliveryMode
 }

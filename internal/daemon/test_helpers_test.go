@@ -17,6 +17,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/gcpcompat"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -131,6 +132,25 @@ type mockResolver struct {
 	errs   map[string]error
 	calls  []string
 	order  *[]string
+}
+
+type fakeGCPMinter struct {
+	tokens []gcpcompat.Token
+	calls  []daemonbroker.GCPMintRequest
+	err    error
+}
+
+func (m *fakeGCPMinter) MintAccessToken(_ context.Context, req daemonbroker.GCPMintRequest) (gcpcompat.Token, error) {
+	m.calls = append(m.calls, req)
+	if m.err != nil {
+		return gcpcompat.Token{}, m.err
+	}
+	if len(m.tokens) == 0 {
+		return gcpcompat.Token{AccessToken: "synthetic-gcp-token", ExpiresAt: time.Now().Add(req.Lifetime)}, nil
+	}
+	token := m.tokens[0]
+	m.tokens = m.tokens[1:]
+	return token, nil
 }
 
 func (m *mockResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
@@ -391,6 +411,86 @@ func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
 		ReceivedAt:         now,
 		ExpiresAt:          now.Add(request.DefaultItemDescribeTTL),
 	}
+}
+
+func testGCPExecRequest(t *testing.T, now time.Time) request.GCPExecRequest {
+	t.Helper()
+
+	cwd, executable, executableIdentity := testGCPCommandFixture(t)
+	return request.GCPExecRequest{
+		Reason:                 "Inspect logs",
+		Command:                []string{"gcloud", "logging", "read", "severity>=ERROR"},
+		ResolvedExecutable:     executable,
+		ExecutableIdentity:     executableIdentity,
+		CWD:                    cwd,
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=" + filepath.Dir(executable)}),
+		GoogleAccount:          "work",
+		Project:                "fixture-beta",
+		ServiceAccount:         "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:                 []string{"https://www.googleapis.com/auth/cloud-platform"},
+		ProfileName:            "beta-logs",
+		ConfigRoot:             cwd,
+		DeliveryMode:           request.GCPDeliveryModeTokenFile,
+		TTL:                    2 * time.Minute,
+		ReceivedAt:             now,
+		ExpiresAt:              now.Add(2 * time.Minute),
+	}
+}
+
+func testGCPSessionCreateRequest(t *testing.T, now time.Time, projectRoot string) request.GCPSessionCreateRequest {
+	t.Helper()
+
+	return request.GCPSessionCreateRequest{
+		Reason:           "Run benchmark",
+		GoogleAccount:    "work",
+		Project:          "fixture-beta",
+		ServiceAccount:   "agent-bench@fixture-beta.iam.gserviceaccount.com",
+		Scopes:           []string{"https://www.googleapis.com/auth/cloud-platform"},
+		ProfileName:      "fixture-beta-benchmark-run",
+		ConfigSourcePath: filepath.Join(projectRoot, "agent-secret.yml"),
+		ProjectRoot:      projectRoot,
+		DeliveryMode:     request.GCPDeliveryModeTokenFile,
+		TTL:              30 * time.Minute,
+		ReceivedAt:       now,
+		ExpiresAt:        now.Add(30 * time.Minute),
+		MaxCommandStarts: 3,
+	}
+}
+
+func testGCPSessionUseRequest(t *testing.T, handle string, cwd string) request.GCPSessionUseRequest {
+	t.Helper()
+
+	_, executable, executableIdentity := testGCPCommandFixture(t)
+	return request.GCPSessionUseRequest{
+		SessionHandle:          handle,
+		Command:                []string{"gcloud", "compute", "instances", "list"},
+		ResolvedExecutable:     executable,
+		ExecutableIdentity:     executableIdentity,
+		CWD:                    cwd,
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=" + filepath.Dir(executable)}),
+	}
+}
+
+func testGCPCommandFixture(t *testing.T) (string, string, fileidentity.Identity) {
+	t.Helper()
+
+	cwd, err := pathresolve.Strict(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize GCP cwd: %v", err)
+	}
+	executableDir := filepath.Join(cwd, "bin")
+	if err := os.Mkdir(executableDir, 0o750); err != nil {
+		t.Fatalf("mkdir GCP executable dir: %v", err)
+	}
+	executable := filepath.Join(executableDir, "gcloud")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon tests need a runnable gcloud fixture executable.
+		t.Fatalf("write gcloud fixture: %v", err)
+	}
+	executableIdentity, err := fileidentity.Capture(executable)
+	if err != nil {
+		t.Fatalf("capture GCP executable identity: %v", err)
+	}
+	return cwd, executable, executableIdentity
 }
 
 func approvalTestRequest(t *testing.T, expiresAt time.Time) request.ExecRequest {

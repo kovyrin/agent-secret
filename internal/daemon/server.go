@@ -261,7 +261,9 @@ func (s *Server) retireIfExecutableChanged(ctx context.Context, encoder *json.En
 func checksExecutableIdentity(messageType protocol.MessageType) bool {
 	//nolint:exhaustive // Only new foreground work should trigger daemon executable self-checks.
 	switch messageType {
-	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe, protocol.TypeSessionCreate, protocol.TypeSessionResolve, protocol.TypeSessionDestroy, protocol.TypeSessionList:
+	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe,
+		protocol.TypeSessionCreate, protocol.TypeSessionResolve, protocol.TypeSessionDestroy, protocol.TypeSessionList,
+		protocol.TypeGCPExec, protocol.TypeGCPSessionCreate, protocol.TypeGCPWithSession:
 		return true
 	default:
 		return false
@@ -402,6 +404,29 @@ func (s *Server) dispatchClientEnvelope(
 			return connectionDispatchAction{}
 		}
 		requestID := s.handleRequestExec(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
+	case protocol.TypeGCPExec:
+		if state.hasActiveRequest() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+			return connectionDispatchAction{}
+		}
+		requestID := s.handleGCPExec(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
+	case protocol.TypeGCPSessionCreate:
+		s.handleGCPSessionCreate(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPSessionList:
+		s.handleGCPSessionList(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPSessionDestroy:
+		s.handleGCPSessionDestroy(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPWithSession:
+		if state.hasActiveRequest() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+			return connectionDispatchAction{}
+		}
+		requestID := s.handleGCPWithSession(ctx, conn, encoder, env)
 		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
 	case protocol.TypeItemDescribe:
 		s.handleItemDescribe(ctx, conn, encoder, env)
@@ -777,6 +802,184 @@ func (s *Server) handleRequestExec(
 	return env.RequestID
 }
 
+type gcpSessionCreateServerPayload struct {
+	Request request.GCPSessionCreateRequest `json:"request"`
+	Handle  string                          `json:"handle"`
+}
+
+type gcpSessionListServerPayload struct {
+	CWD string `json:"cwd"`
+}
+
+func (s *Server) handleGCPExec(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) string {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	req, err := protocol.DecodeRequiredPayload[request.GCPExecRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	req = req.WithReceiptTime(s.broker.Now())
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	delivery, err := s.broker.PrepareGCPExecDelivery(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	defer clearWriteDeadline()
+	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	delivery.CommitDelivered()
+	committed = true
+	return env.RequestID
+}
+
+func (s *Server) handleGCPSessionCreate(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	payload, err := protocol.DecodeRequiredPayload[gcpSessionCreateServerPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	req := payload.Request.WithReceiptTime(s.broker.Now())
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	response, err := s.broker.CreateGCPSession(ctx, env.Correlation(), req, strings.TrimSpace(payload.Handle))
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), response)
+}
+
+func (s *Server) handleGCPSessionList(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	payload, err := protocol.DecodePayload[gcpSessionListServerPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	response, err := s.broker.ListGCPSessions(ctx, strings.TrimSpace(payload.CWD))
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), response)
+}
+
+func (s *Server) handleGCPSessionDestroy(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	req, err := protocol.DecodeRequiredPayload[request.GCPSessionDestroyRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	response, err := s.broker.DestroyGCPSession(ctx, req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), response)
+}
+
+func (s *Server) handleGCPWithSession(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) string {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	req, err := protocol.DecodeRequiredPayload[request.GCPSessionUseRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	delivery, err := s.broker.PrepareGCPSessionCommandDelivery(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	defer clearWriteDeadline()
+	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	delivery.CommitDelivered()
+	committed = true
+	return env.RequestID
+}
+
 func (s *Server) setExecResponseWriteDeadline(conn *net.UnixConn, expiresAt time.Time) (func(), error) {
 	if expiresAt.IsZero() {
 		return func() {}, nil
@@ -943,6 +1146,12 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeRequestActive
 	case errors.Is(err, daemonbroker.ErrDaemonStopped):
 		return protocol.ErrorCodeDaemonStopped
+	case errors.Is(err, daemonbroker.ErrUnknownGCPSession):
+		return protocol.ErrorCodeBadRequest
+	case errors.Is(err, daemonbroker.ErrGCPSessionExpired):
+		return protocol.ErrorCodeRequestExpired
+	case errors.Is(err, daemonbroker.ErrGCPSessionNotUsableFromCWD), errors.Is(err, daemonbroker.ErrGCPSessionExhausted):
+		return protocol.ErrorCodeBadRequest
 	case errors.Is(err, approval.ErrRequestExpired):
 		return protocol.ErrorCodeRequestExpired
 	case errors.Is(err, approval.ErrStaleApproval):
@@ -953,7 +1162,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeContextCanceled
 	case errors.Is(err, context.DeadlineExceeded):
 		return protocol.ErrorCodeContextDeadlineExceeded
-	case errors.Is(err, daemonbroker.ErrSecretResolveFailed), errors.Is(err, daemonbroker.ErrItemMetadataResolveFailed):
+	case errors.Is(err, daemonbroker.ErrSecretResolveFailed), errors.Is(err, daemonbroker.ErrItemMetadataResolveFailed), errors.Is(err, daemonbroker.ErrNoGCPTokenMinter):
 		return protocol.ErrorCodeResolveFailed
 	default:
 		return protocol.ErrorCodeRequestFailed

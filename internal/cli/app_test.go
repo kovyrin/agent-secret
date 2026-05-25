@@ -705,6 +705,488 @@ func TestAppWithSessionRunsChildWithResolvedEnv(t *testing.T) {
 	}
 }
 
+func TestAppGCPExecRunsChildWithIsolatedCloudSDKEnv(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_GCP_HELPER") == "1" {
+		runAppGCPHelper()
+		return
+	}
+
+	client := &appFakeDaemonClient{
+		gcpCommandPayload: protocol.GCPCommandResponsePayload{
+			Env: map[string]string{
+				"CLOUDSDK_CONFIG":                 filepath.Join(t.TempDir(), "cloudsdk"),
+				"CLOUDSDK_AUTH_ACCESS_TOKEN_FILE": filepath.Join(t.TempDir(), "access-token"),
+				"CLOUDSDK_CORE_PROJECT":           "fixture-beta",
+			},
+			DeliveryMode: "token_file",
+			ExpiresAt:    time.Now().Add(time.Minute),
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_GCP_HELPER", "1")
+	t.Setenv("CLOUDSDK_CONFIG", "/ambient/config")
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/ambient/adc.json")
+
+	code := app.Run(context.Background(), []string{
+		"gcp", "exec",
+		"--reason", "Inspect logs",
+		"--google-account", "work",
+		"--project", "fixture-beta",
+		"--service-account", "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		"--scope", "https://www.googleapis.com/auth/cloud-platform",
+		"--",
+		os.Args[0], "-test.run=TestAppGCPExecRunsChildWithIsolatedCloudSDKEnv", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp-env-ok" {
+		t.Fatalf("stdout = %q, want gcp-env-ok", stdout.String())
+	}
+	if manager.ensureCalls != 1 || manager.connectCalls != 1 || client.requestGCPExecCalls != 1 {
+		t.Fatalf("manager/client calls: ensure=%d connect=%d gcp=%d", manager.ensureCalls, manager.connectCalls, client.requestGCPExecCalls)
+	}
+	if len(client.startedPIDs) != 1 || len(client.completedExitCodes) != 1 {
+		t.Fatalf("audit calls: started=%v completed=%v", client.startedPIDs, client.completedExitCodes)
+	}
+}
+
+func TestAppGCPExecDryRunJSONDoesNotStartDaemon(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o750); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gcloud")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  beta-logs:
+    reason: Inspect beta logs
+    ttl: 5m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	t.Setenv("PATH", binDir)
+	manager := &appFakeDaemonManager{ensureErr: errors.New("daemon should not start")}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"gcp", "exec",
+		"--config", filepath.Join(root, "agent-secret.yml"),
+		"--profile", "beta-logs",
+		"--dry-run",
+		"--json",
+		"--",
+		"gcloud", "logging", "read", "severity>=ERROR",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 {
+		t.Fatalf("dry run touched daemon: ensure=%d connect=%d", manager.ensureCalls, manager.connectCalls)
+	}
+	var output gcpExecDryRunOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("unmarshal dry-run json: %v\n%s", err, stdout.String())
+	}
+	if !output.OK || output.WouldSpawn || output.Request.Project != "fixture-beta" {
+		t.Fatalf("unexpected dry-run output: %+v", output)
+	}
+	if !strings.Contains(strings.Join(output.Notes, " "), "did not mint") {
+		t.Fatalf("dry-run notes did not mention minting: %+v", output.Notes)
+	}
+}
+
+func TestAppGCPSessionCreateListAndDestroyOutput(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  beta-debug:
+    reason: Debug beta
+    ttl: 30m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	expiresAt := time.Date(2026, 5, 21, 12, 30, 0, 0, time.UTC)
+	client := &appFakeDaemonClient{
+		gcpSessionCreatePayload: protocol.GCPSessionCreateResponsePayload{
+			SessionHandle:          "asess_123",
+			SessionAuditID:         "asess_123:deadbeef",
+			ExpiresAt:              expiresAt,
+			RemainingCommandStarts: 12,
+		},
+		gcpSessionListPayload: protocol.GCPSessionListResponsePayload{
+			Sessions: []protocol.GCPSessionInfo{
+				{
+					SessionAuditID:         "asess_123:deadbeef",
+					ProfileName:            "beta-debug",
+					GoogleAccount:          "work",
+					Project:                "fixture-beta",
+					ServiceAccount:         "agent-beta-debug@fixture-beta.iam.gserviceaccount.com",
+					RemainingCommandStarts: 12,
+					UsableFromCWD:          true,
+				},
+			},
+		},
+		gcpSessionDestroyPayload: protocol.GCPSessionDestroyResponsePayload{
+			Destroyed:      true,
+			SessionAuditID: "asess_123:deadbeef",
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"gcp", "session", "create",
+		"--config", filepath.Join(root, "agent-secret.yml"),
+		"--profile", "beta-debug",
+		"--max-command-starts", "12",
+		"--json",
+	})
+	if code != 0 {
+		t.Fatalf("session create exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var created gcpSessionCreateOutput
+	if err := json.Unmarshal(stdout.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal session create json: %v\n%s", err, stdout.String())
+	}
+	if created.SessionHandle != "asess_123" || created.RemainingCommandStarts != 12 {
+		t.Fatalf("unexpected create output: %+v", created)
+	}
+	if len(client.gcpSessionCreateRequests) != 1 || client.gcpSessionCreateRequests[0].ProjectRoot != root {
+		t.Fatalf("session create requests = %+v", client.gcpSessionCreateRequests)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{"gcp", "session", "list"})
+	if code != 0 {
+		t.Fatalf("session list exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "asess_123:deadbeef") || !strings.Contains(stdout.String(), "usable from cwd") {
+		t.Fatalf("session list output = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{"gcp", "session", "destroy", "--json", "asess_123"})
+	if code != 0 {
+		t.Fatalf("session destroy exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var destroyed gcpSessionDestroyOutput
+	if err := json.Unmarshal(stdout.Bytes(), &destroyed); err != nil {
+		t.Fatalf("unmarshal session destroy json: %v\n%s", err, stdout.String())
+	}
+	if !destroyed.Destroyed || destroyed.SessionAuditID != "asess_123:deadbeef" {
+		t.Fatalf("unexpected destroy output: %+v", destroyed)
+	}
+	if manager.ensureCalls != 3 || manager.connectCalls != 3 ||
+		client.createGCPSessionCalls != 1 ||
+		client.listGCPSessionsCalls != 1 ||
+		client.destroyGCPSessionCalls != 1 {
+		t.Fatalf("manager/client calls: ensure=%d connect=%d create=%d list=%d destroy=%d",
+			manager.ensureCalls,
+			manager.connectCalls,
+			client.createGCPSessionCalls,
+			client.listGCPSessionsCalls,
+			client.destroyGCPSessionCalls,
+		)
+	}
+}
+
+func TestAppGCPTextAndEmptyJSONOutputs(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o750); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gcloud")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  beta-debug:
+    reason: Debug beta
+    ttl: 30m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	t.Setenv("PATH", binDir)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	dryRunApp := newTestAppWithDaemonManager(&appFakeDaemonManager{ensureErr: errors.New("daemon should not start")}, &stdout, &stderr)
+	code := dryRunApp.Run(context.Background(), []string{
+		"gcp", "exec",
+		"--config", filepath.Join(root, "agent-secret.yml"),
+		"--profile", "beta-debug",
+		"--ttl", "5m",
+		"--dry-run",
+		"--",
+		"gcloud", "logging", "read", "severity>=ERROR",
+	})
+	if code != 0 {
+		t.Fatalf("dry-run text exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"agent-secret gcp exec dry run: ok",
+		"would prompt: true",
+		"project: fixture-beta",
+		"service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("dry-run text missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	expiresAt := time.Date(2026, 5, 21, 12, 30, 0, 0, time.UTC)
+	client := &appFakeDaemonClient{
+		gcpSessionCreatePayload: protocol.GCPSessionCreateResponsePayload{
+			SessionHandle:          "asess_123",
+			SessionAuditID:         "asess_123:deadbeef",
+			ExpiresAt:              expiresAt,
+			RemainingCommandStarts: 12,
+		},
+		gcpSessionDestroyPayload: protocol.GCPSessionDestroyResponsePayload{Destroyed: true},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	stdout.Reset()
+	stderr.Reset()
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	code = app.Run(context.Background(), []string{
+		"gcp", "session", "create",
+		"--config", filepath.Join(root, "agent-secret.yml"),
+		"--profile", "beta-debug",
+	})
+	if code != 0 {
+		t.Fatalf("session create text exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "gcp session: asess_123") ||
+		!strings.Contains(stdout.String(), "remaining_command_starts: 12") {
+		t.Fatalf("session create text output = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	client.gcpSessionListPayload = protocol.GCPSessionListResponsePayload{}
+	code = app.Run(context.Background(), []string{"gcp", "session", "list", "--json"})
+	if code != 0 {
+		t.Fatalf("session list json exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var listOutput gcpSessionListOutput
+	if err := json.Unmarshal(stdout.Bytes(), &listOutput); err != nil {
+		t.Fatalf("unmarshal session list json: %v\n%s", err, stdout.String())
+	}
+	if len(listOutput.Sessions) != 0 {
+		t.Fatalf("session list json sessions = %+v, want none", listOutput.Sessions)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{"gcp", "session", "list"})
+	if code != 0 {
+		t.Fatalf("session list empty text exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp sessions: none" {
+		t.Fatalf("session list empty text = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	client.gcpSessionDestroyPayload = protocol.GCPSessionDestroyResponsePayload{Destroyed: true}
+	code = app.Run(context.Background(), []string{"gcp", "session", "destroy", "asess_123"})
+	if code != 0 {
+		t.Fatalf("session destroy text exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp session: destroyed" {
+		t.Fatalf("session destroy text = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	client.gcpSessionDestroyPayload = protocol.GCPSessionDestroyResponsePayload{}
+	code = app.Run(context.Background(), []string{"gcp", "session", "destroy", "asess_missing"})
+	if code != 0 {
+		t.Fatalf("session destroy missing text exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp session: not found" {
+		t.Fatalf("session destroy missing text = %q", stdout.String())
+	}
+}
+
+func TestAppGCPWithSessionRunsChildWithIsolatedCloudSDKEnv(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_GCP_HELPER") == "1" {
+		runAppGCPHelper()
+		return
+	}
+
+	client := &appFakeDaemonClient{
+		gcpCommandPayload: protocol.GCPCommandResponsePayload{
+			Env: map[string]string{
+				"CLOUDSDK_CONFIG":                 filepath.Join(t.TempDir(), "cloudsdk"),
+				"CLOUDSDK_AUTH_ACCESS_TOKEN_FILE": filepath.Join(t.TempDir(), "access-token"),
+				"CLOUDSDK_CORE_PROJECT":           "fixture-beta",
+			},
+			DeliveryMode: "token_file",
+			ExpiresAt:    time.Now().Add(time.Minute),
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_GCP_HELPER", "1")
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/ambient/adc.json")
+
+	code := app.Run(context.Background(), []string{
+		"gcp", "with-session", "asess_123",
+		"--",
+		os.Args[0], "-test.run=TestAppGCPWithSessionRunsChildWithIsolatedCloudSDKEnv", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp-env-ok" {
+		t.Fatalf("stdout = %q, want gcp-env-ok", stdout.String())
+	}
+	if client.useGCPSessionCalls != 1 || len(client.gcpSessionUseRequests) != 1 {
+		t.Fatalf("with-session calls = %d requests=%+v", client.useGCPSessionCalls, client.gcpSessionUseRequests)
+	}
+	if client.gcpSessionUseRequests[0].SessionHandle != "asess_123" {
+		t.Fatalf("with-session request = %+v", client.gcpSessionUseRequests[0])
+	}
+}
+
+func TestAppGCPAuthStatusAndUnimplementedMutations(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "status"}); code != 0 {
+		t.Fatalf("auth status exit = %d stderr=%q", code, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp auth: not configured" {
+		t.Fatalf("auth status stdout = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "login"}); code != 1 {
+		t.Fatalf("auth login exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "not implemented") {
+		t.Fatalf("auth login stderr = %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "logout"}); code != 1 {
+		t.Fatalf("auth logout exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "not implemented") {
+		t.Fatalf("auth logout stderr = %q", stderr.String())
+	}
+}
+
+func TestAppGCPCommandsReportDaemonStartupFailures(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o750); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gcloud")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  beta-debug:
+    reason: Debug beta
+    ttl: 30m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	t.Setenv("PATH", binDir)
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     &appFakeDaemonClient{},
+		ensureErr:  errors.New("daemon unavailable"),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	tests := [][]string{
+		{
+			"gcp", "exec",
+			"--reason", "Inspect logs",
+			"--google-account", "work",
+			"--project", "fixture-beta",
+			"--service-account", "agent-beta-debug@fixture-beta.iam.gserviceaccount.com",
+			"--scope", "https://www.googleapis.com/auth/cloud-platform",
+			"--",
+			"gcloud", "logging", "read", "severity>=ERROR",
+		},
+		{
+			"gcp", "session", "create",
+			"--config", filepath.Join(root, "agent-secret.yml"),
+			"--profile", "beta-debug",
+		},
+		{"gcp", "session", "list"},
+		{"gcp", "session", "destroy", "asess_123"},
+		{"gcp", "with-session", "asess_123", "--", "gcloud", "compute", "instances", "list"},
+	}
+	for _, args := range tests {
+		stdout.Reset()
+		stderr.Reset()
+		if code := app.Run(context.Background(), args); code != 1 {
+			t.Fatalf("%v exit = %d, want 1", args, code)
+		}
+		if !strings.Contains(stderr.String(), "start daemon: daemon unavailable") {
+			t.Fatalf("%v stderr = %q", args, stderr.String())
+		}
+	}
+}
+
 func TestAppItemDescribePrintsMetadataWithoutSecretValues(t *testing.T) {
 	t.Parallel()
 
@@ -2022,6 +2504,67 @@ profiles:
 	}
 }
 
+func TestAppProfileShowGCPProfileTextAndJSON(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: beta-logs
+profiles:
+  beta-logs:
+    reason: Inspect beta logs
+    ttl: 5m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/logging.read
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	t.Chdir(root)
+	manager := &appFakeDaemonManager{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"profile", "show"}); code != 0 {
+		t.Fatalf("profile show GCP exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"gcp:",
+		"google_account:",
+		"work",
+		"project:",
+		"fixture-beta",
+		"service_account:",
+		"agent-beta-logs@fixture-beta.iam.gserviceaccount.com",
+		"https://www.googleapis.com/auth/cloud-platform",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("profile show GCP stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"profile", "show", "--json", "beta-logs"}); code != 0 {
+		t.Fatalf("profile show GCP json exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var output profileShowOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("profile show GCP json did not decode: %v\n%s", err, stdout.String())
+	}
+	if output.Profile.GCP == nil ||
+		output.Profile.GCP.GoogleAccount != "work" ||
+		output.Profile.GCP.Project != "fixture-beta" ||
+		len(output.Profile.GCP.Scopes) != 2 {
+		t.Fatalf("unexpected GCP profile json: %+v", output.Profile)
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 {
+		t.Fatalf("profile show GCP touched daemon manager: %+v", manager)
+	}
+}
+
 func TestAppDaemonStatusReportsStoppedAfterRequestCancellation(t *testing.T) {
 	client, requestReceived, cleanup := startStallingAppDaemon(t)
 	defer cleanup()
@@ -3008,6 +3551,30 @@ func runAppExecHelper() {
 	os.Exit(0)
 }
 
+func runAppGCPHelper() {
+	if len(os.Args) == 0 || os.Args[len(os.Args)-1] != "child" {
+		return
+	}
+	if os.Getenv("CLOUDSDK_CORE_PROJECT") != "fixture-beta" {
+		fmt.Println("project-missing")
+		os.Exit(44)
+	}
+	if os.Getenv("CLOUDSDK_CONFIG") == "/ambient/config" {
+		fmt.Println("ambient-config-leaked")
+		os.Exit(45)
+	}
+	if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") != "" {
+		fmt.Println("ambient-adc-leaked")
+		os.Exit(46)
+	}
+	if os.Getenv("CLOUDSDK_AUTH_ACCESS_TOKEN_FILE") == "" {
+		fmt.Println("token-file-missing")
+		os.Exit(47)
+	}
+	fmt.Println("gcp-env-ok")
+	os.Exit(0)
+}
+
 type appTestClient struct {
 	SocketPath string
 }
@@ -3097,14 +3664,19 @@ func (m *appFakeDaemonManager) SocketPath() string {
 }
 
 type appFakeDaemonClient struct {
-	execPayload           protocol.ExecResponsePayload
-	itemDescribePayload   protocol.ItemDescribeResponsePayload
-	sessionCreatePayload  protocol.SessionCreateResponsePayload
-	sessionResolvePayload protocol.SessionResolveResponsePayload
-	sessionDestroyPayload protocol.SessionDestroyResponsePayload
-	sessionListPayload    protocol.SessionListResponsePayload
+	execPayload              protocol.ExecResponsePayload
+	itemDescribePayload      protocol.ItemDescribeResponsePayload
+	sessionCreatePayload     protocol.SessionCreateResponsePayload
+	sessionResolvePayload    protocol.SessionResolveResponsePayload
+	sessionDestroyPayload    protocol.SessionDestroyResponsePayload
+	sessionListPayload       protocol.SessionListResponsePayload
+	gcpCommandPayload        protocol.GCPCommandResponsePayload
+	gcpSessionCreatePayload  protocol.GCPSessionCreateResponsePayload
+	gcpSessionListPayload    protocol.GCPSessionListResponsePayload
+	gcpSessionDestroyPayload protocol.GCPSessionDestroyResponsePayload
 
 	requestErr         error
+	gcpErr             error
 	itemDescribeErr    error
 	sessionCreateErr   error
 	sessionResolveErr  error
@@ -3114,20 +3686,28 @@ type appFakeDaemonClient struct {
 	reportCompletedErr error
 	closeErr           error
 
-	requestExecCalls       int
-	itemDescribeCalls      int
-	sessionCreateCalls     int
-	sessionResolveCalls    int
-	sessionDestroyCalls    int
-	sessionListCalls       int
-	requests               []request.ExecRequest
-	itemDescribeRequests   []request.ItemDescribeRequest
-	sessionCreateRequests  []request.SessionCreateRequest
-	sessionResolveRequests []request.SessionResolveRequest
-	sessionDestroyRequests []request.SessionDestroyRequest
-	closeCalls             int
-	startedPIDs            []int
-	completedExitCodes     []int
+	requestExecCalls         int
+	itemDescribeCalls        int
+	sessionCreateCalls       int
+	sessionResolveCalls      int
+	sessionDestroyCalls      int
+	sessionListCalls         int
+	requestGCPExecCalls      int
+	createGCPSessionCalls    int
+	listGCPSessionsCalls     int
+	destroyGCPSessionCalls   int
+	useGCPSessionCalls       int
+	requests                 []request.ExecRequest
+	itemDescribeRequests     []request.ItemDescribeRequest
+	sessionCreateRequests    []request.SessionCreateRequest
+	sessionResolveRequests   []request.SessionResolveRequest
+	sessionDestroyRequests   []request.SessionDestroyRequest
+	gcpExecRequests          []request.GCPExecRequest
+	gcpSessionCreateRequests []request.GCPSessionCreateRequest
+	gcpSessionUseRequests    []request.GCPSessionUseRequest
+	closeCalls               int
+	startedPIDs              []int
+	completedExitCodes       []int
 }
 
 func (c *appFakeDaemonClient) Close() error {
@@ -3143,6 +3723,53 @@ func (c *appFakeDaemonClient) RequestExec(
 	c.requestExecCalls++
 	c.requests = append(c.requests, req)
 	return c.execPayload, c.requestErr
+}
+
+func (c *appFakeDaemonClient) RequestGCPExec(
+	_ context.Context,
+	_ protocol.Correlation,
+	req request.GCPExecRequest,
+) (protocol.GCPCommandResponsePayload, error) {
+	c.requestGCPExecCalls++
+	c.gcpExecRequests = append(c.gcpExecRequests, req)
+	return c.gcpCommandPayload, c.gcpErr
+}
+
+func (c *appFakeDaemonClient) CreateGCPSession(
+	_ context.Context,
+	_ protocol.Correlation,
+	req request.GCPSessionCreateRequest,
+	_ string,
+) (protocol.GCPSessionCreateResponsePayload, error) {
+	c.createGCPSessionCalls++
+	c.gcpSessionCreateRequests = append(c.gcpSessionCreateRequests, req)
+	return c.gcpSessionCreatePayload, c.gcpErr
+}
+
+func (c *appFakeDaemonClient) ListGCPSessions(
+	_ context.Context,
+	_ string,
+) (protocol.GCPSessionListResponsePayload, error) {
+	c.listGCPSessionsCalls++
+	return c.gcpSessionListPayload, c.gcpErr
+}
+
+func (c *appFakeDaemonClient) DestroyGCPSession(
+	_ context.Context,
+	_ request.GCPSessionDestroyRequest,
+) (protocol.GCPSessionDestroyResponsePayload, error) {
+	c.destroyGCPSessionCalls++
+	return c.gcpSessionDestroyPayload, c.gcpErr
+}
+
+func (c *appFakeDaemonClient) UseGCPSession(
+	_ context.Context,
+	_ protocol.Correlation,
+	req request.GCPSessionUseRequest,
+) (protocol.GCPCommandResponsePayload, error) {
+	c.useGCPSessionCalls++
+	c.gcpSessionUseRequests = append(c.gcpSessionUseRequests, req)
+	return c.gcpCommandPayload, c.gcpErr
 }
 
 func (c *appFakeDaemonClient) DescribeItem(
@@ -3550,6 +4177,11 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 			protocol.TypeSessionResolve,
 			protocol.TypeSessionDestroy,
 			protocol.TypeSessionList,
+			protocol.TypeGCPExec,
+			protocol.TypeGCPSessionCreate,
+			protocol.TypeGCPSessionList,
+			protocol.TypeGCPSessionDestroy,
+			protocol.TypeGCPWithSession,
 			protocol.TypeCommandStarted,
 			protocol.TypeCommandCompleted:
 			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemonbroker.ErrDaemonStopped); err != nil {

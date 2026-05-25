@@ -58,6 +58,7 @@ type ProfileInfo struct {
 	Include []string             `json:"include,omitempty"`
 	Session *SessionInfo         `json:"session,omitempty"`
 	Secrets []request.SecretSpec `json:"secrets,omitempty"`
+	GCP     *request.GCPAccess   `json:"gcp,omitempty"`
 }
 
 type Profile struct {
@@ -67,6 +68,7 @@ type Profile struct {
 	Sources        Sources
 	Reason         string
 	Secrets        []request.SecretSpec
+	GCP            *request.GCPAccess
 	TTL            time.Duration
 	SessionBinding *request.SessionBindingPolicy
 }
@@ -108,6 +110,7 @@ type profileYAML struct {
 	Reason  string                `yaml:"reason"`
 	Session profileSessionYAML    `yaml:"session"`
 	Secrets map[string]secretYAML `yaml:"secrets"`
+	GCP     *gcpYAML              `yaml:"gcp"`
 	TTL     string                `yaml:"ttl"`
 }
 
@@ -115,6 +118,7 @@ type resolvedProfile struct {
 	account        string
 	reason         string
 	secrets        map[string]resolvedSecret
+	gcp            *request.GCPAccess
 	ttl            time.Duration
 	sessionBinding *request.SessionBindingPolicy
 }
@@ -139,6 +143,13 @@ type profileSessionYAML struct {
 type sessionBindYAML struct {
 	policy request.SessionBindingPolicy
 	set    bool
+}
+
+type gcpYAML struct {
+	GoogleAccount  string   `yaml:"google_account"`
+	Project        string   `yaml:"project"`
+	ServiceAccount string   `yaml:"service_account"`
+	Scopes         []string `yaml:"scopes"`
 }
 
 func (s *secretYAML) UnmarshalYAML(value *yaml.Node) error {
@@ -307,10 +318,11 @@ func Load(opts LoadOptions) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	secrets, err := sortedSecrets(resolved.secrets, path, profileName)
+	secrets, err := sortedSecrets(resolved.secrets, path, profileName, resolved.gcp != nil)
 	if err != nil {
 		return Profile{}, err
 	}
+	gcp := cloneGCPAccess(resolved.gcp)
 
 	return Profile{
 		Name:           profileName,
@@ -319,6 +331,7 @@ func Load(opts LoadOptions) (Profile, error) {
 		Sources:        sources,
 		Reason:         resolved.reason,
 		Secrets:        secrets,
+		GCP:            gcp,
 		TTL:            resolved.ttl,
 		SessionBinding: cloneSessionBindingPolicy(resolved.sessionBinding),
 	}, nil
@@ -370,7 +383,7 @@ func Inspect(opts LoadOptions) (ConfigInfo, error) {
 		if err != nil {
 			return ConfigInfo{}, err
 		}
-		secrets, err := sortedSecrets(resolved.secrets, path, name)
+		secrets, err := sortedSecrets(resolved.secrets, path, name, resolved.gcp != nil)
 		if err != nil {
 			return ConfigInfo{}, err
 		}
@@ -382,6 +395,7 @@ func Inspect(opts LoadOptions) (ConfigInfo, error) {
 			Include: trimmedList(rawProfile.Include),
 			Session: sessionInfo(resolved.sessionBinding),
 			Secrets: secrets,
+			GCP:     cloneGCPAccess(resolved.gcp),
 		}
 		if resolved.ttl != 0 {
 			profile.TTL = resolved.ttl.String()
@@ -518,6 +532,9 @@ func (r *profileResolver) resolve(profileName string, stack []string) (resolvedP
 		if included.sessionBinding != nil {
 			result.sessionBinding = cloneSessionBindingPolicy(included.sessionBinding)
 		}
+		if included.gcp != nil {
+			result.gcp = cloneGCPAccess(included.gcp)
+		}
 	}
 
 	ttl, err := parseTTL(rawProfile.TTL, r.path, profileName)
@@ -536,8 +553,15 @@ func (r *profileResolver) resolve(profileName string, stack []string) (resolvedP
 	if err := mergeSecrets(result.secrets, rawProfile.Secrets, result.account, r.sources, r.path, profileName); err != nil {
 		return resolvedProfile{}, err
 	}
-	if len(result.secrets) == 0 {
-		return resolvedProfile{}, fmt.Errorf("%w: %s profile %q must define or include at least one secret", ErrInvalidConfig, r.path, profileName)
+	if rawProfile.GCP != nil {
+		merged, err := mergeGCP(result.gcp, rawProfile.GCP)
+		if err != nil {
+			return resolvedProfile{}, fmt.Errorf("%w: %s profile %q gcp: %w", ErrInvalidConfig, r.path, profileName, err)
+		}
+		result.gcp = &merged
+	}
+	if len(result.secrets) == 0 && result.gcp == nil {
+		return resolvedProfile{}, fmt.Errorf("%w: %s profile %q must define or include at least one secret or gcp block", ErrInvalidConfig, r.path, profileName)
 	}
 	r.memo[profileName] = cloneResolvedProfile(result)
 	return result, nil
@@ -548,6 +572,7 @@ func cloneResolvedProfile(profile resolvedProfile) resolvedProfile {
 		account:        profile.account,
 		reason:         profile.reason,
 		secrets:        cloneResolvedSecrets(profile.secrets),
+		gcp:            cloneGCPAccess(profile.gcp),
 		ttl:            profile.ttl,
 		sessionBinding: cloneSessionBindingPolicy(profile.sessionBinding),
 	}
@@ -671,9 +696,12 @@ func mergeSecrets(
 	return nil
 }
 
-func sortedSecrets(raw map[string]resolvedSecret, path string, profileName string) ([]request.SecretSpec, error) {
+func sortedSecrets(raw map[string]resolvedSecret, path string, profileName string, allowEmpty bool) ([]request.SecretSpec, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("%w: %s profile %q must define or include at least one secret", ErrInvalidConfig, path, profileName)
+		if allowEmpty {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%w: %s profile %q must define or include at least one secret or gcp block", ErrInvalidConfig, path, profileName)
 	}
 
 	aliases := make([]string, 0, len(raw))
@@ -857,6 +885,39 @@ func cloneSources(sources Sources) Sources {
 		out.Bitwarden = maps.Clone(sources.Bitwarden)
 	}
 	return out
+}
+
+func mergeGCP(base *request.GCPAccess, raw *gcpYAML) (request.GCPAccess, error) {
+	merged := request.GCPAccess{}
+	if base != nil {
+		merged = *cloneGCPAccess(base)
+	}
+	if value := strings.TrimSpace(raw.GoogleAccount); value != "" {
+		merged.GoogleAccount = value
+	}
+	if value := strings.TrimSpace(raw.Project); value != "" {
+		merged.Project = value
+	}
+	if value := strings.TrimSpace(raw.ServiceAccount); value != "" {
+		merged.ServiceAccount = value
+	}
+	if raw.Scopes != nil {
+		merged.Scopes = raw.Scopes
+	}
+	normalized, err := request.NormalizeGCPAccess(merged)
+	if err != nil {
+		return request.GCPAccess{}, err
+	}
+	return normalized, nil
+}
+
+func cloneGCPAccess(access *request.GCPAccess) *request.GCPAccess {
+	if access == nil {
+		return nil
+	}
+	cloned := *access
+	cloned.Scopes = slices.Clone(access.Scopes)
+	return &cloned
 }
 
 func effectiveAccount(defaultAccount string, overrideAccount string) string {

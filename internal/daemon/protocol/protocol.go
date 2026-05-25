@@ -26,6 +26,11 @@ const (
 	TypeApprovalPending   MessageType = "approval.pending"
 	TypeApprovalDecision  MessageType = "approval.decision"
 	TypeRequestExec       MessageType = "request.exec"
+	TypeGCPExec           MessageType = "gcp.exec"
+	TypeGCPSessionCreate  MessageType = "gcp.session.create"
+	TypeGCPSessionList    MessageType = "gcp.session.list"
+	TypeGCPSessionDestroy MessageType = "gcp.session.destroy"
+	TypeGCPWithSession    MessageType = "gcp.with_session"
 	TypeItemDescribe      MessageType = "item.describe"
 	TypeSessionCreate     MessageType = "session.create"
 	TypeSessionResolve    MessageType = "session.resolve"
@@ -141,6 +146,43 @@ type SessionInfoPayload struct {
 	RemainingReads int                        `json:"remaining_reads"`
 	OverrideEnv    bool                       `json:"override_env"`
 	Binding        request.SessionBindingInfo `json:"session_binding"`
+}
+
+type GCPCommandResponsePayload struct {
+	Env          map[string]string `json:"env"`
+	DeliveryMode string            `json:"delivery_mode"`
+	ExpiresAt    time.Time         `json:"expires_at"`
+}
+
+type GCPSessionCreateResponsePayload struct {
+	SessionHandle          string    `json:"session_handle"`
+	SessionAuditID         string    `json:"session_audit_id"`
+	ExpiresAt              time.Time `json:"expires_at"`
+	RemainingCommandStarts int       `json:"remaining_command_starts"`
+}
+
+type GCPSessionListResponsePayload struct {
+	Sessions []GCPSessionInfo `json:"sessions"`
+}
+
+type GCPSessionInfo struct {
+	SessionAuditID         string    `json:"session_audit_id"`
+	ProfileName            string    `json:"profile_name"`
+	GoogleAccount          string    `json:"google_account"`
+	Project                string    `json:"project"`
+	ServiceAccount         string    `json:"service_account"`
+	Scopes                 []string  `json:"scopes"`
+	ProjectRoot            string    `json:"project_root"`
+	Reason                 string    `json:"reason"`
+	ExpiresAt              time.Time `json:"expires_at"`
+	RemainingTTLMillis     int64     `json:"remaining_ttl_ms"`
+	RemainingCommandStarts int       `json:"remaining_command_starts"`
+	UsableFromCWD          bool      `json:"usable_from_cwd"`
+}
+
+type GCPSessionDestroyResponsePayload struct {
+	Destroyed      bool   `json:"destroyed"`
+	SessionAuditID string `json:"session_audit_id,omitempty"`
 }
 
 type ItemDescribeResponsePayload struct {

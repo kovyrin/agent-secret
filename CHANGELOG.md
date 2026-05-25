@@ -372,6 +372,19 @@ file before a release is published.
 - Ignored local Claude worktree artifacts so generated scratch work does not
   appear in release status checks.
 
+## [0.0.13] - Pending
+
+### Added
+
+- Added the first GCP broker surfaces: `agent-secret gcp exec`,
+  `agent-secret gcp session create|list|destroy`, and
+  `agent-secret gcp with-session`.
+- Added GCP profile config support for Google bootstrap identity aliases,
+  intended projects, impersonated service accounts, and explicit OAuth scopes.
+- Added isolated Cloud SDK token-file delivery for approved GCP commands and
+  sessions, including broker-owned temp-file cleanup and value-free audit
+  metadata.
+
 ## [0.0.12] - 2026-05-11
 
 ### Added

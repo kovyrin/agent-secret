@@ -48,6 +48,9 @@ extension ApprovalRequestViewModel {
 
         case .sessionCreate:
             "Session secrets:"
+
+        case .gcpExec, .gcpSessionCreate:
+            "GCP access:"
         }
     }
 

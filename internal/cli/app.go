@@ -51,6 +51,24 @@ type daemonClient interface {
 		correlation protocol.Correlation,
 		req request.ExecRequest,
 	) (protocol.ExecResponsePayload, error)
+	RequestGCPExec(
+		ctx context.Context,
+		correlation protocol.Correlation,
+		req request.GCPExecRequest,
+	) (protocol.GCPCommandResponsePayload, error)
+	CreateGCPSession(
+		ctx context.Context,
+		correlation protocol.Correlation,
+		req request.GCPSessionCreateRequest,
+		handle string,
+	) (protocol.GCPSessionCreateResponsePayload, error)
+	ListGCPSessions(ctx context.Context, cwd string) (protocol.GCPSessionListResponsePayload, error)
+	DestroyGCPSession(ctx context.Context, req request.GCPSessionDestroyRequest) (protocol.GCPSessionDestroyResponsePayload, error)
+	UseGCPSession(
+		ctx context.Context,
+		correlation protocol.Correlation,
+		req request.GCPSessionUseRequest,
+	) (protocol.GCPCommandResponsePayload, error)
 	DescribeItem(
 		ctx context.Context,
 		correlation protocol.Correlation,
@@ -154,6 +172,18 @@ func (a App) Run(ctx context.Context, args []string) int {
 		return a.runSessionDestroy(ctx, command)
 	case KindWithSession:
 		return a.runWithSession(ctx, command)
+	case KindGCPExec:
+		return a.runGCPExec(ctx, command)
+	case KindGCPSessionCreate:
+		return a.runGCPSessionCreate(ctx, command)
+	case KindGCPSessionList:
+		return a.runGCPSessionList(ctx, command)
+	case KindGCPSessionDestroy:
+		return a.runGCPSessionDestroy(ctx, command)
+	case KindGCPWithSession:
+		return a.runGCPWithSession(ctx, command)
+	case KindGCPAuthStatus, KindGCPAuthLogin, KindGCPAuthLogout:
+		return a.runGCPAuth(ctx, command)
 	case KindItemDescribe:
 		return a.runItemDescribe(ctx, command)
 	case KindProfileList:
