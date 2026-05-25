@@ -29,3 +29,23 @@ func TestParseDaemonConfigDoesNotReadApproverEnvironmentOverride(t *testing.T) {
 		t.Fatalf("parseDaemonConfig returned error: %v", err)
 	}
 }
+
+func TestParseDaemonConfigReadsGCPOAuthClientIDFromFlagOrEnvironment(t *testing.T) {
+	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID", "env-client-id")
+
+	config, err := parseDaemonConfig([]string{})
+	if err != nil {
+		t.Fatalf("parseDaemonConfig returned error: %v", err)
+	}
+	if config.gcpOAuthClientID != "env-client-id" {
+		t.Fatalf("env client id = %q", config.gcpOAuthClientID)
+	}
+
+	config, err = parseDaemonConfig([]string{"--gcp-oauth-client-id", "flag-client-id"})
+	if err != nil {
+		t.Fatalf("parseDaemonConfig flag returned error: %v", err)
+	}
+	if config.gcpOAuthClientID != "flag-client-id" {
+		t.Fatalf("flag client id = %q", config.gcpOAuthClientID)
+	}
+}

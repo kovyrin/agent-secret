@@ -218,6 +218,30 @@ func agentContextCommands() map[string]commandContext {
 					Summary: "Run one command inside an approved GCP session.",
 					Outputs: []string{"child passthrough"},
 				},
+				"auth status": {
+					Summary: "Show app-owned Google bootstrap auth stored in Keychain.",
+					Flags: append([]flagContext{
+						{Name: "--google-account", Type: "string", Description: "Optional Google bootstrap identity alias filter."},
+					}, jsonFlag()...),
+					Outputs: []string{"text", "json"},
+				},
+				"auth login": {
+					Summary: "Start daemon-owned Google OAuth login and store bootstrap state in Keychain.",
+					Flags: []flagContext{
+						{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
+						{Name: "--expected-email", Type: "string", Description: "Refuse login unless Google reports this email."},
+						{Name: "--json", Type: "bool", Description: "Print JSON output."},
+					},
+					Outputs: []string{"text", "json"},
+				},
+				"auth logout": {
+					Summary: "Remove app-owned Google bootstrap auth from Keychain.",
+					Flags: []flagContext{
+						{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
+						{Name: "--json", Type: "bool", Description: "Print JSON output."},
+					},
+					Outputs: []string{"text", "json"},
+				},
 			},
 		},
 		"install-cli": {

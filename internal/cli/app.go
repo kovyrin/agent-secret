@@ -39,7 +39,7 @@ type daemonManager interface {
 	SocketPath() string
 }
 
-type daemonClient interface {
+type daemonClient interface { //nolint:interfacebloat // Mirrors daemon protocol methods for app-level fakes and control.Client.
 	Close() error
 	RequestExec(
 		ctx context.Context,
@@ -51,6 +51,18 @@ type daemonClient interface {
 		correlation protocol.Correlation,
 		req request.GCPExecRequest,
 	) (protocol.GCPCommandResponsePayload, error)
+	GCPAuthStatus(
+		ctx context.Context,
+		req request.GCPAuthStatusRequest,
+	) (protocol.GCPAuthStatusResponsePayload, error)
+	GCPAuthLogin(
+		ctx context.Context,
+		req request.GCPAuthLoginRequest,
+	) (protocol.GCPAuthLoginResponsePayload, error)
+	GCPAuthLogout(
+		ctx context.Context,
+		req request.GCPAuthLogoutRequest,
+	) (protocol.GCPAuthLogoutResponsePayload, error)
 	CreateGCPSession(
 		ctx context.Context,
 		correlation protocol.Correlation,

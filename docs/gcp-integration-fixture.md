@@ -100,6 +100,12 @@ Do not commit the OAuth client JSON or client secret. For live broker
 implementation, keep OAuth client material in Keychain or another private local
 bootstrap path and store only non-secret metadata in the repository.
 
+The v1 daemon reads the public desktop OAuth client ID from
+`AGENT_SECRET_GCP_OAUTH_CLIENT_ID` or `agent-secretd --gcp-oauth-client-id`.
+The client ID is not a credential, but keeping it configurable avoids binding
+the generic broker implementation to this test fixture. For fixture smokes, use
+the client ID listed above.
+
 ## Service Accounts
 
 ### Read-Only

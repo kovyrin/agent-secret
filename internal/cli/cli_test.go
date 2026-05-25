@@ -219,19 +219,21 @@ func TestParseGCPSessionListDestroyWithSessionAndAuth(t *testing.T) {
 	if status.Kind != KindGCPAuthStatus {
 		t.Fatalf("auth status kind = %s", status.Kind)
 	}
-	login, err := NewParser().Parse([]string{"gcp", "auth", "login"})
+	login, err := NewParser().Parse([]string{"gcp", "auth", "login", "--google-account", "personal", "--expected-email", "oleksiy@kovyrin.net"})
 	if err != nil {
 		t.Fatalf("auth login Parse returned error: %v", err)
 	}
-	if login.Kind != KindGCPAuthLogin {
-		t.Fatalf("auth login kind = %s", login.Kind)
+	if login.Kind != KindGCPAuthLogin ||
+		login.GCPAuthLoginRequest.GoogleAccount != "personal" ||
+		login.GCPAuthLoginRequest.ExpectedEmail != "oleksiy@kovyrin.net" {
+		t.Fatalf("auth login command = %+v", login)
 	}
-	logout, err := NewParser().Parse([]string{"gcp", "auth", "logout"})
+	logout, err := NewParser().Parse([]string{"gcp", "auth", "logout", "--google-account", "personal"})
 	if err != nil {
 		t.Fatalf("auth logout Parse returned error: %v", err)
 	}
-	if logout.Kind != KindGCPAuthLogout {
-		t.Fatalf("auth logout kind = %s", logout.Kind)
+	if logout.Kind != KindGCPAuthLogout || logout.GCPAuthLogoutRequest.GoogleAccount != "personal" {
+		t.Fatalf("auth logout command = %+v", logout)
 	}
 }
 
@@ -250,6 +252,9 @@ func TestParseGCPHelpCommands(t *testing.T) {
 		{args: []string{"gcp", "session", "destroy", "help"}, want: "agent-secret gcp session destroy [--json] SESSION_HANDLE"},
 		{args: []string{"gcp", "with-session", "help"}, want: "agent-secret gcp with-session SESSION_HANDLE"},
 		{args: []string{"gcp", "auth", "help"}, want: "agent-secret gcp auth manages"},
+		{args: []string{"gcp", "auth", "status", "help"}, want: "agent-secret gcp auth status shows"},
+		{args: []string{"gcp", "auth", "login", "help"}, want: "agent-secret gcp auth login opens"},
+		{args: []string{"gcp", "auth", "logout", "help"}, want: "agent-secret gcp auth logout removes"},
 	}
 	for _, tc := range tests {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
@@ -276,6 +281,8 @@ func TestParseGCPErrorsAndAccessMerge(t *testing.T) {
 		{args: []string{"gcp", "unknown"}, err: ErrInvalidArguments},
 		{args: []string{"gcp", "session", "unknown"}, err: ErrInvalidArguments},
 		{args: []string{"gcp", "auth", "unknown"}, err: ErrInvalidArguments},
+		{args: []string{"gcp", "auth", "login"}, err: request.ErrInvalidGCPAccount},
+		{args: []string{"gcp", "auth", "logout"}, err: request.ErrInvalidGCPAccount},
 		{args: []string{"gcp", "exec", "--json", "--", "gcloud"}, err: ErrUnsupportedExecJSON},
 		{args: []string{"gcp", "with-session", "asess_123", "gcloud"}, err: ErrShellStringCommand},
 		{args: []string{"gcp", "session", "destroy"}, err: ErrHelpRequested},

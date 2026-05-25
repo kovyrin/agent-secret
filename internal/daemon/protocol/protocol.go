@@ -24,6 +24,9 @@ const (
 	TypeApprovalPending   MessageType = "approval.pending"
 	TypeApprovalDecision  MessageType = "approval.decision"
 	TypeRequestExec       MessageType = "request.exec"
+	TypeGCPAuthStatus     MessageType = "gcp.auth.status"
+	TypeGCPAuthLogin      MessageType = "gcp.auth.login"
+	TypeGCPAuthLogout     MessageType = "gcp.auth.logout"
 	TypeGCPExec           MessageType = "gcp.exec"
 	TypeGCPSessionCreate  MessageType = "gcp.session.create"
 	TypeGCPSessionList    MessageType = "gcp.session.list"
@@ -136,6 +139,27 @@ type GCPSessionInfo struct {
 type GCPSessionDestroyResponsePayload struct {
 	Destroyed      bool   `json:"destroyed"`
 	SessionAuditID string `json:"session_audit_id,omitempty"`
+}
+
+type GCPAuthStatusResponsePayload struct {
+	Accounts []GCPAuthAccountInfo `json:"accounts"`
+}
+
+type GCPAuthLoginResponsePayload struct {
+	Account GCPAuthAccountInfo `json:"account"`
+}
+
+type GCPAuthLogoutResponsePayload struct {
+	GoogleAccount string `json:"google_account"`
+	Deleted       bool   `json:"deleted"`
+}
+
+type GCPAuthAccountInfo struct {
+	GoogleAccount string    `json:"google_account"`
+	Email         string    `json:"email,omitempty"`
+	Scopes        []string  `json:"scopes,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitzero"`
+	UpdatedAt     time.Time `json:"updated_at,omitzero"`
 }
 
 type ItemDescribeResponsePayload struct {

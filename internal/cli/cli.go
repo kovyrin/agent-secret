@@ -50,6 +50,9 @@ type Command struct {
 	ExecEnv                  []string
 	ExecDryRun               bool
 	GCPExecRequest           request.GCPExecRequest
+	GCPAuthStatusRequest     request.GCPAuthStatusRequest
+	GCPAuthLoginRequest      request.GCPAuthLoginRequest
+	GCPAuthLogoutRequest     request.GCPAuthLogoutRequest
 	GCPSessionCreateRequest  request.GCPSessionCreateRequest
 	GCPSessionUseRequest     request.GCPSessionUseRequest
 	GCPSessionDestroyRequest request.GCPSessionDestroyRequest

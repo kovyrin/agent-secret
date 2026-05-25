@@ -418,8 +418,44 @@ agent-secret gcp auth manages app-owned Google bootstrap auth.
 Commands:
 
   status  Show local setup status.
-  login   Start app-owned Google login. Not implemented in this build.
-  logout  Remove app-owned Google login state. Not implemented in this build.
+  login   Start app-owned Google login and store bootstrap state in Keychain.
+  logout  Remove app-owned Google login state from Keychain.
+`)
+}
+
+func GCPAuthStatusHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth status shows app-owned Google bootstrap auth stored in Keychain.
+
+Usage:
+
+  agent-secret gcp auth status [--google-account ALIAS] [--json]
+`)
+}
+
+func GCPAuthLoginHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth login opens a browser from the daemon, completes Google OAuth with PKCE, and stores refresh-capable bootstrap state in Keychain.
+
+Usage:
+
+  agent-secret gcp auth login --google-account ALIAS [--expected-email EMAIL] [--json]
+
+Flags:
+
+  --google-account ALIAS  Local bootstrap identity alias used by GCP profiles.
+  --expected-email EMAIL  Refuse login unless Google reports this email.
+  --json                  Print JSON output.
+`)
+}
+
+func GCPAuthLogoutHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth logout removes app-owned Google bootstrap auth from Keychain.
+
+Usage:
+
+  agent-secret gcp auth logout --google-account ALIAS [--json]
 `)
 }
 

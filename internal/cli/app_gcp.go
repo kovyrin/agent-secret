@@ -58,6 +58,24 @@ type gcpSessionDestroyOutput struct {
 	SessionAuditID string `json:"session_audit_id,omitempty"`
 }
 
+type gcpAuthStatusOutput struct {
+	SchemaVersion string                        `json:"schema_version"`
+	Accounts      []protocol.GCPAuthAccountInfo `json:"accounts"`
+}
+
+type gcpAuthLoginOutput struct {
+	SchemaVersion string                      `json:"schema_version"`
+	Account       protocol.GCPAuthAccountInfo `json:"account"`
+}
+
+type gcpAuthLogoutOutput struct {
+	SchemaVersion string `json:"schema_version"`
+	GoogleAccount string `json:"google_account"`
+	Deleted       bool   `json:"deleted"`
+}
+
+const gcpAuthLoginTimeout = 5 * time.Minute
+
 func (a App) runGCPExec(ctx context.Context, command Command) int {
 	if command.GCPDryRun {
 		return a.runGCPExecDryRun(command)
@@ -325,17 +343,121 @@ func (a App) runGCPSessionDestroy(ctx context.Context, command Command) int {
 	return 0
 }
 
-func (a App) runGCPAuth(_ context.Context, command Command) int {
+func (a App) runGCPAuth(ctx context.Context, command Command) int {
 	//nolint:exhaustive // This helper is called only for gcp auth command kinds.
 	switch command.Kind {
 	case KindGCPAuthStatus:
-		a.stdoutln("gcp auth: not configured")
+		return a.runGCPAuthStatus(ctx, command)
 	case KindGCPAuthLogin:
-		a.stderrf("agent-secret: gcp auth login is not implemented in this build\n")
-		return 1
+		return a.runGCPAuthLogin(ctx, command)
 	case KindGCPAuthLogout:
-		a.stderrf("agent-secret: gcp auth logout is not implemented in this build\n")
+		return a.runGCPAuthLogout(ctx, command)
+	}
+	return 0
+}
+
+func (a App) runGCPAuthStatus(ctx context.Context, command Command) int {
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
 		return 1
+	}
+	if err := manager.EnsureRunning(ctx); err != nil {
+		a.stderrf("agent-secret: start daemon: %v\n", err)
+		return 1
+	}
+	client, payload, err := requestDaemonPayload(ctx, manager, func(client daemonClient) (protocol.GCPAuthStatusResponsePayload, error) {
+		return client.GCPAuthStatus(ctx, command.GCPAuthStatusRequest)
+	})
+	if err != nil {
+		a.stderrf("agent-secret: %v\n", err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	if command.OutputJSON {
+		if err := a.writeJSON(gcpAuthStatusOutput{SchemaVersion: "1", Accounts: payload.Accounts}); err != nil {
+			a.stderrf("agent-secret: write gcp auth status json: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if len(payload.Accounts) == 0 {
+		a.stdoutln("gcp auth: no bootstrap accounts configured")
+		return 0
+	}
+	for _, account := range payload.Accounts {
+		a.stdoutf("%s email=%s scopes=%s updated_at=%s\n",
+			account.GoogleAccount,
+			account.Email,
+			strings.Join(account.Scopes, ","),
+			account.UpdatedAt.Format(time.RFC3339Nano),
+		)
+	}
+	return 0
+}
+
+func (a App) runGCPAuthLogin(ctx context.Context, command Command) int {
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		return 1
+	}
+	if err := manager.EnsureRunning(ctx); err != nil {
+		a.stderrf("agent-secret: start daemon: %v\n", err)
+		return 1
+	}
+	loginCtx, cancel := context.WithTimeout(ctx, gcpAuthLoginTimeout)
+	defer cancel()
+	client, payload, err := requestDaemonPayload(loginCtx, manager, func(client daemonClient) (protocol.GCPAuthLoginResponsePayload, error) {
+		return client.GCPAuthLogin(loginCtx, command.GCPAuthLoginRequest)
+	})
+	if err != nil {
+		a.stderrf("agent-secret: %v\n", err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	if command.OutputJSON {
+		if err := a.writeJSON(gcpAuthLoginOutput{SchemaVersion: "1", Account: payload.Account}); err != nil {
+			a.stderrf("agent-secret: write gcp auth login json: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	a.stdoutln("gcp auth: logged in")
+	a.stdoutf("google_account: %s\n", payload.Account.GoogleAccount)
+	a.stdoutf("email: %s\n", payload.Account.Email)
+	return 0
+}
+
+func (a App) runGCPAuthLogout(ctx context.Context, command Command) int {
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		return 1
+	}
+	if err := manager.EnsureRunning(ctx); err != nil {
+		a.stderrf("agent-secret: start daemon: %v\n", err)
+		return 1
+	}
+	client, payload, err := requestDaemonPayload(ctx, manager, func(client daemonClient) (protocol.GCPAuthLogoutResponsePayload, error) {
+		return client.GCPAuthLogout(ctx, command.GCPAuthLogoutRequest)
+	})
+	if err != nil {
+		a.stderrf("agent-secret: %v\n", err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	if command.OutputJSON {
+		if err := a.writeJSON(gcpAuthLogoutOutput{SchemaVersion: "1", GoogleAccount: payload.GoogleAccount, Deleted: payload.Deleted}); err != nil {
+			a.stderrf("agent-secret: write gcp auth logout json: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if payload.Deleted {
+		a.stdoutf("gcp auth: removed %s\n", payload.GoogleAccount)
+	} else {
+		a.stdoutf("gcp auth: %s was not configured\n", payload.GoogleAccount)
 	}
 	return 0
 }
