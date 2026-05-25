@@ -56,6 +56,7 @@ package_floor() {
     github.com/kovyrin/agent-secret/internal/daemon/protocol) printf '%s\n' "65" ;;
     github.com/kovyrin/agent-secret/internal/daemon/socket) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/daemon/trust) printf '%s\n' "1" ;;
+    github.com/kovyrin/agent-secret/internal/gcpauth) printf '%s\n' "60" ;;
     github.com/kovyrin/agent-secret/internal/opresolver) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/policy) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/profileconfig) printf '%s\n' "85" ;;

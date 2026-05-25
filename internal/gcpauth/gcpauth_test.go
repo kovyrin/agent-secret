@@ -3,6 +3,7 @@ package gcpauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -186,6 +187,136 @@ func TestServiceLoginStatusAndLogoutDoNotExposeRefreshToken(t *testing.T) {
 	}
 }
 
+func TestServicePreservesCredentialCreationTimeOnRelogin(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	updatedAt := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	if err := store.Put(context.Background(), Credential{
+		GoogleAccount: "personal",
+		Email:         "old@example.com",
+		RefreshToken:  "old-refresh",
+		CreatedAt:     createdAt,
+		UpdatedAt:     createdAt,
+	}); err != nil {
+		t.Fatalf("Put returned error: %v", err)
+	}
+	service, err := NewService(ServiceOptions{
+		Store: store,
+		OAuth: staticOAuthRunner{token: OAuthToken{
+			RefreshToken: "new-refresh",
+			Email:        "oleksiy@kovyrin.net",
+			Scopes:       []string{"https://www.googleapis.com/auth/cloud-platform"},
+		}},
+		Now: func() time.Time { return updatedAt },
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	login, err := service.Login(context.Background(), mustGCPAuthLogin(t, "personal", "oleksiy@kovyrin.net"))
+	if err != nil {
+		t.Fatalf("Login returned error: %v", err)
+	}
+	if !login.Account.CreatedAt.Equal(createdAt) || !login.Account.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("login times = created %s updated %s", login.Account.CreatedAt, login.Account.UpdatedAt)
+	}
+}
+
+func TestServiceReturnsStoreAndOAuthErrors(t *testing.T) {
+	t.Parallel()
+
+	storeErr := errors.New("store unavailable")
+	oauthErr := errors.New("oauth denied")
+	service, err := NewService(ServiceOptions{
+		Store: errStore{err: storeErr},
+		OAuth: staticOAuthRunner{err: oauthErr},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	if _, err := service.Status(context.Background(), request.GCPAuthStatusRequest{}); !errors.Is(err, storeErr) {
+		t.Fatalf("Status error = %v, want storeErr", err)
+	}
+	if _, err := service.Login(context.Background(), mustGCPAuthLogin(t, "personal", "")); !errors.Is(err, oauthErr) {
+		t.Fatalf("Login error = %v, want oauthErr", err)
+	}
+	if _, err := service.Logout(context.Background(), request.GCPAuthLogoutRequest{GoogleAccount: "personal"}); !errors.Is(err, storeErr) {
+		t.Fatalf("Logout error = %v, want storeErr", err)
+	}
+}
+
+func TestKeychainStoreRoundTripUsesPrivateIndex(t *testing.T) {
+	backend, store := newMemoryKeychainStore()
+	ctx := context.Background()
+	accounts := []string{"personal", "fixture"}
+
+	for _, account := range accounts {
+		err := store.Put(ctx, Credential{
+			GoogleAccount: account,
+			Email:         account + "@example.test",
+			RefreshToken:  "synthetic-" + account,
+			Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+		})
+		if err != nil {
+			t.Fatalf("Put(%s) returned error: %v", account, err)
+		}
+	}
+	if len(backend.items) != len(accounts)+1 {
+		t.Fatalf("backend stored %d items, want credentials plus index", len(backend.items))
+	}
+
+	credential, found, err := store.Get(ctx, "personal")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !found || credential.RefreshToken != "synthetic-personal" {
+		t.Fatalf("Get = %+v found=%t", credential, found)
+	}
+	credential.GoogleAccount = ""
+	if err := store.Put(ctx, credential); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("Put missing account error = %v, want ErrInvalidCredential", err)
+	}
+
+	credentials, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	gotAccounts := make([]string, 0, len(credentials))
+	for _, credential := range credentials {
+		gotAccounts = append(gotAccounts, credential.GoogleAccount)
+	}
+	wantAccounts := slices.Clone(accounts)
+	slices.Sort(wantAccounts)
+	if !slices.Equal(gotAccounts, wantAccounts) {
+		t.Fatalf("listed accounts = %v, want %v", gotAccounts, wantAccounts)
+	}
+
+	deleted, err := store.Delete(ctx, "personal")
+	if err != nil {
+		t.Fatalf("Delete returned error: %v", err)
+	}
+	if !deleted {
+		t.Fatal("Delete returned false for existing credential")
+	}
+	_, found, err = store.Get(ctx, "personal")
+	if err != nil {
+		t.Fatalf("Get after delete returned error: %v", err)
+	}
+	if found {
+		t.Fatal("deleted credential still found")
+	}
+	again, err := store.Delete(ctx, "personal")
+	if err != nil {
+		t.Fatalf("second Delete returned error: %v", err)
+	}
+	if again {
+		t.Fatal("second Delete returned true")
+	}
+}
+
 func TestIAMCredentialsMinterRefreshesBootstrapTokenAndCallsGenerateAccessToken(t *testing.T) {
 	t.Parallel()
 
@@ -259,6 +390,50 @@ func TestIAMCredentialsMinterRefreshesBootstrapTokenAndCallsGenerateAccessToken(
 	}
 }
 
+func TestIAMCredentialsMinterRejectsMissingAndIncompleteCredentials(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	minter, err := NewIAMCredentialsMinter(IAMCredentialsMinterOptions{
+		Store:    store,
+		ClientID: "desktop-client-id",
+	})
+	if err != nil {
+		t.Fatalf("NewIAMCredentialsMinter returned error: %v", err)
+	}
+	_, err = minter.MintAccessToken(context.Background(), MintRequest{GoogleAccount: "personal"})
+	if !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("missing credential error = %v, want ErrCredentialNotFound", err)
+	}
+	if err := store.Put(context.Background(), Credential{GoogleAccount: "personal"}); err != nil {
+		t.Fatalf("Put returned error: %v", err)
+	}
+	_, err = minter.MintAccessToken(context.Background(), MintRequest{GoogleAccount: "personal"})
+	if err == nil || !strings.Contains(err.Error(), "missing refresh token") {
+		t.Fatalf("missing refresh token error = %v", err)
+	}
+}
+
+func TestOAuthHTTPErrorIncludesStructuredDescription(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_request","error_description":"client_secret is missing"}`))
+	}))
+	defer server.Close()
+
+	flow := NewOAuthFlow(OAuthFlowOptions{
+		ClientID:      "desktop-client-id",
+		TokenEndpoint: server.URL,
+	})
+	_, err := flow.exchangeCode(context.Background(), "auth-code", "http://127.0.0.1/callback", "verifier")
+	if err == nil || !strings.Contains(err.Error(), "invalid_request: client_secret is missing") {
+		t.Fatalf("exchangeCode error = %v", err)
+	}
+}
+
 type staticOAuthRunner struct {
 	token OAuthToken
 	err   error
@@ -307,6 +482,70 @@ func (s *memoryStore) List(context.Context) ([]Credential, error) {
 		credentials = append(credentials, credential)
 	}
 	return credentials, nil
+}
+
+type errStore struct {
+	err error
+}
+
+func (s errStore) Get(context.Context, string) (Credential, bool, error) {
+	return Credential{}, false, s.err
+}
+
+func (s errStore) Put(context.Context, Credential) error {
+	return s.err
+}
+
+func (s errStore) Delete(context.Context, string) (bool, error) {
+	return false, s.err
+}
+
+func (s errStore) List(context.Context) ([]Credential, error) {
+	return nil, s.err
+}
+
+type memoryKeychainBackend struct {
+	mu    sync.Mutex
+	items map[string][]byte
+}
+
+func newMemoryKeychainStore() (*memoryKeychainBackend, *KeychainStore) {
+	backend := &memoryKeychainBackend{items: map[string][]byte{}}
+	store := &KeychainStore{
+		service: "com.kovyrin.agent-secret.gcp.oauth.test",
+		backend: keychainBackend{
+			get:    backend.get,
+			put:    backend.put,
+			delete: backend.delete,
+		},
+	}
+	return backend, store
+}
+
+func (b *memoryKeychainBackend) get(_ context.Context, service string, account string) ([]byte, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	raw, ok := b.items[service+"\x00"+account]
+	if !ok {
+		return nil, ErrCredentialNotFound
+	}
+	return slices.Clone(raw), nil
+}
+
+func (b *memoryKeychainBackend) put(_ context.Context, service string, account string, raw []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.items[service+"\x00"+account] = slices.Clone(raw)
+	return nil
+}
+
+func (b *memoryKeychainBackend) delete(_ context.Context, service string, account string) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := service + "\x00" + account
+	_, ok := b.items[key]
+	delete(b.items, key)
+	return ok, nil
 }
 
 func mustGCPAuthLogin(t *testing.T, googleAccount string, expectedEmail string) request.GCPAuthLoginRequest {

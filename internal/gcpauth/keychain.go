@@ -13,6 +13,13 @@ const keychainIndexAccount = "__agent_secret_gcp_accounts__"
 
 type KeychainStore struct {
 	service string
+	backend keychainBackend
+}
+
+type keychainBackend struct {
+	get    func(context.Context, string, string) ([]byte, error)
+	put    func(context.Context, string, string, []byte) error
+	delete func(context.Context, string, string) (bool, error)
 }
 
 type keychainIndex struct {
@@ -24,14 +31,21 @@ func NewKeychainStore(service string) *KeychainStore {
 	if service == "" {
 		service = DefaultKeychainService
 	}
-	return &KeychainStore{service: service}
+	return &KeychainStore{
+		service: service,
+		backend: keychainBackend{
+			get:    keychainGet,
+			put:    keychainPut,
+			delete: keychainDelete,
+		},
+	}
 }
 
 func (s *KeychainStore) Get(ctx context.Context, googleAccount string) (Credential, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return Credential{}, false, err
 	}
-	raw, err := keychainGet(ctx, s.service, googleAccount)
+	raw, err := s.backend.get(ctx, s.service, googleAccount)
 	if err != nil {
 		if errors.Is(err, ErrCredentialNotFound) {
 			return Credential{}, false, nil
@@ -59,7 +73,7 @@ func (s *KeychainStore) Put(ctx context.Context, credential Credential) error {
 	if err != nil {
 		return fmt.Errorf("encode GCP Keychain credential metadata: %w", err)
 	}
-	if err := keychainPut(ctx, s.service, credential.GoogleAccount, raw); err != nil {
+	if err := s.backend.put(ctx, s.service, credential.GoogleAccount, raw); err != nil {
 		return err
 	}
 	index, err := s.loadIndex(ctx)
@@ -77,7 +91,7 @@ func (s *KeychainStore) Delete(ctx context.Context, googleAccount string) (bool,
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	deleted, err := keychainDelete(ctx, s.service, googleAccount)
+	deleted, err := s.backend.delete(ctx, s.service, googleAccount)
 	if err != nil {
 		return false, err
 	}
@@ -113,7 +127,7 @@ func (s *KeychainStore) List(ctx context.Context) ([]Credential, error) {
 }
 
 func (s *KeychainStore) loadIndex(ctx context.Context) (keychainIndex, error) {
-	raw, err := keychainGet(ctx, s.service, keychainIndexAccount)
+	raw, err := s.backend.get(ctx, s.service, keychainIndexAccount)
 	if err != nil {
 		if errors.Is(err, ErrCredentialNotFound) {
 			return keychainIndex{}, nil
@@ -132,5 +146,5 @@ func (s *KeychainStore) saveIndex(ctx context.Context, index keychainIndex) erro
 	if err != nil {
 		return fmt.Errorf("encode GCP Keychain credential index: %w", err)
 	}
-	return keychainPut(ctx, s.service, keychainIndexAccount, raw)
+	return s.backend.put(ctx, s.service, keychainIndexAccount, raw)
 }

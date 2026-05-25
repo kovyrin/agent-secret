@@ -80,6 +80,21 @@ func TestNewServerRequiresClientValidator(t *testing.T) {
 	}
 }
 
+func TestUnavailableGCPAuthServiceReturnsSentinel(t *testing.T) {
+	t.Parallel()
+
+	service := unavailableGCPAuthService{}
+	if _, err := service.Status(context.Background(), request.GCPAuthStatusRequest{}); !errors.Is(err, ErrGCPAuthUnavailable) {
+		t.Fatalf("Status error = %v, want ErrGCPAuthUnavailable", err)
+	}
+	if _, err := service.Login(context.Background(), request.GCPAuthLoginRequest{GoogleAccount: "personal"}); !errors.Is(err, ErrGCPAuthUnavailable) {
+		t.Fatalf("Login error = %v, want ErrGCPAuthUnavailable", err)
+	}
+	if _, err := service.Logout(context.Background(), request.GCPAuthLogoutRequest{GoogleAccount: "personal"}); !errors.Is(err, ErrGCPAuthUnavailable) {
+		t.Fatalf("Logout error = %v, want ErrGCPAuthUnavailable", err)
+	}
+}
+
 func TestServerExecProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 

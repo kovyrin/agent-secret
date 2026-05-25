@@ -22,6 +22,18 @@ func TestExecutableSelfCheckAcceptsUnchangedExecutable(t *testing.T) {
 	}
 }
 
+func TestCurrentExecutableSelfCheckAcceptsRunningTestBinary(t *testing.T) {
+	t.Parallel()
+
+	check, err := CurrentExecutableSelfCheck()
+	if err != nil {
+		t.Fatalf("CurrentExecutableSelfCheck returned error: %v", err)
+	}
+	if err := check(); err != nil {
+		t.Fatalf("current executable self check returned error: %v", err)
+	}
+}
+
 func TestExecutableSelfCheckRejectsMissingStartupIdentity(t *testing.T) {
 	t.Parallel()
 

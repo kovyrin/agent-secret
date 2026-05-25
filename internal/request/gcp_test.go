@@ -48,6 +48,111 @@ func TestNormalizeGCPAccessSortsDedupesAndRequiresScopes(t *testing.T) {
 	}
 }
 
+func TestGCPAuthRequestsNormalizeAndValidateForDaemon(t *testing.T) {
+	t.Parallel()
+
+	status, err := NewGCPAuthStatus(" personal ")
+	if err != nil {
+		t.Fatalf("NewGCPAuthStatus returned error: %v", err)
+	}
+	if status.GoogleAccount != "personal" {
+		t.Fatalf("status account = %q", status.GoogleAccount)
+	}
+	if err := status.ValidateForDaemon(); err != nil {
+		t.Fatalf("status ValidateForDaemon returned error: %v", err)
+	}
+	login, err := NewGCPAuthLogin(GCPAuthLoginOptions{
+		GoogleAccount: " personal ",
+		ExpectedEmail: " Oleksiy@Kovyrin.NET ",
+	})
+	if err != nil {
+		t.Fatalf("NewGCPAuthLogin returned error: %v", err)
+	}
+	if login.GoogleAccount != "personal" || login.ExpectedEmail != "oleksiy@kovyrin.net" {
+		t.Fatalf("login request = %+v", login)
+	}
+	if err := login.ValidateForDaemon(); err != nil {
+		t.Fatalf("login ValidateForDaemon returned error: %v", err)
+	}
+	logout, err := NewGCPAuthLogout(" personal ")
+	if err != nil {
+		t.Fatalf("NewGCPAuthLogout returned error: %v", err)
+	}
+	if logout.GoogleAccount != "personal" {
+		t.Fatalf("logout account = %q", logout.GoogleAccount)
+	}
+	if err := logout.ValidateForDaemon(); err != nil {
+		t.Fatalf("logout ValidateForDaemon returned error: %v", err)
+	}
+}
+
+func TestGCPAuthRequestsRejectInvalidAliasesAndEmails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "empty required login account",
+			run: func() error {
+				_, err := NewGCPAuthLogin(GCPAuthLoginOptions{})
+				return err
+			},
+		},
+		{
+			name: "newline account",
+			run: func() error {
+				_, err := NewGCPAuthStatus("personal\nfixture")
+				return err
+			},
+		},
+		{
+			name: "long account",
+			run: func() error {
+				_, err := NewGCPAuthLogout(strings.Repeat("a", 129))
+				return err
+			},
+		},
+		{
+			name: "bad expected email",
+			run: func() error {
+				_, err := NewGCPAuthLogin(GCPAuthLoginOptions{
+					GoogleAccount: "personal",
+					ExpectedEmail: "oleksiy kovyrin.net",
+				})
+				return err
+			},
+		},
+		{
+			name: "daemon requires normalized status",
+			run: func() error {
+				return GCPAuthStatusRequest{GoogleAccount: " personal "}.ValidateForDaemon()
+			},
+		},
+		{
+			name: "daemon requires normalized login",
+			run: func() error {
+				return GCPAuthLoginRequest{GoogleAccount: "personal", ExpectedEmail: "Oleksiy@Kovyrin.NET"}.ValidateForDaemon()
+			},
+		},
+		{
+			name: "daemon requires normalized logout",
+			run: func() error {
+				return GCPAuthLogoutRequest{GoogleAccount: " personal "}.ValidateForDaemon()
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if err := tc.run(); !errors.Is(err, ErrInvalidGCPAccount) {
+				t.Fatalf("error = %v, want ErrInvalidGCPAccount", err)
+			}
+		})
+	}
+}
+
 func TestNewGCPSessionCreateAllowsLongerSessionTTL(t *testing.T) {
 	t.Parallel()
 

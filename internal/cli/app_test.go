@@ -608,6 +608,124 @@ func TestAppGCPAuthStatusLoginAndLogoutOutput(t *testing.T) {
 	}
 }
 
+func TestAppGCPAuthJSONAndEmptyTextOutput(t *testing.T) {
+	t.Parallel()
+
+	client := &appFakeDaemonClient{
+		gcpAuthLoginPayload: protocol.GCPAuthLoginResponsePayload{
+			Account: protocol.GCPAuthAccountInfo{
+				GoogleAccount: "personal",
+				Email:         "oleksiy@kovyrin.net",
+				Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+			},
+		},
+		gcpAuthLogoutPayload: protocol.GCPAuthLogoutResponsePayload{
+			GoogleAccount: "personal",
+			Deleted:       false,
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "status"}); code != 0 {
+		t.Fatalf("auth status exit = %d stderr=%q", code, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp auth: no bootstrap accounts configured" {
+		t.Fatalf("empty auth status stdout = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "status", "--json"}); code != 0 {
+		t.Fatalf("auth status json exit = %d stderr=%q", code, stderr.String())
+	}
+	var status gcpAuthStatusOutput
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatalf("unmarshal status json: %v\n%s", err, stdout.String())
+	}
+	if status.SchemaVersion != "1" || len(status.Accounts) != 0 {
+		t.Fatalf("unexpected status json: %+v", status)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{
+		"gcp", "auth", "login",
+		"--google-account", "personal",
+		"--json",
+	}); code != 0 {
+		t.Fatalf("auth login json exit = %d stderr=%q", code, stderr.String())
+	}
+	var login gcpAuthLoginOutput
+	if err := json.Unmarshal(stdout.Bytes(), &login); err != nil {
+		t.Fatalf("unmarshal login json: %v\n%s", err, stdout.String())
+	}
+	if login.SchemaVersion != "1" || login.Account.GoogleAccount != "personal" {
+		t.Fatalf("unexpected login json: %+v", login)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "logout", "--google-account", "personal"}); code != 0 {
+		t.Fatalf("auth logout exit = %d stderr=%q", code, stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "gcp auth: personal was not configured" {
+		t.Fatalf("auth logout missing stdout = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "logout", "--google-account", "personal", "--json"}); code != 0 {
+		t.Fatalf("auth logout json exit = %d stderr=%q", code, stderr.String())
+	}
+	var logout gcpAuthLogoutOutput
+	if err := json.Unmarshal(stdout.Bytes(), &logout); err != nil {
+		t.Fatalf("unmarshal logout json: %v\n%s", err, stdout.String())
+	}
+	if logout.SchemaVersion != "1" || logout.GoogleAccount != "personal" || logout.Deleted {
+		t.Fatalf("unexpected logout json: %+v", logout)
+	}
+}
+
+func TestAppGCPAuthCommandsReportDaemonRequestFailures(t *testing.T) {
+	t.Parallel()
+
+	client := &appFakeDaemonClient{gcpAuthErr: errors.New("auth unavailable")}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	tests := [][]string{
+		{"gcp", "auth", "status"},
+		{"gcp", "auth", "login", "--google-account", "personal"},
+		{"gcp", "auth", "logout", "--google-account", "personal"},
+	}
+	for _, args := range tests {
+		stdout.Reset()
+		stderr.Reset()
+		if code := app.Run(context.Background(), args); code != 1 {
+			t.Fatalf("%v exit = %d, want 1", args, code)
+		}
+		if !strings.Contains(stderr.String(), "auth unavailable") {
+			t.Fatalf("%v stderr = %q", args, stderr.String())
+		}
+	}
+	if client.gcpAuthStatusCalls != 1 || client.gcpAuthLoginCalls != 1 || client.gcpAuthLogoutCalls != 1 {
+		t.Fatalf("auth calls: status=%d login=%d logout=%d", client.gcpAuthStatusCalls, client.gcpAuthLoginCalls, client.gcpAuthLogoutCalls)
+	}
+}
+
 func TestAppGCPCommandsReportDaemonStartupFailures(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")
@@ -656,6 +774,9 @@ profiles:
 		{"gcp", "session", "list"},
 		{"gcp", "session", "destroy", "asess_123"},
 		{"gcp", "with-session", "asess_123", "--", "gcloud", "compute", "instances", "list"},
+		{"gcp", "auth", "status"},
+		{"gcp", "auth", "login", "--google-account", "personal"},
+		{"gcp", "auth", "logout", "--google-account", "personal"},
 	}
 	for _, args := range tests {
 		stdout.Reset()
