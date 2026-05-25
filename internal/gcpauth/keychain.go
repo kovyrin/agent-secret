@@ -76,7 +76,7 @@ func (s *KeychainStore) Put(ctx context.Context, credential Credential) error {
 	if err := s.backend.put(ctx, s.service, credential.GoogleAccount, raw); err != nil {
 		return err
 	}
-	index, err := s.loadIndex(ctx)
+	index, err := s.loadRepairableIndex(ctx)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (s *KeychainStore) Delete(ctx context.Context, googleAccount string) (bool,
 	if err != nil {
 		return false, err
 	}
-	index, err := s.loadIndex(ctx)
+	index, err := s.loadRepairableIndex(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -139,6 +139,20 @@ func (s *KeychainStore) loadIndex(ctx context.Context) (keychainIndex, error) {
 		return keychainIndex{}, fmt.Errorf("decode GCP Keychain credential index: %w", err)
 	}
 	return index, nil
+}
+
+func (s *KeychainStore) loadRepairableIndex(ctx context.Context) (keychainIndex, error) {
+	index, err := s.loadIndex(ctx)
+	if err == nil {
+		return index, nil
+	}
+	if !errors.Is(err, ErrKeychainAccess) {
+		return keychainIndex{}, err
+	}
+	if _, deleteErr := s.backend.delete(ctx, s.service, keychainIndexAccount); deleteErr != nil && !errors.Is(deleteErr, ErrCredentialNotFound) {
+		return keychainIndex{}, deleteErr
+	}
+	return keychainIndex{}, nil
 }
 
 func (s *KeychainStore) saveIndex(ctx context.Context, index keychainIndex) error {

@@ -317,6 +317,48 @@ func TestKeychainStoreRoundTripUsesPrivateIndex(t *testing.T) {
 	}
 }
 
+func TestKeychainStoreRepairsInaccessibleIndexOnPutAndDelete(t *testing.T) {
+	backend, store := newMemoryKeychainStore()
+	ctx := context.Background()
+	indexKey := keychainTestKey(store.service, keychainIndexAccount)
+	backend.items[indexKey] = []byte(`{"accounts":["stale"]}`)
+	backend.getErrs[indexKey] = ErrKeychainAccess
+
+	if err := store.Put(ctx, Credential{
+		GoogleAccount: "personal",
+		Email:         "personal@example.test",
+		RefreshToken:  "synthetic-refresh",
+	}); err != nil {
+		t.Fatalf("Put returned error: %v", err)
+	}
+	if _, ok := backend.getErrs[indexKey]; ok {
+		t.Fatal("Put did not clear inaccessible index")
+	}
+	credentials, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Put returned error: %v", err)
+	}
+	if len(credentials) != 1 || credentials[0].GoogleAccount != "personal" {
+		t.Fatalf("credentials after repaired Put = %+v", credentials)
+	}
+
+	backend.getErrs[indexKey] = ErrKeychainAccess
+	deleted, err := store.Delete(ctx, "personal")
+	if err != nil {
+		t.Fatalf("Delete returned error: %v", err)
+	}
+	if !deleted {
+		t.Fatal("Delete returned false")
+	}
+	credentials, err = store.List(ctx)
+	if err != nil {
+		t.Fatalf("List after Delete returned error: %v", err)
+	}
+	if len(credentials) != 0 {
+		t.Fatalf("credentials after repaired Delete = %+v, want empty", credentials)
+	}
+}
+
 func TestIAMCredentialsMinterRefreshesBootstrapTokenAndCallsGenerateAccessToken(t *testing.T) {
 	t.Parallel()
 
@@ -505,12 +547,13 @@ func (s errStore) List(context.Context) ([]Credential, error) {
 }
 
 type memoryKeychainBackend struct {
-	mu    sync.Mutex
-	items map[string][]byte
+	mu      sync.Mutex
+	items   map[string][]byte
+	getErrs map[string]error
 }
 
 func newMemoryKeychainStore() (*memoryKeychainBackend, *KeychainStore) {
-	backend := &memoryKeychainBackend{items: map[string][]byte{}}
+	backend := &memoryKeychainBackend{items: map[string][]byte{}, getErrs: map[string]error{}}
 	store := &KeychainStore{
 		service: "com.kovyrin.agent-secret.gcp.oauth.test",
 		backend: keychainBackend{
@@ -525,7 +568,11 @@ func newMemoryKeychainStore() (*memoryKeychainBackend, *KeychainStore) {
 func (b *memoryKeychainBackend) get(_ context.Context, service string, account string) ([]byte, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	raw, ok := b.items[service+"\x00"+account]
+	key := keychainTestKey(service, account)
+	if err, ok := b.getErrs[key]; ok {
+		return nil, err
+	}
+	raw, ok := b.items[key]
 	if !ok {
 		return nil, ErrCredentialNotFound
 	}
@@ -535,17 +582,24 @@ func (b *memoryKeychainBackend) get(_ context.Context, service string, account s
 func (b *memoryKeychainBackend) put(_ context.Context, service string, account string, raw []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.items[service+"\x00"+account] = slices.Clone(raw)
+	key := keychainTestKey(service, account)
+	delete(b.getErrs, key)
+	b.items[key] = slices.Clone(raw)
 	return nil
 }
 
 func (b *memoryKeychainBackend) delete(_ context.Context, service string, account string) (bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	key := service + "\x00" + account
+	key := keychainTestKey(service, account)
 	_, ok := b.items[key]
 	delete(b.items, key)
+	delete(b.getErrs, key)
 	return ok, nil
+}
+
+func keychainTestKey(service string, account string) string {
+	return service + "\x00" + account
 }
 
 func mustGCPAuthLogin(t *testing.T, googleAccount string, expectedEmail string) request.GCPAuthLoginRequest {

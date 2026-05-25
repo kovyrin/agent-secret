@@ -8,6 +8,9 @@ package gcpauth
 #include <Security/Security.h>
 #include <stdlib.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 static CFMutableDictionaryRef agentSecretGCPKeychainQuery(CFStringRef service, CFStringRef account) {
 	CFMutableDictionaryRef query = CFDictionaryCreateMutable(
 		NULL,
@@ -18,6 +21,7 @@ static CFMutableDictionaryRef agentSecretGCPKeychainQuery(CFStringRef service, C
 	CFDictionarySetValue(query, kSecClass, kSecClassGenericPassword);
 	CFDictionarySetValue(query, kSecAttrService, service);
 	CFDictionarySetValue(query, kSecAttrAccount, account);
+	CFDictionarySetValue(query, kSecUseAuthenticationUI, kSecUseAuthenticationUIFail);
 	return query;
 }
 
@@ -37,6 +41,7 @@ static CFMutableDictionaryRef agentSecretGCPKeychainAddQuery(CFStringRef service
 	CFMutableDictionaryRef query = agentSecretGCPKeychainQuery(service, account);
 	CFDictionarySetValue(query, kSecValueData, data);
 	CFDictionarySetValue(query, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly);
+	CFDictionarySetValue(query, kSecUseAuthenticationUI, kSecUseAuthenticationUIFail);
 	return query;
 }
 
@@ -46,14 +51,86 @@ static CFMutableDictionaryRef agentSecretGCPKeychainDataQuery(CFStringRef servic
 	CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
 	return query;
 }
+
+static void agentSecretGCPRestoreUserInteraction(Boolean restored, Boolean previous) {
+	if (restored) {
+		SecKeychainSetUserInteractionAllowed(previous);
+	}
+}
+
+static OSStatus agentSecretGCPDisableUserInteraction(Boolean *previous, Boolean *restored) {
+	*previous = true;
+	*restored = false;
+	OSStatus status = SecKeychainGetUserInteractionAllowed(previous);
+	if (status != errSecSuccess) {
+		return status;
+	}
+	status = SecKeychainSetUserInteractionAllowed(false);
+	if (status == errSecSuccess) {
+		*restored = true;
+	}
+	return status;
+}
+
+static OSStatus agentSecretGCPSecItemCopyMatchingNoUI(CFDictionaryRef query, CFTypeRef *result) {
+	Boolean previous;
+	Boolean restored;
+	OSStatus status = agentSecretGCPDisableUserInteraction(&previous, &restored);
+	if (status == errSecSuccess) {
+		status = SecItemCopyMatching(query, result);
+	}
+	agentSecretGCPRestoreUserInteraction(restored, previous);
+	return status;
+}
+
+static OSStatus agentSecretGCPSecItemAddNoUI(CFDictionaryRef query) {
+	Boolean previous;
+	Boolean restored;
+	OSStatus status = agentSecretGCPDisableUserInteraction(&previous, &restored);
+	if (status == errSecSuccess) {
+		status = SecItemAdd(query, NULL);
+	}
+	agentSecretGCPRestoreUserInteraction(restored, previous);
+	return status;
+}
+
+static OSStatus agentSecretGCPSecItemUpdateNoUI(CFDictionaryRef query, CFDictionaryRef attrs) {
+	Boolean previous;
+	Boolean restored;
+	OSStatus status = agentSecretGCPDisableUserInteraction(&previous, &restored);
+	if (status == errSecSuccess) {
+		status = SecItemUpdate(query, attrs);
+	}
+	agentSecretGCPRestoreUserInteraction(restored, previous);
+	return status;
+}
+
+static OSStatus agentSecretGCPSecItemDeleteNoUI(CFDictionaryRef query) {
+	Boolean previous;
+	Boolean restored;
+	OSStatus status = agentSecretGCPDisableUserInteraction(&previous, &restored);
+	if (status == errSecSuccess) {
+		status = SecItemDelete(query);
+	}
+	agentSecretGCPRestoreUserInteraction(restored, previous);
+	return status;
+}
+
+#pragma clang diagnostic pop
 */
 import "C"
 
 import (
 	"context"
-	"fmt"
+	"sync"
 	"unsafe"
 )
+
+// keychainInteractionMu serializes SecKeychainSetUserInteractionAllowed because
+// the Keychain interaction setting is process-wide.
+//
+//nolint:gochecknoglobals
+var keychainInteractionMu sync.Mutex
 
 func keychainGet(ctx context.Context, service string, account string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
@@ -67,7 +144,9 @@ func keychainGet(ctx context.Context, service string, account string) ([]byte, e
 	defer C.CFRelease(C.CFTypeRef(query))
 
 	var result C.CFTypeRef
-	status := C.SecItemCopyMatching(C.CFDictionaryRef(query), &result) //nolint:gocritic // cgo macro expansion confuses dupSubExpr.
+	keychainInteractionMu.Lock()
+	defer keychainInteractionMu.Unlock()
+	status := C.agentSecretGCPSecItemCopyMatchingNoUI(C.CFDictionaryRef(query), &result) //nolint:gocritic // cgo macro expansion confuses dupSubExpr.
 	if status == C.errSecItemNotFound {
 		return nil, ErrCredentialNotFound
 	}
@@ -102,9 +181,11 @@ func keychainPut(ctx context.Context, service string, account string, data []byt
 
 	addQuery := C.agentSecretGCPKeychainAddQuery(serviceRef, accountRef, dataRef)
 	defer C.CFRelease(C.CFTypeRef(addQuery))
-	status := C.SecItemAdd(C.CFDictionaryRef(addQuery), nil)
+	keychainInteractionMu.Lock()
+	defer keychainInteractionMu.Unlock()
+	status := C.agentSecretGCPSecItemAddNoUI(C.CFDictionaryRef(addQuery))
 	if status == C.errSecDuplicateItem {
-		status = C.SecItemUpdate(C.CFDictionaryRef(query), C.CFDictionaryRef(attrs))
+		status = C.agentSecretGCPSecItemUpdateNoUI(C.CFDictionaryRef(query), C.CFDictionaryRef(attrs))
 	}
 	if status != C.errSecSuccess {
 		return keychainStatusError("write", status)
@@ -123,7 +204,9 @@ func keychainDelete(ctx context.Context, service string, account string) (bool, 
 	query := C.agentSecretGCPKeychainQuery(serviceRef, accountRef)
 	defer C.CFRelease(C.CFTypeRef(query))
 
-	status := C.SecItemDelete(C.CFDictionaryRef(query))
+	keychainInteractionMu.Lock()
+	defer keychainInteractionMu.Unlock()
+	status := C.agentSecretGCPSecItemDeleteNoUI(C.CFDictionaryRef(query))
 	if status == C.errSecItemNotFound {
 		return false, nil
 	}
@@ -147,5 +230,5 @@ func cfData(data []byte) C.CFDataRef {
 }
 
 func keychainStatusError(operation string, status C.OSStatus) error {
-	return fmt.Errorf("GCP Keychain %s failed with OSStatus %d", operation, int(status))
+	return keychainStatusErrorFromStatus(operation, int(status))
 }

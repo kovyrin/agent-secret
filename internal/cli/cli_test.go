@@ -204,12 +204,53 @@ profiles:
 	if command.Kind != KindGCPSessionCreate || !command.OutputJSON {
 		t.Fatalf("unexpected command metadata: %+v", command)
 	}
+	normalizedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
 	req := command.GCPSessionCreateRequest
-	if req.ProfileName != "beta-debug" || req.ProjectRoot != root || req.MaxCommandStarts != 12 {
+	if req.ProfileName != "beta-debug" || req.ProjectRoot != normalizedRoot || req.MaxCommandStarts != 12 {
 		t.Fatalf("unexpected session request: %+v", req)
 	}
 	if req.TTL != 30*time.Minute {
 		t.Fatalf("TTL = %s, want profile ttl", req.TTL)
+	}
+}
+
+func TestParseGCPSessionCreateResolvesSymlinkedConfigRoot(t *testing.T) {
+	realRoot := t.TempDir()
+	linkRoot := filepath.Join(t.TempDir(), "project-link")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Fatalf("Symlink returned error: %v", err)
+	}
+	writeProfileConfig(t, realRoot, `
+version: 1
+profiles:
+  beta-debug:
+    reason: Debug beta
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+
+	command, err := NewParser().Parse([]string{
+		"gcp", "session", "create",
+		"--config", filepath.Join(linkRoot, "agent-secret.yml"),
+		"--profile", "beta-debug",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	normalizedRoot, err := filepath.EvalSymlinks(realRoot)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+	req := command.GCPSessionCreateRequest
+	if req.ProjectRoot != normalizedRoot || req.ConfigSourcePath != filepath.Join(normalizedRoot, "agent-secret.yml") {
+		t.Fatalf("session create paths = source %q root %q, want real root %q", req.ConfigSourcePath, req.ProjectRoot, normalizedRoot)
 	}
 }
 

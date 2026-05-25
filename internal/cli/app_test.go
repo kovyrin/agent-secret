@@ -878,7 +878,11 @@ profiles:
 	if created.SessionHandle != "asess_123" || created.RemainingCommandStarts != 12 {
 		t.Fatalf("unexpected create output: %+v", created)
 	}
-	if len(client.gcpSessionCreateRequests) != 1 || client.gcpSessionCreateRequests[0].ProjectRoot != root {
+	normalizedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+	if len(client.gcpSessionCreateRequests) != 1 || client.gcpSessionCreateRequests[0].ProjectRoot != normalizedRoot {
 		t.Fatalf("session create requests = %+v", client.gcpSessionCreateRequests)
 	}
 

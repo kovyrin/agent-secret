@@ -391,6 +391,12 @@ file before a release is published.
   when a Google desktop OAuth client requires a secret during token exchange
   and refresh.
 
+### Fixed
+
+- GCP OAuth Keychain access now fails with repair guidance instead of opening
+  macOS login-keychain password prompts when the stored item is not usable by
+  the current Agent Secret app build.
+
 ## [0.0.12] - 2026-05-11
 
 ### Added
