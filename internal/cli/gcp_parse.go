@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -266,12 +267,16 @@ func (p Parser) parseGCPSessionCreate(args []string) (Command, error) {
 	if ttl == 0 {
 		ttl = profile.TTL
 	}
+	configSourcePath, err := pathresolve.Strict(profile.SourcePath)
+	if err != nil {
+		return Command{}, fmt.Errorf("resolve gcp session profile path: %w", err)
+	}
 	req, err := request.NewGCPSessionCreate(request.GCPSessionCreateOptions{
 		Reason:           reason,
 		Access:           *profile.GCP,
 		ProfileName:      profile.Name,
-		ConfigSourcePath: profile.SourcePath,
-		ProjectRoot:      filepath.Dir(profile.SourcePath),
+		ConfigSourcePath: configSourcePath,
+		ProjectRoot:      filepath.Dir(configSourcePath),
 		TTL:              ttl,
 		MaxCommandStarts: flags.maxCommandStarts,
 	})
