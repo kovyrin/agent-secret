@@ -60,6 +60,7 @@ package_floor() {
     github.com/kovyrin/agent-secret/internal/daemon/trust) printf '%s\n' "1" ;;
     # Includes Darwin Security.framework wrappers that are covered by live Keychain smoke tests, not unit tests.
     github.com/kovyrin/agent-secret/internal/bwsm) printf '%s\n' "60" ;;
+    github.com/kovyrin/agent-secret/internal/gcpauth) printf '%s\n' "60" ;;
     github.com/kovyrin/agent-secret/internal/opresolver) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/policy) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/profileconfig) printf '%s\n' "85" ;;
