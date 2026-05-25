@@ -28,6 +28,7 @@ type MintRequest struct {
 type IAMCredentialsMinter struct {
 	store         Store
 	clientID      string
+	clientSecret  string
 	tokenEndpoint string
 	iamEndpoint   string
 	httpClient    *http.Client
@@ -36,6 +37,7 @@ type IAMCredentialsMinter struct {
 type IAMCredentialsMinterOptions struct {
 	Store         Store
 	ClientID      string
+	ClientSecret  string
 	TokenEndpoint string
 	IAMEndpoint   string
 	HTTPClient    *http.Client
@@ -82,6 +84,7 @@ func NewIAMCredentialsMinter(opts IAMCredentialsMinterOptions) (*IAMCredentialsM
 	return &IAMCredentialsMinter{
 		store:         opts.Store,
 		clientID:      clientID,
+		clientSecret:  strings.TrimSpace(opts.ClientSecret),
 		tokenEndpoint: tokenEndpoint,
 		iamEndpoint:   iamEndpoint,
 		httpClient:    httpClient,
@@ -113,6 +116,7 @@ func (m *IAMCredentialsMinter) refreshBootstrapToken(ctx context.Context, refres
 	}
 	form := url.Values{}
 	form.Set("client_id", m.clientID)
+	setOptionalClientSecret(form, m.clientSecret)
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, m.tokenEndpoint, strings.NewReader(form.Encode()))

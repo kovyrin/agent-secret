@@ -58,7 +58,8 @@ func Run(args []string, stderr io.Writer) int {
 	gcpAuth, err := gcpauth.NewService(gcpauth.ServiceOptions{
 		Store: gcpStore,
 		OAuth: gcpauth.NewOAuthFlow(gcpauth.OAuthFlowOptions{
-			ClientID: config.gcpOAuthClientID,
+			ClientID:     config.gcpOAuthClientID,
+			ClientSecret: config.gcpOAuthClientSecret,
 		}),
 	})
 	if err != nil {
@@ -68,8 +69,9 @@ func Run(args []string, stderr io.Writer) int {
 	var gcpMinter daemonbroker.GCPTokenMinter
 	if config.gcpOAuthClientID != "" {
 		iamMinter, err := gcpauth.NewIAMCredentialsMinter(gcpauth.IAMCredentialsMinterOptions{
-			Store:    gcpStore,
-			ClientID: config.gcpOAuthClientID,
+			Store:        gcpStore,
+			ClientID:     config.gcpOAuthClientID,
+			ClientSecret: config.gcpOAuthClientSecret,
 		})
 		if err != nil {
 			stderrf(stderr, "agent-secretd: initialize GCP token minter: %v\n", err)
@@ -132,8 +134,9 @@ func onePasswordDesktopIntegrationCheck() func(context.Context, string) error {
 }
 
 type config struct {
-	socketPath       string
-	gcpOAuthClientID string
+	socketPath           string
+	gcpOAuthClientID     string
+	gcpOAuthClientSecret string
 }
 
 type daemonGCPMinter struct {
@@ -162,6 +165,7 @@ func parseConfig(args []string) (config, error) {
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&parsed.socketPath, "socket", socketPath, "daemon socket path")
 	flags.StringVar(&parsed.gcpOAuthClientID, "gcp-oauth-client-id", strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID")), "GCP OAuth desktop client ID")
+	flags.StringVar(&parsed.gcpOAuthClientSecret, "gcp-oauth-client-secret", strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET")), "GCP OAuth desktop client secret")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}

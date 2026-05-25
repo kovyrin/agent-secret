@@ -15,7 +15,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
-func TestOAuthFlowUsesPKCEAndStoresNoClientSecretInTokenRequest(t *testing.T) {
+func TestOAuthFlowUsesPKCEAndOmitsUnsetClientSecretInTokenRequest(t *testing.T) {
 	t.Parallel()
 
 	var tokenForm url.Values
@@ -111,6 +111,35 @@ func TestOAuthFlowUsesPKCEAndStoresNoClientSecretInTokenRequest(t *testing.T) {
 	}
 }
 
+func TestOAuthFlowIncludesConfiguredClientSecretInTokenRequest(t *testing.T) {
+	t.Parallel()
+
+	var tokenForm url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm returned error: %v", err)
+		}
+		tokenForm = cloneValues(r.PostForm)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"bootstrap-access","refresh_token":"bootstrap-refresh"}`))
+	}))
+	defer server.Close()
+
+	flow := NewOAuthFlow(OAuthFlowOptions{
+		ClientID:      "desktop-client-id",
+		ClientSecret:  "desktop-client-secret",
+		TokenEndpoint: server.URL,
+	})
+	_, err := flow.exchangeCode(context.Background(), "auth-code", "http://127.0.0.1/callback", "verifier")
+	if err != nil {
+		t.Fatalf("exchangeCode returned error: %v", err)
+	}
+	if tokenForm.Get("client_secret") != "desktop-client-secret" {
+		t.Fatalf("client_secret = %q", tokenForm.Get("client_secret"))
+	}
+}
+
 func TestServiceLoginStatusAndLogoutDoNotExposeRefreshToken(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +229,7 @@ func TestIAMCredentialsMinterRefreshesBootstrapTokenAndCallsGenerateAccessToken(
 	minter, err := NewIAMCredentialsMinter(IAMCredentialsMinterOptions{
 		Store:         store,
 		ClientID:      "desktop-client-id",
+		ClientSecret:  "desktop-client-secret",
 		TokenEndpoint: server.URL + "/token",
 		IAMEndpoint:   server.URL,
 	})
@@ -220,7 +250,7 @@ func TestIAMCredentialsMinterRefreshesBootstrapTokenAndCallsGenerateAccessToken(
 		t.Fatalf("unexpected minted token metadata: %+v", token)
 	}
 	if refreshForm.Get("refresh_token") != syntheticRefresh ||
-		refreshForm.Get("client_secret") != "" {
+		refreshForm.Get("client_secret") != "desktop-client-secret" {
 		t.Fatalf("unexpected refresh form: %v", refreshForm)
 	}
 	if generateBody.Lifetime != "90s" ||
