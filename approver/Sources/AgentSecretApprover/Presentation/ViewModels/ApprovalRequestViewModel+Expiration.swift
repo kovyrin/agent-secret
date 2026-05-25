@@ -21,6 +21,7 @@ extension ApprovalRequestViewModel {
             promptQuestion: Self.promptQuestion(operation: request.operation, resourceCount: count, isExpired: expired),
             accessSummary: Self.accessSummary(operation: request.operation, isExpired: expired),
             scopeSummary: Self.scopeSummary(
+                operation: request.operation,
                 uses: request.reusableUses,
                 remaining: remainingText,
                 expired: expired,
@@ -39,10 +40,19 @@ extension ApprovalRequestViewModel {
 
             case .itemDescribe:
                 return "This item metadata request has expired."
+
+            case .gcpExec, .gcpSessionCreate:
+                return "This GCP access request has expired."
             }
         }
         if operation == .itemDescribe {
             return "Allow this command to inspect this 1Password item?"
+        }
+        if operation == .gcpExec {
+            return "Allow this command to use this GCP capability?"
+        }
+        if operation == .gcpSessionCreate {
+            return "Allow this GCP session?"
         }
         if resourceCount == 1 {
             return "Allow this command to use the following secret?"
@@ -57,6 +67,9 @@ extension ApprovalRequestViewModel {
         if operation == .itemDescribe {
             return "wants item metadata access."
         }
+        if operation == .gcpExec || operation == .gcpSessionCreate {
+            return "wants temporary GCP access."
+        }
         return "wants temporary access."
     }
 
@@ -70,6 +83,12 @@ extension ApprovalRequestViewModel {
             Secret values are never shown to the agent or stored on disk.
             """
         }
+        if operation == .gcpExec || operation == .gcpSessionCreate {
+            return """
+            Agent Secret prepares isolated Cloud SDK state for approved commands.
+            Access tokens are not shown to the agent.
+            """
+        }
         let noun: String = resourceCount == 1 ? "secret is" : "secrets are"
         let pronoun: String = resourceCount == 1 ? "It is" : "They are"
         return """
@@ -78,7 +97,25 @@ extension ApprovalRequestViewModel {
         """
     }
 
-    static func scopeSummary(uses: Int, remaining: String, expired: Bool, allowsReusable: Bool) -> String {
+    static func scopeSummary(
+        operation: ApprovalOperation,
+        uses: Int,
+        remaining: String,
+        expired: Bool,
+        allowsReusable: Bool
+    ) -> String {
+        if operation == .gcpSessionCreate {
+            if expired {
+                return "GCP session • max \(uses) command starts\nrequest expired"
+            }
+            return "GCP session • max \(uses) command starts\nexpires in \(remaining)"
+        }
+        if operation == .gcpExec {
+            if expired {
+                return "One GCP command only\nrequest expired"
+            }
+            return "One GCP command only\nexpires in \(remaining)"
+        }
         if !allowsReusable {
             if expired {
                 return "One metadata lookup only\nrequest expired"

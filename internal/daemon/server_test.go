@@ -20,6 +20,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/gcpcompat"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -114,6 +115,128 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 		audit.EventCommandStarting,
 		audit.EventCommandStarted,
 		audit.EventCommandCompleted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerGCPExecProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	aud := &memoryAudit{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Now:                func() time.Time { return now },
+		Approver:           &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     &fakeGCPMinter{},
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              aud,
+	})
+	defer cleanup()
+
+	req := testGCPExecRequest(t, now)
+	req.ReceivedAt = time.Time{}
+	req.ExpiresAt = time.Time{}
+	payload, err := client.RequestGCPExec(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), req)
+	if err != nil {
+		t.Fatalf("RequestGCPExec returned error: %v", err)
+	}
+	if payload.Env[gcpcompat.EnvCloudSDKCoreProject] != "fixture-beta" ||
+		payload.Env[gcpcompat.EnvCloudSDKAccessTokenFile] == "" {
+		t.Fatalf("unexpected GCP payload env: %+v", payload.Env)
+	}
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), 0, ""); err != nil {
+		t.Fatalf("ReportCompleted returned error: %v", err)
+	}
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventGCPTokenMintStarted,
+		audit.EventGCPTokenMintCompleted,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerGCPSessionProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	projectRoot, _, _ := testGCPCommandFixture(t)
+	aud := &memoryAudit{}
+	minter := &fakeGCPMinter{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Now:                func() time.Time { return now },
+		Approver:           &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     minter,
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              aud,
+	})
+	defer cleanup()
+
+	createReq := testGCPSessionCreateRequest(t, now, projectRoot)
+	createReq.ReceivedAt = time.Time{}
+	createReq.ExpiresAt = time.Time{}
+	created, err := client.CreateGCPSession(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, "asess_123")
+	if err != nil {
+		t.Fatalf("CreateGCPSession returned error: %v", err)
+	}
+	if created.SessionHandle != "asess_123" || created.RemainingCommandStarts != 3 {
+		t.Fatalf("unexpected session create payload: %+v", created)
+	}
+
+	listed, err := client.ListGCPSessions(context.Background(), projectRoot)
+	if err != nil {
+		t.Fatalf("ListGCPSessions returned error: %v", err)
+	}
+	if len(listed.Sessions) != 1 || !listed.Sessions[0].UsableFromCWD {
+		t.Fatalf("unexpected session list payload: %+v", listed)
+	}
+
+	useReq := testGCPSessionUseRequest(t, "asess_123", projectRoot)
+	commandPayload, err := client.UseGCPSession(context.Background(), testCorrelation("req_use", "nonce_use"), useReq)
+	if err != nil {
+		t.Fatalf("UseGCPSession returned error: %v", err)
+	}
+	if commandPayload.Env[gcpcompat.EnvCloudSDKCoreProject] != "fixture-beta" {
+		t.Fatalf("unexpected with-session payload: %+v", commandPayload)
+	}
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_use", "nonce_use"), 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_use", "nonce_use"), 0, ""); err != nil {
+		t.Fatalf("ReportCompleted returned error: %v", err)
+	}
+
+	destroyed, err := client.DestroyGCPSession(context.Background(), request.GCPSessionDestroyRequest{SessionHandle: "asess_123", CWD: projectRoot})
+	if err != nil {
+		t.Fatalf("DestroyGCPSession returned error: %v", err)
+	}
+	if !destroyed.Destroyed || destroyed.SessionAuditID != created.SessionAuditID {
+		t.Fatalf("unexpected destroy payload: %+v", destroyed)
+	}
+	if len(minter.calls) != 1 {
+		t.Fatalf("minter calls = %d, want 1", len(minter.calls))
+	}
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventGCPSessionCreated,
+		audit.EventGCPTokenMintStarted,
+		audit.EventGCPTokenMintCompleted,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+		audit.EventGCPSessionDestroyed,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
@@ -1350,6 +1473,26 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 			wantCode: "bad_request",
 		},
 		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPExec, RequestID: "req_gcp", Nonce: "nonce_gcp", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPSessionCreate, RequestID: "req_create", Nonce: "nonce_create", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPSessionList, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPSessionDestroy, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPWithSession, RequestID: "req_use", Nonce: "nonce_use", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
 			wantCode: "invalid_nonce",
 		},
@@ -1469,6 +1612,43 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	}
 	if calls := resolver.Calls(); len(calls) != 0 {
 		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+}
+
+func TestServerRejectsMalformedGCPRequestsBeforeApprovalOrMint(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
+	minter := &fakeGCPMinter{}
+	client, cleanup := startTestServer(t, daemonbroker.Options{
+		Now:                func() time.Time { return now },
+		Approver:           approver,
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     minter,
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              &memoryAudit{},
+	})
+	defer cleanup()
+
+	execReq := testGCPExecRequest(t, now)
+	execReq.Reason = "  fabricated metadata  "
+	if _, err := client.RequestGCPExec(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), execReq); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("expected bad_request GCP exec error, got %v", err)
+	}
+
+	projectRoot, _, _ := testGCPCommandFixture(t)
+	sessionReq := testGCPSessionCreateRequest(t, now, projectRoot)
+	sessionReq.ProfileName = " beta "
+	if _, err := client.CreateGCPSession(context.Background(), testCorrelation("req_create", "nonce_create"), sessionReq, "asess_123"); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("expected bad_request GCP session create error, got %v", err)
+	}
+
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if len(minter.calls) != 0 {
+		t.Fatalf("minter calls = %d, want 0", len(minter.calls))
 	}
 }
 

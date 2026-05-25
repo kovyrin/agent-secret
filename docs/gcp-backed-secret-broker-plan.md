@@ -231,6 +231,7 @@ profiles:
     reason: Inspect beta logs
     ttl: 5m
     gcp:
+      google_account: work
       project: fixture-beta
       service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
       scopes:

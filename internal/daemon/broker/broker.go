@@ -10,6 +10,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/gcpcompat"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -17,14 +18,19 @@ import (
 )
 
 var (
-	ErrAuditRequired             = errors.New("audit required")
-	ErrMissingCache              = errors.New("approved secret cache entry missing")
-	ErrNoReusableApproval        = errors.New("no reusable approval matches request")
-	ErrNoResolver                = errors.New("secret resolver unavailable")
-	ErrSecretResolveFailed       = errors.New("secret resolve failed")
-	ErrItemMetadataResolveFailed = errors.New("item metadata resolve failed")
-	ErrDaemonStopped             = errors.New("daemon stopped")
-	ErrUnknownRequest            = errors.New("unknown request")
+	ErrAuditRequired              = errors.New("audit required")
+	ErrMissingCache               = errors.New("approved secret cache entry missing")
+	ErrNoReusableApproval         = errors.New("no reusable approval matches request")
+	ErrNoResolver                 = errors.New("secret resolver unavailable")
+	ErrSecretResolveFailed        = errors.New("secret resolve failed")
+	ErrItemMetadataResolveFailed  = errors.New("item metadata resolve failed")
+	ErrDaemonStopped              = errors.New("daemon stopped")
+	ErrNoGCPTokenMinter           = errors.New("GCP token minter unavailable")
+	ErrUnknownRequest             = errors.New("unknown request")
+	ErrUnknownGCPSession          = errors.New("unknown GCP session")
+	ErrGCPSessionExpired          = errors.New("GCP session expired")
+	ErrGCPSessionNotUsableFromCWD = errors.New("GCP session is not usable from cwd")
+	ErrGCPSessionExhausted        = errors.New("GCP session command starts exhausted")
 )
 
 type Resolver interface {
@@ -37,6 +43,19 @@ type AuditSink interface {
 	Record(ctx context.Context, event audit.Event) error
 }
 
+type GCPTokenMinter interface {
+	MintAccessToken(ctx context.Context, req GCPMintRequest) (gcpcompat.Token, error)
+}
+
+type GCPMintRequest struct {
+	GoogleAccount  string
+	Project        string
+	ServiceAccount string
+	Scopes         []string
+	Lifetime       time.Duration
+	Reason         string
+}
+
 type SecretCache interface {
 	Put(key secretcache.CacheKey, value string) error
 	Get(key secretcache.CacheKey) (string, bool)
@@ -45,22 +64,65 @@ type SecretCache interface {
 }
 
 type Broker struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	grants   *grantIssuer
-	approver approval.Approver
-	resolver Resolver
-	audit    AuditSink
-	active   map[string]*activeExec
-	stopOnce sync.Once
-	stop     chan struct{}
+	mu                 sync.Mutex
+	now                func() time.Time
+	grants             *grantIssuer
+	approver           approval.Approver
+	resolver           Resolver
+	gcpMinter          GCPTokenMinter
+	gcpDeliveryBaseDir string
+	audit              AuditSink
+	active             map[string]*activeCommand
+	gcpSessions        map[string]*gcpSession
+	stopOnce           sync.Once
+	stop               chan struct{}
 }
 
-type activeExec struct {
+type activeKind string
+
+const (
+	activeKindExec          activeKind = "exec"
+	activeKindGCPExec       activeKind = "gcp_exec"
+	activeKindGCPSessionUse activeKind = "gcp_session_use"
+)
+
+type activeCommand struct {
 	nonce    string
-	req      request.ExecRequest
+	kind     activeKind
+	execReq  request.ExecRequest
+	gcpReq   request.GCPExecRequest
+	session  *gcpSessionCommandAudit
 	started  bool
 	childPID *int
+	cleanup  func()
+}
+
+type gcpSession struct {
+	handle          string
+	auditID         string
+	req             request.GCPSessionCreateRequest
+	expiresAt       time.Time
+	remainingStarts int
+	token           *gcpSessionToken
+}
+
+type gcpSessionToken struct {
+	env       map[string]string
+	expiresAt time.Time
+	lifetime  time.Duration
+	cleanup   func()
+}
+
+type gcpSessionCommandAudit struct {
+	SessionAuditID     string
+	Reason             string
+	ProfileName        string
+	ProjectRoot        string
+	Access             request.GCPAccess
+	Command            []string
+	ResolvedExecutable string
+	CWD                string
+	DeliveryMode       string
 }
 
 type itemDescribeResult struct {
@@ -69,13 +131,15 @@ type itemDescribeResult struct {
 }
 
 type Options struct {
-	Now        func() time.Time
-	Store      *policy.Store
-	Cache      SecretCache
-	Approver   approval.Approver
-	Resolver   Resolver
-	Audit      AuditSink
-	FetchLimit int
+	Now                func() time.Time
+	Store              *policy.Store
+	Cache              SecretCache
+	Approver           approval.Approver
+	Resolver           Resolver
+	GCPTokenMinter     GCPTokenMinter
+	GCPDeliveryBaseDir string
+	Audit              AuditSink
+	FetchLimit         int
 }
 
 func New(opts Options) (*Broker, error) {
@@ -105,12 +169,21 @@ func New(opts Options) (*Broker, error) {
 		fetchLimit = 4
 	}
 	broker := &Broker{
-		now:      now,
-		approver: opts.Approver,
-		resolver: opts.Resolver,
-		audit:    opts.Audit,
-		active:   make(map[string]*activeExec),
-		stop:     make(chan struct{}),
+		now:                now,
+		approver:           opts.Approver,
+		resolver:           opts.Resolver,
+		gcpMinter:          opts.GCPTokenMinter,
+		gcpDeliveryBaseDir: opts.GCPDeliveryBaseDir,
+		audit:              opts.Audit,
+		active:             make(map[string]*activeCommand),
+		gcpSessions:        make(map[string]*gcpSession),
+		stop:               make(chan struct{}),
+	}
+	if broker.gcpMinter == nil {
+		broker.gcpMinter = unavailableGCPTokenMinter{}
+	}
+	if broker.gcpDeliveryBaseDir == "" {
+		broker.gcpDeliveryBaseDir = gcpcompat.DefaultBaseDir()
 	}
 	broker.grants = newGrantIssuer(
 		now,
@@ -404,9 +477,10 @@ func (b *Broker) activateExec(correlation protocol.Correlation, req request.Exec
 	if b.stopped() {
 		return ErrDaemonStopped
 	}
-	b.active[correlation.RequestID] = &activeExec{
-		nonce: correlation.Nonce,
-		req:   req,
+	b.active[correlation.RequestID] = &activeCommand{
+		nonce:   correlation.Nonce,
+		kind:    activeKindExec,
+		execReq: req,
 	}
 	return nil
 }
@@ -426,7 +500,7 @@ func (b *Broker) ReportStarted(ctx context.Context, correlation protocol.Correla
 		return err
 	}
 
-	event := audit.FromExecRequest(audit.EventCommandStarted, correlation.RequestID, active.req)
+	event := active.commandStartedEvent(correlation.RequestID)
 	pid := childPID
 	event.ChildPID = &pid
 	if err := recordRequiredAudit(ctx, b.audit, event); err != nil {
@@ -448,7 +522,7 @@ func (b *Broker) ReportCompleted(ctx context.Context, correlation protocol.Corre
 		return err
 	}
 
-	event := audit.FromExecRequest(audit.EventCommandCompleted, correlation.RequestID, active.req)
+	event := active.commandCompletedEvent(correlation.RequestID)
 	event.ExitCode = new(exitCode)
 	event.Signal = signal
 	if err := recordRequiredAudit(ctx, b.audit, event); err != nil {
@@ -456,6 +530,9 @@ func (b *Broker) ReportCompleted(ctx context.Context, correlation protocol.Corre
 	}
 
 	b.mu.Lock()
+	if active.cleanup != nil {
+		active.cleanup()
+	}
 	delete(b.active, correlation.RequestID)
 	b.mu.Unlock()
 	return nil
@@ -476,8 +553,11 @@ func (b *Broker) ClientDisconnected(ctx context.Context, requestID string) {
 	if active.started {
 		eventType = audit.EventExecClientDisconnectedAfterStart
 	}
-	event := audit.FromExecRequest(eventType, requestID, active.req)
+	event := active.disconnectedEvent(eventType, requestID)
 	event.ChildPID = active.childPID
+	if active.cleanup != nil {
+		active.cleanup()
+	}
 	b.recordBestEffortAudit(ctx, event)
 }
 
@@ -485,7 +565,16 @@ func (b *Broker) StopWithAuditEvent(ctx context.Context, event audit.Event) {
 	b.stopOnce.Do(func() { close(b.stop) })
 	b.RecordStopAttempt(ctx, event)
 	b.mu.Lock()
-	b.active = make(map[string]*activeExec)
+	for _, active := range b.active {
+		if active.cleanup != nil {
+			active.cleanup()
+		}
+	}
+	for _, session := range b.gcpSessions {
+		session.cleanup()
+	}
+	b.active = make(map[string]*activeCommand)
+	b.gcpSessions = make(map[string]*gcpSession)
 	b.mu.Unlock()
 	b.grants.clearReusableGrants()
 }
@@ -538,7 +627,7 @@ func contextCause(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func (b *Broker) activeRequest(correlation protocol.Correlation) (*activeExec, error) {
+func (b *Broker) activeRequest(correlation protocol.Correlation) (*activeCommand, error) {
 	if b.stopped() {
 		return nil, ErrDaemonStopped
 	}
@@ -553,6 +642,45 @@ func (b *Broker) activeRequest(correlation protocol.Correlation) (*activeExec, e
 		return nil, protocol.ErrInvalidNonce
 	}
 	return active, nil
+}
+
+func (active *activeCommand) commandStartedEvent(requestID string) audit.Event {
+	switch active.kind {
+	case activeKindExec:
+		return audit.FromExecRequest(audit.EventCommandStarted, requestID, active.execReq)
+	case activeKindGCPExec:
+		return audit.FromGCPExecRequest(audit.EventCommandStarted, requestID, active.gcpReq)
+	case activeKindGCPSessionUse:
+		return audit.FromGCPSessionCommand(audit.EventCommandStarted, requestID, *active.session)
+	default:
+		return audit.FromExecRequest(audit.EventCommandStarted, requestID, active.execReq)
+	}
+}
+
+func (active *activeCommand) commandCompletedEvent(requestID string) audit.Event {
+	switch active.kind {
+	case activeKindExec:
+		return audit.FromExecRequest(audit.EventCommandCompleted, requestID, active.execReq)
+	case activeKindGCPExec:
+		return audit.FromGCPExecRequest(audit.EventCommandCompleted, requestID, active.gcpReq)
+	case activeKindGCPSessionUse:
+		return audit.FromGCPSessionCommand(audit.EventCommandCompleted, requestID, *active.session)
+	default:
+		return audit.FromExecRequest(audit.EventCommandCompleted, requestID, active.execReq)
+	}
+}
+
+func (active *activeCommand) disconnectedEvent(eventType audit.EventType, requestID string) audit.Event {
+	switch active.kind {
+	case activeKindExec:
+		return audit.FromExecRequest(eventType, requestID, active.execReq)
+	case activeKindGCPExec:
+		return audit.FromGCPExecRequest(eventType, requestID, active.gcpReq)
+	case activeKindGCPSessionUse:
+		return audit.FromGCPSessionCommand(eventType, requestID, *active.session)
+	default:
+		return audit.FromExecRequest(eventType, requestID, active.execReq)
+	}
 }
 
 func (b *Broker) stopped() bool {

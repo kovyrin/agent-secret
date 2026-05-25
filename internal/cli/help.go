@@ -18,6 +18,7 @@ Commands:
 
   agent-context Print a machine-readable command and config discovery schema.
   exec       Run a command with approved secrets injected as environment variables.
+  gcp        Run commands with approved short-lived GCP access tokens.
   item       Inspect 1Password item metadata without revealing secret values.
   profile    Inspect project profiles without resolving secret values.
   install-cli Install or repair the agent-secret command symlink for this user.
@@ -307,6 +308,118 @@ Exit behavior:
   If --reuse-only has no matching reusable approval, the child is not spawned and no new approval prompt opens.
   After the child starts, stdin, stdout, and stderr are passed through. The wrapper returns the child exit status.
   Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
+`)
+}
+
+func GCPHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp brokers short-lived Google Cloud access for approved commands and sessions.
+
+Commands:
+
+  exec          Run one command with isolated Cloud SDK state and an approved access token.
+  session       Create, list, or destroy approved multi-command GCP sessions.
+  with-session  Run one command inside an approved GCP session.
+  auth          Show local GCP bootstrap auth status.
+`)
+}
+
+func GCPExecHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp exec validates a GCP capability request, asks for approval, prepares isolated Cloud SDK state, and runs the wrapped command.
+
+Usage:
+
+  agent-secret gcp exec --profile NAME -- COMMAND [ARG...]
+  agent-secret gcp exec --google-account ALIAS --project PROJECT --service-account EMAIL --scope SCOPE --reason TEXT -- COMMAND [ARG...]
+
+Flags:
+
+  --profile NAME           Load a GCP profile from agent-secret.yml or .agent-secret.yml.
+  --google-account ALIAS   Google bootstrap identity alias for ad hoc access.
+  --project PROJECT        Intended GCP project.
+  --service-account EMAIL  Service account to impersonate.
+  --scope URL              OAuth scope. Repeat for multiple scopes.
+  --reason TEXT            Human-readable reason shown to the approver.
+  --ttl DURATION           Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
+  --config PATH            Profile config path.
+  --cwd DIR                Child working directory.
+  --dry-run                Validate without prompting, minting, or spawning.
+  --reuse-only             Use an existing reusable approval or fail without prompting.
+  --json                   Print JSON output. Only valid with --dry-run.
+`)
+}
+
+func GCPSessionHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session manages approved multi-command GCP sessions.
+
+Commands:
+
+  create   Approve a config-backed GCP profile session.
+  list     List active same-user GCP sessions.
+  destroy  Destroy an active GCP session.
+`)
+}
+
+func GCPSessionCreateHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session create asks for approval to use a config-backed GCP profile across multiple with-session commands.
+
+Usage:
+
+  agent-secret gcp session create --profile NAME --reason TEXT
+
+Flags:
+
+  --profile NAME             Load a GCP profile from project config.
+  --reason TEXT              Human-readable workflow reason. Defaults to profile reason.
+  --ttl DURATION             Session TTL. Defaults to profile ttl or 30m. Allowed range: 10s through 1h.
+  --max-command-starts N     Maximum approved with-session command starts. Defaults to 20.
+  --config PATH              Profile config path.
+  --json                     Print JSON output.
+`)
+}
+
+func GCPSessionListHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session list lists active GCP sessions owned by the same local user.
+
+Usage:
+
+  agent-secret gcp session list [--json]
+`)
+}
+
+func GCPSessionDestroyHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session destroy deletes an active GCP session and clears cached token material.
+
+Usage:
+
+  agent-secret gcp session destroy [--json] SESSION_HANDLE
+`)
+}
+
+func GCPWithSessionHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp with-session runs one command inside an approved GCP session.
+
+Usage:
+
+  agent-secret gcp with-session SESSION_HANDLE -- COMMAND [ARG...]
+`)
+}
+
+func GCPAuthHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth manages app-owned Google bootstrap auth.
+
+Commands:
+
+  status  Show local setup status.
+  login   Start app-owned Google login. Not implemented in this build.
+  logout  Remove app-owned Google login state. Not implemented in this build.
 `)
 }
 

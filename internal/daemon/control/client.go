@@ -133,6 +133,83 @@ func (c *Client) RequestExec(
 	return payload, nil
 }
 
+type gcpSessionCreateClientPayload struct {
+	Request request.GCPSessionCreateRequest `json:"request"`
+	Handle  string                          `json:"handle"`
+}
+
+type gcpSessionListClientPayload struct {
+	CWD string `json:"cwd"`
+}
+
+func (c *Client) RequestGCPExec(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.GCPExecRequest,
+) (protocol.GCPCommandResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.GCPCommandResponsePayload](ctx, c, protocol.TypeGCPExec, correlation, req)
+	if err != nil {
+		return protocol.GCPCommandResponsePayload{}, err
+	}
+	if err := validateGCPCommandResponsePayload(payload); err != nil {
+		return protocol.GCPCommandResponsePayload{}, err
+	}
+	return payload, nil
+}
+
+func (c *Client) CreateGCPSession(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.GCPSessionCreateRequest,
+	handle string,
+) (protocol.GCPSessionCreateResponsePayload, error) {
+	return roundTripPayload[protocol.GCPSessionCreateResponsePayload](
+		ctx,
+		c,
+		protocol.TypeGCPSessionCreate,
+		correlation,
+		gcpSessionCreateClientPayload{Request: req, Handle: handle},
+	)
+}
+
+func (c *Client) ListGCPSessions(ctx context.Context, cwd string) (protocol.GCPSessionListResponsePayload, error) {
+	return roundTripPayload[protocol.GCPSessionListResponsePayload](
+		ctx,
+		c,
+		protocol.TypeGCPSessionList,
+		protocol.Correlation{},
+		gcpSessionListClientPayload{CWD: cwd},
+	)
+}
+
+func (c *Client) DestroyGCPSession(
+	ctx context.Context,
+	req request.GCPSessionDestroyRequest,
+) (protocol.GCPSessionDestroyResponsePayload, error) {
+	return roundTripPayload[protocol.GCPSessionDestroyResponsePayload](
+		ctx,
+		c,
+		protocol.TypeGCPSessionDestroy,
+		protocol.Correlation{},
+		req,
+	)
+}
+
+func (c *Client) UseGCPSession(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.GCPSessionUseRequest,
+) (protocol.GCPCommandResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.GCPCommandResponsePayload](ctx, c, protocol.TypeGCPWithSession, correlation, req)
+	if err != nil {
+		return protocol.GCPCommandResponsePayload{}, err
+	}
+	if err := validateGCPCommandResponsePayload(payload); err != nil {
+		return protocol.GCPCommandResponsePayload{}, err
+	}
+	return payload, nil
+}
+
 func (c *Client) DescribeItem(
 	ctx context.Context,
 	correlation protocol.Correlation,
@@ -280,6 +357,21 @@ func validateExecResponsePayload(payload protocol.ExecResponsePayload, req reque
 	return nil
 }
 
+func validateGCPCommandResponsePayload(payload protocol.GCPCommandResponsePayload) error {
+	if payload.Env == nil {
+		return fmt.Errorf("%w: GCP command response missing env", protocol.ErrMalformedEnvelope)
+	}
+	for _, key := range []string{"CLOUDSDK_CONFIG", "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE", "CLOUDSDK_CORE_PROJECT"} {
+		if payload.Env[key] == "" {
+			return fmt.Errorf("%w: GCP command response missing %s", protocol.ErrMalformedEnvelope, key)
+		}
+	}
+	if payload.DeliveryMode == "" {
+		return fmt.Errorf("%w: GCP command response missing delivery mode", protocol.ErrMalformedEnvelope)
+	}
+	return nil
+}
+
 func envAliases(env map[string]string) []string {
 	aliases := make([]string, 0, len(env))
 	for alias := range env {
@@ -312,6 +404,12 @@ func protocolRequestTiming(messageType protocol.MessageType, payload any) (time.
 	case protocol.TypeRequestExec:
 		req, ok := payload.(request.ExecRequest)
 		return req.ExpiresAt, req.TTL, ok
+	case protocol.TypeGCPExec:
+		req, ok := payload.(request.GCPExecRequest)
+		return req.ExpiresAt, req.TTL, ok
+	case protocol.TypeGCPSessionCreate:
+		req, ok := payload.(gcpSessionCreateClientPayload)
+		return req.Request.ExpiresAt, req.Request.TTL, ok
 	case protocol.TypeItemDescribe:
 		req, ok := payload.(request.ItemDescribeRequest)
 		return req.ExpiresAt, req.TTL, ok

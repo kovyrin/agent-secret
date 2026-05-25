@@ -14,6 +14,7 @@ import (
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/gcpcompat"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 )
@@ -48,6 +49,10 @@ func run() int {
 	)
 	if err != nil {
 		stderrf("agent-secretd: initialize approver: %v\n", err)
+		return 1
+	}
+	if err := gcpcompat.CleanupStale(gcpcompat.DefaultBaseDir()); err != nil {
+		stderrf("agent-secretd: clean stale GCP token files: %v\n", err)
 		return 1
 	}
 

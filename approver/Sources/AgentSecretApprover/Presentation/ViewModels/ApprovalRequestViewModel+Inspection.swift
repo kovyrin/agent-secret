@@ -41,6 +41,9 @@ extension ApprovalRequestViewModel {
 
         case .itemDescribe:
             "Item metadata:"
+
+        case .gcpExec, .gcpSessionCreate:
+            "GCP access:"
         }
     }
 
