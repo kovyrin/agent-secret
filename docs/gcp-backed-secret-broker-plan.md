@@ -16,6 +16,13 @@ The GCP provider ships in layers:
 3. Explicit Google Secret Manager version resolution through the same approval,
    TTL, audit, and command-binding model used for 1Password refs.
 
+The implementation should land `gcp exec` first because it is the smallest
+proof of the bootstrap, service-account impersonation, token delivery, Cloud SDK
+isolation, cleanup, and audit path. Session support should follow immediately.
+For benchmark migration, the first useful product milestone is not merely
+"single command works"; it is "`gcp exec` proves minting and `gcp session` lets
+benchmark workflows stop relying on ambient `gcloud auth`."
+
 Do not start by replacing 1Password, importing service account keys, or teaching
 agents to run `gcloud auth login`. Those paths preserve too much standing
 machine-local privilege and make Agent Secret responsible for broad cloud IAM
@@ -176,13 +183,40 @@ is stable.
 
 This is the first implementation target because it proves the provider,
 approval, token minting, Cloud SDK isolation, cleanup, and audit path with the
-smallest new surface area.
+smallest new surface area. It is an implementation milestone, not the end of the
+benchmarking migration; multi-command session support comes next.
 
 Example:
 
 ```bash
 agent-secret gcp exec \
   --profile beta-logs \
+  --reason "Inspect beta Cloud Run errors" \
+  -- gcloud logging read 'severity>=ERROR' --project fixture-beta
+```
+
+`gcp exec` may be profile-backed or fully explicit. A profile-backed request
+loads GCP identity fields from the project config. An ad hoc request without a
+config-backed profile is allowed for one-command access, but it must provide all
+sensitive GCP identity and approval fields explicitly: Google bootstrap identity
+alias, intended project, service account, scopes, TTL, and reason. This keeps
+live smokes and one-off debugging possible without weakening the reusable
+session model.
+Ad hoc `gcp exec` approvals may be reusable, but only when the full normalized
+request snapshot matches. Reuse must include Google bootstrap identity alias,
+intended project, service account, scopes, TTL, delivery mode, resolved
+executable, command argv, cwd, and reason. A change to any of those fields must
+prompt again.
+
+Ad hoc sketch:
+
+```bash
+agent-secret gcp exec \
+  --google-account work \
+  --project fixture-beta \
+  --service-account agent-beta-logs@fixture-beta.iam.gserviceaccount.com \
+  --scope https://www.googleapis.com/auth/cloud-platform \
+  --ttl 5m \
   --reason "Inspect beta Cloud Run errors" \
   -- gcloud logging read 'severity>=ERROR' --project fixture-beta
 ```
@@ -207,7 +241,7 @@ The approval prompt should show:
 
 - provider: GCP
 - operation: mint access token
-- target project
+- profile default or intended project
 - service account
 - OAuth scopes
 - IAM permissions: determined by the service account and not verified by Agent
@@ -231,14 +265,66 @@ full cloud permission boundary. The service account's IAM policy is the real GCP
 permission boundary, and Agent Secret does not perform live IAM policy analysis
 in the MVP.
 
+Access-token scopes are required in v1 for both profile-backed and ad hoc GCP
+requests. `cloud-platform` will often be the practical `gcloud` scope, but Agent
+Secret should not make it an implicit default. A broad OAuth scope is a broad
+token audience, even when IAM is the real permission boundary, and it should be
+visible in profile config, CLI flags, approval prompts, dry-run output, and audit
+events. The schema should support one or more scopes from day one. Profiles use
+a `scopes` list, ad hoc `gcp exec` accepts repeated `--scope` flags, and
+validation rejects an empty scope list. Scope order should not be significant
+for approval reuse, token cache keys, or session token cache keys: normalize
+scopes by trimming, validating, deduplicating, and sorting them before building
+the approved snapshot. Approval UI, dry-run JSON, and audit output should show
+the normalized scope list.
+
+Profile project and resource fields are intended targets, defaults, display
+metadata, and audit metadata. They are not an Agent Secret enforcement boundary
+for `gcloud` commands. Agent Secret should prepare the approved environment,
+such as isolated Cloud SDK state and token delivery, then run the approved
+command as provided. It should not parse, reject, rewrite, or police `gcloud`
+argv for project or resource consistency, because nested wrappers can change
+those arguments in ways Agent Secret cannot reliably observe. The service
+account's IAM policy remains the enforceable cloud boundary. Even though project
+is not a hard security boundary, every v1 access-token request should include an
+explicit intended project through the selected profile or an ad hoc `--project`
+flag so approval and audit records are understandable.
+
+The intended project should become the default project in the isolated Cloud SDK
+configuration that Agent Secret creates for the approved command or session.
+This makes normal `gcloud` commands work without repeating `--project` and keeps
+the prepared environment aligned with the approval prompt. Agent Secret still
+must not block, rewrite, or remove explicit `gcloud --project ...` arguments
+inside the command.
+
+`gcp exec` should not support command allowlists. The approved command argv,
+resolved executable, executable identity, and cwd are still displayed, bound to
+approval reuse, and audited, but profile policy should be based on the GCP
+profile, Google bootstrap identity, impersonated service account, project or
+resource hints, cwd or repo policy, TTL, and local approval. Command allowlists
+would make repo-local wrappers brittle without becoming the real GCP permission
+boundary.
+
 Execution behavior:
 
-1. CLI validates the command and GCP profile.
-2. Daemon asks for local approval.
-3. Daemon obtains a short-lived service account access token.
-4. CLI runs the approved command with isolated Cloud SDK state.
-5. Agent Secret deletes any broker-owned compatibility files after the command
+1. CLI validates the command and either the selected GCP profile or the explicit
+   ad hoc GCP identity fields.
+2. CLI and daemon construct a normalized request snapshot containing Google
+   bootstrap identity alias, project or resource hints, service account, scopes,
+   cwd or repo policy, requested TTL, delivery mode, command argv, resolved
+   executable, executable identity, cwd, reason, and display labels.
+3. Daemon asks for local approval of that normalized snapshot.
+4. Daemon obtains a short-lived service account access token from the approved
+   snapshot, not by re-reading profile config after approval.
+5. CLI runs the approved command with isolated Cloud SDK state.
+6. Agent Secret deletes any broker-owned compatibility files after the command
    exits and clears daemon-held token material when the approval expires.
+
+The approved `gcp exec` snapshot is the source of truth for the command. Later
+edits to `agent-secret.yml` must not change the service account, scopes, project
+or resource hints, TTL, delivery mode, or command metadata used for that already
+approved invocation. This avoids a time-of-check/time-of-use gap between the
+approval prompt and token minting.
 
 For direct API clients, the broker should prefer in-memory token delivery through
 an approved wrapper or credential helper. For `gcloud`, the official supported
@@ -256,6 +342,12 @@ This is not as clean as pure in-memory delivery, but it still avoids persistent
 Cloud SDK account state and does not give every same-user process a refreshable
 credential.
 
+Agent Secret should not silently mutate the command argv to add
+`--access-token-file`, `--project`, or other `gcloud` flags. The MVP delivery
+path should rely on inherited environment and isolated Cloud SDK configuration.
+Direct flag injection is acceptable only as an explicit compatibility mode if
+the user asks for it or a future narrow integration documents why it is safe.
+
 `gcp exec` should also prove a nested `gcloud` smoke, not only a direct `gcloud`
 argv. A command such as `mise run loadtest:production:75` may call `gcloud`
 internally. Passing `--access-token-file` to the top-level `mise` command is not
@@ -264,6 +356,8 @@ useful; nested `gcloud` processes need inherited configuration.
 The compatibility target is:
 
 - set `CLOUDSDK_CONFIG` to a broker-owned private directory;
+- configure that isolated Cloud SDK state with the approved intended project as
+  the default project;
 - set `CLOUDSDK_AUTH_ACCESS_TOKEN_FILE` as the baseline delivery mechanism;
 - make nested `gcloud` invocations use the broker token without reading or
   mutating the user's normal Cloud SDK state;
@@ -302,44 +396,103 @@ The session approval should be scoped to a GCP profile and workflow reason, not
 to one command argv. It should show the same provider fields as `gcp exec`,
 plus:
 
-- session ID preview or generated handle prefix
+- session ID preview or generated handle
 - approved command wrapper: `agent-secret gcp with-session`
+- project root, defined as the directory containing the discovered or explicit
+  `agent-secret.yml` / `.agent-secret.yml`
 - session TTL
-- max command uses or max token deliveries
-- process ownership policy
+- max command starts
+- caller identity policy
 - whether token refresh inside the session is allowed
+
+GCP sessions require a config-backed profile in the first version. The session
+root is the directory containing the discovered `agent-secret.yml` or
+`.agent-secret.yml`, or the directory containing the explicit `--config PATH`.
+`gcp with-session` should be usable from that root or a descendant path and
+should fail outside it. This uses Agent Secret's existing project-config
+discovery rule instead of introducing a Git-specific repository root. One-off or
+ad hoc GCP access without a project config belongs in `gcp exec`, not
+multi-command sessions.
 
 Session behavior:
 
 1. `session create` validates the GCP profile and asks for local approval.
-2. The daemon stores only session metadata and cached token material in memory.
+2. The daemon snapshots the normalized approved profile into memory, including
+   Google bootstrap identity alias, project or resource hints, service account,
+   scopes, project root policy, TTL, max command starts, and display labels. It
+   does not mint a GCP access token yet.
 3. Every `with-session` command must be launched through the trusted CLI.
-4. The daemon validates the session ID, TTL, use count, cwd policy, and process
-   ownership before each delivery.
-5. If a cached token is still valid, the daemon reuses it.
-6. If the session is still valid but the token is expired or has less than 20
+4. The daemon validates the session ID, local user identity, daemon identity,
+   TTL, command-start count, and project root policy before each delivery.
+5. The first valid `with-session` command lazily mints token material for that
+   concrete command delivery.
+6. If a cached token is still valid, the daemon reuses it.
+7. If the session is still valid but the token is expired or has less than 20
    percent of its requested lifetime remaining, with a 60-second floor, the
    daemon re-mints it without asking the user again.
-7. No token may outlive the Agent Secret session TTL, even if Google would allow
+8. No token may outlive the Agent Secret session TTL, even if Google would allow
    a longer token lifetime.
-8. Session tokens clear when the TTL expires, use counts are exhausted, the
+9. Session tokens clear when the TTL expires, command starts are exhausted, the
    session is destroyed, or the daemon stops.
-9. Each wrapped command gets its own value-free audit events.
+10. Each wrapped command gets its own value-free audit events.
 
 The important distinction is that approval reuse and token reuse are separate.
 The user approves a bounded GCP resource scope for a session. The daemon may
 reuse or refresh token material only inside that approved session scope.
+`session_created` records approved session state; `mint_access_token` records
+command-bound credential material.
+
+The approved session snapshot is the enforcement source of truth for the life of
+the session. Later edits to `agent-secret.yml` must not silently broaden,
+narrow, or otherwise change what an existing session can do. `with-session` may
+warn if the underlying profile has changed or disappeared, but it should enforce
+the approved snapshot until the session expires or is destroyed.
 
 The agent should not receive a token-readable session API. For the first
-multi-command version, session use should stay behind `gcp with-session`, with
-the same creator process-tree or owner checks planned for other Agent Secret
-session modes.
+multi-command version, session use should stay behind `gcp with-session`.
+Sessions should not require a strict creator process-tree binding by default:
+agent runtimes often launch each command as a sibling process under the same
+agent host, so requiring every command to descend from the original
+`session create` process would force agents to preserve one long-running shell.
+Instead, v1 sessions should bind to the same local user, same Agent Secret
+daemon, same approved project root policy, TTL, max uses, and daemon-held
+non-token-readable session handle. Each `with-session` call should still record
+and audit caller process metadata.
 
-The first version should not support command allowlists. Session scope is the
-approved GCP profile, cwd or repo policy, TTL, max uses, trusted
-`gcp with-session` wrapper, process ownership policy, and the service account's
-IAM policy. Command allowlists are brittle for repo-local wrappers such as
-`mise`, and IAM remains the real GCP permission boundary.
+Session handles are sensitive-adjacent metadata. They are not bearer tokens by
+themselves and must still pass daemon, local-user, project-root, TTL, and
+max-use checks, but they should not become convenient replay material in logs.
+CLI output may print the full handle because the user or agent needs it for
+`gcp with-session`; audit logs and routine diagnostics should record only a
+prefix or stable hash.
+
+Session `max uses` should count approved `with-session` command starts, not
+token deliveries, token-file writes, or IAM Credentials mint calls. Token
+delivery and refresh counts are implementation details, especially for nested
+`gcloud` workflows; command starts are the user-visible approval boundary. Audit
+events should still record token mint, reuse, and refresh events separately.
+
+`gcp session list` should show all active GCP sessions owned by the same local
+user, regardless of cwd or project root. Listing is operator-visible metadata,
+not credential delivery, and hiding sessions by cwd makes the CLI harder to
+reason about. Each row should make usability constraints explicit: session handle
+prefix, profile, project, service account, Google bootstrap identity alias,
+reason, project root, remaining TTL, remaining command starts, and whether the
+session is usable from the current cwd. `gcp with-session` still enforces
+project-root and other delivery checks before minting or reusing token material.
+
+`gcp session destroy` should also be allowed from any cwd by the same local user
+and daemon. Destroying a session reduces access, so it should not require the
+same project root policy that credential delivery requires. The destroy event
+should audit the caller's cwd, process metadata, and whether cached token
+material or token files were cleared.
+
+Sessions should also avoid command allowlists. Session scope is the approved GCP
+profile, Google bootstrap identity, impersonated service account, project root
+policy, TTL, max uses, trusted `gcp with-session` wrapper, caller identity
+policy, and the service account's IAM policy. Command allowlists are brittle for
+repo-local wrappers such as `mise`, and IAM remains the real GCP permission
+boundary.
 
 Nested `gcloud` support is a first-class session requirement. The common
 benchmark UX should work:
@@ -417,13 +570,14 @@ operator review:
   `session_created`, `session_destroyed`, `command_started`,
   `command_completed`, `secret_manager_access_started`,
   `secret_manager_access_completed`, or failure variants
-- project
+- profile project or resource hints
 - service account
 - OAuth scopes
 - token lifetime or remaining TTL in milliseconds
 - delivery mode: `token_file`, `session_wrapper`, `gcloud_shim`,
   `credential_helper`, or `env`
-- session ID prefix or approval ID
+- session ID prefix or hash, never the full session handle
+- approval ID
 - reason
 - command argv, resolved executable, executable identity, cwd, and exit status
 - Secret Manager project, secret name, and version for `gsm://` refs
@@ -515,6 +669,8 @@ ProviderResource
 Do not weaken the existing approval key. Reuse should still bind to command
 argv, resolved executable, executable identity, cwd, resource identities, account
 or service account scope, TTL, override behavior, and delivery mode.
+For ad hoc `gcp exec`, the full normalized request snapshot is the reuse key; it
+must not become a broad reusable approval for a service account.
 
 ## Rationale And Boundaries
 
@@ -563,6 +719,9 @@ secrets, or keep unbounded reusable cloud sessions open for agents.
   Keychain-held Google OAuth state.
 - Define the nested `gcloud` compatibility contract before implementation.
 - Define a GCP profile schema for access tokens and Secret Manager refs.
+- Model GCP access-token scopes as a required non-empty list, not a scalar.
+- Normalize scopes as an order-insensitive set for approval reuse and token
+  cache keys.
 - Define high-scope UI warnings for project-level Secret Accessor, `latest`,
   broad OAuth scopes, and long token lifetimes.
 
@@ -576,14 +735,42 @@ secrets, or keep unbounded reusable cloud sessions open for agents.
 
 ### Phase 2: `gcp exec` For `gcloud`
 
+- Support both profile-backed `gcp exec` and ad hoc `gcp exec` with explicit
+  Google bootstrap identity alias, intended project, service account, scopes,
+  TTL, and reason.
+- Require explicit scopes; do not default to `cloud-platform`.
+- Support multiple scopes through profile `scopes` lists and repeated ad hoc
+  `--scope` flags.
+- Normalize scopes by trimming, validating, deduplicating, and sorting before
+  approval, token minting, reuse matching, cache keys, and audit output.
+- Allow ad hoc `gcp exec` approval reuse only on a full normalized request
+  snapshot match.
+- Normalize and snapshot the approved `gcp exec` request before approval; use
+  that snapshot for token minting, Cloud SDK delivery, cleanup, and audit.
 - Implement service account access-token minting behind a mockable interface.
 - Run `gcloud` with isolated `CLOUDSDK_CONFIG`.
-- Pass `--access-token-file` to the approved `gcloud` command.
+- Set the approved intended project as the default project inside the isolated
+  Cloud SDK configuration.
+- Deliver token access through inherited environment and isolated Cloud SDK
+  configuration without silently adding `gcloud` flags or policing project
+  arguments.
 - Prove nested `gcloud` calls work through isolated configuration or
   `CLOUDSDK_AUTH_ACCESS_TOKEN_FILE`.
 - Clean up token files and isolated config directories.
 - Add safe local smoke tests that prove no normal Cloud SDK account is used.
 - Add tests proving `~/.config/gcloud` and ADC are unchanged.
+- Add tests proving config edits after approval cannot alter the approved
+  `gcp exec` snapshot used for minting or delivery.
+- Add tests proving missing scopes fail validation for profile-backed and ad hoc
+  `gcp exec`.
+- Add tests proving missing intended project fails validation for profile-backed
+  and ad hoc `gcp exec`.
+- Add tests proving the isolated Cloud SDK default project is set to the
+  approved intended project without mutating the user's normal Cloud SDK config.
+- Add tests proving multiple scopes are preserved in approval snapshots, token
+  mint requests, cache keys, and audit output.
+- Add tests proving equivalent scope lists with different order or duplicates
+  share the same normalized approval and token cache identity.
 - Add tests proving two configured Google bootstrap identities remain isolated
   in profile resolution, approval matching, token cache keys, and audit output.
 - Require opt-in live integration tests for real IAM Credentials calls.
@@ -591,11 +778,26 @@ secrets, or keep unbounded reusable cloud sessions open for agents.
 ### Phase 3: `gcp session` And `gcp with-session`
 
 - Add GCP session create, list, destroy, and `with-session` commands.
-- Store session metadata and cached token material in daemon memory only.
-- Bind session use to the creator process tree or an equivalent trusted-wrapper
-  ownership policy.
-- Cache access tokens by approved session, service account, scopes, project, and
-  delivery mode.
+- Make `gcp session list` show all active GCP sessions owned by the same local
+  user, regardless of cwd or project root, while marking whether each is usable
+  from the current cwd.
+- Allow `gcp session destroy` from any cwd for the same local user and daemon,
+  and audit the destroy caller metadata.
+- Require a config-backed profile for `gcp session create`; define the session
+  project root as the directory containing the discovered or explicit
+  `agent-secret.yml` / `.agent-secret.yml`.
+- Snapshot normalized approved profile metadata into daemon memory on
+  `session create`; use that snapshot as the enforcement source of truth until
+  the session expires or is destroyed.
+- Mint the first access token lazily on the first valid `with-session` command,
+  not during `session create`.
+- Cache token material in daemon memory only after the first command delivery.
+- Bind session use to the same local user, same Agent Secret daemon, approved
+  project root policy, TTL, max uses, and daemon-held non-token-readable session
+  handle.
+- Audit caller process metadata for every `with-session` command.
+- Cache access tokens by approved session, service account, normalized scope set,
+  project, and delivery mode.
 - Reuse unexpired tokens inside the session without prompting again.
 - Re-mint tokens inside the session TTL when token expiry is shorter than the
   approved workflow.
@@ -604,10 +806,12 @@ secrets, or keep unbounded reusable cloud sessions open for agents.
 - Define session expiry behavior while a command is still running.
 - Audit session creation, command start, token reuse, token refresh, command
   completion, expiration, and destroy events without token values.
-- Keep all session commands fail-closed when peer process checks are unavailable
-  or mismatched.
-- Add tests proving sessions fail after TTL, from the wrong process, and outside
-  configured cwd or repo constraints.
+- Keep all session commands fail-closed when local user, daemon identity,
+  session-handle, TTL, command-start count, or project-root checks are
+  unavailable or mismatched.
+- Add tests proving sessions fail after TTL, after max uses, from the wrong
+  local user, against the wrong daemon/session handle, and outside configured
+  project root.
 - If benchmark VM access remains part of the workflow, add a live
   `gcloud compute ssh` smoke that documents the accepted local SSH state and
   Google-side metadata behavior.
@@ -649,9 +853,17 @@ Start with read-only smokes:
 Then add session smokes:
 
 - create a GCP session for the read-only profile;
+- prove `gcp session create` fails without a config-backed profile;
+- prove the session project root is the directory containing the discovered or
+  explicit config file;
+- prove session creation does not mint a token until the first `with-session`
+  command;
+- prove edits or deletion of the underlying profile do not change the approved
+  session snapshot;
 - run multiple `gcp with-session` commands against the test project;
 - prove token reuse and token refresh inside the session TTL;
-- prove expiration, max-use, wrong-process, and wrong-cwd failures.
+- prove expiration, max-use, wrong-user, wrong-session-handle, and outside-root
+  failures.
 
 Add multi-account smokes before calling the auth model complete:
 
@@ -689,9 +901,12 @@ Add SSH smokes only after the accepted v1 SSH boundary is documented:
 - No project-wide secret sync in the first GCP Secret Manager resolver.
 - No cloud-hosted Agent Secret service.
 - No GCP IAM provisioning in the broker.
+- No parsing, rewriting, or policing `gcloud` argv for project or resource
+  consistency.
 - No SSH key lifecycle management in the first GCP MVP.
 - No long-lived shell sessions with ambient GCP credentials.
 - No token-readable session API for agents in the first multi-command version.
+- No `gcp session run` shell-wrapper mode in the first GCP MVP.
 - No command that prints access tokens or Secret Manager payloads to stdout.
 
 ## Proposed Decision
@@ -700,9 +915,11 @@ Build toward a generic provider model, with GCP as the first non-1Password
 provider, but ship it in this order:
 
 1. GCP capability broker for approved `gcloud` commands using service account
-   impersonation.
+   impersonation, used to prove token minting and isolated Cloud SDK execution.
 2. GCP sessions for multi-command workflows under one approved profile, with
-   daemon-side token caching and refresh inside the session TTL.
+   daemon-side token caching and refresh inside the session TTL, shipped
+   immediately after `gcp exec` so benchmark workflows can move off ambient
+   `gcloud auth`.
 3. GCP Secret Manager read-only resolver for explicit, preferably pinned secret
    versions.
 4. Credential-helper support only after the one-command and session paths are
