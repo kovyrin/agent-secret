@@ -32,6 +32,7 @@ func TestParseDaemonConfigDoesNotReadApproverEnvironmentOverride(t *testing.T) {
 
 func TestParseDaemonConfigReadsGCPOAuthClientIDFromFlagOrEnvironment(t *testing.T) {
 	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID", "env-client-id")
+	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET", "env-client-secret")
 
 	config, err := parseDaemonConfig([]string{})
 	if err != nil {
@@ -40,6 +41,9 @@ func TestParseDaemonConfigReadsGCPOAuthClientIDFromFlagOrEnvironment(t *testing.
 	if config.gcpOAuthClientID != "env-client-id" {
 		t.Fatalf("env client id = %q", config.gcpOAuthClientID)
 	}
+	if config.gcpOAuthClientSecret != "env-client-secret" {
+		t.Fatalf("env client secret = %q", config.gcpOAuthClientSecret)
+	}
 
 	config, err = parseDaemonConfig([]string{"--gcp-oauth-client-id", "flag-client-id"})
 	if err != nil {
@@ -47,5 +51,8 @@ func TestParseDaemonConfigReadsGCPOAuthClientIDFromFlagOrEnvironment(t *testing.
 	}
 	if config.gcpOAuthClientID != "flag-client-id" {
 		t.Fatalf("flag client id = %q", config.gcpOAuthClientID)
+	}
+	if config.gcpOAuthClientSecret != "env-client-secret" {
+		t.Fatalf("flag client secret = %q", config.gcpOAuthClientSecret)
 	}
 }

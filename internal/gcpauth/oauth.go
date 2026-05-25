@@ -1,6 +1,7 @@
 package gcpauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -23,6 +24,7 @@ type BrowserOpener func(context.Context, string) error
 
 type OAuthFlow struct {
 	clientID         string
+	clientSecret     string
 	scopes           []string
 	authEndpoint     string
 	tokenEndpoint    string
@@ -34,6 +36,7 @@ type OAuthFlow struct {
 
 type OAuthFlowOptions struct {
 	ClientID         string
+	ClientSecret     string
 	Scopes           []string
 	AuthEndpoint     string
 	TokenEndpoint    string
@@ -97,6 +100,7 @@ func NewOAuthFlow(opts OAuthFlowOptions) *OAuthFlow {
 	}
 	return &OAuthFlow{
 		clientID:         strings.TrimSpace(opts.ClientID),
+		clientSecret:     strings.TrimSpace(opts.ClientSecret),
 		scopes:           scopes,
 		authEndpoint:     authEndpoint,
 		tokenEndpoint:    tokenEndpoint,
@@ -217,6 +221,7 @@ func (f *OAuthFlow) authURL(redirectURI string, state string, challenge string, 
 func (f *OAuthFlow) exchangeCode(ctx context.Context, code string, redirectURI string, verifier string) (oauthTokenResponse, error) {
 	form := url.Values{}
 	form.Set("client_id", f.clientID)
+	setOptionalClientSecret(form, f.clientSecret)
 	form.Set("code", code)
 	form.Set("code_verifier", verifier)
 	form.Set("grant_type", "authorization_code")
@@ -306,14 +311,40 @@ func doJSON(client *http.Client, req *http.Request, out any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	contentType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("read response from %s: %w", req.URL.Host, err)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, req.URL.Host)
+		return httpError(req.URL.Host, resp.StatusCode, contentType, body)
 	}
 	if contentType != "" && contentType != "application/json" {
 		return fmt.Errorf("unexpected content type %q from %s", contentType, req.URL.Host)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(out); err != nil {
 		return fmt.Errorf("decode JSON from %s: %w", req.URL.Host, err)
 	}
 	return nil
+}
+
+func httpError(host string, status int, contentType string, body []byte) error {
+	if contentType == "application/json" {
+		var payload struct {
+			Error            string `json:"error"`
+			ErrorDescription string `json:"error_description"`
+		}
+		if err := json.Unmarshal(body, &payload); err == nil && payload.Error != "" {
+			if payload.ErrorDescription != "" {
+				return fmt.Errorf("HTTP %d from %s: %s: %s", status, host, payload.Error, payload.ErrorDescription)
+			}
+			return fmt.Errorf("HTTP %d from %s: %s", status, host, payload.Error)
+		}
+	}
+	return fmt.Errorf("HTTP %d from %s", status, host)
+}
+
+func setOptionalClientSecret(form url.Values, clientSecret string) {
+	if clientSecret != "" {
+		form.Set("client_secret", clientSecret)
+	}
 }
