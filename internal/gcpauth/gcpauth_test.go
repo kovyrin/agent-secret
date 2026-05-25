@@ -1,0 +1,300 @@
+package gcpauth
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/kovyrin/agent-secret/internal/request"
+)
+
+func TestOAuthFlowUsesPKCEAndStoresNoClientSecretInTokenRequest(t *testing.T) {
+	t.Parallel()
+
+	var tokenForm url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			r.Body = http.MaxBytesReader(w, r.Body, 4096)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm returned error: %v", err)
+			}
+			tokenForm = cloneValues(r.PostForm)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"access_token": "bootstrap-access",
+				"refresh_token": "bootstrap-refresh",
+				"scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform",
+				"token_type": "Bearer",
+				"expires_in": 3600
+			}`))
+		case "/userinfo":
+			if got := r.Header.Get("Authorization"); got != "Bearer bootstrap-access" {
+				t.Fatalf("userinfo authorization = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"email":"Oleksiy@Kovyrin.net"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	flow := NewOAuthFlow(OAuthFlowOptions{
+		ClientID:         "desktop-client-id",
+		AuthEndpoint:     "https://accounts.example.invalid/o/oauth2/v2/auth",
+		TokenEndpoint:    server.URL + "/token",
+		UserInfoEndpoint: server.URL + "/userinfo",
+		OpenBrowser: func(ctx context.Context, authURL string) error {
+			_ = ctx
+			parsed, err := url.Parse(authURL)
+			if err != nil {
+				t.Fatalf("parse auth URL: %v", err)
+			}
+			query := parsed.Query()
+			if query.Get("client_id") != "desktop-client-id" ||
+				query.Get("code_challenge") == "" ||
+				query.Get("code_challenge_method") != "S256" ||
+				query.Get("access_type") != "offline" ||
+				query.Get("prompt") != "consent" ||
+				query.Get("login_hint") != "oleksiy@kovyrin.net" {
+				t.Fatalf("unexpected auth URL query: %s", parsed.RawQuery)
+			}
+			callback, err := url.Parse(query.Get("redirect_uri"))
+			if err != nil {
+				t.Fatalf("parse redirect_uri: %v", err)
+			}
+			values := callback.Query()
+			values.Set("state", query.Get("state"))
+			values.Set("code", "auth-code")
+			callback.RawQuery = values.Encode()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, callback.String(), nil)
+			if err != nil {
+				return err
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("callback status = %d", resp.StatusCode)
+			}
+			return nil
+		},
+	})
+
+	token, err := flow.Login(context.Background(), OAuthLoginRequest{
+		GoogleAccount: "personal",
+		ExpectedEmail: "oleksiy@kovyrin.net",
+	})
+	if err != nil {
+		t.Fatalf("Login returned error: %v", err)
+	}
+	if token.RefreshToken != "bootstrap-refresh" || token.Email != "oleksiy@kovyrin.net" {
+		t.Fatalf("unexpected OAuth token metadata: %+v", token)
+	}
+	if tokenForm.Get("client_secret") != "" {
+		t.Fatalf("token exchange unexpectedly sent client_secret")
+	}
+	if tokenForm.Get("code") != "auth-code" ||
+		tokenForm.Get("code_verifier") == "" ||
+		tokenForm.Get("grant_type") != "authorization_code" {
+		t.Fatalf("unexpected token form: %v", tokenForm)
+	}
+}
+
+func TestServiceLoginStatusAndLogoutDoNotExposeRefreshToken(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	service, err := NewService(ServiceOptions{
+		Store: store,
+		OAuth: staticOAuthRunner{token: OAuthToken{
+			RefreshToken: "secret-refresh",
+			Email:        "oleksiy@kovyrin.net",
+			Scopes:       []string{"https://www.googleapis.com/auth/cloud-platform"},
+		}},
+		Now: func() time.Time { return time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	login, err := service.Login(context.Background(), mustGCPAuthLogin(t, "personal", "oleksiy@kovyrin.net"))
+	if err != nil {
+		t.Fatalf("Login returned error: %v", err)
+	}
+	encoded, err := json.Marshal(login)
+	if err != nil {
+		t.Fatalf("marshal login response: %v", err)
+	}
+	if strings.Contains(string(encoded), "secret-refresh") {
+		t.Fatalf("login response leaked refresh token: %s", encoded)
+	}
+
+	status, err := service.Status(context.Background(), request.GCPAuthStatusRequest{})
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+	if len(status.Accounts) != 1 || status.Accounts[0].GoogleAccount != "personal" {
+		t.Fatalf("unexpected status response: %+v", status)
+	}
+
+	logout, err := service.Logout(context.Background(), request.GCPAuthLogoutRequest{GoogleAccount: "personal"})
+	if err != nil {
+		t.Fatalf("Logout returned error: %v", err)
+	}
+	if !logout.Deleted {
+		t.Fatalf("logout deleted = false")
+	}
+}
+
+func TestIAMCredentialsMinterRefreshesBootstrapTokenAndCallsGenerateAccessToken(t *testing.T) {
+	t.Parallel()
+
+	store := newMemoryStore()
+	syntheticRefresh := strings.Join([]string{"bootstrap", "refresh"}, "-")
+	if err := store.Put(context.Background(), Credential{
+		GoogleAccount: "personal",
+		Email:         "oleksiy@kovyrin.net",
+		RefreshToken:  syntheticRefresh,
+	}); err != nil {
+		t.Fatalf("Put returned error: %v", err)
+	}
+	expireTime := time.Date(2026, 5, 25, 12, 10, 0, 0, time.UTC)
+	var refreshForm url.Values
+	var generateBody generateAccessTokenRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			r.Body = http.MaxBytesReader(w, r.Body, 4096)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm returned error: %v", err)
+			}
+			refreshForm = cloneValues(r.PostForm)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"bootstrap-access","token_type":"Bearer","expires_in":3600}`))
+		case "/v1/projects/-/serviceAccounts/agent-beta@fixture-beta.iam.gserviceaccount.com:generateAccessToken":
+			if got := r.Header.Get("Authorization"); got != "Bearer bootstrap-access" {
+				t.Fatalf("IAM authorization = %q", got)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&generateBody); err != nil {
+				t.Fatalf("decode generateAccessToken body: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"accessToken":"service-account-access","expireTime":"` + expireTime.Format(time.RFC3339Nano) + `"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	minter, err := NewIAMCredentialsMinter(IAMCredentialsMinterOptions{
+		Store:         store,
+		ClientID:      "desktop-client-id",
+		TokenEndpoint: server.URL + "/token",
+		IAMEndpoint:   server.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewIAMCredentialsMinter returned error: %v", err)
+	}
+	token, err := minter.MintAccessToken(context.Background(), MintRequest{
+		GoogleAccount:  "personal",
+		Project:        "fixture-beta",
+		ServiceAccount: "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:         []string{"https://www.googleapis.com/auth/cloud-platform"},
+		Lifetime:       90 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("MintAccessToken returned error: %v", err)
+	}
+	if token.AccessToken != "service-account-access" || !token.ExpiresAt.Equal(expireTime) {
+		t.Fatalf("unexpected minted token metadata: %+v", token)
+	}
+	if refreshForm.Get("refresh_token") != syntheticRefresh ||
+		refreshForm.Get("client_secret") != "" {
+		t.Fatalf("unexpected refresh form: %v", refreshForm)
+	}
+	if generateBody.Lifetime != "90s" ||
+		!slices.Equal(generateBody.Scopes, []string{"https://www.googleapis.com/auth/cloud-platform"}) {
+		t.Fatalf("unexpected generateAccessToken body: %+v", generateBody)
+	}
+}
+
+type staticOAuthRunner struct {
+	token OAuthToken
+	err   error
+}
+
+func (r staticOAuthRunner) Login(context.Context, OAuthLoginRequest) (OAuthToken, error) {
+	return r.token, r.err
+}
+
+type memoryStore struct {
+	mu         sync.Mutex
+	credential map[string]Credential
+}
+
+func newMemoryStore() *memoryStore {
+	return &memoryStore{credential: map[string]Credential{}}
+}
+
+func (s *memoryStore) Get(_ context.Context, account string) (Credential, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	credential, ok := s.credential[account]
+	return credential, ok, nil
+}
+
+func (s *memoryStore) Put(_ context.Context, credential Credential) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.credential[credential.GoogleAccount] = credential
+	return nil
+}
+
+func (s *memoryStore) Delete(_ context.Context, account string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.credential[account]
+	delete(s.credential, account)
+	return ok, nil
+}
+
+func (s *memoryStore) List(context.Context) ([]Credential, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	credentials := make([]Credential, 0, len(s.credential))
+	for _, credential := range s.credential {
+		credentials = append(credentials, credential)
+	}
+	return credentials, nil
+}
+
+func mustGCPAuthLogin(t *testing.T, googleAccount string, expectedEmail string) request.GCPAuthLoginRequest {
+	t.Helper()
+	req, err := request.NewGCPAuthLogin(request.GCPAuthLoginOptions{
+		GoogleAccount: googleAccount,
+		ExpectedEmail: expectedEmail,
+	})
+	if err != nil {
+		t.Fatalf("NewGCPAuthLogin returned error: %v", err)
+	}
+	return req
+}
+
+func cloneValues(values url.Values) url.Values {
+	out := make(url.Values, len(values))
+	for key, list := range values {
+		out[key] = slices.Clone(list)
+	}
+	return out
+}

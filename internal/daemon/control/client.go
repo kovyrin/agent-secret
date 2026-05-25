@@ -129,6 +129,45 @@ func (c *Client) CheckOnePassword(ctx context.Context, account string) error {
 	return roundTripAck(ctx, c, protocol.TypeOnePasswordStatus, protocol.Correlation{}, payload)
 }
 
+func (c *Client) GCPAuthStatus(
+	ctx context.Context,
+	req request.GCPAuthStatusRequest,
+) (protocol.GCPAuthStatusResponsePayload, error) {
+	return roundTripPayload[protocol.GCPAuthStatusResponsePayload](
+		ctx,
+		c,
+		protocol.TypeGCPAuthStatus,
+		protocol.Correlation{},
+		req,
+	)
+}
+
+func (c *Client) GCPAuthLogin(
+	ctx context.Context,
+	req request.GCPAuthLoginRequest,
+) (protocol.GCPAuthLoginResponsePayload, error) {
+	return roundTripPayload[protocol.GCPAuthLoginResponsePayload](
+		ctx,
+		c,
+		protocol.TypeGCPAuthLogin,
+		protocol.Correlation{},
+		req,
+	)
+}
+
+func (c *Client) GCPAuthLogout(
+	ctx context.Context,
+	req request.GCPAuthLogoutRequest,
+) (protocol.GCPAuthLogoutResponsePayload, error) {
+	return roundTripPayload[protocol.GCPAuthLogoutResponsePayload](
+		ctx,
+		c,
+		protocol.TypeGCPAuthLogout,
+		protocol.Correlation{},
+		req,
+	)
+}
+
 func (c *Client) RequestExec(
 	ctx context.Context,
 	correlation protocol.Correlation,

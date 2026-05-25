@@ -384,6 +384,9 @@ file before a release is published.
 - Added isolated Cloud SDK token-file delivery for approved GCP commands and
   sessions, including broker-owned temp-file cleanup and value-free audit
   metadata.
+- Added daemon-owned `agent-secret gcp auth status|login|logout` support with
+  Google OAuth PKCE login, macOS Keychain storage, and IAMCredentials service
+  account token minting.
 
 ## [0.0.12] - 2026-05-11
 

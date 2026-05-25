@@ -39,6 +39,17 @@ type gcpSessionListFlags struct {
 	json bool
 }
 
+type gcpAuthStatusFlags struct {
+	googleAccount string
+	json          bool
+}
+
+type gcpAuthLoginFlags struct {
+	googleAccount string
+	expectedEmail string
+	json          bool
+}
+
 type gcpExecInputs struct {
 	reason      string
 	ttl         time.Duration
@@ -345,12 +356,81 @@ func (p Parser) parseGCPAuth(args []string) (Command, error) {
 	}
 	switch args[0] {
 	case "status":
-		return Command{Kind: KindGCPAuthStatus}, nil
+		return p.parseGCPAuthStatus(args[1:])
 	case "login":
-		return Command{Kind: KindGCPAuthLogin}, nil
+		return p.parseGCPAuthLogin(args[1:])
 	case "logout":
-		return Command{Kind: KindGCPAuthLogout}, nil
+		return p.parseGCPAuthLogout(args[1:])
 	default:
 		return Command{}, fmt.Errorf("%w: unknown gcp auth command %q; expected one of: login, logout, status", ErrInvalidArguments, args[0])
 	}
+}
+
+func (p Parser) parseGCPAuthStatus(args []string) (Command, error) {
+	return parseGCPAuthAccountJSONCommand(args, "gcp auth status", GCPAuthStatusHelp, func(account string, jsonOutput bool) (Command, error) {
+		req, err := request.NewGCPAuthStatus(account)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Kind: KindGCPAuthStatus, OutputJSON: jsonOutput, GCPAuthStatusRequest: req}, nil
+	})
+}
+
+func (p Parser) parseGCPAuthLogin(args []string) (Command, error) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return Command{Kind: KindHelp, HelpText: GCPAuthLoginHelp()}, ErrHelpRequested
+	}
+	var flags gcpAuthLoginFlags
+	fs := flag.NewFlagSet("gcp auth login", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&flags.googleAccount, "google-account", "", "Google bootstrap account alias")
+	fs.StringVar(&flags.expectedEmail, "expected-email", "", "expected Google email")
+	fs.BoolVar(&flags.json, "json", false, "print JSON output")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 0 {
+		return Command{}, fmt.Errorf("%w: unexpected arguments: %v", ErrInvalidArguments, fs.Args())
+	}
+	req, err := request.NewGCPAuthLogin(request.GCPAuthLoginOptions{
+		GoogleAccount: flags.googleAccount,
+		ExpectedEmail: flags.expectedEmail,
+	})
+	if err != nil {
+		return Command{}, err
+	}
+	return Command{Kind: KindGCPAuthLogin, OutputJSON: flags.json, GCPAuthLoginRequest: req}, nil
+}
+
+func (p Parser) parseGCPAuthLogout(args []string) (Command, error) {
+	return parseGCPAuthAccountJSONCommand(args, "gcp auth logout", GCPAuthLogoutHelp, func(account string, jsonOutput bool) (Command, error) {
+		req, err := request.NewGCPAuthLogout(account)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Kind: KindGCPAuthLogout, OutputJSON: jsonOutput, GCPAuthLogoutRequest: req}, nil
+	})
+}
+
+func parseGCPAuthAccountJSONCommand(
+	args []string,
+	name string,
+	help func() string,
+	build func(account string, jsonOutput bool) (Command, error),
+) (Command, error) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return Command{Kind: KindHelp, HelpText: help()}, ErrHelpRequested
+	}
+	var flags gcpAuthStatusFlags
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&flags.googleAccount, "google-account", "", "Google bootstrap account alias")
+	fs.BoolVar(&flags.json, "json", false, "print JSON output")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 0 {
+		return Command{}, fmt.Errorf("%w: unexpected arguments: %v", ErrInvalidArguments, fs.Args())
+	}
+	return build(flags.googleAccount, flags.json)
 }

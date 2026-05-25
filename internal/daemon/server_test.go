@@ -266,6 +266,77 @@ func TestServerGCPSessionProtocolLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerGCPAuthProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	auth := &fakeGCPAuthService{
+		statusPayload: protocol.GCPAuthStatusResponsePayload{
+			Accounts: []protocol.GCPAuthAccountInfo{
+				{
+					GoogleAccount: "personal",
+					Email:         "oleksiy@kovyrin.net",
+					Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+				},
+			},
+		},
+		loginPayload: protocol.GCPAuthLoginResponsePayload{
+			Account: protocol.GCPAuthAccountInfo{
+				GoogleAccount: "personal",
+				Email:         "oleksiy@kovyrin.net",
+				Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+			},
+		},
+		logoutPayload: protocol.GCPAuthLogoutResponsePayload{
+			GoogleAccount: "personal",
+			Deleted:       true,
+		},
+	}
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		GCPAuth:         auth,
+	})
+	defer stop()
+	client := control.NewClient(conn)
+
+	status, err := client.GCPAuthStatus(context.Background(), request.GCPAuthStatusRequest{GoogleAccount: "personal"})
+	if err != nil {
+		t.Fatalf("GCPAuthStatus returned error: %v", err)
+	}
+	if len(status.Accounts) != 1 || status.Accounts[0].Email != "oleksiy@kovyrin.net" {
+		t.Fatalf("unexpected auth status response: %+v", status)
+	}
+	login, err := client.GCPAuthLogin(context.Background(), request.GCPAuthLoginRequest{
+		GoogleAccount: "personal",
+		ExpectedEmail: "oleksiy@kovyrin.net",
+	})
+	if err != nil {
+		t.Fatalf("GCPAuthLogin returned error: %v", err)
+	}
+	if login.Account.GoogleAccount != "personal" {
+		t.Fatalf("unexpected auth login response: %+v", login)
+	}
+	logout, err := client.GCPAuthLogout(context.Background(), request.GCPAuthLogoutRequest{GoogleAccount: "personal"})
+	if err != nil {
+		t.Fatalf("GCPAuthLogout returned error: %v", err)
+	}
+	if !logout.Deleted {
+		t.Fatalf("unexpected auth logout response: %+v", logout)
+	}
+	if len(auth.statusRequests) != 1 ||
+		len(auth.loginRequests) != 1 ||
+		auth.loginRequests[0].ExpectedEmail != "oleksiy@kovyrin.net" ||
+		len(auth.logoutRequests) != 1 {
+		t.Fatalf("unexpected auth service requests: %+v %+v %+v", auth.statusRequests, auth.loginRequests, auth.logoutRequests)
+	}
+}
+
 func TestServerItemDescribeProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -1779,6 +1850,18 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 		},
 		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPExec, RequestID: "req_gcp", Nonce: "nonce_gcp", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPAuthStatus, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPAuthLogin, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPAuthLogout, Payload: json.RawMessage(`[]`)},
 			wantCode: "bad_request",
 		},
 		{

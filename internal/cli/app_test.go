@@ -1093,36 +1093,66 @@ func TestAppGCPWithSessionRunsChildWithIsolatedCloudSDKEnv(t *testing.T) {
 	}
 }
 
-func TestAppGCPAuthStatusAndUnimplementedMutations(t *testing.T) {
+func TestAppGCPAuthStatusLoginAndLogoutOutput(t *testing.T) {
 	t.Parallel()
 
+	client := &appFakeDaemonClient{
+		gcpAuthStatusPayload: protocol.GCPAuthStatusResponsePayload{
+			Accounts: []protocol.GCPAuthAccountInfo{
+				{
+					GoogleAccount: "personal",
+					Email:         "oleksiy@kovyrin.net",
+					Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+					UpdatedAt:     time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+		gcpAuthLoginPayload: protocol.GCPAuthLoginResponsePayload{
+			Account: protocol.GCPAuthAccountInfo{
+				GoogleAccount: "personal",
+				Email:         "oleksiy@kovyrin.net",
+				Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+			},
+		},
+		gcpAuthLogoutPayload: protocol.GCPAuthLogoutResponsePayload{
+			GoogleAccount: "personal",
+			Deleted:       true,
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 
 	if code := app.Run(context.Background(), []string{"gcp", "auth", "status"}); code != 0 {
 		t.Fatalf("auth status exit = %d stderr=%q", code, stderr.String())
 	}
-	if strings.TrimSpace(stdout.String()) != "gcp auth: not configured" {
+	if !strings.Contains(stdout.String(), "personal email=oleksiy@kovyrin.net") {
 		t.Fatalf("auth status stdout = %q", stdout.String())
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := app.Run(context.Background(), []string{"gcp", "auth", "login"}); code != 1 {
-		t.Fatalf("auth login exit = %d, want 1", code)
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "login", "--google-account", "personal", "--expected-email", "oleksiy@kovyrin.net"}); code != 0 {
+		t.Fatalf("auth login exit = %d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "not implemented") {
-		t.Fatalf("auth login stderr = %q", stderr.String())
+	if !strings.Contains(stdout.String(), "gcp auth: logged in") ||
+		len(client.gcpAuthLoginRequests) != 1 ||
+		client.gcpAuthLoginRequests[0].ExpectedEmail != "oleksiy@kovyrin.net" {
+		t.Fatalf("auth login stdout=%q requests=%+v", stdout.String(), client.gcpAuthLoginRequests)
 	}
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := app.Run(context.Background(), []string{"gcp", "auth", "logout"}); code != 1 {
-		t.Fatalf("auth logout exit = %d, want 1", code)
+	if code := app.Run(context.Background(), []string{"gcp", "auth", "logout", "--google-account", "personal"}); code != 0 {
+		t.Fatalf("auth logout exit = %d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "not implemented") {
-		t.Fatalf("auth logout stderr = %q", stderr.String())
+	if strings.TrimSpace(stdout.String()) != "gcp auth: removed personal" || client.gcpAuthLogoutCalls != 1 {
+		t.Fatalf("auth logout stdout=%q calls=%d", stdout.String(), client.gcpAuthLogoutCalls)
 	}
 }
 
@@ -3671,12 +3701,16 @@ type appFakeDaemonClient struct {
 	sessionDestroyPayload    protocol.SessionDestroyResponsePayload
 	sessionListPayload       protocol.SessionListResponsePayload
 	gcpCommandPayload        protocol.GCPCommandResponsePayload
+	gcpAuthStatusPayload     protocol.GCPAuthStatusResponsePayload
+	gcpAuthLoginPayload      protocol.GCPAuthLoginResponsePayload
+	gcpAuthLogoutPayload     protocol.GCPAuthLogoutResponsePayload
 	gcpSessionCreatePayload  protocol.GCPSessionCreateResponsePayload
 	gcpSessionListPayload    protocol.GCPSessionListResponsePayload
 	gcpSessionDestroyPayload protocol.GCPSessionDestroyResponsePayload
 
 	requestErr         error
 	gcpErr             error
+	gcpAuthErr         error
 	itemDescribeErr    error
 	sessionCreateErr   error
 	sessionResolveErr  error
@@ -3693,6 +3727,9 @@ type appFakeDaemonClient struct {
 	sessionDestroyCalls      int
 	sessionListCalls         int
 	requestGCPExecCalls      int
+	gcpAuthStatusCalls       int
+	gcpAuthLoginCalls        int
+	gcpAuthLogoutCalls       int
 	createGCPSessionCalls    int
 	listGCPSessionsCalls     int
 	destroyGCPSessionCalls   int
@@ -3703,6 +3740,9 @@ type appFakeDaemonClient struct {
 	sessionResolveRequests   []request.SessionResolveRequest
 	sessionDestroyRequests   []request.SessionDestroyRequest
 	gcpExecRequests          []request.GCPExecRequest
+	gcpAuthStatusRequests    []request.GCPAuthStatusRequest
+	gcpAuthLoginRequests     []request.GCPAuthLoginRequest
+	gcpAuthLogoutRequests    []request.GCPAuthLogoutRequest
 	gcpSessionCreateRequests []request.GCPSessionCreateRequest
 	gcpSessionUseRequests    []request.GCPSessionUseRequest
 	closeCalls               int
@@ -3733,6 +3773,33 @@ func (c *appFakeDaemonClient) RequestGCPExec(
 	c.requestGCPExecCalls++
 	c.gcpExecRequests = append(c.gcpExecRequests, req)
 	return c.gcpCommandPayload, c.gcpErr
+}
+
+func (c *appFakeDaemonClient) GCPAuthStatus(
+	_ context.Context,
+	req request.GCPAuthStatusRequest,
+) (protocol.GCPAuthStatusResponsePayload, error) {
+	c.gcpAuthStatusCalls++
+	c.gcpAuthStatusRequests = append(c.gcpAuthStatusRequests, req)
+	return c.gcpAuthStatusPayload, c.gcpAuthErr
+}
+
+func (c *appFakeDaemonClient) GCPAuthLogin(
+	_ context.Context,
+	req request.GCPAuthLoginRequest,
+) (protocol.GCPAuthLoginResponsePayload, error) {
+	c.gcpAuthLoginCalls++
+	c.gcpAuthLoginRequests = append(c.gcpAuthLoginRequests, req)
+	return c.gcpAuthLoginPayload, c.gcpAuthErr
+}
+
+func (c *appFakeDaemonClient) GCPAuthLogout(
+	_ context.Context,
+	req request.GCPAuthLogoutRequest,
+) (protocol.GCPAuthLogoutResponsePayload, error) {
+	c.gcpAuthLogoutCalls++
+	c.gcpAuthLogoutRequests = append(c.gcpAuthLogoutRequests, req)
+	return c.gcpAuthLogoutPayload, c.gcpAuthErr
 }
 
 func (c *appFakeDaemonClient) CreateGCPSession(
@@ -4177,6 +4244,9 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 			protocol.TypeSessionResolve,
 			protocol.TypeSessionDestroy,
 			protocol.TypeSessionList,
+			protocol.TypeGCPAuthStatus,
+			protocol.TypeGCPAuthLogin,
+			protocol.TypeGCPAuthLogout,
 			protocol.TypeGCPExec,
 			protocol.TypeGCPSessionCreate,
 			protocol.TypeGCPSessionList,

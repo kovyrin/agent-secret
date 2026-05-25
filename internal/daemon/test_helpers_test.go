@@ -153,6 +153,41 @@ func (m *fakeGCPMinter) MintAccessToken(_ context.Context, req daemonbroker.GCPM
 	return token, nil
 }
 
+type fakeGCPAuthService struct {
+	statusPayload protocol.GCPAuthStatusResponsePayload
+	loginPayload  protocol.GCPAuthLoginResponsePayload
+	logoutPayload protocol.GCPAuthLogoutResponsePayload
+	err           error
+
+	statusRequests []request.GCPAuthStatusRequest
+	loginRequests  []request.GCPAuthLoginRequest
+	logoutRequests []request.GCPAuthLogoutRequest
+}
+
+func (s *fakeGCPAuthService) Status(_ context.Context, req request.GCPAuthStatusRequest) (protocol.GCPAuthStatusResponsePayload, error) {
+	s.statusRequests = append(s.statusRequests, req)
+	if s.err != nil {
+		return protocol.GCPAuthStatusResponsePayload{}, s.err
+	}
+	return s.statusPayload, nil
+}
+
+func (s *fakeGCPAuthService) Login(_ context.Context, req request.GCPAuthLoginRequest) (protocol.GCPAuthLoginResponsePayload, error) {
+	s.loginRequests = append(s.loginRequests, req)
+	if s.err != nil {
+		return protocol.GCPAuthLoginResponsePayload{}, s.err
+	}
+	return s.loginPayload, nil
+}
+
+func (s *fakeGCPAuthService) Logout(_ context.Context, req request.GCPAuthLogoutRequest) (protocol.GCPAuthLogoutResponsePayload, error) {
+	s.logoutRequests = append(s.logoutRequests, req)
+	if s.err != nil {
+		return protocol.GCPAuthLogoutResponsePayload{}, s.err
+	}
+	return s.logoutPayload, nil
+}
+
 func (m *mockResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
