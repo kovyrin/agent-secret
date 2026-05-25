@@ -40,6 +40,7 @@ build_revision="${AGENT_SECRET_BUILD_REVISION:-}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 approver_team_id="-"
 daemon_entitlements="$project_root/scripts/build/agent-secretd.entitlements"
+icon_png="$project_root/scripts/build/assets/AppIcon.png"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -136,6 +137,10 @@ if [[ ! -f "$daemon_entitlements" ]]; then
   echo "build-app-bundle: missing daemon entitlements at $daemon_entitlements" >&2
   exit 1
 fi
+if [[ ! -f "$icon_png" ]]; then
+  echo "build-app-bundle: missing app icon at $icon_png" >&2
+  exit 1
+fi
 
 run_go() (
   unset GOROOT
@@ -151,7 +156,6 @@ trap cleanup EXIT
 app_bundle="$output_dir/$AGENT_SECRET_APP_NAME.app"
 daemon_bundle="$tmp_dir/AgentSecretDaemon.app"
 skill_source="$project_root/.agents/skills/agent-secret"
-icon_png="$tmp_dir/AppIcon.png"
 iconset="$tmp_dir/AppIcon.iconset"
 
 make_icon() {
@@ -286,7 +290,6 @@ if [[ ! -x "$approver_binary" ]]; then
 fi
 
 echo "Creating app icon..."
-"$tool_swift" "$project_root/scripts/build/make-daemon-icon.swift" "$icon_png"
 make_icon "$icon_png" "$iconset" "$tmp_dir/AppIcon.icns"
 
 echo "Creating daemon helper app..."
