@@ -174,6 +174,13 @@ func (f *OAuthFlow) Login(ctx context.Context, req OAuthLoginRequest) (OAuthToke
 	if token.RefreshToken == "" {
 		return OAuthToken{}, ErrOAuthNoRefresh
 	}
+	scopes := strings.Fields(token.Scope)
+	if len(scopes) == 0 {
+		scopes = slices.Clone(f.scopes)
+	}
+	if missing := missingOAuthScopes(f.scopes, scopes); len(missing) > 0 {
+		return OAuthToken{}, fmt.Errorf("%w: %s; rerun login and select all Agent Secret access checkboxes", ErrOAuthScopeDenied, strings.Join(missing, ", "))
+	}
 	email, err := f.fetchEmail(ctx, token.AccessToken)
 	if err != nil {
 		return OAuthToken{}, err
@@ -181,10 +188,6 @@ func (f *OAuthFlow) Login(ctx context.Context, req OAuthLoginRequest) (OAuthToke
 	expected := strings.TrimSpace(strings.ToLower(req.ExpectedEmail))
 	if expected != "" && strings.ToLower(email) != expected {
 		return OAuthToken{}, fmt.Errorf("%w: got %s, expected %s", ErrOAuthEmailMismatch, email, expected)
-	}
-	scopes := strings.Fields(token.Scope)
-	if len(scopes) == 0 {
-		scopes = slices.Clone(f.scopes)
 	}
 	return OAuthToken{
 		AccessToken:  token.AccessToken,
@@ -216,6 +219,27 @@ func (f *OAuthFlow) authURL(redirectURI string, state string, challenge string, 
 	}
 	endpoint.RawQuery = values.Encode()
 	return endpoint.String(), nil
+}
+
+func missingOAuthScopes(want []string, got []string) []string {
+	granted := make(map[string]struct{}, len(got))
+	for _, scope := range got {
+		scope = strings.TrimSpace(scope)
+		if scope != "" {
+			granted[scope] = struct{}{}
+		}
+	}
+	missing := make([]string, 0)
+	for _, scope := range want {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if _, ok := granted[scope]; !ok {
+			missing = append(missing, scope)
+		}
+	}
+	return missing
 }
 
 func (f *OAuthFlow) exchangeCode(ctx context.Context, code string, redirectURI string, verifier string) (oauthTokenResponse, error) {
@@ -328,19 +352,60 @@ func doJSON(client *http.Client, req *http.Request, out any) error {
 }
 
 func httpError(host string, status int, contentType string, body []byte) error {
-	if contentType == "application/json" {
-		var payload struct {
-			Error            string `json:"error"`
-			ErrorDescription string `json:"error_description"`
-		}
-		if err := json.Unmarshal(body, &payload); err == nil && payload.Error != "" {
-			if payload.ErrorDescription != "" {
-				return fmt.Errorf("HTTP %d from %s: %s: %s", status, host, payload.Error, payload.ErrorDescription)
-			}
-			return fmt.Errorf("HTTP %d from %s: %s", status, host, payload.Error)
-		}
+	if contentType != "application/json" {
+		return fmt.Errorf("HTTP %d from %s", status, host)
+	}
+	if message, ok := structuredHTTPMessage(host, status, body); ok {
+		return errors.New(message)
 	}
 	return fmt.Errorf("HTTP %d from %s", status, host)
+}
+
+func structuredHTTPMessage(host string, status int, body []byte) (string, bool) {
+	var payload struct {
+		Error            json.RawMessage `json:"error"`
+		ErrorDescription string          `json:"error_description"`
+	}
+	if json.Unmarshal(body, &payload) != nil || len(payload.Error) == 0 {
+		return "", false
+	}
+	if message, ok := oauthErrorString(host, status, payload.Error, payload.ErrorDescription); ok {
+		return message, true
+	}
+	return googleAPIErrorObject(host, status, payload.Error)
+}
+
+func oauthErrorString(host string, status int, raw json.RawMessage, description string) (string, bool) {
+	var code string
+	if json.Unmarshal(raw, &code) != nil || code == "" {
+		return "", false
+	}
+	if description != "" {
+		return fmt.Sprintf("HTTP %d from %s: %s: %s", status, host, code, description), true
+	}
+	return fmt.Sprintf("HTTP %d from %s: %s", status, host, code), true
+}
+
+func googleAPIErrorObject(host string, status int, raw json.RawMessage) (string, bool) {
+	var googleError struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(raw, &googleError) != nil {
+		return "", false
+	}
+	label := strings.TrimSpace(googleError.Status)
+	message := strings.TrimSpace(googleError.Message)
+	switch {
+	case label != "" && message != "":
+		return fmt.Sprintf("HTTP %d from %s: %s: %s", status, host, label, message), true
+	case message != "":
+		return fmt.Sprintf("HTTP %d from %s: %s", status, host, message), true
+	case label != "":
+		return fmt.Sprintf("HTTP %d from %s: %s", status, host, label), true
+	default:
+		return "", false
+	}
 }
 
 func setOptionalClientSecret(form url.Values, clientSecret string) {

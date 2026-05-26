@@ -142,6 +142,75 @@ func TestOAuthFlowIncludesConfiguredClientSecretInTokenRequest(t *testing.T) {
 	}
 }
 
+func TestOAuthFlowRejectsMissingGrantedScopes(t *testing.T) {
+	t.Parallel()
+
+	var userInfoCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"access_token": "bootstrap-access",
+				"refresh_token": "bootstrap-refresh",
+				"scope": "openid https://www.googleapis.com/auth/userinfo.email",
+				"token_type": "Bearer",
+				"expires_in": 3600
+			}`))
+		case "/userinfo":
+			userInfoCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"email":"oleksiy@kovyrin.net"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	flow := NewOAuthFlow(OAuthFlowOptions{
+		ClientID:         "desktop-client-id",
+		AuthEndpoint:     "https://accounts.example.invalid/o/oauth2/v2/auth",
+		TokenEndpoint:    server.URL + "/token",
+		UserInfoEndpoint: server.URL + "/userinfo",
+		OpenBrowser: func(ctx context.Context, authURL string) error {
+			parsed, err := url.Parse(authURL)
+			if err != nil {
+				t.Fatalf("parse auth URL: %v", err)
+			}
+			query := parsed.Query()
+			callback, err := url.Parse(query.Get("redirect_uri"))
+			if err != nil {
+				t.Fatalf("parse redirect_uri: %v", err)
+			}
+			values := callback.Query()
+			values.Set("state", query.Get("state"))
+			values.Set("code", "auth-code")
+			callback.RawQuery = values.Encode()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, callback.String(), nil)
+			if err != nil {
+				return err
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return nil
+		},
+	})
+
+	_, err := flow.Login(context.Background(), OAuthLoginRequest{
+		GoogleAccount: "personal",
+		ExpectedEmail: "oleksiy@kovyrin.net",
+	})
+	if !errors.Is(err, ErrOAuthScopeDenied) || !strings.Contains(err.Error(), BootstrapOAuthScopeIAM) {
+		t.Fatalf("Login error = %v, want missing IAM scope", err)
+	}
+	if userInfoCalled {
+		t.Fatal("userinfo endpoint was called after missing required scope")
+	}
+}
+
 func TestServiceLoginStatusAndLogoutDoNotExposeRefreshToken(t *testing.T) {
 	t.Parallel()
 
@@ -474,6 +543,23 @@ func TestOAuthHTTPErrorIncludesStructuredDescription(t *testing.T) {
 	_, err := flow.exchangeCode(context.Background(), "auth-code", "http://127.0.0.1/callback", "verifier")
 	if err == nil || !strings.Contains(err.Error(), "invalid_request: client_secret is missing") {
 		t.Fatalf("exchangeCode error = %v", err)
+	}
+}
+
+func TestHTTPErrorIncludesGoogleAPIMessage(t *testing.T) {
+	t.Parallel()
+
+	err := httpError("iamcredentials.googleapis.com", http.StatusForbidden, "application/json", []byte(`{
+		"error": {
+			"code": 403,
+			"message": "The IAM Service Account Credentials API has not been used in project 123 before or it is disabled.",
+			"status": "PERMISSION_DENIED"
+		}
+	}`))
+	if err == nil ||
+		!strings.Contains(err.Error(), "PERMISSION_DENIED") ||
+		!strings.Contains(err.Error(), "has not been used in project 123") {
+		t.Fatalf("httpError = %v, want nested Google API message", err)
 	}
 }
 

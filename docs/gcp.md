@@ -129,6 +129,34 @@ The operator needs Agent Secret installed and `gcloud` available on `PATH`.
 Normal operators do not need a Google OAuth client JSON file. The daemon uses
 the OAuth Desktop client bundled into the Agent Secret release build.
 
+### Bundled OAuth Client Requirements
+
+This section is for Agent Secret maintainers or teams building with their own
+OAuth client. Normal operators can skip it when using an official Agent Secret
+release.
+
+The OAuth client must be a Google OAuth Desktop client. Agent Secret opens the
+system browser and listens on a loopback callback URL such as
+`http://127.0.0.1:<port>/callback`, so do not create a Web client with fixed
+authorized redirect URIs for this flow.
+
+The Google Auth Platform app that owns the client must be configured with:
+
+- App audience and branding that allow the intended users to authorize it. For
+  a Testing app, add each operator Google account as a test user.
+- Data access scopes for `openid`,
+  `https://www.googleapis.com/auth/userinfo.email`, and
+  `https://www.googleapis.com/auth/iam`.
+- The IAM Service Account Credentials API
+  (`iamcredentials.googleapis.com`) enabled in the OAuth client project. This
+  is separate from enabling the same API in the project that contains the
+  target service account.
+
+During login, Google may show the IAM access as an optional checkbox or an
+additional-access step. The operator must grant it. Agent Secret rejects OAuth
+responses that omit required bootstrap scopes so a partial consent cannot be
+stored as a usable GCP login.
+
 ### Development And Custom OAuth Client Builds
 
 Development builds require the bundled OAuth client too. The build script first
@@ -411,7 +439,17 @@ Check both sides of the permission model:
   the service account.
 - The service account must have the IAM roles needed for the actual `gcloud`
   command.
-- Required APIs must be enabled in the relevant project.
+- `iamcredentials.googleapis.com` must be enabled in both the OAuth client
+  project and the project that contains the target service account.
+- Any APIs used by the wrapped `gcloud` command must be enabled in the target
+  project.
+
+### Missing OAuth Scopes After Login
+
+If `gcp auth login` reports that Google did not grant required scopes, rerun
+login and grant every access item Google shows for Agent Secret. For the GCP
+broker, the required bootstrap scope is
+`https://www.googleapis.com/auth/iam`.
 
 ### Session Is Not Usable From This Cwd
 
