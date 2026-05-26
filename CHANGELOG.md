@@ -392,6 +392,8 @@ file before a release is published.
   and refresh.
 - Added build-time support for a bundled Agent Secret GCP OAuth Desktop client
   so release builds can avoid per-operator OAuth client environment setup.
+- Added official release wiring for the bundled GCP OAuth Desktop client, so
+  tag-triggered release artifacts require and embed the configured client.
 - Added a user-facing GCP integration guide covering Google-side IAM setup,
   bundled OAuth client behavior, local bootstrap auth, GCP profiles, `gcp exec`,
   and GCP sessions.
