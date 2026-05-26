@@ -22,10 +22,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          token: ""
-          persist-credentials: false
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Install mise
         run: scripts/ci/install-mise.sh
@@ -50,10 +54,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          token: ""
-          persist-credentials: false
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Install mise
         run: scripts/ci/install-mise.sh
@@ -73,10 +81,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          token: ""
-          persist-credentials: false
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Verify release tag ancestry
         run: scripts/release/check-release-ancestry.sh "$GITHUB_REF_NAME"
@@ -155,10 +167,14 @@ jobs:
       contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          token: ""
-          persist-credentials: false
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
