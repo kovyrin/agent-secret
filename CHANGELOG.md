@@ -387,6 +387,9 @@ file before a release is published.
 - Added daemon-owned `agent-secret gcp auth status|login|logout` support with
   Google OAuth PKCE login, macOS Keychain storage, and IAMCredentials service
   account token minting.
+- Added a native GCP OAuth login warning window that explains Google's IAM
+  consent wording, lets the operator reopen Google login when the wrong browser
+  profile is active, and closes automatically after OAuth completes.
 - Added daemon support for an optional `AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET`
   when a Google desktop OAuth client requires a secret during token exchange
   and refresh.

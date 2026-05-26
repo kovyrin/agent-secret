@@ -27,11 +27,7 @@ type healthCheckRunner interface {
 const approverHealthCheckTimeout = 10 * time.Second
 
 func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
-	executable, err := l.executablePath()
-	if err != nil {
-		return err
-	}
-	identity, err := l.identityPolicy().ValidateApproverExecutable(executable)
+	identity, err := l.validatedExecutableIdentity()
 	if err != nil {
 		return err
 	}
@@ -82,21 +78,29 @@ func (processHealthCheckRunner) RunHealthCheck(ctx context.Context, executablePa
 }
 
 func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string) (ExpectedApprover, error) {
-	executable, err := l.executablePath()
+	identity, err := l.validatedExecutableIdentity()
 	if err != nil {
 		return ExpectedApprover{}, err
 	}
-	identity, err := l.identityPolicy().ValidateApproverExecutable(executable)
-	if err != nil {
-		return ExpectedApprover{}, err
-	}
-	executable = identity.ExecutablePath
+	executable := identity.ExecutablePath
 
 	if err := ctx.Err(); err != nil {
 		return ExpectedApprover{}, err
 	}
+	return l.launch(ctx, executable, []string{"--socket", socketPath}, identity)
+}
+
+func (l ProcessApproverLauncher) launch(
+	ctx context.Context,
+	executable string,
+	args []string,
+	identity ApproverIdentity,
+) (ExpectedApprover, error) {
+	if err := ctx.Err(); err != nil {
+		return ExpectedApprover{}, err
+	}
 	//nolint:gosec,noctx // G204: executable was canonicalized and validated above; CommandContext would kill a successfully launched approver when the approval job completes.
-	cmd := exec.Command(executable, "--socket", socketPath)
+	cmd := exec.Command(executable, args...)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		return ExpectedApprover{}, fmt.Errorf("%w: open /dev/null: %w", ErrApproverLaunchFailed, err)
@@ -129,6 +133,18 @@ func (l ProcessApproverLauncher) Launch(ctx context.Context, socketPath string) 
 		close(exited)
 	}()
 	return expected, nil
+}
+
+func (l ProcessApproverLauncher) validatedExecutableIdentity() (ApproverIdentity, error) {
+	executable, err := l.executablePath()
+	if err != nil {
+		return ApproverIdentity{}, err
+	}
+	identity, err := l.identityPolicy().ValidateApproverExecutable(executable)
+	if err != nil {
+		return ApproverIdentity{}, err
+	}
+	return identity, nil
 }
 
 func (l ProcessApproverLauncher) executablePath() (string, error) {

@@ -211,6 +211,102 @@ func TestOAuthFlowRejectsMissingGrantedScopes(t *testing.T) {
 	}
 }
 
+func TestOAuthFlowUsesLoginPromptAndClosesItAfterCallback(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"access_token": "bootstrap-access",
+				"refresh_token": "bootstrap-refresh",
+				"scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/iam",
+				"token_type": "Bearer",
+				"expires_in": 3600
+			}`))
+		case "/userinfo":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"email":"oleksiy@kovyrin.net"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	callbackErrs := make(chan error, 1)
+	prompter := &recordingLoginPrompter{
+		onStart: func(ctx context.Context, req OAuthLoginPromptRequest) {
+			go func() {
+				callbackErrs <- completeOAuthCallback(ctx, req.AuthURL, "auth-code")
+			}()
+		},
+	}
+	flow := NewOAuthFlow(OAuthFlowOptions{
+		ClientID:         "desktop-client-id",
+		AuthEndpoint:     "https://accounts.example.invalid/o/oauth2/v2/auth",
+		TokenEndpoint:    server.URL + "/token",
+		UserInfoEndpoint: server.URL + "/userinfo",
+		OpenBrowser: func(context.Context, string) error {
+			t.Fatal("OpenBrowser should not be called when LoginPrompter is configured")
+			return nil
+		},
+		LoginPrompter: prompter,
+	})
+
+	token, err := flow.Login(context.Background(), OAuthLoginRequest{
+		GoogleAccount: "personal",
+		ExpectedEmail: "oleksiy@kovyrin.net",
+	})
+	if err != nil {
+		t.Fatalf("Login returned error: %v", err)
+	}
+	if token.RefreshToken != "bootstrap-refresh" {
+		t.Fatalf("refresh token = %q, want bootstrap-refresh", token.RefreshToken)
+	}
+	select {
+	case err := <-callbackErrs:
+		if err != nil {
+			t.Fatalf("complete callback: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for OAuth callback helper")
+	}
+	req := prompter.request()
+	if req.GoogleAccount != "personal" ||
+		req.ExpectedEmail != "oleksiy@kovyrin.net" ||
+		req.AuthURL == "" ||
+		!slices.Contains(req.Scopes, BootstrapOAuthScopeIAM) {
+		t.Fatalf("unexpected prompt request: %+v", req)
+	}
+	if !prompter.sessionClosed() {
+		t.Fatal("OAuth login prompt was not closed after callback")
+	}
+}
+
+func TestOAuthFlowFailsWhenLoginPromptClosesBeforeCallback(t *testing.T) {
+	t.Parallel()
+
+	prompter := &recordingLoginPrompter{
+		onStart: func(_ context.Context, req OAuthLoginPromptRequest) {
+			if req.AuthURL == "" {
+				t.Fatal("prompt request missing auth URL")
+			}
+		},
+		closeImmediately: true,
+	}
+	flow := NewOAuthFlow(OAuthFlowOptions{
+		ClientID:      "desktop-client-id",
+		AuthEndpoint:  "https://accounts.example.invalid/o/oauth2/v2/auth",
+		LoginPrompter: prompter,
+	})
+
+	_, err := flow.Login(context.Background(), OAuthLoginRequest{GoogleAccount: "personal"})
+	if !errors.Is(err, ErrOAuthPromptClosed) {
+		t.Fatalf("Login error = %v, want ErrOAuthPromptClosed", err)
+	}
+}
+
 func TestServiceLoginStatusAndLogoutDoNotExposeRefreshToken(t *testing.T) {
 	t.Parallel()
 
@@ -572,6 +668,67 @@ func (r staticOAuthRunner) Login(context.Context, OAuthLoginRequest) (OAuthToken
 	return r.token, r.err
 }
 
+type recordingLoginPrompter struct {
+	mu               sync.Mutex
+	gotRequest       OAuthLoginPromptRequest
+	gotSession       *recordingLoginPromptSession
+	onStart          func(context.Context, OAuthLoginPromptRequest)
+	closeImmediately bool
+}
+
+func (p *recordingLoginPrompter) StartOAuthLoginPrompt(
+	ctx context.Context,
+	req OAuthLoginPromptRequest,
+) (OAuthLoginPromptSession, error) {
+	session := &recordingLoginPromptSession{done: make(chan error, 1)}
+	p.mu.Lock()
+	p.gotRequest = req
+	p.gotSession = session
+	p.mu.Unlock()
+	if p.onStart != nil {
+		p.onStart(ctx, req)
+	}
+	if p.closeImmediately {
+		session.done <- nil
+	}
+	return session, nil
+}
+
+func (p *recordingLoginPrompter) request() OAuthLoginPromptRequest {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.gotRequest
+}
+
+func (p *recordingLoginPrompter) sessionClosed() bool {
+	p.mu.Lock()
+	session := p.gotSession
+	p.mu.Unlock()
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.closed
+}
+
+type recordingLoginPromptSession struct {
+	mu     sync.Mutex
+	done   chan error
+	closed bool
+}
+
+func (s *recordingLoginPromptSession) Done() <-chan error {
+	return s.done
+}
+
+func (s *recordingLoginPromptSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return nil
+}
+
 type memoryStore struct {
 	mu         sync.Mutex
 	credential map[string]Credential
@@ -707,4 +864,33 @@ func cloneValues(values url.Values) url.Values {
 		out[key] = slices.Clone(list)
 	}
 	return out
+}
+
+func completeOAuthCallback(ctx context.Context, authURL string, code string) error {
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		return err
+	}
+	query := parsed.Query()
+	callback, err := url.Parse(query.Get("redirect_uri"))
+	if err != nil {
+		return err
+	}
+	values := callback.Query()
+	values.Set("state", query.Get("state"))
+	values.Set("code", code)
+	callback.RawQuery = values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, callback.String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("callback returned non-OK status")
+	}
+	return nil
 }

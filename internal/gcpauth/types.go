@@ -23,6 +23,7 @@ var (
 	ErrOAuthNoRefresh     = errors.New("GCP OAuth response did not include a refresh token")
 	ErrOAuthEmailMismatch = errors.New("GCP OAuth email did not match expected email")
 	ErrOAuthScopeDenied   = errors.New("GCP OAuth response did not grant required scopes")
+	ErrOAuthPromptClosed  = errors.New("GCP OAuth login prompt closed before completion")
 	ErrKeychainAccess     = errors.New("GCP Keychain access requires repair")
 	ErrUnsupportedStore   = errors.New("GCP auth store is unsupported on this platform")
 )

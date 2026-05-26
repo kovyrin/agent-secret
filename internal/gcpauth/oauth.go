@@ -31,6 +31,7 @@ type OAuthFlow struct {
 	userInfoEndpoint string
 	httpClient       *http.Client
 	openBrowser      BrowserOpener
+	loginPrompter    OAuthLoginPrompter
 	randomReader     io.Reader
 }
 
@@ -43,6 +44,7 @@ type OAuthFlowOptions struct {
 	UserInfoEndpoint string
 	HTTPClient       *http.Client
 	OpenBrowser      BrowserOpener
+	LoginPrompter    OAuthLoginPrompter
 	RandomReader     io.Reader
 }
 
@@ -107,6 +109,7 @@ func NewOAuthFlow(opts OAuthFlowOptions) *OAuthFlow {
 		userInfoEndpoint: userInfoEndpoint,
 		httpClient:       httpClient,
 		openBrowser:      opts.OpenBrowser,
+		loginPrompter:    opts.LoginPrompter,
 		randomReader:     randomReader,
 	}
 }
@@ -153,18 +156,17 @@ func (f *OAuthFlow) Login(ctx context.Context, req OAuthLoginRequest) (OAuthToke
 	if err != nil {
 		return OAuthToken{}, err
 	}
-	if err := openBrowser(ctx, authURL); err != nil {
-		return OAuthToken{}, fmt.Errorf("open browser for GCP OAuth login: %w", err)
+	prompt, hasPrompt, err := f.startLoginPrompt(ctx, authURL, req, openBrowser)
+	if err != nil {
+		return OAuthToken{}, err
+	}
+	if hasPrompt {
+		defer func() { _ = prompt.Close() }()
 	}
 
-	var callback oauthCallback
-	select {
-	case <-ctx.Done():
-		return OAuthToken{}, ctx.Err()
-	case callback = <-callbacks:
-		if callback.err != nil {
-			return OAuthToken{}, callback.err
-		}
+	callback, err := waitForOAuthCallback(ctx, callbacks, prompt)
+	if err != nil {
+		return OAuthToken{}, err
 	}
 
 	token, err := f.exchangeCode(ctx, callback.code, redirectURI, verifier)
@@ -195,6 +197,58 @@ func (f *OAuthFlow) Login(ctx context.Context, req OAuthLoginRequest) (OAuthToke
 		Email:        email,
 		Scopes:       scopes,
 	}, nil
+}
+
+func (f *OAuthFlow) startLoginPrompt(
+	ctx context.Context,
+	authURL string,
+	req OAuthLoginRequest,
+	openBrowser BrowserOpener,
+) (OAuthLoginPromptSession, bool, error) {
+	if f.loginPrompter == nil {
+		if err := openBrowser(ctx, authURL); err != nil {
+			return nil, false, fmt.Errorf("open browser for GCP OAuth login: %w", err)
+		}
+		return nil, false, nil
+	}
+	prompt, err := f.loginPrompter.StartOAuthLoginPrompt(ctx, OAuthLoginPromptRequest{
+		AuthURL:       authURL,
+		GoogleAccount: req.GoogleAccount,
+		ExpectedEmail: req.ExpectedEmail,
+		Scopes:        slices.Clone(f.scopes),
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("open GCP OAuth login prompt: %w", err)
+	}
+	if prompt == nil {
+		return nil, false, errors.New("open GCP OAuth login prompt: launcher returned nil prompt")
+	}
+	return prompt, true, nil
+}
+
+func waitForOAuthCallback(
+	ctx context.Context,
+	callbacks <-chan oauthCallback,
+	prompt OAuthLoginPromptSession,
+) (oauthCallback, error) {
+	var promptDone <-chan error
+	if prompt != nil {
+		promptDone = prompt.Done()
+	}
+	select {
+	case <-ctx.Done():
+		return oauthCallback{}, ctx.Err()
+	case err := <-promptDone:
+		if err != nil {
+			return oauthCallback{}, fmt.Errorf("%w: %w", ErrOAuthPromptClosed, err)
+		}
+		return oauthCallback{}, ErrOAuthPromptClosed
+	case callback := <-callbacks:
+		if callback.err != nil {
+			return oauthCallback{}, callback.err
+		}
+		return callback, nil
+	}
 }
 
 func (f *OAuthFlow) authURL(redirectURI string, state string, challenge string, req OAuthLoginRequest) (string, error) {

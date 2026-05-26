@@ -233,10 +233,24 @@ agent-secret gcp auth login \
   --expected-email you@example.com
 ```
 
-Agent Secret asks the daemon to open the system browser, runs Google OAuth with
-PKCE, verifies the reported email when `--expected-email` is provided, and
-stores the refresh-capable bootstrap credential in macOS Keychain under Agent
-Secret's GCP OAuth service.
+Agent Secret first shows a native login warning that lists the Google consent
+items, explains the scary IAM wording, and asks the operator to explicitly open
+Google login. The window stays open while OAuth is in progress; if Google opens
+in the wrong Chrome profile, switch to the right profile and click the open
+button again. After the loopback OAuth callback completes, Agent Secret closes
+the window automatically.
+
+The OAuth grant does not create service accounts, grant roles, or bypass Google
+IAM by itself. It lets Agent Secret use IAM permissions that the selected
+Google account already has. Do not authorize a broad Owner, IAM Admin, or
+Service Account Admin account for normal use; prefer a bootstrap identity that
+only has Service Account Token Creator on the exact service accounts Agent
+Secret should use.
+
+After confirmation, the daemon runs Google OAuth with PKCE, verifies the
+reported email when `--expected-email` is provided, and stores the
+refresh-capable bootstrap credential in macOS Keychain under Agent Secret's GCP
+OAuth service.
 
 Verify the local state:
 
