@@ -25,12 +25,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install mise
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
-        with:
-          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
-          install: true
-          cache: true
+        run: scripts/ci/install-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
@@ -55,12 +50,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install mise
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
-        with:
-          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
-          install: true
-          cache: true
+        run: scripts/ci/install-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
@@ -86,12 +76,7 @@ jobs:
         run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
 
       - name: Install mise
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
-        with:
-          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
-          install: true
-          cache: true
+        run: scripts/ci/install-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes

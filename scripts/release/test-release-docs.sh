@@ -111,6 +111,7 @@ require_release_process_text "\`main/uninstall.sh\`"
 require_release_process_text "does not require callers to pass"
 require_release_process_text "AGENT_SECRET_VERSION"
 require_release_process_text "AGENT_SECRET_MISE_VERSION"
+require_release_process_text "scripts/ci/install-mise.sh"
 require_release_process_text "scripts/checks/test-workflow-actions-pinned.sh"
 
 require_threat_model_text "## Review Finding Ledger"
