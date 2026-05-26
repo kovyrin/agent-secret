@@ -1,0 +1,423 @@
+# GCP Integration
+
+Agent Secret can broker short-lived Google Cloud access for approved commands
+and sessions. The goal is to stop giving agents ambient access through
+`gcloud auth login`, `~/.config/gcloud`, or Application Default Credentials
+when a workflow only needs a narrow GCP capability for a short time.
+
+GCP support currently targets `gcloud` workflows. It prepares an isolated Cloud
+SDK environment, writes a broker-owned short-lived access-token file, runs the
+approved command, and cleans up token material when the command or session is
+finished.
+
+## How It Works
+
+There are three identities involved:
+
+- The local macOS user running Agent Secret.
+- A Google bootstrap account, such as `you@example.com`, that signs in through
+  Agent Secret's app-owned OAuth flow.
+- A GCP service account that carries the actual resource permissions for the
+  command, such as
+  `agent-beta-logs@example-project.iam.gserviceaccount.com`.
+
+Agent Secret does not run child commands as the Google bootstrap account. The
+daemon uses the bootstrap account only to call Google's IAM Credentials API and
+mint a short-lived access token for the configured service account. The child
+command receives only the short-lived service-account token through isolated
+Cloud SDK environment variables.
+
+This means the service account's IAM roles are the real GCP permission boundary.
+OAuth scopes are still required by Google token minting, but the approval UI
+must not be read as proof that Agent Secret has verified every resource-level
+permission behind the service account.
+
+## What The GCP Admin Sets Up
+
+Agent Secret does not create Google Cloud IAM resources. A GCP admin must set
+up the OAuth client, service accounts, APIs, and IAM bindings before operators
+can use the feature.
+
+### 1. Choose A GCP Project For OAuth
+
+Pick a Google Cloud project to own the Agent Secret OAuth app. This can be the
+same project that contains the target resources, but it does not have to be.
+
+Enable the APIs Agent Secret needs for token minting:
+
+```bash
+gcloud services enable \
+  iamcredentials.googleapis.com \
+  --project PROJECT_ID
+```
+
+Enable any additional APIs that the wrapped `gcloud` commands need, such as
+Cloud Logging, Cloud Run, Compute Engine, Secret Manager, or Service Usage.
+
+### 2. Create A Google OAuth App And Desktop Client
+
+This is the part hidden behind the phrase "configure the app/daemon with a
+Google OAuth desktop client."
+
+Agent Secret needs a Google OAuth client so Google knows which local
+application is asking the user to sign in. For v1, create an OAuth client of
+type **Desktop app** in Google Auth Platform.
+
+In Google Cloud Console:
+
+1. Open **APIs & Services -> OAuth consent screen** or **Google Auth Platform**.
+2. Create or configure an OAuth app for Agent Secret.
+3. Set the user type:
+   - **Internal** if all users are in your Google Workspace organization.
+   - **External** if personal Google accounts or accounts outside the org need
+     access.
+4. Add the scopes Agent Secret requests during login:
+   - `openid`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   - `https://www.googleapis.com/auth/cloud-platform`
+5. If the app is in testing mode, add each operator Google account as a test
+   user.
+6. Open **Clients** or **Credentials** and create an OAuth client.
+7. Choose application type **Desktop app**.
+8. Save the generated client ID and client secret, if Google shows one, for
+   local Agent Secret daemon startup.
+
+The OAuth client does not grant cloud resource access by itself. It lets the
+Agent Secret daemon run the local browser OAuth flow and store the resulting
+refresh-capable bootstrap credential in macOS Keychain.
+
+Use a Desktop app client, not a Web application client. Google's installed-app
+OAuth flow assumes a local app opens the system browser and receives the
+authorization code through a local redirect. Google also documents that
+installed applications cannot keep client secrets truly secret, so do not treat
+this client secret like a service account key. Still keep it out of the repo,
+shell history, logs, screenshots, and protocol payloads.
+
+### 3. Create Narrow Service Accounts
+
+Create separate service accounts for separate capabilities. For example:
+
+- `agent-beta-logs`: read beta logs.
+- `agent-prod-readonly`: inspect production metadata.
+- `agent-benchmark-runner`: create benchmark resources.
+- `agent-compute-ssh`: create VMs and use IAP or OS Login for SSH tests.
+
+Example:
+
+```bash
+project="PROJECT_ID"
+
+gcloud iam service-accounts create agent-beta-logs \
+  --project "$project" \
+  --display-name "Agent Secret beta log reader"
+```
+
+Grant the service account only the roles its workflow needs. For log reads:
+
+```bash
+sa="agent-beta-logs@$project.iam.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding "$project" \
+  --member "serviceAccount:$sa" \
+  --role roles/logging.viewer
+```
+
+Use project, folder, organization, or resource-level bindings according to your
+normal GCP policy. Agent Secret will display the service account, but it does
+not verify whether the service account's roles are broad or narrow.
+
+### 4. Allow Human Bootstrap Accounts To Impersonate The Service Account
+
+Grant each approved human Google account
+`roles/iam.serviceAccountTokenCreator` on the service account that Agent Secret
+should mint tokens for.
+
+Prefer binding this role on the service account itself, not on the whole
+project:
+
+```bash
+project="PROJECT_ID"
+sa="agent-beta-logs@$project.iam.gserviceaccount.com"
+user="you@example.com"
+
+gcloud iam service-accounts add-iam-policy-binding "$sa" \
+  --project "$project" \
+  --member "user:$user" \
+  --role roles/iam.serviceAccountTokenCreator
+```
+
+That role includes permission to create short-lived OAuth access tokens for the
+service account. Once a user can mint tokens for a service account, they can
+access whatever that service account can access, so keep the service account's
+own IAM roles narrow.
+
+## What The Local Operator Sets Up
+
+The operator needs Agent Secret installed, `gcloud` available on `PATH`, and
+the OAuth desktop client ID from the GCP admin. If Google produced a client
+secret for the Desktop app client, keep that with the client ID and provide it
+to the daemon too.
+
+### 1. Start The Daemon With The OAuth Client
+
+The daemon reads the OAuth client values only at startup. If the daemon is
+already running, stop it first.
+
+```bash
+agent-secret daemon stop
+```
+
+Start the daemon from a shell that has the OAuth client values:
+
+```bash
+export AGENT_SECRET_GCP_OAUTH_CLIENT_ID="GOOGLE_DESKTOP_CLIENT_ID"
+export AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET="GOOGLE_DESKTOP_CLIENT_SECRET"
+
+agent-secret daemon start
+```
+
+If the Desktop app client does not have a client secret, omit
+`AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET`. The client ID is required.
+
+For v1, this is the concrete meaning of "configure the daemon with a Google
+OAuth desktop client." The values are process configuration for the local
+daemon. There is not yet an Agent Secret settings UI or keychain-backed
+configuration store for the OAuth client material.
+
+Process environment is a pragmatic v1 configuration path, but it is not a
+secret vault. Same-user diagnostic tools can usually inspect a running
+process's environment on macOS. That is acceptable for a Google Desktop OAuth
+client, which Google treats as installed-app material that cannot be kept truly
+secret, but it would not be acceptable for service account keys, refresh tokens,
+or generated access tokens. Do not put those values in daemon environment.
+
+If you change the OAuth client, restart the daemon. If the daemon starts
+without these values, GCP auth or token minting will fail until the daemon is
+restarted with them.
+
+### 2. Log In A Google Bootstrap Account
+
+Pick a short local alias for the Google account. The alias is stored in Agent
+Secret config and audit metadata; it does not need to equal the email address.
+
+```bash
+agent-secret gcp auth login \
+  --google-account work \
+  --expected-email you@example.com
+```
+
+Agent Secret asks the daemon to open the system browser, runs Google OAuth with
+PKCE, verifies the reported email when `--expected-email` is provided, and
+stores the refresh-capable bootstrap credential in macOS Keychain under Agent
+Secret's GCP OAuth service.
+
+Verify the local state:
+
+```bash
+agent-secret gcp auth status
+```
+
+You should not need to enter the macOS login keychain password for normal Agent
+Secret GCP use. If macOS refuses non-interactive access to old or stale GCP
+OAuth Keychain state, Agent Secret fails with repair guidance instead of
+opening a password prompt. The normal repair is:
+
+```bash
+agent-secret gcp auth logout --google-account work
+agent-secret gcp auth login --google-account work \
+  --expected-email you@example.com
+```
+
+### 3. Add A GCP Profile To The Project
+
+Create or edit `agent-secret.yml` at the project root:
+
+```yaml
+version: 1
+
+profiles:
+  beta-logs:
+    reason: Inspect beta Cloud Run errors
+    ttl: 10m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+```
+
+GCP profile fields:
+
+- `google_account`: local alias created with `gcp auth login`.
+- `project`: intended project for approval, token delivery, and Cloud SDK
+  defaults.
+- `service_account`: service account to impersonate.
+- `scopes`: non-empty list of OAuth scopes for the minted access token.
+
+`https://www.googleapis.com/auth/cloud-platform` is often the practical scope
+for `gcloud`, but the service account IAM roles still define what the command
+can actually do.
+
+Inspect the resolved profile without minting a token:
+
+```bash
+agent-secret profile show beta-logs
+agent-secret gcp exec --dry-run --profile beta-logs --json -- \
+  gcloud logging read 'severity>=ERROR' --project fixture-beta --limit=5
+```
+
+### 4. Run One Command With `gcp exec`
+
+```bash
+agent-secret gcp exec --profile beta-logs -- \
+  gcloud logging read 'severity>=ERROR' \
+    --project fixture-beta \
+    --limit=5
+```
+
+Agent Secret will show a native approval prompt with the command, reason,
+project, Google bootstrap alias, service account, and scopes. After approval,
+the daemon mints a short-lived token for the service account and runs the child
+with isolated Cloud SDK state.
+
+Ad hoc access is available when there is no profile yet:
+
+```bash
+agent-secret gcp exec \
+  --google-account work \
+  --project fixture-beta \
+  --service-account agent-beta-logs@fixture-beta.iam.gserviceaccount.com \
+  --scope https://www.googleapis.com/auth/cloud-platform \
+  --reason "Inspect beta Cloud Run errors" \
+  -- gcloud logging read 'severity>=ERROR' --project fixture-beta --limit=5
+```
+
+### 5. Use A Session For Multi-Command Workflows
+
+Use a GCP session when an agent needs multiple commands under the same approved
+profile, such as a benchmark or incident investigation.
+
+Sessions require a config-backed profile. They are bound to the project root
+containing `agent-secret.yml`, the same local user, the same daemon, TTL, and
+max command starts.
+
+```bash
+handle="$(
+  agent-secret gcp session create \
+    --profile beta-logs \
+    --max-command-starts 5 \
+    --json | jq -r .session_handle
+)"
+
+agent-secret gcp with-session "$handle" -- \
+  gcloud logging read 'severity>=ERROR' --project fixture-beta --limit=5
+
+agent-secret gcp with-session "$handle" -- \
+  gcloud services list --enabled --project fixture-beta --limit=10
+
+agent-secret gcp session destroy "$handle"
+```
+
+`gcp with-session` prepares the same isolated Cloud SDK environment for each
+command. Nested `gcloud` calls from scripts or tools such as `mise` work because
+the environment is inherited by child processes.
+
+List active same-user sessions:
+
+```bash
+agent-secret gcp session list
+agent-secret gcp session list --json
+```
+
+The list shows all active same-user sessions, including whether each session is
+usable from the current directory. `with-session` is allowed only from the
+approved project root or a descendant directory. `session destroy` can be run
+from any directory by the same local user because it only reduces access.
+
+## What The Child Command Receives
+
+Agent Secret does not write to `~/.config/gcloud` and does not create ADC files.
+For each approved command or session use, it prepares environment variables
+similar to:
+
+- `CLOUDSDK_CONFIG`: a broker-owned temporary Cloud SDK config directory.
+- `CLOUDSDK_AUTH_ACCESS_TOKEN_FILE`: a broker-owned `0600` token file.
+- `CLOUDSDK_CORE_PROJECT`: the approved project.
+- `CLOUDSDK_ACTIVE_CONFIG_NAME`: an isolated config name.
+
+The token file is deleted on command cleanup, session destroy, session expiry,
+or daemon startup janitor cleanup. Agent Secret does not expose a command that
+prints the token value.
+
+## Troubleshooting
+
+### `GCP OAuth client id is required`
+
+The daemon was started without `AGENT_SECRET_GCP_OAUTH_CLIENT_ID`. Stop the
+daemon, set the OAuth client environment variables, and start it again.
+
+### `GCP token minter is unavailable`
+
+The daemon was started without a GCP OAuth client ID, so it cannot mint service
+account tokens. Restart the daemon with the OAuth client configuration.
+
+### `GCP bootstrap credential not found`
+
+The profile's `google_account` alias has not been logged in. Run:
+
+```bash
+agent-secret gcp auth login \
+  --google-account ALIAS \
+  --expected-email you@example.com
+```
+
+### Permission denied From Google APIs
+
+Check both sides of the permission model:
+
+- The human Google account must have `roles/iam.serviceAccountTokenCreator` on
+  the service account.
+- The service account must have the IAM roles needed for the actual `gcloud`
+  command.
+- Required APIs must be enabled in the relevant project.
+
+### Session Is Not Usable From This Cwd
+
+`gcp session create` binds the session to the directory containing the resolved
+`agent-secret.yml`. Run `gcp with-session` from that directory or a descendant,
+or create a new session for the intended project root.
+
+### `gcloud compute ssh` Writes Local SSH State
+
+Agent Secret brokers the GCP token and Cloud SDK state. It does not manage SSH
+keys or host-key files in v1. `gcloud compute ssh` may write OS Login metadata,
+SSH keys, or known-hosts entries depending on your flags and Google-side
+configuration. Use explicit `gcloud compute ssh` flags and temporary SSH paths
+when you need stronger isolation.
+
+## Security Notes
+
+- Do not run `gcloud auth login` as a replacement for Agent Secret GCP auth.
+- Do not commit OAuth client JSON, client secrets, refresh tokens, service
+  account keys, access tokens, token files, or captured fixtures containing real
+  values.
+- Prefer one service account per capability class instead of one broad service
+  account for all agents.
+- Prefer service-account-level Token Creator bindings over project-level
+  Token Creator bindings.
+- Use `--expected-email` during `gcp auth login` to prevent accidentally
+  bootstrapping the wrong Google account.
+- Treat `cloud-platform` as a broad OAuth scope, but remember IAM roles on the
+  service account are the real resource boundary.
+- Agent Secret does not parse, rewrite, or police `gcloud` arguments inside the
+  approved environment. It audits the command and prepares the approved GCP
+  environment; GCP IAM enforces cloud permissions.
+
+## Official Google References
+
+- [OAuth 2.0 for iOS and Desktop Apps](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [Service account impersonation](https://cloud.google.com/iam/docs/service-account-impersonation)
+- [Service Account Token Creator role](https://cloud.google.com/iam/docs/service-account-permissions#service-account-token-creator-role)
+- [Create short-lived credentials for a service account](https://cloud.google.com/iam/docs/create-short-lived-credentials-direct)
+- [IAM Credentials generateAccessToken](https://cloud.google.com/iam/docs/reference/credentials/rest/v1/projects.serviceAccounts/generateAccessToken)

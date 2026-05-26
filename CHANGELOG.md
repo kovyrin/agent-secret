@@ -390,6 +390,9 @@ file before a release is published.
 - Added daemon support for an optional `AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET`
   when a Google desktop OAuth client requires a secret during token exchange
   and refresh.
+- Added a user-facing GCP integration guide covering Google-side setup, OAuth
+  desktop client configuration, local bootstrap auth, GCP profiles, `gcp exec`,
+  and GCP sessions.
 
 ### Fixed
 
