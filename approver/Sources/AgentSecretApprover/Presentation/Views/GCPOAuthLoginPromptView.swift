@@ -5,29 +5,39 @@ import Foundation
 
     public struct GCPOAuthLoginPromptView: View {
         private enum Metric {
-            static let boundaryColumnWidth: CGFloat = 258
-            static let boundaryPadding: CGFloat = 14
-            static let boundarySectionSpacing: CGFloat = 10
-            static let consentIconFontSize: CGFloat = 14
-            static let consentIconSize: CGFloat = 22
-            static let consentRowSpacing: CGFloat = 10
-            static let finePrintSpacing: CGFloat = 5
-            static let footerSpacing: CGFloat = 12
+            static let bodySpacing: CGFloat = 14
+            static let boxPadding: CGFloat = 12
+            static let boxSpacing: CGFloat = 7
+            static let borderWidth: CGFloat = 1
+            static let cardBorderOpacity: Double = 0.08
+            static let cardCornerRadius: CGFloat = 20
+            static let cardHeight: CGFloat = 360
+            static let cardOpacity: Double = 0.98
+            static let cardShadowOpacity: Double = 0.22
+            static let cardShadowRadius: CGFloat = 18
+            static let cardShadowYOffset: CGFloat = 10
+            static let cardWidth: CGFloat = 520
+            static let footerTopPadding: CGFloat = 12
+            static let footerSpacing: CGFloat = 10
             static let footerVerticalPadding: CGFloat = 14
-            static let headerIconFontSize: CGFloat = 20
+            static let headerIconFontSize: CGFloat = 18
             static let headerIconOpacity: Double = 0.12
             static let headerSpacing: CGFloat = 12
-            static let iconSize: CGFloat = 38
-            static let itemDetailSpacing: CGFloat = 3
-            static let itemSpacing: CGFloat = 12
-            static let mainContentSpacing: CGFloat = 20
-            static let minContentHeight: CGFloat = 460
-            static let minContentWidth: CGFloat = 720
+            static let headerTextSpacing: CGFloat = 4
+            static let iconSize: CGFloat = 36
+            static let itemIconFontSize: CGFloat = 12
+            static let itemIconSize: CGFloat = 18
+            static let itemRowSpacing: CGFloat = 8
+            static let itemTextSpacing: CGFloat = 1
+            static let itemTitleLineLimit: Int = 2
+            static let itemDetailLineLimit: Int = 2
+            static let outerPadding: CGFloat = 14
             static let panelCornerRadius: CGFloat = 8
-            static let panelPadding: CGFloat = 24
-            static let primaryButtonMinWidth: CGFloat = 154
-            static let sectionSpacing: CGFloat = 16
-            static let titleFontSize: CGFloat = 23
+            static let panelPadding: CGFloat = 22
+            static let primaryButtonMinWidth: CGFloat = 124
+            static let scopeColumnSpacing: CGFloat = 16
+            static let scopeItemSpacing: CGFloat = 5
+            static let titleFontSize: CGFloat = 22
         }
 
         private let prompt: GCPOAuthLoginPrompt
@@ -39,24 +49,35 @@ import Foundation
 
         public var body: some View {
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
+                VStack(alignment: .leading, spacing: Metric.bodySpacing) {
                     header
-                    Divider()
-                    mainContent
+                    scopeSummary
+                    boundaryBox
                 }
                 .padding(Metric.panelPadding)
 
                 Spacer(minLength: 0)
                 footer
             }
-            .frame(
-                minWidth: Metric.minContentWidth,
-                maxWidth: .infinity,
-                minHeight: Metric.minContentHeight,
-                maxHeight: .infinity,
-                alignment: .topLeading
+            .frame(width: Metric.cardWidth, height: Metric.cardHeight, alignment: .topLeading)
+            .background(Color(nsColor: .windowBackgroundColor).opacity(Metric.cardOpacity))
+            .clipShape(cardShape)
+            .overlay(cardBorder)
+            .shadow(
+                color: .black.opacity(Metric.cardShadowOpacity),
+                radius: Metric.cardShadowRadius,
+                x: 0,
+                y: Metric.cardShadowYOffset
             )
-            .background(Color(nsColor: .windowBackgroundColor))
+            .padding(Metric.outerPadding)
+        }
+
+        private var cardShape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: Metric.cardCornerRadius, style: .continuous)
+        }
+
+        private var cardBorder: some View {
+            cardShape.stroke(Color.black.opacity(Metric.cardBorderOpacity), lineWidth: Metric.borderWidth)
         }
 
         private var header: some View {
@@ -69,8 +90,8 @@ import Foundation
                     .clipShape(RoundedRectangle(cornerRadius: Metric.panelCornerRadius))
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: Metric.finePrintSpacing) {
-                    Text("Review Google Cloud Login")
+                VStack(alignment: .leading, spacing: Metric.headerTextSpacing) {
+                    Text("Connect Google Cloud")
                         .font(.system(size: Metric.titleFontSize, weight: .semibold))
                         .foregroundStyle(.primary)
                     Text("Agent Secret will open Google OAuth for \(prompt.accountLabel).")
@@ -81,57 +102,48 @@ import Foundation
             }
         }
 
-        private var mainContent: some View {
-            HStack(alignment: .top, spacing: Metric.mainContentSpacing) {
-                consentSection
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                boundarySection
-                    .frame(width: Metric.boundaryColumnWidth, alignment: .topLeading)
-            }
-        }
-
-        private var consentSection: some View {
-            VStack(alignment: .leading, spacing: Metric.itemSpacing) {
-                Text("Google consent screen")
-                    .font(.headline)
+        private var scopeSummary: some View {
+            VStack(alignment: .leading, spacing: Metric.scopeItemSpacing) {
+                Text("Google will ask for:")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                ForEach(GCPOAuthLoginPromptCopy.consentItems(for: prompt.scopes)) { item in
-                    consentRow(item)
+                HStack(alignment: .top, spacing: Metric.scopeColumnSpacing) {
+                    ForEach(GCPOAuthLoginPromptCopy.consentItems(for: prompt.scopes)) { item in
+                        scopeRow(item)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
                 }
             }
         }
 
-        private var boundarySection: some View {
-            VStack(alignment: .leading, spacing: Metric.boundarySectionSpacing) {
+        private var boundaryBox: some View {
+            VStack(alignment: .leading, spacing: Metric.boxSpacing) {
                 Label("Permission boundary", systemImage: "checkmark.shield")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                boundaryText(GCPOAuthLoginPromptCopy.meaningText)
-
-                Divider()
-
-                Label("Use a narrow account", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                boundaryText(GCPOAuthLoginPromptCopy.adminRiskText)
 
-                Divider()
+                Text(GCPOAuthLoginPromptCopy.meaningText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Label("Wrong Chrome profile?", systemImage: "arrow.clockwise")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                boundaryText(GCPOAuthLoginPromptCopy.retryText)
+                Text(GCPOAuthLoginPromptCopy.adminRiskText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(Metric.boundaryPadding)
+            .padding(Metric.boxPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: Metric.panelCornerRadius))
         }
 
         private var footer: some View {
             HStack(spacing: Metric.footerSpacing) {
-                statusText
+                Spacer()
+                if openFailed || openCount > 0 {
+                    statusText
+                }
                 Spacer()
 
                 Button("Cancel") {
@@ -157,7 +169,8 @@ import Foundation
                 .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, Metric.panelPadding)
-            .padding(.vertical, Metric.footerVerticalPadding)
+            .padding(.top, Metric.footerTopPadding)
+            .padding(.bottom, Metric.footerVerticalPadding)
             .background(Color(nsColor: .windowBackgroundColor))
             .overlay(alignment: .top) {
                 Divider()
@@ -175,7 +188,7 @@ import Foundation
                     .foregroundStyle(.red)
                 } else if openCount > 0 {
                     Label(
-                        "Google opened. Switch Chrome profiles, then open again if needed.",
+                        "Wrong Chrome profile? Switch profiles and open again.",
                         systemImage: "arrow.clockwise"
                     )
                     .font(.callout)
@@ -198,31 +211,26 @@ import Foundation
             self.cancel = cancel
         }
 
-        private func consentRow(_ item: GCPOAuthConsentItem) -> some View {
-            HStack(alignment: .top, spacing: Metric.consentRowSpacing) {
+        private func scopeRow(_ item: GCPOAuthConsentItem) -> some View {
+            HStack(alignment: .top, spacing: Metric.itemRowSpacing) {
                 Image(systemName: consentIconName(for: item.id))
-                    .font(.system(size: Metric.consentIconFontSize, weight: .semibold))
+                    .font(.system(size: Metric.itemIconFontSize, weight: .semibold))
                     .foregroundStyle(.blue)
-                    .frame(width: Metric.consentIconSize, height: Metric.consentIconSize)
+                    .frame(width: Metric.itemIconSize, height: Metric.itemIconSize)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: Metric.itemDetailSpacing) {
+                VStack(alignment: .leading, spacing: Metric.itemTextSpacing) {
                     Text(item.title)
-                        .font(.body.weight(.semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.primary)
+                        .lineLimit(Metric.itemTitleLineLimit)
                     Text(item.detail)
-                        .font(.callout)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(Metric.itemDetailLineLimit)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
-
-        private func boundaryText(_ text: String) -> some View {
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
 
         private func consentIconName(for id: String) -> String {
