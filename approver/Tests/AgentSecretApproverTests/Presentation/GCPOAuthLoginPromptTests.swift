@@ -15,13 +15,13 @@ final class GCPOAuthLoginPromptTests: XCTestCase {
         XCTAssertEqual(prompt.accountLabel, "oleksiy@kovyrin.net")
         XCTAssertTrue(
             GCPOAuthLoginPromptCopy.consentItems(for: prompt.scopes).map(\.title).contains(
-                "Manage your Identity and Access Management (IAM) Policies"
+                "IAM policy scope"
             )
         )
         XCTAssertTrue(GCPOAuthLoginPromptCopy.meaningText.contains("does not create service accounts"))
         XCTAssertTrue(GCPOAuthLoginPromptCopy.meaningText.contains("does not"))
-        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("Owner"))
-        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("Service Account Token Creator"))
+        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("narrow bootstrap account"))
+        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("Token Creator"))
         XCTAssertTrue(GCPOAuthLoginPromptCopy.retryText.contains("wrong Chrome profile"))
     }
 
@@ -31,9 +31,9 @@ final class GCPOAuthLoginPromptTests: XCTestCase {
         XCTAssertEqual(
             titles,
             [
-                "Manage your Identity and Access Management (IAM) Policies",
-                "See your primary Google Account email address",
-                "Associate you with your personal info on Google"
+                "IAM policy scope",
+                "Email address",
+                "Account identity"
             ]
         )
     }

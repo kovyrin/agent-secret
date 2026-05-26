@@ -29,10 +29,10 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
         }
 
         private static let windowOrigin: CGFloat = 0
-        private static let windowWidth: CGFloat = 760
-        private static let windowHeight: CGFloat = 488
-        private static let minWindowWidth: CGFloat = 720
-        private static let minWindowHeight: CGFloat = 460
+        private static let windowWidth: CGFloat = 548
+        private static let windowHeight: CGFloat = 388
+        private static let minWindowWidth: CGFloat = 548
+        private static let minWindowHeight: CGFloat = 388
 
         /// Runs the prompt until the operator cancels or the daemon ends the helper process.
         @preconcurrency
@@ -55,7 +55,7 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
             NSRunningApplication.current.activate(options: [.activateAllWindows])
             app.requestUserAttention(.criticalRequest)
 
-            withExtendedLifetime((delegate, content.hostingView, windowHandle)) {
+            withExtendedLifetime((delegate, content.hostingView, window, windowHandle)) {
                 app.run()
             }
         }
@@ -83,7 +83,7 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
                 )
             )
             contentView.wantsLayer = true
-            contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            contentView.layer?.backgroundColor = NSColor.clear.cgColor
             hostingView.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(hostingView)
             NSLayoutConstraint.activate([
@@ -97,18 +97,17 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
 
         @MainActor
         private static func makeWindow(contentView: NSView, delegate: NSWindowDelegate) -> NSWindow {
-            let window = NSWindow(
+            let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: windowOrigin,
                     y: windowOrigin,
                     width: windowWidth,
                     height: windowHeight
                 ),
-                styleMask: [.titled, .closable, .miniaturizable],
+                styleMask: [.borderless],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Agent Secret Google Cloud Login"
             window.level = .modalPanel
             window.collectionBehavior = [
                 .canJoinAllSpaces,
@@ -116,7 +115,10 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
             ]
             window.minSize = NSSize(width: minWindowWidth, height: minWindowHeight)
             window.isReleasedWhenClosed = false
-            window.backgroundColor = .windowBackgroundColor
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.isMovableByWindowBackground = true
             window.setContentSize(NSSize(width: windowWidth, height: windowHeight))
             window.contentView = contentView
             window.delegate = delegate

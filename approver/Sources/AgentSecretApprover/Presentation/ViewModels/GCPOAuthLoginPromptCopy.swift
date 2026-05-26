@@ -11,34 +11,33 @@ public enum GCPOAuthLoginPromptCopy {
 
     private static let openIDConsentItem = GCPOAuthConsentItem(
         id: "openid",
-        title: "Associate you with your personal info on Google",
-        detail: "Google's OpenID Connect label. Agent Secret uses it to bind this login to the selected account."
+        title: "Account identity",
+        detail: "OpenID Connect"
     )
 
     private static let emailConsentItem = GCPOAuthConsentItem(
         id: "userinfo.email",
-        title: "See your primary Google Account email address",
-        detail: "Used to show and verify which Google account completed login."
+        title: "Email address",
+        detail: "Verify account"
     )
 
     private static let iamConsentItem = GCPOAuthConsentItem(
         id: "iam",
-        title: "Manage your Identity and Access Management (IAM) Policies",
+        title: "IAM policy scope",
         detail: """
-        Required so Agent Secret can call IAMCredentials and mint short-lived service-account tokens.
+        Shown by Google as "Manage IAM Policies"
         """
     )
 
     /// Explains the Google IAM scope without overstating what OAuth grants by itself.
     public static let meaningText = """
-    This grant does not create service accounts, assign roles, or bypass Google IAM. It only lets Agent Secret use \
-    permissions the selected Google account already has.
+    This grant does not create service accounts, assign roles, or bypass IAM. Agent Secret can only use permissions \
+    this Google account already has.
     """
 
     /// Warns operators away from broad admin accounts for bootstrap login.
     public static let adminRiskText = """
-    Avoid Owner, IAM Admin, and Service Account Admin for normal use. Grant Service Account Token Creator only on the \
-    exact service accounts Agent Secret should impersonate.
+    Use a narrow bootstrap account: Token Creator only on the service accounts Agent Secret may impersonate.
     """
 
     /// Explains the repeated open button behavior for users with multiple browser profiles.
