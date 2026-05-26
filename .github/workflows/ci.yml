@@ -38,6 +38,8 @@ jobs:
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Run lints and tests
@@ -70,6 +72,8 @@ jobs:
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Run non-secret smoke tests
@@ -103,6 +107,8 @@ jobs:
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Verify release signing configuration
