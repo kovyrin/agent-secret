@@ -5,18 +5,29 @@ import Foundation
 
     public struct GCPOAuthLoginPromptView: View {
         private enum Metric {
-            static let buttonCornerRadius: CGFloat = 8
-            static let buttonHorizontalPadding: CGFloat = 18
-            static let buttonVerticalPadding: CGFloat = 11
-            static let contentSpacing: CGFloat = 18
-            static let finePrintSpacing: CGFloat = 8
+            static let boundaryColumnWidth: CGFloat = 258
+            static let boundaryPadding: CGFloat = 14
+            static let boundarySectionSpacing: CGFloat = 10
+            static let consentIconFontSize: CGFloat = 14
+            static let consentIconSize: CGFloat = 22
+            static let consentRowSpacing: CGFloat = 10
+            static let finePrintSpacing: CGFloat = 5
             static let footerSpacing: CGFloat = 12
-            static let iconColumnWidth: CGFloat = 18
+            static let footerVerticalPadding: CGFloat = 14
+            static let headerIconFontSize: CGFloat = 20
+            static let headerIconOpacity: Double = 0.12
+            static let headerSpacing: CGFloat = 12
+            static let iconSize: CGFloat = 38
             static let itemDetailSpacing: CGFloat = 3
-            static let itemSpacing: CGFloat = 10
-            static let panelPadding: CGFloat = 30
-            static let sectionSpacing: CGFloat = 12
-            static let titleFontSize: CGFloat = 24
+            static let itemSpacing: CGFloat = 12
+            static let mainContentSpacing: CGFloat = 20
+            static let minContentHeight: CGFloat = 460
+            static let minContentWidth: CGFloat = 720
+            static let panelCornerRadius: CGFloat = 8
+            static let panelPadding: CGFloat = 24
+            static let primaryButtonMinWidth: CGFloat = 154
+            static let sectionSpacing: CGFloat = 16
+            static let titleFontSize: CGFloat = 23
         }
 
         private let prompt: GCPOAuthLoginPrompt
@@ -27,93 +38,107 @@ import Foundation
         @State private var openFailed = false
 
         public var body: some View {
-            VStack(alignment: .leading, spacing: Metric.contentSpacing) {
-                header
-                consentItems
-                meaning
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
+                    header
+                    Divider()
+                    mainContent
+                }
+                .padding(Metric.panelPadding)
+
+                Spacer(minLength: 0)
                 footer
             }
-            .padding(Metric.panelPadding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(
+                minWidth: Metric.minContentWidth,
+                maxWidth: .infinity,
+                minHeight: Metric.minContentHeight,
+                maxHeight: .infinity,
+                alignment: .topLeading
+            )
             .background(Color(nsColor: .windowBackgroundColor))
         }
 
         private var header: some View {
-            VStack(alignment: .leading, spacing: Metric.finePrintSpacing) {
-                Text("Connect Agent Secret to Google Cloud")
-                    .font(.system(size: Metric.titleFontSize, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text("Agent Secret will open Google OAuth for \(prompt.accountLabel). Google will ask you to approve:")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-
-        private var consentItems: some View {
-            VStack(alignment: .leading, spacing: Metric.itemSpacing) {
-                ForEach(GCPOAuthLoginPromptCopy.consentItems(for: prompt.scopes)) { item in
-                    HStack(alignment: .top, spacing: Metric.itemSpacing) {
-                        Text("•")
-                            .font(.body.weight(.semibold))
-                            .frame(width: Metric.iconColumnWidth, alignment: .center)
-                            .foregroundStyle(.blue)
-                        VStack(alignment: .leading, spacing: Metric.itemDetailSpacing) {
-                            Text(item.title)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(item.detail)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-            }
-        }
-
-        private var meaning: some View {
-            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                Text("What this means")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(GCPOAuthLoginPromptCopy.meaningText)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(GCPOAuthLoginPromptCopy.adminRiskText)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(GCPOAuthLoginPromptCopy.retryText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if openCount > 0 {
-                    Text("""
-                    Google login opened. You can click Open Google Login again if it used the wrong browser profile.
-                    """)
-                    .font(.callout.weight(.semibold))
+            HStack(alignment: .center, spacing: Metric.headerSpacing) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: Metric.headerIconFontSize, weight: .semibold))
                     .foregroundStyle(.blue)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                if openFailed {
-                    Text("Agent Secret could not open the Google login URL. Check your default browser and try again.")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.red)
+                    .frame(width: Metric.iconSize, height: Metric.iconSize)
+                    .background(Color.blue.opacity(Metric.headerIconOpacity))
+                    .clipShape(RoundedRectangle(cornerRadius: Metric.panelCornerRadius))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Metric.finePrintSpacing) {
+                    Text("Review Google Cloud Login")
+                        .font(.system(size: Metric.titleFontSize, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("Agent Secret will open Google OAuth for \(prompt.accountLabel).")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
 
+        private var mainContent: some View {
+            HStack(alignment: .top, spacing: Metric.mainContentSpacing) {
+                consentSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                boundarySection
+                    .frame(width: Metric.boundaryColumnWidth, alignment: .topLeading)
+            }
+        }
+
+        private var consentSection: some View {
+            VStack(alignment: .leading, spacing: Metric.itemSpacing) {
+                Text("Google consent screen")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                ForEach(GCPOAuthLoginPromptCopy.consentItems(for: prompt.scopes)) { item in
+                    consentRow(item)
+                }
+            }
+        }
+
+        private var boundarySection: some View {
+            VStack(alignment: .leading, spacing: Metric.boundarySectionSpacing) {
+                Label("Permission boundary", systemImage: "checkmark.shield")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                boundaryText(GCPOAuthLoginPromptCopy.meaningText)
+
+                Divider()
+
+                Label("Use a narrow account", systemImage: "exclamationmark.triangle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                boundaryText(GCPOAuthLoginPromptCopy.adminRiskText)
+
+                Divider()
+
+                Label("Wrong Chrome profile?", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                boundaryText(GCPOAuthLoginPromptCopy.retryText)
+            }
+            .padding(Metric.boundaryPadding)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: Metric.panelCornerRadius))
+        }
+
         private var footer: some View {
             HStack(spacing: Metric.footerSpacing) {
+                statusText
+                Spacer()
+
                 Button("Cancel") {
                     cancel()
                 }
                 .keyboardShortcut(.cancelAction)
-
-                Spacer()
+                .controlSize(.large)
 
                 Button {
                     if openGoogle() {
@@ -123,14 +148,43 @@ import Foundation
                         openFailed = true
                     }
                 } label: {
-                    Text(openCount == 0 ? "Open Google Login" : "Open Google Login Again")
+                    Text(openCount == 0 ? "Open Google" : "Open Google Again")
                         .font(.body.weight(.semibold))
-                        .padding(.horizontal, Metric.buttonHorizontalPadding)
-                        .padding(.vertical, Metric.buttonVerticalPadding)
+                        .frame(minWidth: Metric.primaryButtonMinWidth)
                 }
                 .buttonStyle(.borderedProminent)
-                .clipShape(RoundedRectangle(cornerRadius: Metric.buttonCornerRadius))
+                .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, Metric.panelPadding)
+            .padding(.vertical, Metric.footerVerticalPadding)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(alignment: .top) {
+                Divider()
+            }
+        }
+
+        private var statusText: some View {
+            Group {
+                if openFailed {
+                    Label(
+                        "Could not open Google. Check your default browser and try again.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.red)
+                } else if openCount > 0 {
+                    Label(
+                        "Google opened. Switch Chrome profiles, then open again if needed.",
+                        systemImage: "arrow.clockwise"
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text("Nothing is sent to Google until you continue.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
 
@@ -142,6 +196,49 @@ import Foundation
             self.prompt = prompt
             self.openGoogle = openGoogle
             self.cancel = cancel
+        }
+
+        private func consentRow(_ item: GCPOAuthConsentItem) -> some View {
+            HStack(alignment: .top, spacing: Metric.consentRowSpacing) {
+                Image(systemName: consentIconName(for: item.id))
+                    .font(.system(size: Metric.consentIconFontSize, weight: .semibold))
+                    .foregroundStyle(.blue)
+                    .frame(width: Metric.consentIconSize, height: Metric.consentIconSize)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Metric.itemDetailSpacing) {
+                    Text(item.title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(item.detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+
+        private func boundaryText(_ text: String) -> some View {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        private func consentIconName(for id: String) -> String {
+            switch id {
+            case "iam":
+                "key.horizontal"
+
+            case "userinfo.email":
+                "envelope"
+
+            case "openid":
+                "person.crop.circle"
+
+            default:
+                "checkmark.circle"
+            }
         }
     }
 #endif
