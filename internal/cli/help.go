@@ -435,7 +435,7 @@ Usage:
 
 func GCPAuthLoginHelp() string {
 	return strings.TrimSpace(`
-agent-secret gcp auth login opens a browser from the daemon, completes Google OAuth with PKCE through the bundled Agent Secret OAuth client, and stores refresh-capable bootstrap state in Keychain.
+agent-secret gcp auth login shows a native Google Cloud login warning, opens Google OAuth from the daemon after local confirmation, completes OAuth with PKCE through the bundled Agent Secret OAuth client, and stores refresh-capable bootstrap state in Keychain.
 
 Usage:
 

@@ -44,9 +44,10 @@ func run() int {
 	}
 	defer func() { _ = auditWriter.Close() }()
 
+	appLauncher := approval.ProcessApproverLauncher{}
 	approver, err := approval.NewSocketApprover(
 		config.socketPath,
-		approval.ProcessApproverLauncher{},
+		appLauncher,
 		nil,
 	)
 	if err != nil {
@@ -61,8 +62,9 @@ func run() int {
 	gcpAuth, err := gcpauth.NewService(gcpauth.ServiceOptions{
 		Store: gcpStore,
 		OAuth: gcpauth.NewOAuthFlow(gcpauth.OAuthFlowOptions{
-			ClientID:     config.gcpOAuthClientID,
-			ClientSecret: config.gcpOAuthClientSecret,
+			ClientID:      config.gcpOAuthClientID,
+			ClientSecret:  config.gcpOAuthClientSecret,
+			LoginPrompter: approval.GCPOAuthLoginPromptLauncher{AppLauncher: appLauncher},
 		}),
 	})
 	if err != nil {

@@ -294,7 +294,7 @@ func TestParseGCPHelpCommands(t *testing.T) {
 		{args: []string{"gcp", "with-session", "help"}, want: "agent-secret gcp with-session SESSION_HANDLE"},
 		{args: []string{"gcp", "auth", "help"}, want: "agent-secret gcp auth manages"},
 		{args: []string{"gcp", "auth", "status", "help"}, want: "agent-secret gcp auth status shows"},
-		{args: []string{"gcp", "auth", "login", "help"}, want: "agent-secret gcp auth login opens"},
+		{args: []string{"gcp", "auth", "login", "help"}, want: "agent-secret gcp auth login shows"},
 		{args: []string{"gcp", "auth", "logout", "help"}, want: "agent-secret gcp auth logout removes"},
 	}
 	for _, tc := range tests {
