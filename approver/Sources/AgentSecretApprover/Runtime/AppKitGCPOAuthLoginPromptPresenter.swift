@@ -12,14 +12,27 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
     #if canImport(AppKit) && canImport(SwiftUI)
         @MainActor
         private final class WindowDelegate: NSObject, NSWindowDelegate {
-            func windowWillClose(_: Notification) {
-                NSApplication.shared.stopModal()
+            private let app: NSApplication
+
+            init(app: NSApplication) {
+                self.app = app
             }
+
+            func windowWillClose(_: Notification) {
+                app.stop(nil)
+            }
+        }
+
+        @MainActor
+        private final class WindowHandle {
+            weak var window: NSWindow?
         }
 
         private static let windowOrigin: CGFloat = 0
         private static let windowWidth: CGFloat = 760
-        private static let windowHeight: CGFloat = 650
+        private static let windowHeight: CGFloat = 488
+        private static let minWindowWidth: CGFloat = 720
+        private static let minWindowHeight: CGFloat = 460
 
         /// Runs the prompt until the operator cancels or the daemon ends the helper process.
         @preconcurrency
@@ -28,41 +41,86 @@ public enum AppKitGCPOAuthLoginPromptPresenter {
             let app = NSApplication.shared
             app.setActivationPolicy(.regular)
             app.unhide(nil)
+
+            let windowHandle = WindowHandle()
+            let content = makeContentView(prompt: prompt, windowHandle: windowHandle)
+            let delegate = WindowDelegate(app: app)
+            let window = makeWindow(contentView: content.view, delegate: delegate)
+            windowHandle.window = window
+
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            app.activate(ignoringOtherApps: true)
             NSRunningApplication.current.activate(options: [.activateAllWindows])
             app.requestUserAttention(.criticalRequest)
 
-            let window = ApprovalPanelWindow(
+            withExtendedLifetime((delegate, content.hostingView, windowHandle)) {
+                app.run()
+            }
+        }
+
+        @MainActor
+        private static func makeContentView(
+            prompt: GCPOAuthLoginPrompt,
+            windowHandle: WindowHandle
+        ) -> (view: NSView, hostingView: NSHostingView<GCPOAuthLoginPromptView>) {
+            let hostingView = NSHostingView(
+                rootView: GCPOAuthLoginPromptView(
+                    prompt: prompt,
+                    openGoogle: { NSWorkspace.shared.open(prompt.authorizationURL) },
+                    cancel: {
+                        windowHandle.window?.close()
+                    }
+                )
+            )
+            let contentView = NSView(
+                frame: NSRect(
+                    x: windowOrigin,
+                    y: windowOrigin,
+                    width: windowWidth,
+                    height: windowHeight
+                )
+            )
+            contentView.wantsLayer = true
+            contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            hostingView.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(hostingView)
+            NSLayoutConstraint.activate([
+                hostingView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                hostingView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                hostingView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                hostingView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            ])
+            return (contentView, hostingView)
+        }
+
+        @MainActor
+        private static func makeWindow(contentView: NSView, delegate: NSWindowDelegate) -> NSWindow {
+            let window = NSWindow(
                 contentRect: NSRect(
                     x: windowOrigin,
                     y: windowOrigin,
                     width: windowWidth,
                     height: windowHeight
                 ),
-                styleMask: [.titled, .closable],
+                styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
-            let delegate = WindowDelegate()
             window.title = "Agent Secret Google Cloud Login"
+            window.level = .modalPanel
+            window.collectionBehavior = [
+                .canJoinAllSpaces,
+                .fullScreenAuxiliary
+            ]
+            window.minSize = NSSize(width: minWindowWidth, height: minWindowHeight)
             window.isReleasedWhenClosed = false
+            window.backgroundColor = .windowBackgroundColor
+            window.setContentSize(NSSize(width: windowWidth, height: windowHeight))
+            window.contentView = contentView
             window.delegate = delegate
-            window.contentView = NSHostingView(
-                rootView: GCPOAuthLoginPromptView(
-                    prompt: prompt,
-                    openGoogle: { NSWorkspace.shared.open(prompt.authorizationURL) },
-                    cancel: {
-                        NSApplication.shared.stopModal()
-                    }
-                )
-            )
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-            NSRunningApplication.current.activate(options: [.activateAllWindows])
-            withExtendedLifetime(delegate) {
-                _ = app.runModal(for: window)
-            }
-            window.close()
+            return window
         }
     #else
         /// Returns immediately on platforms that cannot present the AppKit login prompt.
