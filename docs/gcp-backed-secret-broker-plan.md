@@ -98,10 +98,11 @@ application-default credentials, or normal Cloud SDK configuration as that
 bootstrap. Reusing ambient Google auth recreates the standing local credential
 problem the feature is meant to remove.
 
-Selected local MVP direction:
+Selected local direction:
 
 1. `agent-secret gcp auth login` asks the trusted app/daemon to start a Google
-   OAuth flow for the signed Agent Secret app.
+   OAuth flow for the signed Agent Secret app using the bundled Agent Secret
+   Google Desktop OAuth client.
 2. The app/daemon owns browser launch, callback handling, authorization-code
    exchange, and token-state handling.
 3. The long-lived refresh capability is stored in macOS Keychain under an Agent
@@ -119,6 +120,27 @@ This treats the bootstrap credential as app-owned OAuth state, not as a normal
 human-managed secret ref. Normal 1Password-backed `op://` refs remain the
 preferred path for ordinary secret values, but GCP token minting should not ask
 agents to fetch or hold the Google bootstrap credential.
+
+The bundled OAuth client is product configuration and app identity, not a GCP
+permission boundary. It should be owned by the Agent Secret project and verified
+with Google so normal operators do not need to create, export, or share OAuth
+client JSON. Desktop OAuth client material is expected to be extractable from an
+installed app, so security must come from PKCE, the user's Google login, local
+Keychain storage, Token Creator IAM bindings, and the impersonated service
+account's IAM policy.
+
+Bootstrap OAuth should request the smallest scopes needed to authenticate the
+operator and call IAM Credentials:
+
+- `openid`
+- `https://www.googleapis.com/auth/userinfo.email`
+- `https://www.googleapis.com/auth/iam`
+
+This is separate from the access-token scopes requested for the impersonated
+service account. Profile access-token scopes remain explicit and non-empty;
+`https://www.googleapis.com/auth/cloud-platform` may still be the practical
+service-account token scope for many `gcloud` workflows, but it should not be
+used for the human bootstrap grant.
 
 Agent Secret must support more than one Google bootstrap identity on the same
 machine. Keychain entries should be keyed by Google identity or an explicit
@@ -143,20 +165,44 @@ alias and the impersonated service account. Reusable approvals and cached tokens
 must not cross Google bootstrap identities, even when project, service account,
 scopes, and command match.
 
-Other options:
+Custom OAuth client overrides are an escape hatch, not the normal operator
+path. They are useful when an organization requires an internal Google
+Workspace OAuth app, custom consent-screen branding, or a controlled client
+lifecycle. The intended override UX is explicit install/list/remove commands
+that store client material under Agent Secret control:
+
+```bash
+agent-secret gcp oauth-client install \
+  --name fixture \
+  --from-file ~/Downloads/client_secret_....json
+
+agent-secret gcp oauth-client install \
+  --name fixture \
+  --from-ref op://Fixture/AgentSecretGCP/desktop-client-json
+
+agent-secret gcp auth login \
+  --oauth-client fixture \
+  --google-account work \
+  --expected-email you@fixture.app
+```
+
+The `--from-file` path imports a Google Desktop OAuth client JSON downloaded
+from Google Auth Platform. The `--from-ref` path resolves the same JSON from
+1Password as an operator setup action, then stores the parsed client locally; it
+does not expose the OAuth client JSON to agents and does not make 1Password the
+runtime source of Google bootstrap refresh tokens. Development-only daemon
+environment variables may remain as a low-level escape hatch, but they should
+not be the documented team workflow.
+
+Other future options:
 
 - Workforce or Workload Identity Federation may become cleaner for organization
   environments, but it should not block the local MVP.
-- A bootstrap secret stored in 1Password is not the default local UX. It could
-  be an explicit bridge for early testing or unusual environments, but it must
-  be marked as provider-internal credential material and never exposed as a
-  normal `--secret` value.
 - A hosted broker is a separate product direction and should stay out of the
   local-first MVP.
 
 Keychain implementation questions remain:
 
-- which OAuth client type and redirect mechanism to use for the local app;
 - exact Keychain access-control attributes for the signed app and daemon;
 - how `agent-secret gcp auth status` reports setup health without exposing token
   details;
@@ -716,8 +762,15 @@ secrets, or keep unbounded reusable cloud sessions open for agents.
   not generalize to normal secret delivery.
 - Specify the bootstrap auth model and reject ambient Cloud SDK auth as a root
   credential source.
+- Use a bundled, Google-verified Agent Secret Desktop OAuth client for normal
+  bootstrap login.
+- Keep bootstrap OAuth scopes to `openid`, `userinfo.email`, and `auth/iam`;
+  do not request `cloud-platform` for the human bootstrap grant.
 - Implement `gcp auth login`, `gcp auth status`, and `gcp auth logout` around
   Keychain-held Google OAuth state.
+- Add a custom OAuth client install/list/remove surface for teams that need
+  their own Google Auth Platform Desktop app, with imports from a Google client
+  JSON file or a 1Password `op://` ref.
 - Define the nested `gcloud` compatibility contract before implementation.
 - Define a GCP profile schema for access tokens and Secret Manager refs.
 - Model GCP access-token scopes as a required non-empty list, not a scalar.
@@ -894,6 +947,8 @@ Add SSH smokes only after the accepted v1 SSH boundary is documented:
 ## Non-Goals
 
 - No service account key import or activation.
+- No normal operator requirement to create, export, or share Google OAuth client
+  JSON before first use.
 - No `gcloud auth login` or ADC mutation managed by Agent Secret.
 - No ambient Cloud SDK auth as the bootstrap credential source.
 - No 1Password-stored Google bootstrap credential as the default local auth

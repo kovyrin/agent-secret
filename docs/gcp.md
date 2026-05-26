@@ -32,18 +32,29 @@ OAuth scopes are still required by Google token minting, but the approval UI
 must not be read as proof that Agent Secret has verified every resource-level
 permission behind the service account.
 
+Agent Secret release builds use a bundled Google OAuth Desktop client for the
+bootstrap login flow. That client identifies the local Agent Secret app to
+Google; it does not grant cloud resource access by itself. The bootstrap OAuth
+grant requests only the minimum Google scopes needed for this flow:
+
+- `openid`
+- `https://www.googleapis.com/auth/userinfo.email`
+- `https://www.googleapis.com/auth/iam`
+
+Those bootstrap login scopes are separate from the `scopes` list in a GCP
+profile. Profile scopes are the service-account access-token scopes delivered
+to `gcloud` after approval, and they remain explicit and non-empty.
+
 ## What The GCP Admin Sets Up
 
 Agent Secret does not create Google Cloud IAM resources. A GCP admin must set
-up the OAuth client, service accounts, APIs, and IAM bindings before operators
-can use the feature.
+up service accounts, APIs, and IAM bindings before operators can use the
+feature.
 
-### 1. Choose A GCP Project For OAuth
+### 1. Choose Target Projects And Enable APIs
 
-Pick a Google Cloud project to own the Agent Secret OAuth app. This can be the
-same project that contains the target resources, but it does not have to be.
-
-Enable the APIs Agent Secret needs for token minting:
+Enable the APIs Agent Secret needs for token minting in the projects that own
+the impersonated service accounts:
 
 ```bash
 gcloud services enable \
@@ -54,46 +65,7 @@ gcloud services enable \
 Enable any additional APIs that the wrapped `gcloud` commands need, such as
 Cloud Logging, Cloud Run, Compute Engine, Secret Manager, or Service Usage.
 
-### 2. Create A Google OAuth App And Desktop Client
-
-This is the part hidden behind the phrase "configure the app/daemon with a
-Google OAuth desktop client."
-
-Agent Secret needs a Google OAuth client so Google knows which local
-application is asking the user to sign in. For v1, create an OAuth client of
-type **Desktop app** in Google Auth Platform.
-
-In Google Cloud Console:
-
-1. Open **APIs & Services -> OAuth consent screen** or **Google Auth Platform**.
-2. Create or configure an OAuth app for Agent Secret.
-3. Set the user type:
-   - **Internal** if all users are in your Google Workspace organization.
-   - **External** if personal Google accounts or accounts outside the org need
-     access.
-4. Add the scopes Agent Secret requests during login:
-   - `openid`
-   - `https://www.googleapis.com/auth/userinfo.email`
-   - `https://www.googleapis.com/auth/cloud-platform`
-5. If the app is in testing mode, add each operator Google account as a test
-   user.
-6. Open **Clients** or **Credentials** and create an OAuth client.
-7. Choose application type **Desktop app**.
-8. Save the generated client ID and client secret, if Google shows one, for
-   local Agent Secret daemon startup.
-
-The OAuth client does not grant cloud resource access by itself. It lets the
-Agent Secret daemon run the local browser OAuth flow and store the resulting
-refresh-capable bootstrap credential in macOS Keychain.
-
-Use a Desktop app client, not a Web application client. Google's installed-app
-OAuth flow assumes a local app opens the system browser and receives the
-authorization code through a local redirect. Google also documents that
-installed applications cannot keep client secrets truly secret, so do not treat
-this client secret like a service account key. Still keep it out of the repo,
-shell history, logs, screenshots, and protocol payloads.
-
-### 3. Create Narrow Service Accounts
+### 2. Create Narrow Service Accounts
 
 Create separate service accounts for separate capabilities. For example:
 
@@ -126,7 +98,7 @@ Use project, folder, organization, or resource-level bindings according to your
 normal GCP policy. Agent Secret will display the service account, but it does
 not verify whether the service account's roles are broad or narrow.
 
-### 4. Allow Human Bootstrap Accounts To Impersonate The Service Account
+### 3. Allow Human Bootstrap Accounts To Impersonate The Service Account
 
 Grant each approved human Google account
 `roles/iam.serviceAccountTokenCreator` on the service account that Agent Secret
@@ -153,15 +125,30 @@ own IAM roles narrow.
 
 ## What The Local Operator Sets Up
 
-The operator needs Agent Secret installed, `gcloud` available on `PATH`, and
-the OAuth desktop client ID from the GCP admin. If Google produced a client
-secret for the Desktop app client, keep that with the client ID and provide it
-to the daemon too.
+The operator needs Agent Secret installed and `gcloud` available on `PATH`.
+Normal operators do not need a Google OAuth client JSON file. The daemon uses
+the OAuth Desktop client bundled into the Agent Secret release build.
 
-### 1. Start The Daemon With The OAuth Client
+### Development And Custom OAuth Client Builds
 
-The daemon reads the OAuth client values only at startup. If the daemon is
-already running, stop it first.
+Development builds may not have a bundled OAuth client yet. Custom deployments
+may also need to test a team-owned OAuth Desktop client before the planned
+Keychain-backed override command exists. In those cases, the daemon still
+accepts explicit OAuth client process configuration.
+
+App-bundle builds can embed the bundled client with:
+
+```bash
+export AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID="GOOGLE_DESKTOP_CLIENT_ID"
+export AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET="GOOGLE_DESKTOP_CLIENT_SECRET"
+
+mise run build
+```
+
+The client secret is optional. If the Desktop app client does not have one,
+omit `AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET`.
+
+If the daemon is already running, stop it first.
 
 ```bash
 agent-secret daemon stop
@@ -180,9 +167,9 @@ If the Desktop app client does not have a client secret, omit
 `AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET`. The client ID is required.
 
 For v1, this is the concrete meaning of "configure the daemon with a Google
-OAuth desktop client." The values are process configuration for the local
-daemon. There is not yet an Agent Secret settings UI or keychain-backed
-configuration store for the OAuth client material.
+OAuth desktop client" in development builds. The values are process
+configuration for the local daemon. There is not yet an Agent Secret settings
+UI or Keychain-backed configuration store for custom OAuth client material.
 
 Process environment is a pragmatic v1 configuration path, but it is not a
 secret vault. Same-user diagnostic tools can usually inspect a running
@@ -192,10 +179,10 @@ secret, but it would not be acceptable for service account keys, refresh tokens,
 or generated access tokens. Do not put those values in daemon environment.
 
 If you change the OAuth client, restart the daemon. If the daemon starts
-without these values, GCP auth or token minting will fail until the daemon is
-restarted with them.
+without bundled client material or explicit development override values, GCP
+auth or token minting will fail until the daemon is restarted with a client.
 
-### 2. Log In A Google Bootstrap Account
+### 1. Log In A Google Bootstrap Account
 
 Pick a short local alias for the Google account. The alias is stored in Agent
 Secret config and audit metadata; it does not need to equal the email address.
@@ -228,7 +215,7 @@ agent-secret gcp auth login --google-account work \
   --expected-email you@example.com
 ```
 
-### 3. Add A GCP Profile To The Project
+### 2. Add A GCP Profile To The Project
 
 Create or edit `agent-secret.yml` at the project root:
 
@@ -267,7 +254,7 @@ agent-secret gcp exec --dry-run --profile beta-logs --json -- \
   gcloud logging read 'severity>=ERROR' --project fixture-beta --limit=5
 ```
 
-### 4. Run One Command With `gcp exec`
+### 3. Run One Command With `gcp exec`
 
 ```bash
 agent-secret gcp exec --profile beta-logs -- \
@@ -293,7 +280,7 @@ agent-secret gcp exec \
   -- gcloud logging read 'severity>=ERROR' --project fixture-beta --limit=5
 ```
 
-### 5. Use A Session For Multi-Command Workflows
+### 4. Use A Session For Multi-Command Workflows
 
 Use a GCP session when an agent needs multiple commands under the same approved
 profile, such as a benchmark or incident investigation.
@@ -350,17 +337,49 @@ The token file is deleted on command cleanup, session destroy, session expiry,
 or daemon startup janitor cleanup. Agent Secret does not expose a command that
 prints the token value.
 
+## Custom OAuth Clients
+
+The default product path is the bundled Agent Secret OAuth Desktop client. A
+custom client is only needed when an organization wants its own Google consent
+screen branding, internal-only OAuth app, or controlled client lifecycle.
+
+The planned custom-client surface is:
+
+```bash
+agent-secret gcp oauth-client install \
+  --name fixture \
+  --from-file ~/Downloads/client_secret_....json
+
+agent-secret gcp oauth-client install \
+  --name fixture \
+  --from-ref op://Fixture/AgentSecretGCP/desktop-client-json
+
+agent-secret gcp auth login \
+  --oauth-client fixture \
+  --google-account work \
+  --expected-email you@example.com
+```
+
+That override should store OAuth client material locally under Agent Secret
+control and should not require daemon environment variables. Until that command
+exists, use the development override environment variables only for local
+testing and custom-client bring-up.
+
 ## Troubleshooting
 
 ### `GCP OAuth client id is required`
 
-The daemon was started without `AGENT_SECRET_GCP_OAUTH_CLIENT_ID`. Stop the
-daemon, set the OAuth client environment variables, and start it again.
+The daemon does not have a bundled OAuth client ID and was not started with an
+explicit development override. Use a release build that contains the bundled
+OAuth client, or stop the daemon, set the OAuth client environment variables,
+and start it again.
 
 ### `GCP token minter is unavailable`
 
-The daemon was started without a GCP OAuth client ID, so it cannot mint service
-account tokens. Restart the daemon with the OAuth client configuration.
+The daemon was started without a bundled or explicitly configured GCP OAuth
+client ID, so it cannot mint service account tokens. Restart the daemon with a
+release build that contains the bundled client or with explicit development
+override values.
 
 ### `GCP bootstrap credential not found`
 
@@ -402,13 +421,18 @@ when you need stronger isolation.
 - Do not commit OAuth client JSON, client secrets, refresh tokens, service
   account keys, access tokens, token files, or captured fixtures containing real
   values.
+- OAuth client JSON is app identity, not cloud authority, but it should still
+  be shared through controlled operator channels such as 1Password or device
+  management rather than Git.
 - Prefer one service account per capability class instead of one broad service
   account for all agents.
 - Prefer service-account-level Token Creator bindings over project-level
   Token Creator bindings.
 - Use `--expected-email` during `gcp auth login` to prevent accidentally
   bootstrapping the wrong Google account.
-- Treat `cloud-platform` as a broad OAuth scope, but remember IAM roles on the
+- Agent Secret bootstrap login requests `https://www.googleapis.com/auth/iam`
+  instead of `cloud-platform`. Treat `cloud-platform` as a broad profile access
+  token scope when a `gcloud` workflow needs it, but remember IAM roles on the
   service account are the real resource boundary.
 - Agent Secret does not parse, rewrite, or police `gcloud` arguments inside the
   approved environment. It audits the command and prepares the approved GCP

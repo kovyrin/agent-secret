@@ -226,7 +226,7 @@ func agentContextCommands() map[string]commandContext {
 					Outputs: []string{"text", "json"},
 				},
 				"auth login": {
-					Summary: "Start daemon-owned Google OAuth login and store bootstrap state in Keychain.",
+					Summary: "Start daemon-owned Google OAuth login with the bundled OAuth client and store bootstrap state in Keychain.",
 					Flags: []flagContext{
 						{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
 						{Name: "--expected-email", Type: "string", Description: "Refuse login unless Google reports this email."},

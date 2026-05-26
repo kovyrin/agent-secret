@@ -32,7 +32,7 @@ func TestOAuthFlowUsesPKCEAndOmitsUnsetClientSecretInTokenRequest(t *testing.T) 
 			_, _ = w.Write([]byte(`{
 				"access_token": "bootstrap-access",
 				"refresh_token": "bootstrap-refresh",
-				"scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform",
+				"scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/iam",
 				"token_type": "Bearer",
 				"expires_in": 3600
 			}`))
@@ -65,6 +65,7 @@ func TestOAuthFlowUsesPKCEAndOmitsUnsetClientSecretInTokenRequest(t *testing.T) 
 				query.Get("code_challenge_method") != "S256" ||
 				query.Get("access_type") != "offline" ||
 				query.Get("prompt") != "consent" ||
+				query.Get("scope") != "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/iam" ||
 				query.Get("login_hint") != "oleksiy@kovyrin.net" {
 				t.Fatalf("unexpected auth URL query: %s", parsed.RawQuery)
 			}
@@ -150,7 +151,7 @@ func TestServiceLoginStatusAndLogoutDoNotExposeRefreshToken(t *testing.T) {
 		OAuth: staticOAuthRunner{token: OAuthToken{
 			RefreshToken: "secret-refresh",
 			Email:        "oleksiy@kovyrin.net",
-			Scopes:       []string{"https://www.googleapis.com/auth/cloud-platform"},
+			Scopes:       []string{BootstrapOAuthScopeIAM},
 		}},
 		Now: func() time.Time { return time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC) },
 	})
@@ -207,7 +208,7 @@ func TestServicePreservesCredentialCreationTimeOnRelogin(t *testing.T) {
 		OAuth: staticOAuthRunner{token: OAuthToken{
 			RefreshToken: "new-refresh",
 			Email:        "oleksiy@kovyrin.net",
-			Scopes:       []string{"https://www.googleapis.com/auth/cloud-platform"},
+			Scopes:       []string{BootstrapOAuthScopeIAM},
 		}},
 		Now: func() time.Time { return updatedAt },
 	})
@@ -258,7 +259,7 @@ func TestKeychainStoreRoundTripUsesPrivateIndex(t *testing.T) {
 			GoogleAccount: account,
 			Email:         account + "@example.test",
 			RefreshToken:  "synthetic-" + account,
-			Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+			Scopes:        []string{BootstrapOAuthScopeIAM},
 		})
 		if err != nil {
 			t.Fatalf("Put(%s) returned error: %v", account, err)

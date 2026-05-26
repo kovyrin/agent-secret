@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/kovyrin/agent-secret/internal/buildinfo"
 )
 
 func TestParseDaemonConfigRejectsCallerSelectedTrustInputs(t *testing.T) {
@@ -31,6 +33,7 @@ func TestParseDaemonConfigDoesNotReadApproverEnvironmentOverride(t *testing.T) {
 }
 
 func TestParseDaemonConfigReadsGCPOAuthClientIDFromFlagOrEnvironment(t *testing.T) {
+	resetBundledGCPOAuthClient(t)
 	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID", "env-client-id")
 	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET", "env-client-secret")
 
@@ -55,4 +58,46 @@ func TestParseDaemonConfigReadsGCPOAuthClientIDFromFlagOrEnvironment(t *testing.
 	if config.gcpOAuthClientSecret != "env-client-secret" {
 		t.Fatalf("flag client secret = %q", config.gcpOAuthClientSecret)
 	}
+}
+
+func TestParseDaemonConfigUsesBundledGCPOAuthClientWhenEnvironmentIsEmpty(t *testing.T) {
+	resetBundledGCPOAuthClient(t)
+	buildinfo.GCPOAuthClientID = "bundled-client-id"
+	buildinfo.GCPOAuthClientSecret = "bundled-client-secret"
+
+	config, err := parseDaemonConfig([]string{})
+	if err != nil {
+		t.Fatalf("parseDaemonConfig returned error: %v", err)
+	}
+	if config.gcpOAuthClientID != "bundled-client-id" {
+		t.Fatalf("bundled client id = %q", config.gcpOAuthClientID)
+	}
+	if config.gcpOAuthClientSecret != "bundled-client-secret" {
+		t.Fatalf("bundled client secret = %q", config.gcpOAuthClientSecret)
+	}
+
+	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID", "env-client-id")
+	t.Setenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET", "env-client-secret")
+	config, err = parseDaemonConfig([]string{})
+	if err != nil {
+		t.Fatalf("parseDaemonConfig with env returned error: %v", err)
+	}
+	if config.gcpOAuthClientID != "env-client-id" {
+		t.Fatalf("env client id = %q", config.gcpOAuthClientID)
+	}
+	if config.gcpOAuthClientSecret != "env-client-secret" {
+		t.Fatalf("env client secret = %q", config.gcpOAuthClientSecret)
+	}
+}
+
+func resetBundledGCPOAuthClient(t *testing.T) {
+	t.Helper()
+	originalClientID := buildinfo.GCPOAuthClientID
+	originalClientSecret := buildinfo.GCPOAuthClientSecret
+	buildinfo.GCPOAuthClientID = ""
+	buildinfo.GCPOAuthClientSecret = ""
+	t.Cleanup(func() {
+		buildinfo.GCPOAuthClientID = originalClientID
+		buildinfo.GCPOAuthClientSecret = originalClientSecret
+	})
 }

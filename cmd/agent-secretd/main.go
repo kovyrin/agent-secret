@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/buildinfo"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
@@ -163,8 +164,16 @@ func parseDaemonConfig(args []string) (daemonConfig, error) {
 	flags := flag.NewFlagSet("agent-secretd", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&config.socketPath, "socket", socketPath, "daemon socket path")
-	flags.StringVar(&config.gcpOAuthClientID, "gcp-oauth-client-id", strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID")), "GCP OAuth desktop client ID")
-	config.gcpOAuthClientSecret = strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET"))
+	defaultClientID := strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID"))
+	if defaultClientID == "" {
+		defaultClientID = strings.TrimSpace(buildinfo.GCPOAuthClientID)
+	}
+	defaultClientSecret := strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET"))
+	if defaultClientSecret == "" {
+		defaultClientSecret = strings.TrimSpace(buildinfo.GCPOAuthClientSecret)
+	}
+	flags.StringVar(&config.gcpOAuthClientID, "gcp-oauth-client-id", defaultClientID, "GCP OAuth desktop client ID")
+	config.gcpOAuthClientSecret = defaultClientSecret
 	if err := flags.Parse(args); err != nil {
 		return daemonConfig{}, err
 	}

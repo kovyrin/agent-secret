@@ -37,6 +37,8 @@ output_dir="$project_root/_dist"
 version="${AGENT_SECRET_VERSION:-}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 build_revision="${AGENT_SECRET_BUILD_REVISION:-}"
+bundled_gcp_oauth_client_id="${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID:-}"
+bundled_gcp_oauth_client_secret="${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET:-}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 approver_team_id="-"
 daemon_entitlements="$project_root/scripts/build/agent-secretd.entitlements"
@@ -276,6 +278,12 @@ go_ldflags=(
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Version=$version"
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Revision=$build_revision"
 )
+if [[ "$bundled_gcp_oauth_client_id" != "" ]]; then
+  go_ldflags+=("-X github.com/kovyrin/agent-secret/internal/buildinfo.GCPOAuthClientID=$bundled_gcp_oauth_client_id")
+fi
+if [[ "$bundled_gcp_oauth_client_secret" != "" ]]; then
+  go_ldflags+=("-X github.com/kovyrin/agent-secret/internal/buildinfo.GCPOAuthClientSecret=$bundled_gcp_oauth_client_secret")
+fi
 go_build_flags+=(-ldflags "${go_ldflags[*]}")
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd
