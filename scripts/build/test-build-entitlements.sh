@@ -34,4 +34,15 @@ if ! grep -F "sign_path \"\$app_bundle/Contents/Resources/bin/agent-secret\"" "$
   fail "bundled CLI executable must be signed separately"
 fi
 
+if ! grep -F "agent-secret exec" "$build_script" >/dev/null ||
+  ! grep -F -- "--profile bundled-gcp-oauth-client" "$build_script" >/dev/null ||
+  ! grep -F -- "--override-env" "$build_script" >/dev/null; then
+  fail "build script must use the bundled-gcp-oauth-client profile when OAuth client env vars are absent"
+fi
+
+if ! grep -F "AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID" "$project_root/agent-secret.yml" >/dev/null ||
+  ! grep -F "AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET" "$project_root/agent-secret.yml" >/dev/null; then
+  fail "agent-secret.yml must define bundled GCP OAuth client build secrets"
+fi
+
 echo "test-build-entitlements: ok"
