@@ -409,6 +409,11 @@ file before a release is published.
 
 ### Fixed
 
+- GCP OAuth login now rejects Google consent responses that omit required
+  bootstrap scopes, instead of storing a refresh token that cannot mint service
+  account access tokens.
+- GCP token-minting failures now include structured Google API error details
+  when IAMCredentials returns a nested JSON error payload.
 - GCP OAuth Keychain access now fails with repair guidance instead of opening
   macOS login-keychain password prompts when the stored item is not usable by
   the current Agent Secret app build.

@@ -89,6 +89,11 @@ Configured scopes:
 - `https://www.googleapis.com/auth/userinfo.email`
 - `https://www.googleapis.com/auth/iam`
 
+The project that owns the OAuth client must have
+`iamcredentials.googleapis.com` enabled. This is easy to miss when the OAuth
+client lives in a release or branding project that is different from the
+fixture project containing the service accounts.
+
 Desktop OAuth client:
 
 - Name: `Agent Secret Local GCP Broker`
