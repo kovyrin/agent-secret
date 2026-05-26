@@ -225,7 +225,10 @@ GitHub Secrets.
 The bundled GCP OAuth client secrets are build inputs for official Agent Secret
 release artifacts. Keep the source values in the maintainer password manager,
 copy only the current values into GitHub Actions secrets, and never commit the
-values or password-manager references to the repository.
+values to the repository. The repository does include the maintainer
+`op://` references in `agent-secret.yml` so local maintainer builds can resolve
+the same client through Agent Secret when the GitHub Actions environment
+variables are absent.
 
 For this repository's maintainer releases, the current Developer ID identity is:
 

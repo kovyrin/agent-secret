@@ -27,6 +27,9 @@ bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERS
 release_dir="$tmp_dir/release"
 dev_dir="$tmp_dir/dev"
 
+export AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID=test-client-id
+export AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET=test-client-secret
+
 "$project_root/scripts/build/build-app-bundle.sh" --version "$tag_version" --output "$release_dir"
 "$project_root/scripts/build/check-bundle-metadata.sh" \
   "$release_dir/$AGENT_SECRET_APP_NAME.app" \

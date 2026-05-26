@@ -42,6 +42,9 @@ jobs:
         run: mise run lint
 
       - name: Build commands and app bundle
+        env:
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
         run: mise run build
 
   smoke-tests:

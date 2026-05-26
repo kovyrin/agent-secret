@@ -131,10 +131,16 @@ the OAuth Desktop client bundled into the Agent Secret release build.
 
 ### Development And Custom OAuth Client Builds
 
-Development builds may not have a bundled OAuth client yet. Custom deployments
-may also need to test a team-owned OAuth Desktop client before the planned
-Keychain-backed override command exists. In those cases, the daemon still
-accepts explicit OAuth client process configuration.
+Development builds require the bundled OAuth client too. The build script first
+uses `AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID` and
+`AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET` when they are already present,
+which is the CI and release path. If they are absent, maintainer builds use the
+repo-local `bundled-gcp-oauth-client` Agent Secret profile to resolve the
+client from 1Password after approval.
+
+Custom deployments may also need to test a team-owned OAuth Desktop client
+before the planned Keychain-backed override command exists. In those cases,
+the daemon still accepts explicit OAuth client process configuration.
 
 App-bundle builds can embed the bundled client with:
 
@@ -145,8 +151,14 @@ export AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET="GOOGLE_DESKTOP_CLIENT_SECRE
 mise run build
 ```
 
-The client secret is optional. If the Desktop app client does not have one,
-omit `AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET`.
+Official Agent Secret builds require both values. Local maintainer builds can
+also run plain `mise run build`; when the env vars are absent, the build script
+re-enters itself through:
+
+```bash
+agent-secret exec --profile bundled-gcp-oauth-client -- \
+  scripts/build/build-app-bundle.sh
+```
 
 If the daemon is already running, stop it first.
 

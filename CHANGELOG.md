@@ -42,6 +42,9 @@ version numbers for public releases.
   so release builds can avoid per-operator OAuth client environment setup.
 - Added official release wiring for the bundled GCP OAuth Desktop client, so
   tag-triggered release artifacts require and embed the configured client.
+- Added a repo-local Agent Secret profile for maintainer builds to resolve the
+  bundled GCP OAuth Desktop client from 1Password when build env vars are not
+  already present.
 - Added a user-facing GCP integration guide covering Google-side IAM setup,
   bundled OAuth client behavior, local bootstrap auth, GCP profiles, `gcp exec`,
   and GCP sessions.
