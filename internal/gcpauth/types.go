@@ -12,6 +12,7 @@ const (
 	DefaultUserInfoEndpoint = "https://openidconnect.googleapis.com/v1/userinfo"
 	DefaultIAMEndpoint      = "https://iamcredentials.googleapis.com"
 	DefaultKeychainService  = "com.kovyrin.agent-secret.gcp.oauth"
+	BootstrapOAuthScopeIAM  = "https://www.googleapis.com/auth/iam"
 )
 
 var (
@@ -45,6 +46,6 @@ func defaultOAuthScopes() []string {
 	return []string{
 		"openid",
 		"https://www.googleapis.com/auth/userinfo.email",
-		"https://www.googleapis.com/auth/cloud-platform",
+		BootstrapOAuthScopeIAM,
 	}
 }

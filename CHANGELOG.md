@@ -390,9 +390,17 @@ file before a release is published.
 - Added daemon support for an optional `AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET`
   when a Google desktop OAuth client requires a secret during token exchange
   and refresh.
-- Added a user-facing GCP integration guide covering Google-side setup, OAuth
-  desktop client configuration, local bootstrap auth, GCP profiles, `gcp exec`,
+- Added build-time support for a bundled Agent Secret GCP OAuth Desktop client
+  so release builds can avoid per-operator OAuth client environment setup.
+- Added a user-facing GCP integration guide covering Google-side IAM setup,
+  bundled OAuth client behavior, local bootstrap auth, GCP profiles, `gcp exec`,
   and GCP sessions.
+
+### Changed
+
+- GCP bootstrap OAuth now requests the narrower
+  `https://www.googleapis.com/auth/iam` scope instead of `cloud-platform`; GCP
+  profile access-token scopes remain explicit per profile or command.
 
 ### Fixed
 
