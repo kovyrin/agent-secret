@@ -422,7 +422,7 @@ agent-secret exec \
   -- sh -c 'test -n "${TOKEN:-}" && printf "TOKEN present\n"'
 ```
 
-The smoke should use a real test-only ref locally and must not print the secret
+The smoke should use a real test-only reference locally and must not print the secret
 value.
 
 ### Epic 2: CLI Symlink Installation

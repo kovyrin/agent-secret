@@ -1,9 +1,9 @@
 # Agent Secret
 
 Agent Secret is a local macOS approval broker for coding-agent secrets. It lets
-an agent request exact 1Password refs, shows you a native approval prompt with
-the command and reason, then injects approved values only into that child
-process.
+an agent request exact 1Password secret references, shows you a native approval
+prompt with the command and reason, then injects approved values only into that
+child process.
 
 ## Install
 
@@ -119,7 +119,8 @@ agent-secret profile show --json terraform-cloudflare
 
 The approval UI emphasizes the reason for the request, the command, the working
 directory, the approval scope, the requested aliases, and the exact 1Password
-refs. Secret values are not shown in the UI and are not returned to the agent.
+secret references. Secret values are not shown in the UI and are not returned
+to the agent.
 
 Metadata inspection has its own approval prompt:
 
@@ -128,8 +129,8 @@ Metadata inspection has its own approval prompt:
 ## Project Profiles
 
 Projects can store reusable secret mappings in `agent-secret.yml` or
-`.agent-secret.yml`. The file contains 1Password refs and request metadata only,
-never resolved values.
+`.agent-secret.yml`. The file contains 1Password secret references and request
+metadata only, never resolved values.
 
 ```yaml
 version: 1
@@ -178,11 +179,12 @@ other process with that value.
 
 What Agent Secret does protect:
 
-- Project configs and command flags carry `op://` refs, not resolved values.
-- The daemon fetches only refs approved for the current request.
+- Project configs and command flags carry `op://` references, not resolved
+  values.
+- The daemon fetches only secrets approved for the current request.
 - Audit logs contain metadata only, not raw secret values.
-- Reusable approvals are bounded by command, cwd, refs, account, TTL, and use
-  count.
+- Reusable approvals are bounded by command, cwd, secret references, account,
+  TTL, and use count.
 - Reusable cached values are kept in daemon memory and cleared when their scope
   is replaced, refreshed, expired, or when the daemon stops.
 

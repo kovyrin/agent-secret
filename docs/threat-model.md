@@ -22,7 +22,7 @@ Agent Secret is a local macOS-first broker for short-lived access to
 
 1. The CLI validates a request and connects to the per-user daemon.
 2. The daemon shows a native approval prompt before resolving secrets.
-3. The daemon resolves exactly the approved 1Password refs.
+3. The daemon resolves exactly the approved 1Password secret references.
 4. The daemon returns an approved environment payload to the trusted CLI.
 5. The CLI starts the child process with those environment variables.
 6. The daemon records value-free audit metadata.
@@ -34,7 +34,7 @@ Other delivery modes are out of scope for the current implementation.
 The model protects these assets:
 
 - Raw 1Password secret values.
-- Secret refs, aliases, and account scope.
+- Secret references, aliases, and account scope.
 - Approval decisions and reusable approval state.
 - Approval request metadata shown to the operator.
 - CLI-to-daemon protocol messages and environment payloads.
@@ -43,8 +43,8 @@ The model protects these assets:
 - Installed app bundle, CLI symlink, and bundled skill.
 - Release DMGs, checksums, code signatures, and notarization identity.
 
-Secret refs and aliases are metadata, not raw secret values. They can still be
-sensitive and must be handled intentionally.
+Secret references and aliases are metadata, not raw secret values. They can
+still be sensitive and must be handled intentionally.
 
 ## Trusted Components
 
@@ -100,7 +100,7 @@ Agent Secret must meet these goals:
 - The daemon never resolves secrets before a valid approval or reusable approval
   match.
 - Approval is bound to the displayed reason, command argv, resolved executable,
-  executable identity, cwd, secret refs, account scope, TTL, and override
+  executable identity, cwd, secret references, account scope, TTL, and override
   behavior.
 - Reusable approvals expire at their TTL, consume uses correctly, and clear
   cached raw values when exhausted, expired, or rolled back.
@@ -192,15 +192,16 @@ Required checks:
 
 ### Daemon to 1Password
 
-The daemon resolves approved refs through 1Password Desktop integration.
+The daemon resolves approved secret references through 1Password Desktop
+integration.
 
 Required checks:
 
-- Secret refs and account scope are validated before resolution.
-- Ref resolution starts only after approval.
+- Secret references and account scope are validated before resolution.
+- Secret resolution starts only after approval.
 - Partial fetch failures cancel outstanding fetches and are audited.
 - Raw values stay in memory only for the approved delivery or reuse window.
-- Cached values are keyed by ref and account.
+- Cached values are keyed by secret reference and account.
 
 ### CLI to Child Process
 

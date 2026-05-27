@@ -129,8 +129,8 @@ Status: pass.
 
 Evidence reviewed:
 
-- Audit event types carry refs, aliases, accounts, commands, decisions, timing,
-  and child status, not raw secret values.
+- Audit event types carry secret references, aliases, accounts, commands,
+  decisions, timing, and child status, not raw secret values.
 - Audit tests reject accidental value-bearing fields.
 - Broker paths write required audit metadata before payload delivery; audit
   failure before payload delivery blocks child execution.
@@ -138,7 +138,7 @@ Evidence reviewed:
 
 Residual risk:
 
-- `op://` refs, aliases, and account names are metadata but can still be
+- `op://` references, aliases, and account names are metadata but can still be
   sensitive. This is documented in the threat model and README limitations.
 
 ### Approval Expiry, Cancellation, Timeout, And Disconnect

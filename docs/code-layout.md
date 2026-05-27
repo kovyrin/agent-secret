@@ -34,7 +34,7 @@ agent-secret/
     processhardening/            # Process-level hardening hooks
     profileconfig/               # Project-local profile config loading
     randid/                      # Random request and approval identifiers
-    request/                     # Exec request model and secret ref parsing
+    request/                     # Exec request model and secret reference parsing
     secretcache/                 # Reusable approval secret value cache
     secretmem/                   # In-memory secret value handling
     testsupport/                 # Shared Go test support helpers and fixtures
@@ -120,8 +120,8 @@ reference parser, and env-alias rendering used by `agent-secret item describe`.
 It never carries field values.
 
 `internal/opresolver` is the only Go package that creates the 1Password SDK
-desktop-app integration client and resolves approved refs. Integration tests for
-live 1Password access remain opt-in.
+desktop-app integration client and resolves approved secret references.
+Integration tests for live 1Password access remain opt-in.
 
 `internal/pathresolve` owns canonical path resolution used by request
 preparation, daemon peer trust, and installer paths.
@@ -134,7 +134,7 @@ command-start/completion audit reporting outside the daemon.
 socket handlers. Peer credential policy decisions stay in `internal/daemon`.
 
 `internal/envfile` parses dotenv-style files before approval so env-file secret
-refs become normal request secrets.
+references become normal request secrets.
 
 `internal/randid` generates random request, nonce, and reusable-approval
 identifiers for CLI and policy code.

@@ -115,8 +115,8 @@ profiles. `reason` and `ttl` also follow that order: the last included value is
 used unless the selected profile sets its own value.
 
 Each included secret keeps the account chosen by the profile that defined it.
-If the selected profile needs a different account or ref for a secret, redeclare
-that alias in its own `secrets` map.
+If the selected profile needs a different account or reference for a secret,
+redeclare that alias in its own `secrets` map.
 
 Secret entries can be scalar references:
 
@@ -173,21 +173,21 @@ Current flags:
 - `--secret ALIAS=op://vault/item[/section]/field-or-text-file`: explicit
   secret mapping. Repeat for multiple secrets.
 - `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
-  with `op://` become approved secret refs; other values are passed to the
+  with `op://` become approved secret references; other values are passed to the
   child process as plain environment entries. Repeat for multiple files.
 - `--profile NAME`: load a named profile from the project config.
 - `--only ALIAS[,ALIAS...]`: filter loaded profile secrets and env-file secret
-  refs to selected aliases. Repeat to add more aliases. Deliberate one-off
-  `--secret` refs are not filtered.
-- `--account ACCOUNT`: default 1Password account for refs that do not already
-  have a config/profile account.
+  references to selected aliases. Repeat to add more aliases. Deliberate
+  one-off `--secret` references are not filtered.
+- `--account ACCOUNT`: default 1Password account for references that do not
+  already have a config/profile account.
 - `--config PATH`: use a specific config file.
 - `--cwd DIR`: run the child process from `DIR`.
 - `--ttl DURATION`: approval TTL. Defaults to profile `ttl` or `2m`; allowed
   range is `10s` through `10m`.
 - `--override-env`: allow approved secret aliases to replace existing
   environment variables in the child process.
-- `--force-refresh`: when a reusable approval matches, refetch approved refs
+- `--force-refresh`: when a reusable approval matches, refetch approved secrets
   before delivering them to the child.
 - `--dry-run`: validate the request and print preflight output without starting
   the daemon, prompting for approval, resolving values, or spawning the child.
@@ -202,12 +202,12 @@ Unsupported by design:
 - `--reuse`: reusable approvals are chosen in the approval UI.
 
 Explicit `--secret` flags may be combined with `--profile` for one-off
-additional refs. In that mode, explicit secrets inherit the loaded profile
-account. `--only` filters profile-loaded aliases and env-file secret refs
-before one-off `--secret` refs are added. Invocations with explicit `--secret`
-or `--env-file` sources do not load `default_profile` unless `--profile` is
-provided, but still inherit a discovered or explicit config's top-level
-`account`.
+additional references. In that mode, explicit secrets inherit the loaded
+profile account. `--only` filters profile-loaded aliases and env-file secret
+references before one-off `--secret` references are added. Invocations with
+explicit `--secret` or `--env-file` sources do not load `default_profile`
+unless `--profile` is provided, but still inherit a discovered or explicit
+config's top-level `account`.
 
 `--env-file` may be combined with `--profile` or `--secret`. It is intended for
 migrating `op run --env-file` workflows without rewriting every caller at once:
@@ -218,15 +218,17 @@ agent-secret exec --reason "Deploy from env file" --env-file .env.deploy -- \
 ```
 
 Each env file is parsed before approval. Entries whose values start with
-`op://` become secret refs. Other entries are plain child-process environment
-variables and are never sent to the daemon. Later env files override earlier
-files. Env-file keys override the caller environment for the child process, and
-env-file secret aliases are removed from the base child environment before
-approved values are injected. Use `--only` with env files when one file contains
-refs for multiple command surfaces, such as beta and production deploy refs.
+`op://` become secret references. Other entries are plain child-process
+environment variables and are never sent to the daemon. Later env files
+override earlier files. Env-file keys override the caller environment for the
+child process, and env-file secret aliases are removed from the base child
+environment before approved values are injected. Use `--only` with env files
+when one file contains references for multiple command surfaces, such as beta
+and production deploy secrets.
 
-1Password file attachments and Document items are supported as text refs. Use
-the same shape as `op read`, for example `op://Example/GitHub App/key.pem`.
+1Password file attachments and Document items are supported as text
+references. Use the same shape as `op read`, for example
+`op://Example/GitHub App/key.pem`.
 The resolved file contents are injected into the alias environment variable
 with multiline text preserved. Agent Secret does not create a temp file for the
 value and env-var delivery does not support binary attachments with NUL bytes.
@@ -262,8 +264,8 @@ agent-secret profile show --json terraform-cloudflare
 ```
 
 If `profile show` is called without a profile name, it shows the config's
-`default_profile`. Output contains resolved aliases, refs, account metadata,
-reason, TTL, and includes. It never fetches or prints secret values.
+`default_profile`. Output contains resolved aliases, secret references, account
+metadata, reason, TTL, and includes. It never fetches or prints secret values.
 
 Text output is available for humans:
 
@@ -274,8 +276,8 @@ agent-secret profile show terraform-cloudflare
 
 ## Item Metadata Inspection
 
-Use `agent-secret item describe` when an agent has an item-level ref but does
-not know which field labels are available yet:
+Use `agent-secret item describe` when an agent has an item-level reference but
+does not know which field labels are available yet:
 
 ```bash
 agent-secret item describe "op://Example Infra/Database Credentials"
@@ -286,13 +288,13 @@ agent-secret item describe --format env-refs --prefix DATABASE \
 The command accepts `op://vault/item` and `op://vault/item/*`. It requires local
 approval, performs one metadata lookup, and prints no field values. Output may
 include item title, category, field labels, field IDs, field types, section
-names, concealment flags, account, and canonical field refs.
+names, concealment flags, account, and canonical field references.
 
 Formats:
 
 - `text`: human-readable metadata table.
 - `json`: machine-readable item metadata.
-- `env-refs`: shell-quoted `ALIAS='op://...'` field-ref mappings.
+- `env-refs`: shell-quoted `ALIAS='op://...'` field-reference mappings.
 
 `--account` overrides account selection for this inspection command. Without
 `--account`, the command uses the discovered project config account, then

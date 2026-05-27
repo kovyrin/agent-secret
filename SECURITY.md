@@ -21,8 +21,8 @@ Use GitHub private vulnerability reporting:
 <https://github.com/kovyrin/agent-secret/security/advisories/new>
 
 Do not open a public issue with exploit details, raw secret values, private
-vault names, real `op://` refs, credentials, crash dumps that may contain
-environment variables, or screenshots that reveal sensitive metadata.
+vault names, real `op://` secret references, credentials, crash dumps that may
+contain environment variables, or screenshots that reveal sensitive metadata.
 
 If private vulnerability reporting is unavailable, open a minimal public issue
 that says you have a security report and need a private contact path. Include no
@@ -36,7 +36,7 @@ Useful reports include:
 - macOS version and hardware architecture.
 - Whether the build was a signed release, local dev build, or custom artifact.
 - The trust boundary involved, using `docs/threat-model.md` when possible.
-- Reproduction steps using synthetic refs or test-only 1Password items.
+- Reproduction steps using synthetic references or test-only 1Password items.
 - Expected impact, especially whether raw secret values can be fetched,
   delivered, logged, persisted, or sent to the wrong process.
 
@@ -61,7 +61,8 @@ In scope:
 - Same-UID processes crossing a documented socket, executable identity, install,
   release artifact, audit, approval, or secret-delivery boundary.
 - Fetching a secret before local approval.
-- Delivering a secret outside the displayed command, cwd, account, or ref scope.
+- Delivering a secret outside the displayed command, cwd, account, or secret
+  reference scope.
 - Logging, printing, or persisting raw secret values.
 - Accepting release artifacts from the wrong signer, bundle ID, or notarization
   state.

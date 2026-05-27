@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Privacy Policy · Agent Secret</title>
+    <meta
+      name="description"
+      content="Privacy policy for Agent Secret, an open-source local macOS app for coding-agent secret approvals."
+    >
+    <meta property="og:title" content="Privacy Policy · Agent Secret">
+    <meta
+      property="og:description"
+      content="Agent Secret is local-first: no analytics, no hosted account, and no maintainer collection of raw secret values."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://agent-secret.sh/privacy">
+    <meta property="og:image" content="https://agent-secret.sh/assets/app-icon-512.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="theme-color" content="#071011">
+    <link rel="canonical" href="https://agent-secret.sh/privacy">
+    <link rel="icon" href="assets/app-icon-180.png">
+    <link rel="apple-touch-icon" href="assets/app-icon-180.png">
+    <link rel="stylesheet" href="styles.css?v=20260527">
+  </head>
+  <body class="legal-page">
+    <header class="site-header" aria-label="Primary">
+      <a class="brand" href="index.html" aria-label="Agent Secret home">
+        <img src="assets/app-icon-180.png" alt="" width="40" height="40">
+        <span>Agent Secret</span>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="index.html#install">Install</a>
+        <a href="index.html#boundary">Security</a>
+        <a aria-current="page" href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="https://github.com/kovyrin/agent-secret">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="legal-main">
+      <section class="legal-hero" aria-labelledby="privacy-title">
+        <p class="eyebrow">Agent Secret</p>
+        <h1 id="privacy-title">Privacy Policy</h1>
+        <p class="lede">
+          Agent Secret is an open-source local macOS application. The privacy
+          posture is intentionally simple: no hosted Agent Secret account, no
+          website analytics, and no maintainer collection of raw secret values.
+        </p>
+        <p class="legal-date">Last updated: May 27, 2026</p>
+      </section>
+
+      <section class="legal-content" aria-label="Privacy policy content">
+        <h2>What This Policy Covers</h2>
+        <p>
+          This policy covers the Agent Secret website, the published Agent
+          Secret macOS app and CLI, and planned provider integrations such as
+          Google OAuth for GCP token minting. It does not replace the privacy
+          policies for third-party services you connect to Agent Secret, such as
+          1Password, Google Cloud, GitHub, or Homebrew.
+        </p>
+
+        <h2>Website Privacy</h2>
+        <p>
+          The Agent Secret website is a static site. It does not set analytics
+          cookies, run advertising trackers, or collect contact forms. The site
+          is hosted by Cloudflare Pages, so Cloudflare may process ordinary
+          server logs and request metadata needed to operate the hosting
+          service.
+        </p>
+
+        <h2>Application Data</h2>
+        <p>
+          Agent Secret runs locally on your Mac. Configuration files contain
+          secret references, not secret values. When you approve a request, the
+          daemon fetches the approved values from your configured provider and
+          passes them to the approved child process. The maintainer does not
+          receive those values.
+        </p>
+        <p>
+          Agent Secret may write local audit metadata such as request time,
+          working directory, command, account, approved references, result, TTL,
+          and approval state. Audit metadata is intended to avoid raw secret
+          values. Downstream commands you run with approved secrets are outside
+          Agent Secret's control.
+        </p>
+
+        <h2>1Password Integration</h2>
+        <p>
+          Current builds use the 1Password desktop app and official 1Password
+          SDK integration. Agent Secret asks 1Password for approved references
+          after local approval. 1Password account data, vault membership,
+          unlock state, and provider-side logs are governed by 1Password's
+          terms and privacy policy.
+        </p>
+
+        <h2>Google OAuth And GCP Token Minting</h2>
+        <p>
+          GCP token minting is planned. When you choose to use a Google
+          integration, Agent Secret will request the Google scopes shown by the
+          app, configuration, or approval flow and use them to perform the local
+          operation you requested, such as minting an access token for a
+          specific command. Agent Secret should not request broad default scopes
+          silently.
+        </p>
+        <p>
+          OAuth tokens, refresh tokens, and derived access tokens are used to
+          perform local Agent Secret features. The project does not sell this
+          data or share it with the maintainer. Google may process OAuth,
+          account, token, and Cloud API activity under Google's own policies.
+          You can revoke Google access from your Google Account security
+          settings.
+        </p>
+
+        <h2>Data Sharing</h2>
+        <p>
+          Agent Secret does not operate a backend service that receives your
+          secrets. Data is shared only when you cause it to be shared: for
+          example, when the local app talks to 1Password or Google, when a
+          command receives an approved environment variable, when you open a
+          GitHub issue, or when you send a security report.
+        </p>
+
+        <h2>Retention And Deletion</h2>
+        <p>
+          Local configuration, caches, and audit metadata stay on your machine
+          until you delete them or uninstall the app. Third-party providers keep
+          their own logs and account records according to their policies. Agent
+          Secret does not provide a hosted account dashboard because it does not
+          operate a hosted user account system.
+        </p>
+
+        <h2>Security Reports</h2>
+        <p>
+          Do not include raw secret values, private secret references, vault
+          names, or sensitive screenshots in public issues. Use GitHub private
+          vulnerability reporting for security reports:
+          <a href="https://github.com/kovyrin/agent-secret/security/advisories/new">
+            github.com/kovyrin/agent-secret/security/advisories/new
+          </a>.
+        </p>
+
+        <h2>Changes</h2>
+        <p>
+          This policy may change as Agent Secret adds providers or changes how
+          local approvals work. Material privacy changes should be reflected in
+          the website and repository documentation.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Agent Secret</span>
+      <nav class="footer-links" aria-label="Legal">
+        <a aria-current="page" href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="https://github.com/kovyrin/agent-secret">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>

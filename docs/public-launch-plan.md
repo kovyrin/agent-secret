@@ -1,7 +1,7 @@
 # Agent Secret Public Launch Plan
 
-Status: Draft
-Last updated: 2026-05-25
+Status: Active tracker
+Last updated: 2026-05-27
 Owner: Oleksiy Kovyrin
 Primary repo: [kovyrin/agent-secret][repo]
 
@@ -18,6 +18,72 @@ Success looks like:
 - The launch produces useful GitHub issues, questions, and design feedback.
 - The docs and demo make the security boundary clear without overselling it.
 - People understand that this is already used daily by a real team.
+
+## Tracking Rules
+
+- Keep the "Outstanding Work" section as the source of truth for what remains.
+- Move completed one-time setup work into "Completed Work".
+- Keep narrative, positioning, and channel notes as reference material only.
+- Remove tasks when they stop being relevant; do not leave stale unchecked
+  items in the main checklist.
+
+## Completed Work
+
+- [x] Public launch tracker created in this repository.
+- [x] Primary launch domain registered: `agent-secret.sh`.
+- [x] Homebrew-first distribution chosen.
+- [x] Homebrew cask exists and currently points to `v0.0.12`.
+- [x] GitHub release `v0.0.12` is published.
+- [x] App icon selected, converted to transparent RGBA source, committed, and
+  installed in the local dev build.
+- [x] Core audience selected: developers using coding agents, macOS, and
+  1Password.
+- [x] Product scope and launch limits captured.
+- [x] Blog narrative angle selected: Touch ID is not enough context for agent
+  secret access.
+- [x] Initial static product site built under `site/` with home, privacy, and
+  terms pages.
+- [x] Hosting target changed to Cloudflare Pages because `agent-secret.sh` DNS
+  is already on Cloudflare.
+- [x] Cloudflare Pages static headers, canonical redirects, robots.txt, and
+  sitemap added to `site/`.
+- [x] Cloudflare GitHub integration connected by Oleksiy.
+
+## Outstanding Work
+
+### Launch-Critical
+
+- [ ] Create the Cloudflare Pages project connected to `kovyrin/agent-secret`.
+- [ ] Configure Cloudflare Pages with production branch `main`, no build
+  command, and output directory `site`.
+- [ ] Verify the first Cloudflare Pages deploy succeeds.
+- [ ] Attach `agent-secret.sh` as the Cloudflare Pages custom domain.
+- [ ] Configure `www.agent-secret.sh` to redirect to the apex domain.
+- [ ] Verify HTTPS and the Cloudflare-issued certificate.
+- [ ] Verify the published product page has install, demo, limitations, privacy,
+  terms, and security model links.
+- [ ] Cut a public launch release that includes the final transparent icon.
+- [ ] Update the Homebrew cask to the launch release.
+- [ ] Run a clean-machine install drill against the launch release.
+- [ ] Verify one real `agent-secret exec` flow without printing secrets.
+- [ ] Do a public-docs pass on README, configuration docs, threat model, and
+  security contact.
+
+### Launch Content
+
+- [ ] Write the blog article.
+- [ ] Record the 45 to 90 second demo video.
+- [ ] Draft the X launch post and thread.
+- [ ] Draft the LinkedIn narrative post.
+- [ ] Prepare the HN title and human-written first comment.
+- [ ] Decide whether Product Hunt is wave 1 or wave 2.
+
+### Product Hunt, If Wave 1
+
+- [ ] Prepare 240x240 thumbnail.
+- [ ] Prepare at least two 1270x760 gallery images.
+- [ ] Prepare maker first comment.
+- [ ] Create and schedule the Product Hunt launch.
 
 ## Core Positioning
 
@@ -51,10 +117,10 @@ Moving secrets into 1Password helped because `op` can gate access on Touch ID.
 That is a good primitive, but it does not carry enough intent once many agents
 are running in parallel. A random Touch ID prompt for 1Password access stops
 being meaningful when you cannot tell which agent triggered it, what it plans
-to read, why it needs those refs, and what command will receive the values.
+to read, why it needs those secrets, and what command will receive the values.
 
 Agent Secret was built to make those approval moments intelligible. Agents ask
-for specific refs, attach a reason, and show the command they intend to run.
+for specific secrets, attach a reason, and show the command they intend to run.
 The approval prompt becomes both a security checkpoint and a progress signal:
 it tells the human where the agent is going, and it creates a natural
 opportunity to deny or steer the work if the request does not make sense.
@@ -123,18 +189,20 @@ Use this launch URL stack:
 2. GitHub repo as the primary install CTA from that page.
 3. Blog article as the narrative launch post linked from the product URL.
 
+Current state:
+
+- `agent-secret.sh` is registered.
+- Initial static site lives in `site/`.
+- Privacy and terms pages exist for OAuth client setup.
+- Cloudflare Pages is the selected host.
+- Cloudflare should deploy the `site/` directory from `main` with no build
+  command.
+- DNS does not currently resolve from this machine.
+
 Product Hunt can use a GitHub repo URL, but a small landing page is better. If
 we launch on Product Hunt, prefer `https://agent-secret.sh` with the GitHub
 repo, install command, demo video, limitations, and security model linked above
 the fold.
-
-Hosting tasks:
-
-- Point DNS for `agent-secret.sh` at the chosen static hosting provider.
-- Enable HTTPS and confirm the certificate is valid.
-- Publish a minimal product page with install, demo, limitations, and security
-  model links above the fold.
-- Redirect `www.agent-secret.sh` to the apex domain or serve the same page.
 
 ## Distribution
 
@@ -152,24 +220,25 @@ Secondary install paths:
 - Release installer script from GitHub Releases.
 - Manual DMG install for users who prefer GUI installation.
 
-Before launch, verify:
+Current state:
 
-- The latest public release is signed and notarized.
-- The Homebrew cask points at that release.
-- `brew install --cask agent-secret` works on a clean macOS user or VM.
-- `agent-secret doctor` gives useful non-secret diagnostics.
-- The README starts with the Homebrew path.
-- The release notes explain the user-visible changes since early private use.
+- `v0.0.12` is published.
+- The cask points at `v0.0.12`.
+- The final app icon landed after `v0.0.12`, so a new launch release is still
+  needed.
 
 ## Assets
 
-Required:
+Completed:
 
-- Logo or app icon.
+- App icon selected and committed at `scripts/build/assets/AppIcon.png`.
 - README screenshots:
   - Approval request.
   - Item metadata request.
   - 1Password SDK integration.
+
+Outstanding:
+
 - Demo video, 45 to 90 seconds.
 - Blog hero image or screenshot.
 - X thread copy.
@@ -183,28 +252,6 @@ Nice to have:
 - A short terminal transcript showing `exec --dry-run --json`.
 - A before/after snippet replacing `op run` with `agent-secret exec`.
 
-## Logo Prompt
-
-Use this with an image-generation model:
-
-```text
-Create a polished macOS app icon for "Agent Secret", a developer tool that
-brokers local human approval before coding agents can access 1Password secrets.
-Use an abstract vault, keyhole, command prompt, or agent-routing motif, but no
-literal text. The icon should feel trustworthy, technical, and local-first, not
-corporate or cartoonish. Avoid hacker hoodies, skulls, shields full of binary,
-and generic padlock-only imagery. Use a dark graphite base with deep teal and
-warm amber accents, subtle depth, crisp edges, and a distinctive silhouette that
-remains readable at 32px. Square 1024x1024 app-icon composition.
-```
-
-Ask for 4 variants, then pick one and generate:
-
-- 1024x1024 app icon.
-- 512x512 social avatar.
-- 240x240 Product Hunt thumbnail.
-- Transparent-background mark for the README or blog.
-
 ## Demo Video
 
 Target length: 45 to 90 seconds.
@@ -213,9 +260,10 @@ Recommended flow:
 
 1. Show the problem: a script or agent workflow needs a secret.
 2. Show why a generic 1Password approval is not enough context.
-3. Show the config profile with `op://` refs, not values.
+3. Show the config profile with `op://` references, not values.
 4. Run `agent-secret exec --profile ... -- <safe command>`.
-5. Show the native approval prompt with command, reason, cwd, and refs.
+5. Show the native approval prompt with command, reason, cwd, and requested
+   secrets.
 6. Approve it.
 7. Show the command succeeds without printing the secret.
 8. End on Homebrew install and the GitHub repo URL.
@@ -243,10 +291,10 @@ Recommended outline:
 2. The agent-access problem: to make agents useful, you must grant access to
    more systems; every extra credential increases blast radius.
 3. Why 1Password and `op` were still not enough: Touch ID gates access but does
-   not explain which agent is asking, which refs it wants, why it needs them,
-   or what command will receive the values.
-4. What Agent Secret adds: explicit refs, explicit reason, explicit command,
-   local native approval, and metadata-only audit context.
+   not explain which agent is asking, which secrets it wants, why it needs
+   them, or what command will receive the values.
+4. What Agent Secret adds: explicit secret references, explicit reason,
+   explicit command, local native approval, and metadata-only audit context.
 5. The team usage: 5 people, dozens of approvals per day, many vaults, both
    automation and ad-hoc access.
 6. The migration: profiles replaced direct `op` usage in automation, while
@@ -360,14 +408,15 @@ Main job:
 ### Prep
 
 - Pull latest `main` before editing release or public docs.
-- Configure `agent-secret.sh` DNS, HTTPS, and static hosting.
-- Verify current release and Homebrew cask install.
+- Configure the Cloudflare Pages project, `agent-secret.sh` custom domain,
+  apex HTTPS, and `www` redirect.
+- Cut and verify the launch release that includes the final transparent icon.
+- Update and verify the Homebrew cask for the launch release.
 - Confirm README, configuration docs, threat model, and release notes are
   launch-ready.
 - Confirm `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md` are accurate.
 - Add a public "known limitations" section if the README does not make limits
   obvious enough.
-- Generate logo candidates.
 - Record demo video.
 - Draft blog article.
 - Draft X and LinkedIn posts.
@@ -398,12 +447,19 @@ Main job:
 
 ## Public Readiness Checklist
 
-- [ ] Latest release is signed, notarized, and published.
+Use this as a final launch gate only. Day-to-day tracking belongs in
+"Outstanding Work".
+
+- [x] Launch domain selected and registered.
+- [x] App icon selected and committed.
+- [x] Homebrew-first install path selected.
+- [x] Base Homebrew cask exists.
+- [ ] Launch release with final icon is signed, notarized, and published.
+- [ ] Homebrew cask installs the launch release.
 - [ ] `agent-secret.sh` resolves over HTTPS.
 - [ ] `www.agent-secret.sh` redirects or serves the same page.
 - [ ] Product page links to GitHub, install docs, demo, limitations, and threat
   model.
-- [ ] Homebrew cask installs the latest release.
 - [ ] Clean-machine install succeeds.
 - [ ] `agent-secret doctor` succeeds or gives actionable diagnostics.
 - [ ] One real `agent-secret exec` flow works without printing secrets.
@@ -414,27 +470,23 @@ Main job:
 - [ ] Security contact path is clear.
 - [ ] Blog article draft exists.
 - [ ] Demo video is recorded.
-- [ ] Logo is selected.
 - [ ] X post and thread are drafted.
 - [ ] LinkedIn post is drafted.
 - [ ] HN title and human-written first comment are prepared.
-- [ ] Product Hunt is either ready or explicitly deferred.
+- [ ] Product Hunt is ready or explicitly deferred.
 
 ## Open Decisions
 
-1. Static hosting provider:
-   Recommended: use whichever path is fastest for `agent-secret.sh`; GitHub
-   Pages, Cloudflare Pages, or the existing blog hosting are all acceptable.
-2. Product Hunt timing:
+1. Product Hunt timing:
    Recommended: wave 2 unless the landing page and gallery are ready.
-3. Launch date:
+2. Launch date:
    Pick a day when Oleksiy can spend several hours responding.
-4. Blog scope:
+3. Blog scope:
    Recommended: personal usage story plus practical migration examples, not a
    generic product announcement.
-5. Demo command:
+4. Demo command:
    Pick a safe command that proves secret consumption without printing values.
-6. Roadmap disclosure:
+5. Roadmap disclosure:
    Mention secret writes and GCP Secret Manager as planned, without promising a
    date.
 
