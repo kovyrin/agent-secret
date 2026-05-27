@@ -757,6 +757,17 @@ li + li {
   font-size: 0.85rem;
 }
 
+.footer-meta a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.footer-meta a:hover {
+  color: var(--teal);
+  border-color: currentColor;
+}
+
 .legal-page {
   background:
     linear-gradient(rgba(244, 241, 234, 0.032) 1px, transparent 1px),
