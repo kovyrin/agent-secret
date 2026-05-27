@@ -1,6 +1,6 @@
 cask "agent-secret" do
-  version "0.0.12"
-  sha256 "8fadcd5e0e31d086d25bbf94b2c2d484a2e7999cd0ba9bb88cd6f31dc91e3d47"
+  version "0.0.13"
+  sha256 "3e22915d28a21473bf47208dff2ab91e06a404583d0eddae4629e8a91e0e756d"
 
   url "https://github.com/kovyrin/agent-secret/releases/download/v#{version}/Agent-Secret-v#{version}-macos-arm64.dmg"
   name "Agent Secret"
@@ -13,7 +13,7 @@ cask "agent-secret" do
   end
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Agent Secret.app"
   binary "#{appdir}/Agent Secret.app/Contents/Resources/bin/agent-secret"
