@@ -32,8 +32,8 @@ Success looks like:
 - [x] Public launch tracker created in this repository.
 - [x] Primary launch domain registered: `agent-secret.sh`.
 - [x] Homebrew-first distribution chosen.
-- [x] Homebrew cask exists and currently points to `v0.0.12`.
-- [x] GitHub release `v0.0.12` is published.
+- [x] Homebrew cask exists and currently points to `v0.0.13`.
+- [x] GitHub release `v0.0.13` is published.
 - [x] App icon selected, converted to transparent RGBA source, committed, and
   installed in the local dev build.
 - [x] Core audience selected: developers using coding agents, macOS, and
@@ -69,6 +69,12 @@ Success looks like:
   skipped Git deployment for `40c89b0` was retried and completed successfully.
 - [x] Pages headers now send `Cache-Control: no-transform` so Cloudflare Email
   Obfuscation does not rewrite code examples.
+- [x] Launch release `v0.0.13` with the final transparent icon was signed,
+  notarized, verified locally, and published.
+- [x] Homebrew cask updated to `v0.0.13`; audit, install, `skill-install`,
+  `doctor`, and upgrade no-op checks passed.
+- [x] A real `agent-secret exec` smoke using the Cloudflare Pages profile
+  completed without printing the secret value.
 
 ## Outstanding Work
 
@@ -76,10 +82,7 @@ Success looks like:
 
 - [ ] Verify the published product page has install, demo, limitations, privacy,
   terms, and security model links.
-- [ ] Cut a public launch release that includes the final transparent icon.
-- [ ] Update the Homebrew cask to the launch release.
 - [ ] Run a clean-machine install drill against the launch release.
-- [ ] Verify one real `agent-secret exec` flow without printing secrets.
 - [ ] Do a public-docs pass on README, configuration docs, threat model, and
   security contact.
 
@@ -237,10 +240,9 @@ Secondary install paths:
 
 Current state:
 
-- `v0.0.12` is published.
-- The cask points at `v0.0.12`.
-- The final app icon landed after `v0.0.12`, so a new launch release is still
-  needed.
+- `v0.0.13` is published.
+- The cask points at `v0.0.13`.
+- The final app icon is included in the published launch release.
 
 ## Assets
 
@@ -425,8 +427,8 @@ Main job:
 - Pull latest `main` before editing release or public docs.
 - Confirm `https://agent-secret.sh/` remains healthy after Cloudflare's domain
   status finishes moving from pending to active in the API.
-- Cut and verify the launch release that includes the final transparent icon.
-- Update and verify the Homebrew cask for the launch release.
+- Confirm the `v0.0.13` release and Homebrew cask remain healthy after mirrors
+  and local caches settle.
 - Confirm README, configuration docs, threat model, and release notes are
   launch-ready.
 - Confirm `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md` are accurate.
@@ -469,15 +471,15 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [x] App icon selected and committed.
 - [x] Homebrew-first install path selected.
 - [x] Base Homebrew cask exists.
-- [ ] Launch release with final icon is signed, notarized, and published.
-- [ ] Homebrew cask installs the launch release.
+- [x] Launch release with final icon is signed, notarized, and published.
+- [x] Homebrew cask installs the launch release.
 - [x] `agent-secret.sh` resolves over HTTPS.
 - [x] `www.agent-secret.sh` redirects to the apex domain.
 - [ ] Product page links to GitHub, install docs, demo, limitations, and threat
   model.
 - [ ] Clean-machine install succeeds.
-- [ ] `agent-secret doctor` succeeds or gives actionable diagnostics.
-- [ ] One real `agent-secret exec` flow works without printing secrets.
+- [x] `agent-secret doctor` succeeds or gives actionable diagnostics.
+- [x] One real `agent-secret exec` flow works without printing secrets.
 - [ ] README install path matches the launch recommendation.
 - [ ] README makes macOS and 1Password requirements obvious.
 - [ ] README makes exec-only and no-write limits obvious.
