@@ -52,7 +52,7 @@ policy and reuse keys but not shown in the approval prompt.
   fetch.
 - In the default prompt, show only the decision-critical fields: reason, command
   or workflow, resolved command binary when useful, requested secret aliases and
-  refs, and approval duration/reuse policy.
+  secret references, and approval duration/reuse policy.
 - Use the official 1Password SDK for normal operation.
 - Never print secret values to the console or return them to the agent.
 - Support command execution through `agent-secret exec` as the default delivery
@@ -60,7 +60,7 @@ policy and reuse keys but not shown in the approval prompt.
 - Leave room for future short-lived sessions, opaque per-secret handles, and
   credential-helper integrations without shipping them in the initial release.
 - Keep secret values in memory only by default.
-- Enforce TTL, requested refs, command, cwd, UID, strict macOS peer/process
+- Enforce TTL, requested secret references, command, cwd, UID, strict macOS peer/process
   checks for session/socket reads, and max reads only for session/socket reads.
 - Write metadata-only audit logs that never include secret values.
 - Keep the trusted core small enough to audit.
@@ -103,11 +103,12 @@ agent-secret exec \
 ```
 
 `agent-secret exec` asks the daemon for local approval. The daemon fetches only
-the approved refs from 1Password and returns an approved environment payload to
-the CLI over the single per-user daemon socket. The CLI starts `terraform plan`
-with scoped environment variables, waits for the command to exit, and clears its
-one-shot in-memory copies. If the user approved same-command reuse, the daemon
-keeps those values in memory only until the approval TTL or use limit is
+the approved secret references from 1Password and returns an approved
+environment payload to the CLI over the single per-user daemon socket. The CLI
+starts `terraform plan` with scoped environment variables, waits for the command
+to exit, and clears its one-shot in-memory copies. If the user approved
+same-command reuse, the daemon keeps those values in memory only until the
+approval TTL or use limit is
 exhausted.
 
 The same initial path should support Ansible commands that need environment-provided
@@ -139,7 +140,7 @@ feature should stay generic and should not depend on any one consumer project.
 
 The first release-ready config workflow is project-local profiles. A checked-in
 `agent-secret.yml` file names reusable secret bundles while still storing only
-`op://` refs and metadata. If `default_profile` is set, the caller can omit
+`op://` references and metadata. If `default_profile` is set, the caller can omit
 `--profile` when no explicit `--secret` flags are provided:
 
 ```yaml
@@ -185,11 +186,12 @@ agent-secret exec -- terraform plan
 agent-secret exec --profile terraform-cloudflare -- terraform plan
 ```
 
-The broker approves the declared refs before the wrapped command runs, avoids
-printing values, and lets CLI `--reason`, `--ttl`, and additional `--secret`
-flags override or extend a named profile for one-off use. Additional explicit
-secrets inherit the loaded profile account. `--only` can filter profile-loaded
-aliases for dynamic subsets before one-off `--secret` refs are added.
+The broker approves the declared secret references before the wrapped command
+runs, avoids printing values, and lets CLI `--reason`, `--ttl`, and additional
+`--secret` flags override or extend a named profile for one-off use. Additional
+explicit secrets inherit the loaded profile account. `--only` can filter
+profile-loaded aliases for dynamic subsets before one-off `--secret` references
+are added.
 Invocations with explicit `--secret` or `--env-file` sources do not load
 `default_profile` unless `--profile` is provided.
 
@@ -242,8 +244,8 @@ agent / Codex
 - Return approved secret payloads to trusted CLI wrappers over the single
   per-user daemon socket.
 - Never spawn, supervise, signal, or wait for `exec` child processes.
-- Enforce TTL, refs, command, cwd, request nonces, reusable use counts, and
-  trusted CLI/approver peer checks.
+- Enforce TTL, secret references, command, cwd, request nonces, reusable use
+  counts, and trusted CLI/approver peer checks.
 - Expose a local Unix domain socket API.
 - Emit metadata-only audit events.
 - Request decisions from the macOS approver app.
@@ -339,18 +341,18 @@ Each approved request should bind these fields:
 - cwd, with `--cwd` defaulting to the caller's current cwd for `exec`
 - stated reason
 - exact command argv and resolved executable path when applicable
-- exact requested secret refs and aliases
+- exact requested secret references and aliases
 - TTL and expiration time
 - delivery mode, implicit env-mode `exec` for MVP
 - approval timestamp and nonce
 - reuse policy: one-shot by default, or same-command reuse with a short TTL and
   max-use count
 
-The broker rejects access if the request is expired, the requested ref/alias is
-not approved, the reusable use count is exhausted, the command or cwd policy
-mismatches, the nonce is invalid, or the request was denied or canceled. Future
-session/socket modes must add session IDs, per-secret read counts, and strict
-peer-policy checks.
+The broker rejects access if the request is expired, the requested
+reference/alias is not approved, the reusable use count is exhausted, the
+command or cwd policy mismatches, the nonce is invalid, or the request was
+denied or canceled. Future session/socket modes must add session IDs,
+per-secret read counts, and strict peer-policy checks.
 
 For `agent-secret exec`, `--cwd` is operational. It sets the child process
 working directory, defaults to the caller's current cwd when omitted, and is part
@@ -367,11 +369,11 @@ Command approvals are one-shot by default. After the base path works, the UI can
 offer a short reusable approval such as "allow this same command for 10
 minutes." Same-command reuse is intentionally strict in v1: it must match the
 stated reason, resolved executable path, exact argv array, cwd, exact aliases
-and refs, delivery mode, `--override-env` state, exact overridden aliases, TTL,
-and max-use count. Requester PID/process identity is audit-only for MVP `exec`
-reuse. The match must not permit a different reason, new refs, a different
-executable path, a different argv, a different cwd, a different delivery mode,
-or different environment override behavior.
+and secret references, delivery mode, `--override-env` state, exact overridden
+aliases, TTL, and max-use count. Requester PID/process identity is audit-only
+for MVP `exec` reuse. The match must not permit a different reason, new secret
+references, a different executable path, a different argv, a different cwd, a
+different delivery mode, or different environment override behavior.
 
 `--reason` is required for every `agent-secret exec` invocation, including
 invocations that reuse an existing approval. A reused approval only matches when
@@ -423,21 +425,22 @@ the 3-use limit is exhausted, or the daemon is stopped. V1 has no reusable
 approval list/destroy command; `agent-secret daemon stop` is the manual way to
 clear reusable approvals early.
 
-Policy objects must remain value-free. They may store request IDs, refs, aliases,
-TTL, use counts, delivery mode, approval metadata, and cache keys, but never raw
-secret values. Reusable secret values live only in a daemon-owned in-memory
-`SecretCache` keyed by approval ID plus unique `op://` ref. One-shot exec values
-may pass through `agent-secret exec` memory only long enough to create and
-supervise the child environment. Audit writers, approval view models, and policy
-serializers must consume value-free policy objects, not cache entries.
+Policy objects must remain value-free. They may store request IDs, secret
+references, aliases, TTL, use counts, delivery mode, approval metadata, and
+cache keys, but never raw secret values. Reusable secret values live only in a
+daemon-owned in-memory `SecretCache` keyed by approval ID plus unique `op://`
+reference. One-shot exec values may pass through `agent-secret exec` memory only
+long enough to create and supervise the child environment. Audit writers,
+approval view models, and policy serializers must consume value-free policy
+objects, not cache entries.
 
 While reusable values are cached and valid, the daemon must not call the
-1Password SDK again for those refs.
+1Password SDK again for those secret references.
 If a 1Password item changes during the reusable approval window, the cached
 value wins until the approval expires unless the caller passes `--force-refresh`.
 `--force-refresh` requires the same reusable approval match, refetches all
-approved refs from 1Password, updates the in-memory cache only after a
-successful all-or-nothing fetch, and records an audit event.
+approved secret references from 1Password, updates the in-memory cache only
+after a successful all-or-nothing fetch, and records an audit event.
 If refresh succeeds and the daemon returns an approved environment payload to
 `agent-secret exec`, it consumes one of the reusable approval's 3 uses.
 A reusable approval use is consumed when the daemon sends an approved
@@ -448,10 +451,11 @@ use. Failures after payload delivery, including CLI spawn failure, immediate
 child exit, non-zero exit, or later `command_started` audit failure, still
 consume the use.
 
-Broker approval must happen before any 1Password SDK fetch or ref validation
-against 1Password in the normal path. If a ref is wrong, the user may approve the
-request and then see a fail-closed fetch error. That tradeoff is acceptable for
-v1 because the rule is simpler to reason about: no contact with 1Password for an
+Broker approval must happen before any 1Password SDK fetch or reference
+validation against 1Password in the normal path. If a reference is wrong, the
+user may approve the request and then see a fail-closed fetch error. That
+tradeoff is acceptable for v1 because the rule is simpler to reason about: no
+contact with 1Password for an
 agent request before local broker approval.
 
 Executable path resolution happens before approval and before any 1Password SDK
@@ -469,29 +473,31 @@ before submitting the request. If `PATH` changes later, a new request is
 resolved again and only reuses an approval if the resolved executable path still
 matches exactly.
 
-Approved refs are all-or-nothing in v1. If any approved ref fails to fetch, the
-daemon must return no secret payload and `agent-secret exec` must not spawn the
-child process.
+Approved secret references are all-or-nothing in v1. If any approved reference
+fails to fetch, the daemon must return no secret payload and
+`agent-secret exec` must not spawn the child process.
 
-After approval, the daemon should fetch approved refs with bounded concurrency.
-Fetch ordering must not affect policy: the command receives secrets only after
-every approved ref resolves successfully. If any fetch fails, the daemon drops
-the successful values from that attempt, records metadata-only failure details,
-does not update reusable caches, and returns no values to the CLI wrapper.
-An empty string returned by 1Password for an approved ref is a successful
+After approval, the daemon should fetch approved secret references with bounded
+concurrency. Fetch ordering must not affect policy: the command receives secrets
+only after every approved reference resolves successfully. If any fetch fails,
+the daemon drops the successful values from that attempt, records metadata-only
+failure details, does not update reusable caches, and returns no values to the
+CLI wrapper.
+An empty string returned by 1Password for an approved reference is a successful
 resolution, not a fetch failure. For env-mode `exec`, it is delivered as an
 environment variable set to the empty string. Missing, unreadable, unauthorized,
-or otherwise unresolved refs still fail closed.
+or otherwise unresolved references still fail closed.
 V1 should not depend on a native SDK bulk-resolution API; the resolver interface
 can still adopt one later if it preserves the same bounded, all-or-nothing
 semantics.
 
-If the approved request contains the same `op://` ref under multiple aliases,
-the daemon should fetch that unique ref once and fan the resolved value out to
-each approved alias. This preserves duplicate refs as an aliasing feature while
-avoiding extra SDK calls or repeated 1Password authorization prompts.
+If the approved request contains the same `op://` reference under multiple
+aliases, the daemon should fetch that unique reference once and fan the resolved
+value out to each approved alias. This preserves duplicate references as an
+aliasing feature while avoiding extra SDK calls or repeated 1Password
+authorization prompts.
 
-V1 allows arbitrary `op://` refs requested by the agent, as long as they are
+V1 allows arbitrary `op://` references requested by the agent, as long as they are
 shown clearly in the approval prompt. There is no allowlist or policy file in
 v1; adding one should require a later explicit product decision.
 
@@ -502,8 +508,8 @@ item or field names in normal flows.
 Alias names must use strict uppercase environment-variable syntax:
 `[A-Z_][A-Z0-9_]*`. Examples include `AWS_ACCESS_KEY_ID`,
 `CLOUDFLARE_API_TOKEN`, and `AWS_SHARED_CREDENTIALS_FILE`.
-Duplicate aliases are invalid. Duplicate refs are allowed when different aliases
-need the same value. Duplicate refs are deduplicated for fetch and cache
+Duplicate aliases are invalid. Duplicate references are allowed when different aliases
+need the same value. Duplicate references are deduplicated for fetch and cache
 purposes, then expanded back to the approved alias set for delivery.
 
 Future session/socket reads require peer PID and executable checks on supported
@@ -542,7 +548,7 @@ Audit logs should include:
 - request ID
 - requester metadata
 - validated trimmed reason
-- refs and aliases
+- secret references and aliases
 - approval or denial, without an operator note field in v1
 - approval reuse, including remaining TTL and remaining use count
 - TTL and reusable approval remaining uses
@@ -565,7 +571,7 @@ Audit logs must never include:
 - 1Password item field values
 - child stdout or stderr
 
-For the initial release, audit logs store full `op://` refs so local debugging
+For the initial release, audit logs store full `op://` references so local debugging
 is straightforward. This records vault, item, and field names as metadata, but
 never secret values. Logs must be current-user-only by default.
 V1 uses a fixed per-user macOS audit log at
@@ -667,9 +673,10 @@ remaining read count, and unexpired policy.
 
 Future session value reads should happen through ephemeral Unix sockets or
 equivalent local IPC and must never print values to stdout/stderr.
-Unlike same-command reuse, sessions should approve a bounded set of refs for a
-session lifetime and allow those approved refs to be read in whatever order the
-approved workflow needs, subject to TTL, max-read, peer, and destroy policy.
+Unlike same-command reuse, sessions should approve a bounded set of references
+for a session lifetime and allow those approved references to be read in
+whatever order the approved workflow needs, subject to TTL, max-read, peer, and
+destroy policy.
 On macOS, session/socket reads must fail closed unless the daemon can validate
 same UID, peer PID, executable path, cwd, session/capability nonce, TTL, and
 read count against the approved session.
@@ -746,7 +753,7 @@ The default approval prompt is intentionally compact. It should show:
 - full command argv exactly as it will be executed, with no omitted arguments
 - cwd as compact command context
 - resolved executable path as the command binary when useful
-- secret aliases and full `op://` refs
+- secret aliases and full `op://` references
 - approval duration, including one-shot vs reusable requested-TTL / 3-use choice
 - compact time remaining, such as `expires in 1m 42s`, because request TTL is
   also the approval prompt timeout
@@ -762,16 +769,16 @@ operator's approval decision.
 The prompt must not show raw secret values.
 The approval prompt is read-only with respect to the request. The approver can
 approve once, allow same-command reuse, or deny, but cannot edit the requester
-reason, command, cwd, refs, TTL, or any other request field. If the reason is
-wrong or insufficient, the correct action is deny and rerun with a better
-`--reason`.
+reason, command, cwd, secret references, TTL, or any other request field. If the
+reason is wrong or insufficient, the correct action is deny and rerun with a
+better `--reason`.
 Denial is a simple v1 action and does not ask for or store an operator note.
 The audit event records the denied request metadata.
 
 Long commands may use scrollable or expandable UI, but the approval data must
 include the full argv exactly.
 
-Secret rows should show both alias and full ref, for example
+Secret rows should show both alias and full reference, for example
 `CLOUDFLARE_API_TOKEN -> op://Example/Cloudflare API Token/password`.
 The `Approve once` action should be the default highlighted approval action.
 The reusable action should show its 3-use limit and clearly state that approved
@@ -885,8 +892,8 @@ approver using a non-secret health check, not a real approval request. It should
 also verify 1Password SDK/client availability, desktop-app auth state,
 desktop-app integration availability, socket directory permissions, and audit log
 writability. It may trigger the 1Password desktop authentication flow so it can
-verify readiness, but it must stop before item/ref access. It must not resolve
-any `op://` ref, fetch arbitrary secrets, or print secret values.
+verify readiness, but it must stop before item/reference access. It must not
+resolve any `op://` reference, fetch arbitrary secrets, or print secret values.
 
 ## Socket API V1
 
@@ -948,17 +955,17 @@ The broker should use the official 1Password Go SDK and desktop-app
 authentication. Research must confirm:
 
 - exact package and API names
-- how to resolve `op://` refs
-- whether concurrent ref resolution is safe and how SDK calls are authenticated
+- how to resolve `op://` references
+- whether concurrent reference resolution is safe and how SDK calls are authenticated
 - whether metadata can be read without values
 - whether SDK calls are grouped or repeatedly prompt
 - how long desktop auth remains warm
-- error types for locked, denied, missing, or unauthorized refs
+- error types for locked, denied, missing, or unauthorized references
 - whether the SDK offers any scope controls beyond account authorization
 - whether SDK metadata or existence checks are available for future diagnostics
 
 1Password's desktop prompt is not treated as item-level policy. The broker must
-enforce exact-ref policy itself.
+enforce exact-reference policy itself.
 
 There is no planned `op read` fallback. If SDK integration fails, the SDK spike
 fails and the design should be revisited rather than silently switching to the
@@ -984,7 +991,7 @@ MVP must include:
 - official 1Password Go SDK integration
 - `exec` mode with environment injection
 - required `--reason`
-- refs displayed before fetch
+- secret references displayed before fetch
 - TTL policy for `exec`
 - one-shot approval plus optional same-command reuse for requested TTL and 3 uses
 - metadata-only audit log
@@ -1024,7 +1031,7 @@ MVP can defer:
 
 Deliverables:
 
-- Minimal Go program resolving one test-only `op://` ref through the 1Password
+- Minimal Go program resolving one test-only `op://` reference through the 1Password
   SDK without printing the value.
 - Notes on observed desktop auth and Touch ID behavior.
 - Go Unix socket peer credential proof of concept on macOS.
@@ -1057,8 +1064,8 @@ Exit criteria:
 - The same exact command can be approved for reuse and rerun without another
   approval prompt during the requested-TTL or 3-use window.
 - Broker output does not print secret values.
-- Approval UI shows reason, refs, command, cwd, optional command binary, and
-  approval duration without audit/debug noise.
+- Approval UI shows reason, secret references, command, cwd, optional command
+  binary, and approval duration without audit/debug noise.
 
 ### Milestone 2: Sessions And Unix Socket Reads
 
@@ -1067,14 +1074,14 @@ Deliverables:
 - session create, list, and destroy
 - opaque handles
 - `with-session` wrapper
-- ephemeral Unix socket reads for approved session refs
+- ephemeral Unix socket reads for approved session references
 - TTL and max-read enforcement
 - strict macOS peer validation for UID, PID, executable path, and cwd
 
 Exit criteria:
 
 - A multi-command workflow can be approved once and executed through wrappers.
-- Approved session refs can be read in whatever order the workflow needs without
+- Approved session references can be read in whatever order the workflow needs without
   console output or disk writes.
 - Expired sessions cannot be used.
 - Peer metadata failures or mismatches fail closed.
@@ -1114,16 +1121,16 @@ Exit criteria:
 
 - Given an agent requests secrets with a reason, the macOS approval window
   appears in the foreground.
-- The prompt includes reason, refs, command, cwd, optional command binary, and
-  approval duration.
+- The prompt includes reason, secret references, command, cwd, optional command
+  binary, and approval duration.
 - Denying the prompt prevents any 1Password secret fetch.
-- Approving the prompt allows only the displayed refs.
+- Approving the prompt allows only the displayed secret references.
 
 ### Secret Access Criteria
 
 - The broker never contacts 1Password or fetches secrets before local broker
   approval in the normal secret-access path.
-- The broker fetches only approved refs.
+- The broker fetches only approved secret references.
 - The broker never writes secret values to logs.
 - The daemon and CLI wrapper clear one-shot secret values from their own memory
   when the command exits.
@@ -1180,7 +1187,7 @@ Exit criteria:
   post-start lifecycle disconnect, and daemon stop events.
 - Future handle/session delivery APIs must add expiry and destroy audit events
   before those APIs are considered complete.
-- Logs contain refs and aliases but no values.
+- Logs contain secret references and aliases but no values.
 - Logs are readable only by the current user by default.
 
 ### Failure Criteria
@@ -1189,7 +1196,7 @@ Exit criteria:
 - If approval does not arrive before the request TTL expires, the request fails
   closed.
 - If 1Password is locked or denied, the request fails closed.
-- If one ref fetch fails, no partial secret set is delivered by default.
+- If one reference fetch fails, no partial secret set is delivered by default.
 - If the daemon disconnects before payload delivery, `agent-secret exec` fails
   closed with a clear daemon-disconnected error. It does not auto-reconnect or
   recreate the request.

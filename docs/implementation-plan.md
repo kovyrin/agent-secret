@@ -43,10 +43,10 @@ Source: [Product Requirements](prd.md)
   future Epic 6 concern for tools or wrappers that cannot consume env vars
   cleanly.
 - V1 approval binds to command shape, cwd, delivery mode, TTL, and exact secret
-  refs. `--repo`, repo-root binding, and git commit binding are out of scope for
-  v1. Delivery mode is implicit env-mode `exec` in MVP and is not shown in the
-  approval UI, but it remains in the policy/reuse key so future delivery modes
-  cannot reuse env approvals.
+  references. `--repo`, repo-root binding, and git commit binding are out of
+  scope for v1. Delivery mode is implicit env-mode `exec` in MVP and is not
+  shown in the approval UI, but it remains in the policy/reuse key so future
+  delivery modes cannot reuse env approvals.
 - For `agent-secret exec`, `--cwd` sets the child working directory, defaults to
   the caller's current cwd, and is part of the approval/reuse key.
 - `--reason` is required for every `agent-secret exec`, including reused
@@ -106,26 +106,26 @@ Source: [Product Requirements](prd.md)
 - `agent-secret daemon stop` attempts one best-effort `daemon_stop` audit event,
   but shutdown does not wait on or fail because of that event.
 - Normal agent requests use approval-first semantics: no 1Password SDK fetch or
-  ref existence check happens before local broker approval.
+  reference existence check happens before local broker approval.
 - Executable path resolution happens before approval and before any 1Password
   SDK access; unresolved executables fail closed with no prompt. Resolution uses
   the requesting CLI process environment at request time, including the caller's
   `PATH`, and stores the resolved absolute executable path for approval,
   execution, audit, and reuse matching.
-- Approved refs are all-or-nothing in v1; one fetch failure prevents any secret
-  delivery.
-- After approval, approved refs are fetched with bounded concurrency. Fetch
-  order does not affect delivery, cache updates, or audit semantics; one failed
-  fetch drops the whole attempt and prevents `agent-secret exec` from spawning
-  the child.
-- Duplicate `op://` refs are fetched once per unique ref, then fanned out to all
-  approved aliases for delivery and cache lookup.
-- V1 accepts arbitrary `op://` refs shown in the approval prompt. No allowlist
-  or policy file is part of v1.
+- Approved secret references are all-or-nothing in v1; one fetch failure
+  prevents any secret delivery.
+- After approval, approved secret references are fetched with bounded
+  concurrency. Fetch order does not affect delivery, cache updates, or audit
+  semantics; one failed fetch drops the whole attempt and prevents
+  `agent-secret exec` from spawning the child.
+- Duplicate `op://` references are fetched once per unique reference, then
+  fanned out to all approved aliases for delivery and cache lookup.
+- V1 accepts arbitrary `op://` references shown in the approval prompt. No
+  allowlist or policy file is part of v1.
 - Aliases are required in v1; env delivery uses the alias as the env var name.
 - Aliases must match `[A-Z_][A-Z0-9_]*`.
-- Audit logs store full `op://` refs in v1, never secret values, and must be
-  current-user-only by default.
+- Audit logs store full `op://` references in v1, never secret values, and must
+  be current-user-only by default.
 - Audit logs use `~/Library/Logs/agent-secret/audit.jsonl` on macOS in v1; there
   is no CLI audit-path override.
 - The broker must never print secret values to stdout/stderr and must never
@@ -136,19 +136,19 @@ Source: [Product Requirements](prd.md)
 - Go linting must be wired into project lint and pre-commit paths before the
   first Go implementation files land.
 - The default approval UI stays compact: reason, command, cwd, optional resolved
-  command binary, refs, and approval duration. Audit/debug metadata and implicit
-  env-mode delivery details stay out of the prompt by default.
+  command binary, secret references, and approval duration. Audit/debug metadata
+  and implicit env-mode delivery details stay out of the prompt by default.
 - Reusable approvals keep approved secret values in daemon memory until TTL,
   max-use exhaustion, or daemon stop.
 - V1 has no reusable approval list/destroy commands. Manual early clearing of
   reusable approvals is done with `agent-secret daemon stop`.
 - Policy objects are value-free. Reusable approval raw values live only in a
   separate daemon-owned in-memory `SecretCache` keyed by approval ID plus unique
-  ref; audit writers and approval view models must never receive cache entries.
-  `agent-secret exec` may hold approved values transiently in memory only while
-  preparing and supervising the child process.
+  reference; audit writers and approval view models must never receive cache
+  entries. `agent-secret exec` may hold approved values transiently in memory
+  only while preparing and supervising the child process.
 - While reusable values are cached and valid, the daemon must not call the SDK
-  again for those refs.
+  again for those secret references.
 - `--force-refresh` refetches values for a matching reusable approval and
   updates the cache after an all-or-nothing successful fetch. A refresh-backed
   request consumes one reusable use when the daemon sends the approved
@@ -178,7 +178,7 @@ Source: [Product Requirements](prd.md)
 - No policy-file language until the broker, approval, and `exec` paths work.
 - No allowlist implementation in v1.
 - No broad `--secret-config` implementation in the first `exec` milestone;
-  project-local `--profile` support covers named ref bundles.
+  project-local `--profile` support covers named reference bundles.
 - No reusable approval management commands in v1 beyond `agent-secret daemon
   stop`.
 - No broad platform support, long-term support promise, or contribution process
@@ -276,8 +276,8 @@ the prompt was visually confirmed in front.
 
 ### Epic 2 Acceptance Criteria
 
-- The 1Password Go SDK can resolve a test-only `op://` ref without printing the
-  value.
+- The 1Password Go SDK can resolve a test-only `op://` reference without
+  printing the value.
 - Swift can show a foreground approval prompt when launched from CLI or daemon
   context.
 - Go can gather reliable peer credential data on macOS. A local C probe on
@@ -291,7 +291,7 @@ the prompt was visually confirmed in front.
 
 - Each spike has a small runnable program or test.
 - Each spike records observed behavior and failure modes.
-- Live tests are opt-in and use test-only refs.
+- Live tests are opt-in and use test-only references.
 - No spike logs or fixtures contain secret values.
 
 ### Epic 2 Risks And Mitigations
@@ -311,7 +311,7 @@ the prompt was visually confirmed in front.
 - Implementation:
   - create a minimal Go module and SDK wrapper
   - add a live integration test gated by an environment variable containing the
-    test ref
+    test reference
   - print only length, hash, or metadata in test output
   - record prompt cadence and error behavior in docs
 - Verification:
@@ -382,8 +382,8 @@ Status: Complete
 ### Epic 3 Completion Notes
 
 - Added pure Go request validation for required trimmed reasons, exact
-  `op://` refs, executable resolution, cwd normalization, TTL bounds, delivery
-  mode safety, env alias conflicts, and queued-request expiry checks.
+  `op://` references, executable resolution, cwd normalization, TTL bounds,
+  delivery mode safety, env alias conflicts, and queued-request expiry checks.
 - Added memory-only policy primitives for reusable approvals, exact reuse keys,
   use-count consumption semantics, nonce checks, and a separate value-holding
   `SecretCache`.
@@ -396,10 +396,10 @@ Status: Complete
 ### Epic 3 Acceptance Criteria
 
 - Request validation rejects missing, blank, or over-240-character reasons,
-  invalid `op://` ref syntax, TTLs outside 10 seconds through 10 minutes for
-  `exec`, and unsafe delivery combinations.
-- Policy enforcement covers exact refs, TTL, delivery mode, request nonce, and
-  reusable approval use counts.
+  invalid `op://` reference syntax, TTLs outside 10 seconds through 10 minutes
+  for `exec`, and unsafe delivery combinations.
+- Policy enforcement covers exact secret references, TTL, delivery mode,
+  request nonce, and reusable approval use counts.
 - Audit events are structured and never contain secret values.
 - The core packages can be tested without 1Password or Swift.
 
@@ -425,15 +425,15 @@ Status: Complete
 - Preconditions/inputs: PRD request fields and CLI examples.
 - Failing test/check: unit tests for valid requests, missing reason, blank
   reason after trimming, over-240-character reason, duplicate aliases, missing
-  aliases, invalid alias names, invalid `op://` ref syntax, missing TTL defaults,
+  aliases, invalid alias names, invalid `op://` reference syntax, missing TTL defaults,
   TTL below 10 seconds or above 10 minutes for `exec`, TTL starting at daemon
   request receipt, and queued request expiry before prompt display. Tests also
   cover executable path resolution failure, successful `PATH`-based resolution
   using the caller environment, slash path resolution relative to cwd, and
-  duplicate refs with different aliases as a valid request.
+  duplicate references with different aliases as a valid request.
 - Implementation:
   - add request structs
-  - parse and validate `op://` refs without resolving them
+  - parse and validate `op://` references without resolving them
   - resolve and normalize executable path from caller request-time context,
     command shape, cwd, TTL, and delivery mode
   - leave repo root and git metadata out of the v1 request model
@@ -442,7 +442,8 @@ Status: Complete
 
 #### Task 2: Implement reusable approval policy
 
-- Goal: enforce TTL, approved refs, reusable use counts, and nonce binding.
+- Goal: enforce TTL, approved secret references, reusable use counts, and nonce
+  binding.
 - Preconditions/inputs: request model exists.
 - Failing test/check: tests for mismatched nonce, mismatched executable path,
   mismatched command shape for reusable approval, mismatched `--override-env`
@@ -457,7 +458,7 @@ Status: Complete
 - Implementation:
   - model one-shot approval as the default reuse policy
   - add optional same-command reuse keyed by stated reason, resolved executable
-    path, exact argv array, cwd, exact aliases and refs, delivery mode,
+    path, exact argv array, cwd, exact aliases and secret references, delivery mode,
     `--override-env` state, exact overridden aliases, requested TTL, and a 3-use
     limit; requester PID/process identity stays audit-only for MVP `exec` reuse;
     if `PATH` later resolves the same argv to a different executable, reuse must
@@ -468,7 +469,7 @@ Status: Complete
   - bypass the single-active-approval queue for reusable approval matches,
     including `--force-refresh`, because no approval prompt is needed
   - add a memory-only `SecretCache` for reusable approvals, keyed by approval ID
-    plus unique ref
+    plus unique reference
   - keep secret values out of policy objects, audit event inputs, and approval
     view-model inputs
 - Verification:
@@ -520,7 +521,7 @@ Status: Complete
   start, readiness wait, explicit daemon status/start/stop commands, and tests
   that prove the daemon remains alive after startup until explicitly stopped.
 - Added a mockable daemon broker that proves approval-before-fetch ordering,
-  denial-before-fetch behavior, all-or-nothing fetch failure, duplicate-ref
+  denial-before-fetch behavior, all-or-nothing fetch failure, duplicate-reference
   deduplication, empty-string value delivery, reusable approval cache reuse,
   `--force-refresh`, audit preflight before approval/SDK access, and value-free
   audit events.
@@ -537,7 +538,7 @@ Status: Complete
 
 ### Epic 4 Acceptance Criteria
 
-- `agent-secret exec` accepts reason, refs, TTL, and a command.
+- `agent-secret exec` accepts reason, secret references, TTL, and a command.
 - The broker approval step occurs before any 1Password fetch.
 - The daemon never spawns the child process.
 - The child process receives approved secrets through `agent-secret exec`; the
@@ -553,7 +554,7 @@ Status: Complete
 - Mock SDK and mock approver tests prove fetch-after-approval ordering.
 - Daemon startup/connect tests prove `agent-secret exec` can use the hidden
   daemon path.
-- A live opt-in smoke can run a harmless command with a test-only ref.
+- A live opt-in smoke can run a harmless command with a test-only reference.
 - `go test ./...` passes.
 
 ### Epic 4 Risks And Mitigations
@@ -643,25 +644,26 @@ Status: Complete
   approval or after denial. Reuse tests fail unless an approved reusable command
   uses cached in-memory values without a second SDK call during the TTL/use-count
   window, unless `--force-refresh` is used. Resolver tests fail until approved
-  refs are fetched with bounded concurrency, successful partial results are
-  discarded on any failure, and the CLI receives no values or spawn permission
-  after a partial fetch failure. Resolver tests also fail until empty-string
-  values are treated as successful resolutions and delivered as empty env vars,
-  while missing, unreadable, unauthorized, or unresolved refs still fail closed.
-  Duplicate-ref tests fail until identical `op://` refs are fetched once and
-  fanned out to each approved alias.
+  secret references are fetched with bounded concurrency, successful partial
+  results are discarded on any failure, and the CLI receives no values or spawn
+  permission after a partial fetch failure. Resolver tests also fail until
+  empty-string values are treated as successful resolutions and delivered as
+  empty env vars, while missing, unreadable, unauthorized, or unresolved
+  references still fail closed. Duplicate-reference tests fail until identical
+  `op://` references are fetched once and fanned out to each approved alias.
 - Implementation:
   - add an approver interface
   - add a secret resolver interface
-  - implement bounded concurrent ref resolution after approval, deduplicating
-    identical refs before fetch
+  - implement bounded concurrent reference resolution after approval,
+    deduplicating identical references before fetch
   - preserve empty-string secret values as valid resolved values
   - wire daemon-owned approval/fetch/cache/audit to CLI-owned spawn and cleanup
-  - keep ref existence and metadata checks out of the normal pre-approval path
-  - treat any approved-ref fetch failure as a fail-closed request with no values
-    returned to the CLI wrapper and no child process spawn
-  - populate the reusable approval cache only after all approved refs are fetched
-    successfully
+  - keep reference existence and metadata checks out of the normal pre-approval
+    path
+  - treat any approved-reference fetch failure as a fail-closed request with no
+    values returned to the CLI wrapper and no child process spawn
+  - populate the reusable approval cache only after all approved references are
+    fetched successfully
   - implement `--force-refresh` as all-or-nothing refetch for matching reusable
     approvals, emit a refresh audit event, and consume one use when the daemon
     sends the approved environment payload to `agent-secret exec`
@@ -765,8 +767,9 @@ Status: Complete
   with explicit account overrides and single-account 1Password desktop metadata
   detection, preserving approval-before-fetch ordering.
 - Added a redacted Swift approval view model showing reason, command, cwd,
-  resolved binary, refs, time remaining, override warning, reusable-use limit,
-  and memory-caching note without request IDs, nonces, or secret values.
+  resolved binary, secret references, time remaining, override warning,
+  reusable-use limit, and memory-caching note without request IDs, nonces, or
+  secret values.
 - Added a minimal `.app` bundle build script for the approver while preserving
   the SwiftPM executable target used by tests and smoke runs.
 - Verified with `go test ./...`, `go test -tags integration ./...`,
@@ -843,7 +846,7 @@ Status: Complete
   rendered view-model text.
 - Implementation:
   - create a request view model
-  - show reason, alias plus full refs, full command argv, cwd, optional
+  - show reason, alias plus full references, full command argv, cwd, optional
     resolved executable path, approval duration, and compact time remaining
   - make approval request fields read-only; approvers can approve once, allow
     same-command reuse, or deny, but cannot edit the requester reason or mutate
@@ -906,8 +909,8 @@ Status: Not started
 - Handles cannot be resolved after TTL, max-read exhaustion, or destroy.
 - Handles cannot be resolved when macOS peer UID, PID, executable path, or cwd
   is missing or mismatched.
-- Sessions approve a bounded set of refs and allow those refs to be read in any
-  order the approved workflow needs.
+- Sessions approve a bounded set of references and allow those references to be
+  read in any order the approved workflow needs.
 - Socket directories and files use restrictive permissions.
 
 ### Epic 6 Definition Of Done
@@ -935,7 +938,7 @@ Status: Not started
   strict PID/executable/cwd checks before resolving session handles.
 - Implementation:
   - add session request, list, destroy, and value-read envelopes
-  - persist session metadata and approved refs in daemon memory only
+  - persist session metadata and approved references in daemon memory only
   - reuse existing socket peer validation before each session value read
   - audit session lifecycle and value-read metadata without secret values
 - Verification:
@@ -1008,7 +1011,7 @@ Status: Not started
   daemon startup failure, approver unavailable, approver non-secret health-check
   failure, unwritable audit path, unsafe socket permissions, SDK/client
   availability, desktop-app auth trigger/readiness, and a guard proving `doctor`
-  does not resolve any `op://` ref.
+  does not resolve any `op://` reference.
 - Implementation:
   - start the daemon on demand using the same path as normal commands
   - report resulting daemon status
@@ -1017,8 +1020,8 @@ Status: Not started
   - check socket directory permissions
   - check audit log path
   - run SDK/client availability and desktop-app auth readiness checks, allowing
-    desktop auth prompt if needed but never resolving any `op://` ref or fetching
-    arbitrary secrets
+    desktop auth prompt if needed but never resolving any `op://` reference or
+    fetching arbitrary secrets
 - Verification:
   - `go test ./...`
   - `bin/agent-secret doctor`
@@ -1072,8 +1075,8 @@ Status: Not started
 
 ## Integration Tests (Opt-In)
 
-- 1Password SDK live tests require a test-only `op://` ref and must print only
-  hash, length, or metadata.
+- 1Password SDK live tests require a test-only `op://` reference and must print
+  only hash, length, or metadata.
 - macOS foreground approval smoke requires a logged-in GUI session.
 - Peer credential tests may skip the whole check on unsupported platforms. On
   the supported current macOS target, missing UID, PID, executable path, or cwd
@@ -1102,7 +1105,8 @@ secret store.
 
 ## Fixtures
 
-- Approval protocol fixtures should be sanitized JSON with inert `op://` refs.
+- Approval protocol fixtures should be sanitized JSON with inert `op://`
+  references.
 - SDK error fixtures should be captured from real SDK errors when possible and
   scrubbed of personal vault or item names unless the user explicitly approves.
 - Audit redaction tests should use synthetic canary values that are safe to
