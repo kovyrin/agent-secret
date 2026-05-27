@@ -70,6 +70,8 @@ Success looks like:
 
 - [ ] Verify the published product page has install, demo, limitations, privacy,
   terms, and security model links.
+- [ ] Resolve Cloudflare Git-triggered deployments staying queued/idle, or
+  document Wrangler ad-hoc deploy as the official deploy path.
 - [ ] Cut a public launch release that includes the final transparent icon.
 - [ ] Update the Homebrew cask to the launch release.
 - [ ] Run a clean-machine install drill against the launch release.
