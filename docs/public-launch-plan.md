@@ -48,18 +48,23 @@ Success looks like:
 - [x] Cloudflare Pages static headers, canonical redirects, robots.txt, and
   sitemap added to `site/`.
 - [x] Cloudflare GitHub integration connected by Oleksiy.
+- [x] Cloudflare Pages project `agent-secret` created from `kovyrin/agent-secret`.
+- [x] Cloudflare Pages build config set to production branch `main`, no build
+  command, and output directory `site`.
+- [x] First Cloudflare Pages deployment completed successfully from commit
+  `6c59827`.
+- [x] `agent-secret.sh` and `www.agent-secret.sh` attached as Pages custom
+  domains.
+- [x] Proxied Cloudflare DNS records created for `agent-secret.sh` and
+  `www.agent-secret.sh`.
+- [x] `https://agent-secret.sh/`, `/privacy`, and `/terms` verified over HTTPS.
+- [x] `https://www.agent-secret.sh/` verified over HTTPS serving the same Pages
+  site.
 
 ## Outstanding Work
 
 ### Launch-Critical
 
-- [ ] Create the Cloudflare Pages project connected to `kovyrin/agent-secret`.
-- [ ] Configure Cloudflare Pages with production branch `main`, no build
-  command, and output directory `site`.
-- [ ] Verify the first Cloudflare Pages deploy succeeds.
-- [ ] Attach `agent-secret.sh` as the Cloudflare Pages custom domain.
-- [ ] Configure `www.agent-secret.sh` to redirect to the apex domain.
-- [ ] Verify HTTPS and the Cloudflare-issued certificate.
 - [ ] Verify the published product page has install, demo, limitations, privacy,
   terms, and security model links.
 - [ ] Cut a public launch release that includes the final transparent icon.
@@ -195,9 +200,9 @@ Current state:
 - Initial static site lives in `site/`.
 - Privacy and terms pages exist for OAuth client setup.
 - Cloudflare Pages is the selected host.
-- Cloudflare should deploy the `site/` directory from `main` with no build
-  command.
-- DNS does not currently resolve from this machine.
+- Cloudflare deploys the `site/` directory from `main` with no build command.
+- `https://agent-secret.sh/` is live.
+- `https://www.agent-secret.sh/` serves the same Pages site.
 
 Product Hunt can use a GitHub repo URL, but a small landing page is better. If
 we launch on Product Hunt, prefer `https://agent-secret.sh` with the GitHub
@@ -408,8 +413,8 @@ Main job:
 ### Prep
 
 - Pull latest `main` before editing release or public docs.
-- Configure the Cloudflare Pages project, `agent-secret.sh` custom domain,
-  apex HTTPS, and `www` redirect.
+- Confirm `https://agent-secret.sh/` remains healthy after Cloudflare's domain
+  status finishes moving from pending to active in the API.
 - Cut and verify the launch release that includes the final transparent icon.
 - Update and verify the Homebrew cask for the launch release.
 - Confirm README, configuration docs, threat model, and release notes are
@@ -456,8 +461,8 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [x] Base Homebrew cask exists.
 - [ ] Launch release with final icon is signed, notarized, and published.
 - [ ] Homebrew cask installs the launch release.
-- [ ] `agent-secret.sh` resolves over HTTPS.
-- [ ] `www.agent-secret.sh` redirects or serves the same page.
+- [x] `agent-secret.sh` resolves over HTTPS.
+- [x] `www.agent-secret.sh` redirects or serves the same page.
 - [ ] Product page links to GitHub, install docs, demo, limitations, and threat
   model.
 - [ ] Clean-machine install succeeds.
