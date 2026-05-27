@@ -15,17 +15,17 @@ finished.
 There are three identities involved:
 
 - The local macOS user running Agent Secret.
-- A Google bootstrap account, such as `you@example.com`, that signs in through
-  Agent Secret's app-owned OAuth flow.
+- A Google account, such as `you@example.com`, that signs in through Agent
+  Secret's app-owned OAuth flow so the daemon can mint service-account tokens.
 - A GCP service account that carries the actual resource permissions for the
   command, such as
   `agent-beta-logs@example-project.iam.gserviceaccount.com`.
 
-Agent Secret does not run child commands as the Google bootstrap account. The
-daemon uses the bootstrap account only to call Google's IAM Credentials API and
-mint a short-lived access token for the configured service account. The child
-command receives only the short-lived service-account token through isolated
-Cloud SDK environment variables.
+Agent Secret does not run child commands as the Google account that completed
+login. The daemon uses that account only to call Google's IAM Credentials API
+and mint a short-lived access token for the configured service account. The
+child command receives only the short-lived service-account token through
+isolated Cloud SDK environment variables.
 
 This means the service account's IAM roles are the real GCP permission boundary.
 OAuth scopes are still required by Google token minting, but the approval UI
@@ -33,17 +33,46 @@ must not be read as proof that Agent Secret has verified every resource-level
 permission behind the service account.
 
 Agent Secret release builds use a bundled Google OAuth Desktop client for the
-bootstrap login flow. That client identifies the local Agent Secret app to
-Google; it does not grant cloud resource access by itself. The bootstrap OAuth
-grant requests only the minimum Google scopes needed for this flow:
+GCP login flow. That client identifies the local Agent Secret app to Google; it
+does not grant cloud resource access by itself. The login OAuth grant requests
+only the minimum Google scopes needed for this flow:
 
 - `openid`
 - `https://www.googleapis.com/auth/userinfo.email`
 - `https://www.googleapis.com/auth/iam`
 
-Those bootstrap login scopes are separate from the `scopes` list in a GCP
-profile. Profile scopes are the service-account access-token scopes delivered
-to `gcloud` after approval, and they remain explicit and non-empty.
+Those login scopes are separate from the `scopes` list in a GCP profile.
+Profile scopes are the service-account access-token scopes delivered to
+`gcloud` after approval, and they remain explicit and non-empty.
+
+## Recommended Team Account Setup
+
+In a team environment, prefer per-user Google identities and narrow IAM
+bindings:
+
+- Normal operators can usually use their regular work Google account for
+  `agent-secret gcp auth login`.
+- GCP admins and organization owners should not use their broad admin account
+  for day-to-day Agent Secret login. Use a separate least-privileged Google
+  account when the normal account carries Owner, IAM Admin, Service Account
+  Admin, or similar broad roles.
+- Put Agent Secret users in a Google Group, such as
+  `agent-secret-gcp-users@example.com`.
+- Grant that group `roles/iam.serviceAccountTokenCreator` only on the exact
+  service accounts Agent Secret profiles may impersonate. Prefer
+  service-account-level bindings over project, folder, or organization
+  bindings.
+- Give resource permissions to the target service accounts, not to the human
+  login accounts. For example, `agent-prod-readonly` gets read-only production
+  roles, while `agent-benchmark-runner` gets only the permissions required for
+  benchmark runs.
+
+Do not use 1Password to share a Google username and password, OAuth refresh
+token, or service-account key as the team's production GCP authority. Shared
+credentials make audit and revocation worse: every operator and every agent
+that can access the item acts as the same Google principal. 1Password is still
+appropriate for sharing inert configuration, such as project IDs, service
+account names, profile snippets, or a team-owned OAuth Desktop client override.
 
 ## What The GCP Admin Sets Up
 
@@ -154,8 +183,8 @@ The Google Auth Platform app that owns the client must be configured with:
 
 During login, Google may show the IAM access as an optional checkbox or an
 additional-access step. The operator must grant it. Agent Secret rejects OAuth
-responses that omit required bootstrap scopes so a partial consent cannot be
-stored as a usable GCP login.
+responses that omit required login scopes so a partial consent cannot be stored
+as a usable GCP login.
 
 ### Development And Custom OAuth Client Builds
 
@@ -222,7 +251,7 @@ If you change the OAuth client, restart the daemon. If the daemon starts
 without bundled client material or explicit development override values, GCP
 auth or token minting will fail until the daemon is restarted with a client.
 
-### 1. Log In A Google Bootstrap Account
+### 1. Log In A Google Account
 
 Pick a short local alias for the Google account. The alias is stored in Agent
 Secret config and audit metadata; it does not need to equal the email address.
@@ -242,14 +271,15 @@ the window automatically.
 
 The OAuth grant does not create service accounts, grant roles, or bypass Google
 IAM by itself. It lets Agent Secret use IAM permissions that the selected
-Google account already has. Do not authorize a broad Owner, IAM Admin, or
-Service Account Admin account for normal use; prefer a bootstrap identity that
-only has Service Account Token Creator on the exact service accounts Agent
-Secret should use.
+Google account already has. Use a least-privileged Google account. Normal
+operators can usually use their regular work identity when it only has the
+intended Token Creator bindings. Operators whose normal account has Owner, IAM
+Admin, Service Account Admin, or similar broad roles should use a separate
+least-privileged Google account for Agent Secret.
 
 After confirmation, the daemon runs Google OAuth with PKCE, verifies the
 reported email when `--expected-email` is provided, and stores the
-refresh-capable bootstrap credential in macOS Keychain under Agent Secret's GCP
+refresh-capable GCP login credential in macOS Keychain under Agent Secret's GCP
 OAuth service.
 
 Verify the local state:
@@ -318,8 +348,8 @@ agent-secret gcp exec --profile beta-logs -- \
 ```
 
 Agent Secret will show a native approval prompt with the command, reason,
-project, Google bootstrap alias, service account, and scopes. After approval,
-the daemon mints a short-lived token for the service account and runs the child
+project, Google account alias, service account, and scopes. After approval, the
+daemon mints a short-lived token for the service account and runs the child
 with isolated Cloud SDK state.
 
 Ad hoc access is available when there is no profile yet:
@@ -462,8 +492,7 @@ Check both sides of the permission model:
 
 If `gcp auth login` reports that Google did not grant required scopes, rerun
 login and grant every access item Google shows for Agent Secret. For the GCP
-broker, the required bootstrap scope is
-`https://www.googleapis.com/auth/iam`.
+broker, the required login scope is `https://www.googleapis.com/auth/iam`.
 
 ### Session Is Not Usable From This Cwd
 
@@ -492,9 +521,9 @@ when you need stronger isolation.
   account for all agents.
 - Prefer service-account-level Token Creator bindings over project-level
   Token Creator bindings.
-- Use `--expected-email` during `gcp auth login` to prevent accidentally
-  bootstrapping the wrong Google account.
-- Agent Secret bootstrap login requests `https://www.googleapis.com/auth/iam`
+- Use `--expected-email` during `gcp auth login` to avoid logging in the wrong
+  Google account.
+- Agent Secret GCP login requests `https://www.googleapis.com/auth/iam`
   instead of `cloud-platform`. Treat `cloud-platform` as a broad profile access
   token scope when a `gcloud` workflow needs it, but remember IAM roles on the
   service account are the real resource boundary.

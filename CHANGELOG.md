@@ -379,8 +379,8 @@ file before a release is published.
 - Added the first GCP broker surfaces: `agent-secret gcp exec`,
   `agent-secret gcp session create|list|destroy`, and
   `agent-secret gcp with-session`.
-- Added GCP profile config support for Google bootstrap identity aliases,
-  intended projects, impersonated service accounts, and explicit OAuth scopes.
+- Added GCP profile config support for Google account aliases, intended
+  projects, impersonated service accounts, and explicit OAuth scopes.
 - Added isolated Cloud SDK token-file delivery for approved GCP commands and
   sessions, including broker-owned temp-file cleanup and value-free audit
   metadata.
@@ -401,20 +401,23 @@ file before a release is published.
   bundled GCP OAuth Desktop client from 1Password when build env vars are not
   already present.
 - Added a user-facing GCP integration guide covering Google-side IAM setup,
-  bundled OAuth client behavior, local bootstrap auth, GCP profiles, `gcp exec`,
-  and GCP sessions.
+  bundled OAuth client behavior, local GCP login, GCP profiles, `gcp exec`, and
+  GCP sessions.
 
 ### Changed
 
-- GCP bootstrap OAuth now requests the narrower
+- GCP login OAuth now requests the narrower
   `https://www.googleapis.com/auth/iam` scope instead of `cloud-platform`; GCP
   profile access-token scopes remain explicit per profile or command.
+- Clarified GCP OAuth login copy and docs to recommend least-privileged
+  per-user Google accounts, with separate Agent Secret login accounts for
+  operators whose normal accounts carry broad admin roles.
 
 ### Fixed
 
-- GCP OAuth login now rejects Google consent responses that omit required
-  bootstrap scopes, instead of storing a refresh token that cannot mint service
-  account access tokens.
+- GCP OAuth login now rejects Google consent responses that omit required login
+  scopes, instead of storing a refresh token that cannot mint service account
+  access tokens.
 - GCP token-minting failures now include structured Google API error details
   when IAMCredentials returns a nested JSON error payload.
 - GCP OAuth Keychain access now fails with repair guidance instead of opening

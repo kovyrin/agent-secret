@@ -1,6 +1,6 @@
 import Foundation
 
-/// Shared text for the Google Cloud OAuth bootstrap login prompt.
+/// Shared text for the Google Cloud OAuth login prompt.
 public enum GCPOAuthLoginPromptCopy {
     /// Consent items that Google shows for the bundled desktop OAuth client.
     public static let defaultConsentItems: [GCPOAuthConsentItem] = [
@@ -35,9 +35,10 @@ public enum GCPOAuthLoginPromptCopy {
     this Google account already has.
     """
 
-    /// Warns operators away from broad admin accounts for bootstrap login.
+    /// Warns operators away from broad admin accounts for GCP login.
     public static let adminRiskText = """
-    Use a narrow bootstrap account: Token Creator only on the service accounts Agent Secret may impersonate.
+    Use a least-privileged Google account. Avoid Owner/IAM Admin accounts; grant only Token Creator on service \
+    accounts Agent Secret may impersonate.
     """
 
     /// Explains the repeated open button behavior for users with multiple browser profiles.
