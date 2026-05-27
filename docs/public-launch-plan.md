@@ -63,6 +63,12 @@ Success looks like:
   proxied placeholder DNS record.
 - [x] `https://www.agent-secret.sh/` redirects to the apex domain with a 301
   native Cloudflare rule.
+- [x] Repository-wide Agent Secret profile `cloudflare-pages` added for the
+  Cloudflare Pages deploy token.
+- [x] Cloudflare Pages build watch paths reset from `site/**` to `*`; the
+  skipped Git deployment for `40c89b0` was retried and completed successfully.
+- [x] Pages headers now send `Cache-Control: no-transform` so Cloudflare Email
+  Obfuscation does not rewrite code examples.
 
 ## Outstanding Work
 
@@ -70,8 +76,6 @@ Success looks like:
 
 - [ ] Verify the published product page has install, demo, limitations, privacy,
   terms, and security model links.
-- [ ] Resolve Cloudflare Git-triggered deployments staying queued/idle, or
-  document Wrangler ad-hoc deploy as the official deploy path.
 - [ ] Cut a public launch release that includes the final transparent icon.
 - [ ] Update the Homebrew cask to the launch release.
 - [ ] Run a clean-machine install drill against the launch release.
