@@ -21,8 +21,8 @@
     <link rel="canonical" href="https://agent-secret.sh/">
     <link rel="icon" href="assets/app-icon-180.png">
     <link rel="apple-touch-icon" href="assets/app-icon-180.png">
-    <link rel="stylesheet" href="styles.css?v=20260527">
-    <script src="scripts.js?v=20260527" defer></script>
+    <link rel="stylesheet" href="styles.css?v=20260527-3">
+    <script src="scripts.js?v=20260527-3" defer></script>
   </head>
   <body>
     <header class="site-header" aria-label="Primary">
@@ -159,24 +159,44 @@
         </div>
         <div class="terminal command-list" role="group" aria-label="Install commands">
           <div class="command-row copyable">
-            <span class="prompt" aria-hidden="true">$</span>
-            <code data-copy-text>brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret</code>
-            <button class="copy-button" type="button" data-copy-button aria-label="Copy brew tap command">Copy</button>
+            <div class="command-line">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code data-copy-text>brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret</code>
+            </div>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy brew tap command">
+              <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+            </button>
           </div>
           <div class="command-row copyable">
-            <span class="prompt" aria-hidden="true">$</span>
-            <code data-copy-text>brew install --cask agent-secret</code>
-            <button class="copy-button" type="button" data-copy-button aria-label="Copy brew install command">Copy</button>
+            <div class="command-line">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code data-copy-text>brew install --cask agent-secret</code>
+            </div>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy brew install command">
+              <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+            </button>
           </div>
           <div class="command-row copyable">
-            <span class="prompt" aria-hidden="true">$</span>
-            <code data-copy-text>agent-secret skill-install</code>
-            <button class="copy-button" type="button" data-copy-button aria-label="Copy skill install command">Copy</button>
+            <div class="command-line">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code data-copy-text>agent-secret skill-install</code>
+            </div>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy skill install command">
+              <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+            </button>
           </div>
           <div class="command-row copyable">
-            <span class="prompt" aria-hidden="true">$</span>
-            <code data-copy-text>agent-secret doctor</code>
-            <button class="copy-button" type="button" data-copy-button aria-label="Copy doctor command">Copy</button>
+            <div class="command-line">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code data-copy-text>agent-secret doctor</code>
+            </div>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy doctor command">
+              <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+            </button>
           </div>
         </div>
       </section>
@@ -188,7 +208,10 @@
           <div class="code-panel copyable">
             <div class="panel-toolbar">
               <p class="panel-label">Profile</p>
-              <button class="copy-button" type="button" data-copy-button aria-label="Copy profile config">Copy</button>
+              <button class="copy-button" type="button" data-copy-button aria-label="Copy profile config">
+                <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+              </button>
             </div>
             <pre><code data-copy-text>version: 1
 default_profile: terraform-cloudflare
@@ -203,11 +226,16 @@ profiles:
           <div class="code-panel copyable">
             <div class="panel-toolbar">
               <p class="panel-label">Command</p>
-              <button class="copy-button" type="button" data-copy-button aria-label="Copy exec command">Copy</button>
+              <button class="copy-button" type="button" data-copy-button aria-label="Copy exec command">
+                <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+              </button>
             </div>
             <div class="command-row single-command">
-              <span class="prompt" aria-hidden="true">$</span>
-              <code data-copy-text>agent-secret exec --profile terraform-cloudflare -- terraform plan</code>
+              <div class="command-line">
+                <span class="prompt" aria-hidden="true">$</span>
+                <code data-copy-text>agent-secret exec --profile terraform-cloudflare -- terraform plan</code>
+              </div>
             </div>
             <p class="panel-note">
               The approved child gets the secret. Project files and agent logs
@@ -233,9 +261,14 @@ profiles:
           </p>
           <div class="inline-command copyable">
             <div class="command-row single-command">
-              <span class="prompt" aria-hidden="true">$</span>
-              <code data-copy-text>agent-secret item describe --format env-refs "op://Example Infra/Database Credentials"</code>
-              <button class="copy-button" type="button" data-copy-button aria-label="Copy item describe command">Copy</button>
+              <div class="command-line">
+                <span class="prompt" aria-hidden="true">$</span>
+                <code data-copy-text>agent-secret item describe --format env-refs "op://Example Infra/Database Credentials"</code>
+              </div>
+              <button class="copy-button" type="button" data-copy-button aria-label="Copy item describe command">
+                <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <svg class="check-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>
+              </button>
             </div>
           </div>
         </div>

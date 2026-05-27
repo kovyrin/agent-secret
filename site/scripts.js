@@ -27,16 +27,21 @@
 
       try {
         await copyText(text);
-        button.textContent = "Copied";
+        button.dataset.state = "copied";
+        button.setAttribute("aria-label", "Copied");
         window.setTimeout(() => {
-          button.textContent = "Copy";
+          delete button.dataset.state;
+          button.setAttribute("aria-label", button.dataset.copyLabel);
         }, 1200);
       } catch {
-        button.textContent = "Failed";
+        button.dataset.state = "failed";
+        button.setAttribute("aria-label", "Copy failed");
         window.setTimeout(() => {
-          button.textContent = "Copy";
+          delete button.dataset.state;
+          button.setAttribute("aria-label", button.dataset.copyLabel);
         }, 1600);
       }
     });
+    button.dataset.copyLabel = button.getAttribute("aria-label") || "Copy";
   });
 })();

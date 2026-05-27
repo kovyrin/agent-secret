@@ -218,9 +218,9 @@ h2 {
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue",
     system-ui, sans-serif;
-  font-size: clamp(1.8rem, 3.4vw, 3.55rem);
+  font-size: clamp(1.78rem, 2.9vw, 2.85rem);
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.04;
   letter-spacing: 0;
 }
 
@@ -511,11 +511,11 @@ h3 {
 
 .command-row {
   display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr) auto;
-  gap: 0.72rem;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: start;
   min-width: 0;
-  padding: 0.64rem 0.7rem;
+  padding: 0.68rem 0.72rem;
   border-radius: 6px;
   background: rgba(244, 241, 234, 0.032);
 }
@@ -526,6 +526,19 @@ h3 {
 
 .single-command {
   margin: 0.58rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inline-command .single-command,
+.command-list .command-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.command-line {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 .prompt {
@@ -535,26 +548,48 @@ h3 {
     monospace;
   font-size: 0.86rem;
   line-height: 1.5;
+  text-align: right;
   user-select: none;
 }
 
 .copy-button {
-  width: 64px;
-  min-width: 58px;
-  min-height: 32px;
-  padding: 0 0.64rem;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 0;
   border: 1px solid rgba(244, 241, 234, 0.14);
-  border-radius: 7px;
+  border-radius: 6px;
   background: rgba(244, 241, 234, 0.055);
   color: var(--muted);
   cursor: pointer;
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0;
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
     color 160ms ease;
+}
+
+.copy-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.copy-button .check-icon {
+  display: none;
+}
+
+.copy-button[data-state="copied"] .copy-icon {
+  display: none;
+}
+
+.copy-button[data-state="copied"] .check-icon {
+  display: block;
 }
 
 .copy-button:hover,
@@ -569,12 +604,18 @@ h3 {
   outline-offset: 2px;
 }
 
+.copy-button[data-state="copied"] {
+  border-color: rgba(24, 212, 195, 0.5);
+  background: rgba(24, 212, 195, 0.12);
+  color: #dcfffb;
+}
+
 .panel-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.9rem;
-  padding: 0.88rem 0.95rem 0.72rem;
+  padding: 0.78rem 0.95rem 0.66rem;
   border-bottom: 1px solid rgba(244, 241, 234, 0.08);
 }
 
@@ -596,15 +637,16 @@ h3 {
 
 .command-row code {
   line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .command-row .copy-button {
-  align-self: start;
+  margin-top: -0.08rem;
 }
 
 .code-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.86fr) minmax(440px, 1.14fr);
+  grid-template-columns: minmax(0, 0.76fr) minmax(540px, 1.24fr);
   gap: 1rem;
 }
 
@@ -624,7 +666,7 @@ h3 {
 
 .panel-note {
   color: var(--dim);
-  font-size: 0.98rem;
+  font-size: 0.9rem;
 }
 
 .boundary-grid {
@@ -801,7 +843,7 @@ li + li {
   }
 
   h2 {
-    font-size: clamp(1.75rem, 8.5vw, 2.55rem);
+    font-size: clamp(1.7rem, 8vw, 2.32rem);
   }
 
   .button {
@@ -884,8 +926,8 @@ li + li {
   }
 
   .copy-button {
-    width: 60px;
-    min-width: 60px;
+    width: 30px;
+    min-width: 30px;
   }
 }
 
