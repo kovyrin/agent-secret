@@ -20,6 +20,58 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.13] - Pending
+
+### Added
+
+- Added the first GCP broker surfaces: `agent-secret gcp exec`,
+  `agent-secret gcp session create|list|destroy`, and
+  `agent-secret gcp with-session`.
+- Added GCP profile config support for Google account aliases, intended
+  projects, impersonated service accounts, and explicit OAuth scopes.
+- Added isolated Cloud SDK token-file delivery for approved GCP commands and
+  sessions, including broker-owned temp-file cleanup and value-free audit
+  metadata.
+- Added daemon-owned `agent-secret gcp auth status|login|logout` support with
+  Google OAuth PKCE login, macOS Keychain storage, and IAMCredentials service
+  account token minting.
+- Added a native GCP OAuth login warning window that explains Google's IAM
+  consent wording, lets the operator reopen Google login when the wrong browser
+  profile is active, and closes automatically after OAuth completes.
+- Added daemon support for an optional `AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET`
+  when a Google desktop OAuth client requires a secret during token exchange
+  and refresh.
+- Added build-time support for a bundled Agent Secret GCP OAuth Desktop client
+  so release builds can avoid per-operator OAuth client environment setup.
+- Added official release wiring for the bundled GCP OAuth Desktop client, so
+  tag-triggered release artifacts require and embed the configured client.
+- Added a repo-local Agent Secret profile for maintainer builds to resolve the
+  bundled GCP OAuth Desktop client from 1Password when build env vars are not
+  already present.
+- Added a user-facing GCP integration guide covering Google-side IAM setup,
+  bundled OAuth client behavior, local GCP login, GCP profiles, `gcp exec`, and
+  GCP sessions.
+
+### Changed
+
+- GCP login OAuth now requests the narrower
+  `https://www.googleapis.com/auth/iam` scope instead of `cloud-platform`; GCP
+  profile access-token scopes remain explicit per profile or command.
+- Clarified GCP OAuth login copy and docs to recommend least-privileged
+  per-user Google accounts, with separate Agent Secret login accounts for
+  operators whose normal accounts carry broad admin roles.
+
+### Fixed
+
+- GCP OAuth login now rejects Google consent responses that omit required login
+  scopes, instead of storing a refresh token that cannot mint service account
+  access tokens.
+- GCP token-minting failures now include structured Google API error details
+  when IAMCredentials returns a nested JSON error payload.
+- GCP OAuth Keychain access now fails with repair guidance instead of opening
+  macOS login-keychain password prompts when the stored item is not usable by
+  the current Agent Secret app build.
+
 ## [0.0.12] - 2026-05-11
 
 ### Added

@@ -172,7 +172,7 @@ struct ApprovalRequestViewModel: Equatable {
             "Scope: \(viewModel.scopeSummary)"
         ])
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
-        lines.append(request.operation == .itemDescribe ? "Item metadata:" : "Secrets:")
+        lines.append(Self.inspectionResourceHeading(for: request.operation))
         lines.append(contentsOf: viewModel.resourceRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
         if request.allowsReusable {
@@ -244,5 +244,18 @@ struct ApprovalRequestViewModel: Equatable {
 
     private static func visibleRemainingSeconds(_ interval: TimeInterval) -> Int {
         max(0, Int(interval.rounded(.up)))
+    }
+
+    private static func inspectionResourceHeading(for operation: ApprovalOperation) -> String {
+        switch operation {
+        case .itemDescribe:
+            "Item metadata:"
+
+        case .gcpExec, .gcpSessionCreate:
+            "GCP access:"
+
+        case .exec:
+            "Secrets:"
+        }
     }
 }

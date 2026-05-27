@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
+	"github.com/kovyrin/agent-secret/internal/gcpauth"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
@@ -180,6 +182,53 @@ func TestProcessApproverLauncherLaunchesBinary(t *testing.T) {
 	}
 	if expected.ExecutablePath != helper {
 		t.Fatalf("expected executable path = %q, want %q", expected.ExecutablePath, helper)
+	}
+}
+
+func TestGCPOAuthLoginPromptLauncherLaunchesAppPrompt(t *testing.T) {
+	t.Parallel()
+
+	argsPath := filepath.Join(t.TempDir(), "args.txt")
+	helper := filepath.Join(t.TempDir(), "approver-helper")
+	argsTmpPath := argsPath + ".tmp"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + strconv.Quote(argsTmpPath) +
+		"\nmv " + strconv.Quote(argsTmpPath) + " " + strconv.Quote(argsPath) +
+		"\nwhile true; do sleep 1; done\n"
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
+		t.Fatalf("write helper: %v", err)
+	}
+
+	session, err := (GCPOAuthLoginPromptLauncher{
+		AppLauncher: ProcessApproverLauncher{
+			AppPath:        helper,
+			IdentityPolicy: allowApproverIdentityPolicy{},
+		},
+	}).StartOAuthLoginPrompt(context.Background(), gcpauth.OAuthLoginPromptRequest{
+		AuthURL:       "https://accounts.example.invalid/oauth?state=test",
+		GoogleAccount: "personal",
+		ExpectedEmail: "oleksiy@kovyrin.net",
+		Scopes:        []string{gcpauth.BootstrapOAuthScopeIAM},
+	})
+	if err != nil {
+		t.Fatalf("StartOAuthLoginPrompt returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	args := waitForHelperArgs(t, argsPath)
+	for _, want := range []string{
+		"--gcp-oauth-login",
+		"--url",
+		"https://accounts.example.invalid/oauth?state=test",
+		"--google-account",
+		"personal",
+		"--expected-email",
+		"oleksiy@kovyrin.net",
+		"--scope",
+		gcpauth.BootstrapOAuthScopeIAM,
+	} {
+		if !slices.Contains(args, want) {
+			t.Fatalf("helper args %v missing %q", args, want)
+		}
 	}
 }
 
@@ -539,4 +588,19 @@ func readBundleMetadata(t *testing.T) map[string]string {
 		metadata[key] = strings.Trim(strings.TrimSpace(value), `"`)
 	}
 	return metadata
+}
+
+func waitForHelperArgs(t *testing.T, path string) []string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		//nolint:gosec // G304: path is a test-owned temp helper output file.
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			return strings.Fields(string(raw))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for helper args at %s", path)
+	return nil
 }

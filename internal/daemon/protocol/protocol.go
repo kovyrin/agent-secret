@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 )
@@ -23,6 +24,14 @@ const (
 	TypeApprovalPending   MessageType = "approval.pending"
 	TypeApprovalDecision  MessageType = "approval.decision"
 	TypeRequestExec       MessageType = "request.exec"
+	TypeGCPAuthStatus     MessageType = "gcp.auth.status"
+	TypeGCPAuthLogin      MessageType = "gcp.auth.login"
+	TypeGCPAuthLogout     MessageType = "gcp.auth.logout"
+	TypeGCPExec           MessageType = "gcp.exec"
+	TypeGCPSessionCreate  MessageType = "gcp.session.create"
+	TypeGCPSessionList    MessageType = "gcp.session.list"
+	TypeGCPSessionDestroy MessageType = "gcp.session.destroy"
+	TypeGCPWithSession    MessageType = "gcp.with_session"
 	TypeItemDescribe      MessageType = "item.describe"
 	TypeCommandStarted    MessageType = "command.started"
 	TypeCommandCompleted  MessageType = "command.completed"
@@ -93,6 +102,64 @@ type ErrorPayload struct {
 type ExecResponsePayload struct {
 	Env           map[string]string `json:"env"`
 	SecretAliases []string          `json:"secret_aliases"`
+}
+
+type GCPCommandResponsePayload struct {
+	Env          map[string]string `json:"env"`
+	DeliveryMode string            `json:"delivery_mode"`
+	ExpiresAt    time.Time         `json:"expires_at"`
+}
+
+type GCPSessionCreateResponsePayload struct {
+	SessionHandle          string    `json:"session_handle"`
+	SessionAuditID         string    `json:"session_audit_id"`
+	ExpiresAt              time.Time `json:"expires_at"`
+	RemainingCommandStarts int       `json:"remaining_command_starts"`
+}
+
+type GCPSessionListResponsePayload struct {
+	Sessions []GCPSessionInfo `json:"sessions"`
+}
+
+type GCPSessionInfo struct {
+	SessionAuditID         string    `json:"session_audit_id"`
+	ProfileName            string    `json:"profile_name"`
+	GoogleAccount          string    `json:"google_account"`
+	Project                string    `json:"project"`
+	ServiceAccount         string    `json:"service_account"`
+	Scopes                 []string  `json:"scopes"`
+	ProjectRoot            string    `json:"project_root"`
+	Reason                 string    `json:"reason"`
+	ExpiresAt              time.Time `json:"expires_at"`
+	RemainingTTLMillis     int64     `json:"remaining_ttl_ms"`
+	RemainingCommandStarts int       `json:"remaining_command_starts"`
+	UsableFromCWD          bool      `json:"usable_from_cwd"`
+}
+
+type GCPSessionDestroyResponsePayload struct {
+	Destroyed      bool   `json:"destroyed"`
+	SessionAuditID string `json:"session_audit_id,omitempty"`
+}
+
+type GCPAuthStatusResponsePayload struct {
+	Accounts []GCPAuthAccountInfo `json:"accounts"`
+}
+
+type GCPAuthLoginResponsePayload struct {
+	Account GCPAuthAccountInfo `json:"account"`
+}
+
+type GCPAuthLogoutResponsePayload struct {
+	GoogleAccount string `json:"google_account"`
+	Deleted       bool   `json:"deleted"`
+}
+
+type GCPAuthAccountInfo struct {
+	GoogleAccount string    `json:"google_account"`
+	Email         string    `json:"email,omitempty"`
+	Scopes        []string  `json:"scopes,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitzero"`
+	UpdatedAt     time.Time `json:"updated_at,omitzero"`
 }
 
 type ItemDescribeResponsePayload struct {

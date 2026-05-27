@@ -46,6 +46,319 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	}
 }
 
+func TestParseGCPExecBuildsProfileRequestAndStripsAmbientGCPEnv(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "gcloud")
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  beta-logs:
+    reason: Inspect beta logs
+    ttl: 5m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/logging.read
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("CLOUDSDK_CONFIG", "/ambient/gcloud")
+	t.Setenv("CLOUDSDK_AUTH_ACCESS_TOKEN_FILE", "/ambient/token")
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/ambient/adc.json")
+
+	command, err := NewParser().Parse([]string{
+		"gcp", "exec",
+		"--profile", "beta-logs",
+		"--dry-run",
+		"--json",
+		"--",
+		"gcloud", "logging", "read", "severity>=ERROR",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if command.Kind != KindGCPExec || !command.GCPDryRun || !command.OutputJSON {
+		t.Fatalf("unexpected command metadata: %+v", command)
+	}
+	req := command.GCPExecRequest
+	if req.Reason != "Inspect beta logs" ||
+		req.GoogleAccount != "work" ||
+		req.Project != "fixture-beta" ||
+		req.ServiceAccount != "agent-beta-logs@fixture-beta.iam.gserviceaccount.com" ||
+		req.ProfileName != "beta-logs" ||
+		req.ConfigRoot != root {
+		t.Fatalf("unexpected GCP request: %+v", req)
+	}
+	if got := lookupTestEnv(command.GCPEnv, "CLOUDSDK_CONFIG"); got != "" {
+		t.Fatalf("ambient CLOUDSDK_CONFIG survived in child env: %q", got)
+	}
+	if got := lookupTestEnv(command.GCPEnv, "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE"); got != "" {
+		t.Fatalf("ambient token file survived in child env: %q", got)
+	}
+	if got := lookupTestEnv(command.GCPEnv, "GOOGLE_APPLICATION_CREDENTIALS"); got != "" {
+		t.Fatalf("ambient ADC survived in child env: %q", got)
+	}
+}
+
+func TestParseGCPExecAdHocRequiresExplicitAccess(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "gcloud")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := NewParser().Parse([]string{
+		"gcp", "exec",
+		"--reason", "Inspect logs",
+		"--project", "fixture-beta",
+		"--service-account", "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		"--scope", "https://www.googleapis.com/auth/cloud-platform",
+		"--",
+		"gcloud", "logging", "read", "severity>=ERROR",
+	})
+	if !errors.Is(err, request.ErrInvalidGCPAccount) {
+		t.Fatalf("Parse error = %v, want missing google account", err)
+	}
+}
+
+func TestParseGCPSessionCreateRequiresConfigBackedGCPProfile(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  beta-debug:
+    reason: Debug beta
+    ttl: 30m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+	t.Chdir(root)
+
+	command, err := NewParser().Parse([]string{
+		"gcp", "session", "create",
+		"--profile", "beta-debug",
+		"--max-command-starts", "12",
+		"--json",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if command.Kind != KindGCPSessionCreate || !command.OutputJSON {
+		t.Fatalf("unexpected command metadata: %+v", command)
+	}
+	normalizedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+	req := command.GCPSessionCreateRequest
+	if req.ProfileName != "beta-debug" || req.ProjectRoot != normalizedRoot || req.MaxCommandStarts != 12 {
+		t.Fatalf("unexpected session request: %+v", req)
+	}
+	if req.TTL != 30*time.Minute {
+		t.Fatalf("TTL = %s, want profile ttl", req.TTL)
+	}
+}
+
+func TestParseGCPSessionCreateResolvesSymlinkedConfigRoot(t *testing.T) {
+	realRoot := t.TempDir()
+	linkRoot := filepath.Join(t.TempDir(), "project-link")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Fatalf("Symlink returned error: %v", err)
+	}
+	writeProfileConfig(t, realRoot, `
+version: 1
+profiles:
+  beta-debug:
+    reason: Debug beta
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-debug@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+
+	command, err := NewParser().Parse([]string{
+		"gcp", "session", "create",
+		"--config", filepath.Join(linkRoot, "agent-secret.yml"),
+		"--profile", "beta-debug",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	normalizedRoot, err := filepath.EvalSymlinks(realRoot)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+	req := command.GCPSessionCreateRequest
+	if req.ProjectRoot != normalizedRoot || req.ConfigSourcePath != filepath.Join(normalizedRoot, "agent-secret.yml") {
+		t.Fatalf("session create paths = source %q root %q, want real root %q", req.ConfigSourcePath, req.ProjectRoot, normalizedRoot)
+	}
+}
+
+func TestParseGCPSessionListDestroyWithSessionAndAuth(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.Mkdir(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "gcloud")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/ambient/adc.json")
+	normalizedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+
+	list, err := NewParser().Parse([]string{"gcp", "session", "list", "--json"})
+	if err != nil {
+		t.Fatalf("session list Parse returned error: %v", err)
+	}
+	if list.Kind != KindGCPSessionList || !list.OutputJSON {
+		t.Fatalf("unexpected session list command: %+v", list)
+	}
+
+	destroy, err := NewParser().Parse([]string{"gcp", "session", "destroy", "--json", " asess_123 "})
+	if err != nil {
+		t.Fatalf("session destroy Parse returned error: %v", err)
+	}
+	if destroy.Kind != KindGCPSessionDestroy || !destroy.OutputJSON ||
+		destroy.GCPSessionDestroyRequest.SessionHandle != "asess_123" ||
+		destroy.GCPSessionDestroyRequest.CWD != normalizedRoot {
+		t.Fatalf("unexpected session destroy command: %+v", destroy)
+	}
+
+	withSession, err := NewParser().Parse([]string{"gcp", "with-session", "asess_123", "--", "gcloud", "compute", "instances", "list"})
+	if err != nil {
+		t.Fatalf("with-session Parse returned error: %v", err)
+	}
+	if withSession.Kind != KindGCPWithSession ||
+		withSession.GCPSessionUseRequest.SessionHandle != "asess_123" ||
+		withSession.GCPSessionUseRequest.Command[0] != "gcloud" ||
+		withSession.GCPSessionUseRequest.CWD != normalizedRoot {
+		t.Fatalf("unexpected with-session command: %+v", withSession)
+	}
+	if got := lookupTestEnv(withSession.GCPEnv, "GOOGLE_APPLICATION_CREDENTIALS"); got != "" {
+		t.Fatalf("ambient ADC survived in with-session env: %q", got)
+	}
+
+	status, err := NewParser().Parse([]string{"gcp", "auth", "status"})
+	if err != nil {
+		t.Fatalf("auth status Parse returned error: %v", err)
+	}
+	if status.Kind != KindGCPAuthStatus {
+		t.Fatalf("auth status kind = %s", status.Kind)
+	}
+	login, err := NewParser().Parse([]string{"gcp", "auth", "login", "--google-account", "personal", "--expected-email", "oleksiy@kovyrin.net"})
+	if err != nil {
+		t.Fatalf("auth login Parse returned error: %v", err)
+	}
+	if login.Kind != KindGCPAuthLogin ||
+		login.GCPAuthLoginRequest.GoogleAccount != "personal" ||
+		login.GCPAuthLoginRequest.ExpectedEmail != "oleksiy@kovyrin.net" {
+		t.Fatalf("auth login command = %+v", login)
+	}
+	logout, err := NewParser().Parse([]string{"gcp", "auth", "logout", "--google-account", "personal"})
+	if err != nil {
+		t.Fatalf("auth logout Parse returned error: %v", err)
+	}
+	if logout.Kind != KindGCPAuthLogout || logout.GCPAuthLogoutRequest.GoogleAccount != "personal" {
+		t.Fatalf("auth logout command = %+v", logout)
+	}
+}
+
+func TestParseGCPHelpCommands(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"gcp", "help"}, want: "agent-secret gcp brokers"},
+		{args: []string{"gcp", "exec", "help"}, want: "agent-secret gcp exec --profile"},
+		{args: []string{"gcp", "session", "help"}, want: "agent-secret gcp session manages"},
+		{args: []string{"gcp", "session", "create", "help"}, want: "agent-secret gcp session create --profile"},
+		{args: []string{"gcp", "session", "list", "help"}, want: "agent-secret gcp session list [--json]"},
+		{args: []string{"gcp", "session", "destroy", "help"}, want: "agent-secret gcp session destroy [--json] SESSION_HANDLE"},
+		{args: []string{"gcp", "with-session", "help"}, want: "agent-secret gcp with-session SESSION_HANDLE"},
+		{args: []string{"gcp", "auth", "help"}, want: "agent-secret gcp auth manages"},
+		{args: []string{"gcp", "auth", "status", "help"}, want: "agent-secret gcp auth status shows"},
+		{args: []string{"gcp", "auth", "login", "help"}, want: "agent-secret gcp auth login shows"},
+		{args: []string{"gcp", "auth", "logout", "help"}, want: "agent-secret gcp auth logout removes"},
+	}
+	for _, tc := range tests {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			command, err := NewParser().Parse(tc.args)
+			if !errors.Is(err, ErrHelpRequested) {
+				t.Fatalf("Parse error = %v, want help requested", err)
+			}
+			if command.Kind != KindHelp || !strings.Contains(command.HelpText, tc.want) {
+				t.Fatalf("help command = %+v, want text containing %q", command, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseGCPErrorsAndAccessMerge(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	tests := []struct {
+		args []string
+		err  error
+	}{
+		{args: []string{"gcp", "unknown"}, err: ErrInvalidArguments},
+		{args: []string{"gcp", "session", "unknown"}, err: ErrInvalidArguments},
+		{args: []string{"gcp", "auth", "unknown"}, err: ErrInvalidArguments},
+		{args: []string{"gcp", "auth", "login"}, err: request.ErrInvalidGCPAccount},
+		{args: []string{"gcp", "auth", "logout"}, err: request.ErrInvalidGCPAccount},
+		{args: []string{"gcp", "exec", "--json", "--", "gcloud"}, err: ErrUnsupportedExecJSON},
+		{args: []string{"gcp", "with-session", "asess_123", "gcloud"}, err: ErrShellStringCommand},
+		{args: []string{"gcp", "session", "destroy"}, err: ErrHelpRequested},
+		{args: []string{"gcp", "session", "list", "extra"}, err: ErrInvalidArguments},
+	}
+	for _, tc := range tests {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			_, err := parser.Parse(tc.args)
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("Parse(%v) error = %v, want %v", tc.args, err, tc.err)
+			}
+		})
+	}
+
+	base := request.GCPAccess{
+		GoogleAccount:  "work",
+		Project:        "fixture-beta",
+		ServiceAccount: "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:         []string{"https://www.googleapis.com/auth/logging.read"},
+	}
+	merged := mergeGCPAccess(base, request.GCPAccess{
+		GoogleAccount:  "personal",
+		Project:        "fixture-dev",
+		ServiceAccount: "agent-dev@fixture-dev.iam.gserviceaccount.com",
+		Scopes:         []string{"https://www.googleapis.com/auth/cloud-platform"},
+	})
+	if merged.GoogleAccount != "personal" ||
+		merged.Project != "fixture-dev" ||
+		merged.ServiceAccount != "agent-dev@fixture-dev.iam.gserviceaccount.com" ||
+		merged.Scopes[0] != "https://www.googleapis.com/auth/cloud-platform" {
+		t.Fatalf("merged GCP access = %+v", merged)
+	}
+}
+
 func TestParseExecBuildsRequestFromProfile(t *testing.T) {
 	root := t.TempDir()
 	infraDir := filepath.Join(root, "infra")

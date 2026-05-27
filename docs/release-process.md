@@ -209,6 +209,8 @@ The tag-triggered release job needs these repository secrets configured:
 AGENT_SECRET_CODESIGN_CERT_P12_BASE64
 AGENT_SECRET_CODESIGN_CERT_PASSWORD
 AGENT_SECRET_CODESIGN_IDENTITY
+AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID
+AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET
 AGENT_SECRET_NOTARIZE
 AGENT_SECRET_NOTARY_KEY
 AGENT_SECRET_NOTARY_KEY_ID
@@ -216,8 +218,17 @@ AGENT_SECRET_NOTARY_ISSUER_ID
 ```
 
 Do not print, commit, paste, or attach `.p8`, `.p12`, private key, or password
-material. If a notary API key must be recreated, use an App Store Connect Team
-Key and store the downloaded `.p8` directly in GitHub Secrets.
+material, or OAuth client material. If a notary API key must be recreated, use
+an App Store Connect Team Key and store the downloaded `.p8` directly in
+GitHub Secrets.
+
+The bundled GCP OAuth client secrets are build inputs for official Agent Secret
+release artifacts. Keep the source values in the maintainer password manager,
+copy only the current values into GitHub Actions secrets, and never commit the
+values to the repository. The repository does include the maintainer
+`op://` references in `agent-secret.yml` so local maintainer builds can resolve
+the same client through Agent Secret when the GitHub Actions environment
+variables are absent.
 
 For this repository's maintainer releases, the current Developer ID identity is:
 
@@ -267,9 +278,9 @@ install instructions.
 
 ## Toolchain Pin Maintenance
 
-The GitHub workflow pins both `jdx/mise-action` and the `mise` binary that the
-action downloads. When updating the CI toolchain, update these values together
-in `.github/workflows/ci.yml`:
+The GitHub workflow installs a pinned `mise` binary directly from the official
+`jdx/mise` release asset through `scripts/ci/install-mise.sh`. When updating the
+CI toolchain, update these values together in `.github/workflows/ci.yml`:
 
 - `AGENT_SECRET_MISE_VERSION`
 - `AGENT_SECRET_MISE_SHA256_MACOS_ARM64`
@@ -278,7 +289,7 @@ runner architecture:
 
 ```bash
 version=2026.4.28
-shasum -a 256 "mise-v${version}-macos-arm64.tar.gz"
+shasum -a 256 "mise-v${version}-macos-arm64"
 ```
 
 Run the workflow pin smoke test after any workflow change:
@@ -287,12 +298,13 @@ Run the workflow pin smoke test after any workflow change:
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 ```
 
-That smoke test fails if a `jdx/mise-action` step does not set both `version`
-and `sha256`.
+That smoke test fails when workflow actions are not pinned to immutable commit
+SHAs. The `mise` installer script separately verifies the downloaded binary
+against `AGENT_SECRET_MISE_SHA256_MACOS_ARM64`.
 
-Signed release builds run through the pinned CI `mise` action and fixed macOS
-system tools for signing, notarization, and DMG assembly. Keep the workflow
-tool action version and checksum pinned when changing release automation.
+Signed release builds run through the pinned CI `mise` binary and fixed macOS
+system tools for signing, notarization, and DMG assembly. Keep the tool version
+and checksum pinned when changing release automation.
 
 ## Failed Release Runs
 

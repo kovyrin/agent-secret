@@ -90,6 +90,14 @@ require_production_release_signing() {
     echo "build-release: production release requires AGENT_SECRET_CODESIGN_IDENTITY" >&2
     missing=1
   fi
+  if [[ "${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID:-}" == "" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID" >&2
+    missing=1
+  fi
+  if [[ "${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET:-}" == "" ]]; then
+    echo "build-release: production release requires AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET" >&2
+    missing=1
+  fi
   if [[ "$notarize" != "1" ]]; then
     echo "build-release: production release requires AGENT_SECRET_NOTARIZE=1" >&2
     missing=1

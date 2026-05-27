@@ -45,6 +45,12 @@ const (
 	EventCommandCompleted                   EventType = "command_completed"
 	EventExecClientDisconnectedAfterPayload EventType = "exec_client_disconnected_after_payload"
 	EventExecClientDisconnectedAfterStart   EventType = "exec_client_disconnected_after_start"
+	EventGCPTokenMintStarted                EventType = "gcp_token_mint_started"   //nolint:gosec // G101: audit event name, not credential material.
+	EventGCPTokenMintCompleted              EventType = "gcp_token_mint_completed" //nolint:gosec // G101: audit event name, not credential material.
+	EventGCPTokenMintFailed                 EventType = "gcp_token_mint_failed"    //nolint:gosec // G101: audit event name, not credential material.
+	EventGCPTokenReused                     EventType = "gcp_token_reused"         //nolint:gosec // G101: audit event name, not credential material.
+	EventGCPSessionCreated                  EventType = "gcp_session_created"
+	EventGCPSessionDestroyed                EventType = "gcp_session_destroyed"
 	EventDaemonStop                         EventType = "daemon_stop"
 )
 
@@ -55,30 +61,42 @@ type SecretRef struct {
 }
 
 type Event struct {
-	Timestamp          time.Time   `json:"timestamp"`
-	Type               EventType   `json:"type"`
-	RequestID          string      `json:"request_id,omitempty"`
-	ApprovalID         string      `json:"approval_id,omitempty"`
-	Reason             string      `json:"reason,omitempty"`
-	Command            []string    `json:"command,omitempty"`
-	ResolvedExecutable string      `json:"resolved_executable,omitempty"`
-	CWD                string      `json:"cwd,omitempty"`
-	SecretRefs         []SecretRef `json:"secret_refs,omitempty"`
-	ItemRef            string      `json:"item_ref,omitempty"`
-	Account            string      `json:"account,omitempty"`
-	ChildPID           *int        `json:"child_pid,omitempty"`
-	ExitCode           *int        `json:"exit_code,omitempty"`
-	Signal             string      `json:"signal,omitempty"`
-	ErrorCode          ErrorCode   `json:"error_code,omitempty"`
-	RequesterPID       *int        `json:"requester_pid,omitempty"`
-	RequesterUID       *int        `json:"requester_uid,omitempty"`
-	RequesterPath      string      `json:"requester_path,omitempty"`
-	RemainingTTLMillis *int64      `json:"remaining_ttl_ms,omitempty"`
-	RemainingUses      *int        `json:"remaining_uses,omitempty"`
-	ForceRefresh       bool        `json:"force_refresh,omitempty"`
-	ReuseOnly          bool        `json:"reuse_only,omitempty"`
-	OverrideEnv        bool        `json:"override_env,omitempty"`
-	OverriddenAliases  []string    `json:"overridden_aliases,omitempty"`
+	Timestamp           time.Time   `json:"timestamp"`
+	Type                EventType   `json:"type"`
+	RequestID           string      `json:"request_id,omitempty"`
+	ApprovalID          string      `json:"approval_id,omitempty"`
+	Provider            string      `json:"provider,omitempty"`
+	Operation           string      `json:"operation,omitempty"`
+	Reason              string      `json:"reason,omitempty"`
+	ProfileName         string      `json:"profile_name,omitempty"`
+	Command             []string    `json:"command,omitempty"`
+	ResolvedExecutable  string      `json:"resolved_executable,omitempty"`
+	CWD                 string      `json:"cwd,omitempty"`
+	SecretRefs          []SecretRef `json:"secret_refs,omitempty"`
+	ItemRef             string      `json:"item_ref,omitempty"`
+	Account             string      `json:"account,omitempty"`
+	GoogleAccount       string      `json:"google_account,omitempty"`
+	Project             string      `json:"project,omitempty"`
+	ServiceAccount      string      `json:"service_account,omitempty"`
+	OAuthScopes         []string    `json:"oauth_scopes,omitempty"`
+	DeliveryMode        string      `json:"delivery_mode,omitempty"`
+	GCPSessionID        string      `json:"gcp_session_id,omitempty"`
+	ProjectRoot         string      `json:"project_root,omitempty"`
+	TokenLifetimeMillis *int64      `json:"token_lifetime_ms,omitempty"`
+	ChildPID            *int        `json:"child_pid,omitempty"`
+	ExitCode            *int        `json:"exit_code,omitempty"`
+	Signal              string      `json:"signal,omitempty"`
+	ErrorCode           ErrorCode   `json:"error_code,omitempty"`
+	RequesterPID        *int        `json:"requester_pid,omitempty"`
+	RequesterUID        *int        `json:"requester_uid,omitempty"`
+	RequesterPath       string      `json:"requester_path,omitempty"`
+	RemainingTTLMillis  *int64      `json:"remaining_ttl_ms,omitempty"`
+	RemainingUses       *int        `json:"remaining_uses,omitempty"`
+	MaxCommandStarts    *int        `json:"max_command_starts,omitempty"`
+	ForceRefresh        bool        `json:"force_refresh,omitempty"`
+	ReuseOnly           bool        `json:"reuse_only,omitempty"`
+	OverrideEnv         bool        `json:"override_env,omitempty"`
+	OverriddenAliases   []string    `json:"overridden_aliases,omitempty"`
 }
 
 type Writer struct {
@@ -129,6 +147,119 @@ func FromItemDescribeRequest(eventType EventType, requestID string, req request.
 		CWD:                req.CWD,
 		ItemRef:            req.Ref.Raw,
 		Account:            req.Account,
+	}
+}
+
+func FromGCPExecRequest(eventType EventType, requestID string, req request.GCPExecRequest) Event {
+	return Event{
+		Type:               eventType,
+		RequestID:          requestID,
+		Provider:           "gcp",
+		Operation:          gcpOperationForEvent(eventType),
+		Reason:             req.Reason,
+		ProfileName:        req.ProfileName,
+		Command:            slices.Clone(req.Command),
+		ResolvedExecutable: req.ResolvedExecutable,
+		CWD:                req.CWD,
+		GoogleAccount:      req.GoogleAccount,
+		Project:            req.Project,
+		ServiceAccount:     req.ServiceAccount,
+		OAuthScopes:        slices.Clone(req.Scopes),
+		DeliveryMode:       req.DeliveryMode,
+		ProjectRoot:        req.ConfigRoot,
+		ReuseOnly:          req.ReuseOnly,
+	}
+}
+
+func FromGCPSessionCreateRequest(eventType EventType, requestID string, req request.GCPSessionCreateRequest, sessionAuditID string) Event {
+	maxStarts := req.MaxCommandStarts
+	return Event{
+		Type:             eventType,
+		RequestID:        requestID,
+		Provider:         "gcp",
+		Operation:        gcpOperationForEvent(eventType),
+		Reason:           req.Reason,
+		ProfileName:      req.ProfileName,
+		GoogleAccount:    req.GoogleAccount,
+		Project:          req.Project,
+		ServiceAccount:   req.ServiceAccount,
+		OAuthScopes:      slices.Clone(req.Scopes),
+		DeliveryMode:     req.DeliveryMode,
+		GCPSessionID:     sessionAuditID,
+		ProjectRoot:      req.ProjectRoot,
+		MaxCommandStarts: &maxStarts,
+	}
+}
+
+type gcpSessionCommand interface {
+	SessionAuditIDValue() string
+	ReasonValue() string
+	ProfileNameValue() string
+	ProjectRootValue() string
+	AccessValue() request.GCPAccess
+	CommandValue() []string
+	ResolvedExecutableValue() string
+	CWDValue() string
+	DeliveryModeValue() string
+}
+
+func FromGCPSessionCommand(eventType EventType, requestID string, command gcpSessionCommand) Event {
+	access := command.AccessValue()
+	return Event{
+		Type:               eventType,
+		RequestID:          requestID,
+		Provider:           "gcp",
+		Operation:          gcpOperationForEvent(eventType),
+		Reason:             command.ReasonValue(),
+		ProfileName:        command.ProfileNameValue(),
+		Command:            slices.Clone(command.CommandValue()),
+		ResolvedExecutable: command.ResolvedExecutableValue(),
+		CWD:                command.CWDValue(),
+		GoogleAccount:      access.GoogleAccount,
+		Project:            access.Project,
+		ServiceAccount:     access.ServiceAccount,
+		OAuthScopes:        slices.Clone(access.Scopes),
+		DeliveryMode:       command.DeliveryModeValue(),
+		GCPSessionID:       command.SessionAuditIDValue(),
+		ProjectRoot:        command.ProjectRootValue(),
+	}
+}
+
+func FromGCPTokenMint(eventType EventType, requestID string, access request.GCPAccess, reason string, lifetime time.Duration, deliveryMode string, sessionAuditID string) Event {
+	lifetimeMillis := lifetime.Milliseconds()
+	return Event{
+		Type:                eventType,
+		RequestID:           requestID,
+		Provider:            "gcp",
+		Operation:           gcpOperationForEvent(eventType),
+		Reason:              reason,
+		GoogleAccount:       access.GoogleAccount,
+		Project:             access.Project,
+		ServiceAccount:      access.ServiceAccount,
+		OAuthScopes:         slices.Clone(access.Scopes),
+		DeliveryMode:        deliveryMode,
+		GCPSessionID:        sessionAuditID,
+		TokenLifetimeMillis: &lifetimeMillis,
+	}
+}
+
+func gcpOperationForEvent(eventType EventType) string {
+	//nolint:exhaustive // Non-GCP event types fall back to their event name for compatibility.
+	switch eventType {
+	case EventGCPTokenMintStarted, EventGCPTokenMintCompleted, EventGCPTokenMintFailed:
+		return "mint_access_token"
+	case EventGCPTokenReused:
+		return "token_reused"
+	case EventGCPSessionCreated:
+		return "session_created"
+	case EventGCPSessionDestroyed:
+		return "session_destroyed"
+	case EventCommandStarted:
+		return "command_started"
+	case EventCommandCompleted:
+		return "command_completed"
+	default:
+		return string(eventType)
 	}
 }
 

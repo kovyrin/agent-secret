@@ -28,14 +28,20 @@ type ApprovalRequestPayload struct {
 type ApprovalOperation string
 
 const (
-	ApprovalOperationExec         ApprovalOperation = "exec"
-	ApprovalOperationItemDescribe ApprovalOperation = "item_describe"
+	ApprovalOperationExec             ApprovalOperation = "exec"
+	ApprovalOperationItemDescribe     ApprovalOperation = "item_describe"
+	ApprovalOperationGCPExec          ApprovalOperation = "gcp_exec"
+	ApprovalOperationGCPSessionCreate ApprovalOperation = "gcp_session_create"
 )
 
 type ApprovalRequestedResource struct {
-	Alias   string `json:"alias"`
-	Ref     string `json:"ref"`
-	Account string `json:"account"`
+	Alias          string   `json:"alias"`
+	Ref            string   `json:"ref"`
+	Account        string   `json:"account"`
+	Provider       string   `json:"provider,omitempty"`
+	Project        string   `json:"project,omitempty"`
+	ServiceAccount string   `json:"service_account,omitempty"`
+	Scopes         []string `json:"scopes,omitempty"`
 }
 
 type ApprovalDecisionKind string
@@ -109,6 +115,62 @@ func NewItemDescribePayload(
 		OverrideEnv:       false,
 		OverriddenAliases: []string{},
 		ReusableUses:      1,
+	}
+}
+
+func NewGCPExecPayload(correlation protocol.Correlation, req request.GCPExecRequest) ApprovalRequestPayload {
+	return ApprovalRequestPayload{
+		Operation:          ApprovalOperationGCPExec,
+		AllowsReusable:     false,
+		RequestID:          correlation.RequestID,
+		Nonce:              correlation.Nonce,
+		Reason:             req.Reason,
+		Command:            slices.Clone(req.Command),
+		CWD:                req.CWD,
+		ResolvedExecutable: req.ResolvedExecutable,
+		ExpiresAt:          req.ExpiresAt,
+		Resources: []ApprovalRequestedResource{
+			gcpApprovalResource(req.Access()),
+		},
+		OverrideEnv:       false,
+		OverriddenAliases: []string{},
+		ReusableUses:      1,
+	}
+}
+
+func NewGCPSessionCreatePayload(
+	correlation protocol.Correlation,
+	req request.GCPSessionCreateRequest,
+	sessionAuditID string,
+) ApprovalRequestPayload {
+	return ApprovalRequestPayload{
+		Operation:          ApprovalOperationGCPSessionCreate,
+		AllowsReusable:     false,
+		RequestID:          correlation.RequestID,
+		Nonce:              correlation.Nonce,
+		Reason:             req.Reason,
+		Command:            []string{"agent-secret", "gcp", "with-session", sessionAuditID, "--", "..."},
+		CWD:                req.ProjectRoot,
+		ResolvedExecutable: "agent-secret",
+		ExpiresAt:          req.ExpiresAt,
+		Resources: []ApprovalRequestedResource{
+			gcpApprovalResource(req.Access()),
+		},
+		OverrideEnv:       false,
+		OverriddenAliases: []string{},
+		ReusableUses:      req.MaxCommandStarts,
+	}
+}
+
+func gcpApprovalResource(access request.GCPAccess) ApprovalRequestedResource {
+	return ApprovalRequestedResource{
+		Alias:          "GCP_ACCESS_TOKEN",
+		Ref:            fmt.Sprintf("gcp://projects/%s/serviceAccounts/%s", access.Project, access.ServiceAccount),
+		Account:        access.GoogleAccount,
+		Provider:       "gcp",
+		Project:        access.Project,
+		ServiceAccount: access.ServiceAccount,
+		Scopes:         slices.Clone(access.Scopes),
 	}
 }
 

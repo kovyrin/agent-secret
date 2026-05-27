@@ -20,36 +20,53 @@ var (
 type Kind string
 
 const (
-	KindHelp         Kind = "help"
-	KindVersion      Kind = "version"
-	KindAgentContext Kind = "agent_context"
-	KindExec         Kind = "exec"
-	KindItemDescribe Kind = "item_describe"
-	KindProfileList  Kind = "profile_list"
-	KindProfileShow  Kind = "profile_show"
-	KindDoctor       Kind = "doctor"
-	KindInstallCLI   Kind = "install_cli"
-	KindSkillInstall Kind = "skill_install"
-	KindDaemonStart  Kind = "daemon_start"
-	KindDaemonStop   Kind = "daemon_stop"
-	KindDaemonStatus Kind = "daemon_status"
+	KindHelp              Kind = "help"
+	KindVersion           Kind = "version"
+	KindAgentContext      Kind = "agent_context"
+	KindExec              Kind = "exec"
+	KindGCPExec           Kind = "gcp_exec"
+	KindGCPSessionCreate  Kind = "gcp_session_create"
+	KindGCPSessionList    Kind = "gcp_session_list"
+	KindGCPSessionDestroy Kind = "gcp_session_destroy"
+	KindGCPWithSession    Kind = "gcp_with_session"
+	KindGCPAuthStatus     Kind = "gcp_auth_status"
+	KindGCPAuthLogin      Kind = "gcp_auth_login"
+	KindGCPAuthLogout     Kind = "gcp_auth_logout"
+	KindItemDescribe      Kind = "item_describe"
+	KindProfileList       Kind = "profile_list"
+	KindProfileShow       Kind = "profile_show"
+	KindDoctor            Kind = "doctor"
+	KindInstallCLI        Kind = "install_cli"
+	KindSkillInstall      Kind = "skill_install"
+	KindDaemonStart       Kind = "daemon_start"
+	KindDaemonStop        Kind = "daemon_stop"
+	KindDaemonStatus      Kind = "daemon_status"
 )
 
 type Command struct {
-	Kind                Kind
-	OutputJSON          bool
-	ExecRequest         request.ExecRequest
-	ExecEnv             []string
-	ExecDryRun          bool
-	ItemDescribeRequest request.ItemDescribeRequest
-	ItemDescribeFormat  itemmetadata.Format
-	ItemDescribePrefix  string
-	AgentContextOptions ConfigCommandOptions
-	ProfileOptions      ProfileCommandOptions
-	InstallCLIOptions   install.CLIOptions
-	InstallSkillOptions install.SkillOptions
-	HelpText            string
-	VersionText         string
+	Kind                     Kind
+	OutputJSON               bool
+	ExecRequest              request.ExecRequest
+	ExecEnv                  []string
+	ExecDryRun               bool
+	GCPExecRequest           request.GCPExecRequest
+	GCPAuthStatusRequest     request.GCPAuthStatusRequest
+	GCPAuthLoginRequest      request.GCPAuthLoginRequest
+	GCPAuthLogoutRequest     request.GCPAuthLogoutRequest
+	GCPSessionCreateRequest  request.GCPSessionCreateRequest
+	GCPSessionUseRequest     request.GCPSessionUseRequest
+	GCPSessionDestroyRequest request.GCPSessionDestroyRequest
+	GCPEnv                   []string
+	GCPDryRun                bool
+	ItemDescribeRequest      request.ItemDescribeRequest
+	ItemDescribeFormat       itemmetadata.Format
+	ItemDescribePrefix       string
+	AgentContextOptions      ConfigCommandOptions
+	ProfileOptions           ProfileCommandOptions
+	InstallCLIOptions        install.CLIOptions
+	InstallSkillOptions      install.SkillOptions
+	HelpText                 string
+	VersionText              string
 }
 
 type Parser struct{}
@@ -72,6 +89,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseAgentContext(args[1:])
 	case "exec":
 		return p.parseExec(args[1:])
+	case "gcp":
+		return p.parseGCP(args[1:])
 	case "item":
 		return p.parseItem(args[1:], args)
 	case "profile":
@@ -86,7 +105,7 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseSkillInstall(args[1:])
 	default:
 		return Command{}, fmt.Errorf(
-			"%w: unknown command %q; expected one of: agent-context, daemon, doctor, exec, help, install-cli, item, profile, skill-install, version",
+			"%w: unknown command %q; expected one of: agent-context, daemon, doctor, exec, gcp, help, install-cli, item, profile, skill-install, version",
 			ErrInvalidArguments,
 			args[0],
 		)

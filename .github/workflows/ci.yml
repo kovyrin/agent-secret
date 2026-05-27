@@ -22,26 +22,33 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Install mise
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
-        with:
-          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
-          install: true
-          cache: true
+        run: scripts/ci/install-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Run lints and tests
         run: mise run lint
 
       - name: Build commands and app bundle
+        env:
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
         run: mise run build
 
   smoke-tests:
@@ -49,20 +56,24 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Install mise
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
-        with:
-          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
-          install: true
-          cache: true
+        run: scripts/ci/install-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Run non-secret smoke tests
@@ -74,7 +85,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Verify release tag ancestry
         run: scripts/release/check-release-ancestry.sh "$GITHUB_REF_NAME"
@@ -83,17 +101,14 @@ jobs:
         run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
 
       - name: Install mise
-        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac
-        with:
-          version: ${{ env.AGENT_SECRET_MISE_VERSION }}
-          sha256: ${{ env.AGENT_SECRET_MISE_SHA256_MACOS_ARM64 }}
-          install: true
-          cache: true
+        run: scripts/ci/install-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Verify release signing configuration
@@ -101,6 +116,8 @@ jobs:
           AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
           AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
           AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
           AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
@@ -117,6 +134,8 @@ jobs:
         env:
           AGENT_SECRET_IN_MISE: "1"
           AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
           AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
@@ -154,7 +173,14 @@ jobs:
       contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093

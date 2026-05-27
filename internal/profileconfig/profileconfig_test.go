@@ -184,6 +184,90 @@ profiles:
 	}
 }
 
+func TestLoadGCPProfileWithoutSecrets(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+default_profile: beta-logs
+profiles:
+  beta-logs:
+    reason: Inspect beta logs
+    ttl: 5m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/logging.read
+        - https://www.googleapis.com/auth/cloud-platform
+`)
+
+	profile, err := Load(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(profile.Secrets) != 0 {
+		t.Fatalf("secrets = %+v, want none", profile.Secrets)
+	}
+	if profile.GCP == nil {
+		t.Fatal("GCP profile missing")
+	}
+	if profile.GCP.GoogleAccount != "work" || profile.GCP.Project != "fixture-beta" {
+		t.Fatalf("GCP access = %+v", profile.GCP)
+	}
+	wantScopes := []string{
+		"https://www.googleapis.com/auth/cloud-platform",
+		"https://www.googleapis.com/auth/logging.read",
+	}
+	if strings.Join(profile.GCP.Scopes, ",") != strings.Join(wantScopes, ",") {
+		t.Fatalf("scopes = %v, want %v", profile.GCP.Scopes, wantScopes)
+	}
+}
+
+func TestLoadGCPProfileIncludesAndOverrides(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  base-gcp:
+    reason: Base GCP
+    ttl: 10m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-readonly@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+  beta-logs:
+    include:
+      - base-gcp
+    reason: Inspect logs
+    gcp:
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/logging.read
+`)
+
+	profile, err := Load(LoadOptions{Name: "beta-logs", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if profile.Reason != "Inspect logs" || profile.TTL != 10*time.Minute {
+		t.Fatalf("included reason/ttl mismatch: reason=%q ttl=%s", profile.Reason, profile.TTL)
+	}
+	if profile.GCP == nil {
+		t.Fatal("GCP profile missing")
+	}
+	if profile.GCP.GoogleAccount != "work" ||
+		profile.GCP.Project != "fixture-beta" ||
+		profile.GCP.ServiceAccount != "agent-beta-logs@fixture-beta.iam.gserviceaccount.com" {
+		t.Fatalf("merged GCP = %+v", profile.GCP)
+	}
+	if len(profile.GCP.Scopes) != 1 || profile.GCP.Scopes[0] != "https://www.googleapis.com/auth/logging.read" {
+		t.Fatalf("scopes = %v, want override logging scope", profile.GCP.Scopes)
+	}
+}
+
 func TestLoadReportsIncludeErrors(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
