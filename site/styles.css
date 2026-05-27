@@ -60,6 +60,10 @@ a {
   color: inherit;
 }
 
+button {
+  font: inherit;
+}
+
 code,
 pre {
   font-family:
@@ -491,7 +495,7 @@ h3 {
 .terminal,
 .code-panel,
 .inline-command {
-  overflow-x: auto;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background:
@@ -500,11 +504,85 @@ h3 {
   box-shadow: var(--shadow);
 }
 
-.terminal pre,
-.code-panel pre,
+.command-list,
 .inline-command {
+  padding: 0.58rem;
+}
+
+.command-row {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  gap: 0.72rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.64rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(244, 241, 234, 0.032);
+}
+
+.command-row + .command-row {
+  margin-top: 1px;
+}
+
+.single-command {
+  margin: 0.58rem;
+}
+
+.prompt {
+  color: rgba(185, 192, 186, 0.58);
+  font-family:
+    "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.copy-button {
+  width: 64px;
+  min-width: 58px;
+  min-height: 32px;
+  padding: 0 0.64rem;
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 7px;
+  background: rgba(244, 241, 234, 0.055);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.copy-button:hover,
+.copy-button:focus-visible {
+  border-color: rgba(24, 212, 195, 0.46);
+  background: rgba(24, 212, 195, 0.1);
+  color: #dcfffb;
+}
+
+.copy-button:focus-visible {
+  outline: 2px solid rgba(24, 212, 195, 0.42);
+  outline-offset: 2px;
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.88rem 0.95rem 0.72rem;
+  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
+}
+
+.code-panel pre {
   margin: 0;
-  padding: 1.1rem;
+  padding: 1rem 1.05rem 1.12rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .terminal code,
@@ -513,21 +591,35 @@ h3 {
   color: #e1fbf7;
   font-size: 0.9rem;
   line-height: 1.62;
+  overflow-wrap: anywhere;
+}
+
+.command-row code {
+  line-height: 1.5;
+}
+
+.command-row .copy-button {
+  align-self: start;
 }
 
 .code-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  grid-template-columns: minmax(0, 0.86fr) minmax(440px, 1.14fr);
   gap: 1rem;
 }
 
 .code-panel {
-  padding-top: 1rem;
+  padding-top: 0;
 }
 
 .panel-label,
 .panel-note {
   padding: 0 1.1rem;
+}
+
+.panel-label {
+  margin-bottom: 0;
+  padding: 0;
 }
 
 .panel-note {
@@ -774,11 +866,26 @@ li + li {
     font-size: 0.82rem;
   }
 
-  .terminal pre,
   .code-panel pre,
+  .command-row code,
   .inline-command {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .command-list,
+  .inline-command {
+    padding: 0.46rem;
+  }
+
+  .command-row {
+    gap: 0.5rem;
+    padding: 0.58rem;
+  }
+
+  .copy-button {
+    width: 60px;
+    min-width: 60px;
   }
 }
 

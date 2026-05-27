@@ -22,6 +22,7 @@
     <link rel="icon" href="assets/app-icon-180.png">
     <link rel="apple-touch-icon" href="assets/app-icon-180.png">
     <link rel="stylesheet" href="styles.css?v=20260527">
+    <script src="scripts.js?v=20260527" defer></script>
   </head>
   <body>
     <header class="site-header" aria-label="Primary">
@@ -156,11 +157,27 @@
             create.
           </p>
         </div>
-        <div class="terminal" role="group" aria-label="Install commands">
-          <pre><code>brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
-brew install --cask agent-secret
-agent-secret skill-install
-agent-secret doctor</code></pre>
+        <div class="terminal command-list" role="group" aria-label="Install commands">
+          <div class="command-row copyable">
+            <span class="prompt" aria-hidden="true">$</span>
+            <code data-copy-text>brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret</code>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy brew tap command">Copy</button>
+          </div>
+          <div class="command-row copyable">
+            <span class="prompt" aria-hidden="true">$</span>
+            <code data-copy-text>brew install --cask agent-secret</code>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy brew install command">Copy</button>
+          </div>
+          <div class="command-row copyable">
+            <span class="prompt" aria-hidden="true">$</span>
+            <code data-copy-text>agent-secret skill-install</code>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy skill install command">Copy</button>
+          </div>
+          <div class="command-row copyable">
+            <span class="prompt" aria-hidden="true">$</span>
+            <code data-copy-text>agent-secret doctor</code>
+            <button class="copy-button" type="button" data-copy-button aria-label="Copy doctor command">Copy</button>
+          </div>
         </div>
       </section>
 
@@ -168,9 +185,12 @@ agent-secret doctor</code></pre>
         <div class="section-kicker">Use</div>
         <h2 id="usage-title">Put references in config. Approve values at runtime.</h2>
         <div class="code-grid">
-          <div class="code-panel">
-            <p class="panel-label">Profile</p>
-            <pre><code>version: 1
+          <div class="code-panel copyable">
+            <div class="panel-toolbar">
+              <p class="panel-label">Profile</p>
+              <button class="copy-button" type="button" data-copy-button aria-label="Copy profile config">Copy</button>
+            </div>
+            <pre><code data-copy-text>version: 1
 default_profile: terraform-cloudflare
 
 profiles:
@@ -180,9 +200,15 @@ profiles:
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token</code></pre>
           </div>
-          <div class="code-panel">
-            <p class="panel-label">Command</p>
-            <pre><code>agent-secret exec --profile terraform-cloudflare -- terraform plan</code></pre>
+          <div class="code-panel copyable">
+            <div class="panel-toolbar">
+              <p class="panel-label">Command</p>
+              <button class="copy-button" type="button" data-copy-button aria-label="Copy exec command">Copy</button>
+            </div>
+            <div class="command-row single-command">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code data-copy-text>agent-secret exec --profile terraform-cloudflare -- terraform plan</code>
+            </div>
             <p class="panel-note">
               The approved child gets the secret. Project files and agent logs
               keep the reference, not the value.
@@ -205,7 +231,13 @@ profiles:
             When agents need to wire a profile, they can ask for labels, IDs,
             field types, and canonical references without receiving secret values.
           </p>
-          <pre class="inline-command"><code>agent-secret item describe --format env-refs "op://Example Infra/Database Credentials"</code></pre>
+          <div class="inline-command copyable">
+            <div class="command-row single-command">
+              <span class="prompt" aria-hidden="true">$</span>
+              <code data-copy-text>agent-secret item describe --format env-refs "op://Example Infra/Database Credentials"</code>
+              <button class="copy-button" type="button" data-copy-button aria-label="Copy item describe command">Copy</button>
+            </div>
+          </div>
         </div>
       </section>
 
