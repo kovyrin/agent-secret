@@ -58,8 +58,9 @@ Success looks like:
 - [x] Proxied Cloudflare DNS records created for `agent-secret.sh` and
   `www.agent-secret.sh`.
 - [x] `https://agent-secret.sh/`, `/privacy`, and `/terms` verified over HTTPS.
-- [x] `https://www.agent-secret.sh/` verified over HTTPS serving the same Pages
-  site.
+- [x] `www` apex-redirect Worker source added under `cloudflare/`.
+- [x] `https://www.agent-secret.sh/` redirects to the apex domain with a 301
+  Worker route.
 
 ## Outstanding Work
 
@@ -202,7 +203,7 @@ Current state:
 - Cloudflare Pages is the selected host.
 - Cloudflare deploys the `site/` directory from `main` with no build command.
 - `https://agent-secret.sh/` is live.
-- `https://www.agent-secret.sh/` serves the same Pages site.
+- `https://www.agent-secret.sh/` redirects to `https://agent-secret.sh/`.
 
 Product Hunt can use a GitHub repo URL, but a small landing page is better. If
 we launch on Product Hunt, prefer `https://agent-secret.sh` with the GitHub
@@ -462,7 +463,7 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [ ] Launch release with final icon is signed, notarized, and published.
 - [ ] Homebrew cask installs the launch release.
 - [x] `agent-secret.sh` resolves over HTTPS.
-- [x] `www.agent-secret.sh` redirects or serves the same page.
+- [x] `www.agent-secret.sh` redirects to the apex domain.
 - [ ] Product page links to GitHub, install docs, demo, limitations, and threat
   model.
 - [ ] Clean-machine install succeeds.
