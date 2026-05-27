@@ -53,14 +53,16 @@ Success looks like:
   command, and output directory `site`.
 - [x] First Cloudflare Pages deployment completed successfully from commit
   `6c59827`.
-- [x] `agent-secret.sh` and `www.agent-secret.sh` attached as Pages custom
-  domains.
+- [x] `agent-secret.sh` attached as the Pages custom domain.
 - [x] Proxied Cloudflare DNS records created for `agent-secret.sh` and
   `www.agent-secret.sh`.
 - [x] `https://agent-secret.sh/`, `/privacy`, and `/terms` verified over HTTPS.
-- [x] `www` apex-redirect Worker source added under `cloudflare/`.
+- [x] Native Cloudflare Single Redirect rule created for `www.agent-secret.sh`.
+- [x] Temporary `www` redirect Worker removed.
+- [x] `www.agent-secret.sh` detached from the Pages project and moved to a
+  proxied placeholder DNS record.
 - [x] `https://www.agent-secret.sh/` redirects to the apex domain with a 301
-  Worker route.
+  native Cloudflare rule.
 
 ## Outstanding Work
 
@@ -203,7 +205,8 @@ Current state:
 - Cloudflare Pages is the selected host.
 - Cloudflare deploys the `site/` directory from `main` with no build command.
 - `https://agent-secret.sh/` is live.
-- `https://www.agent-secret.sh/` redirects to `https://agent-secret.sh/`.
+- `https://www.agent-secret.sh/` redirects to `https://agent-secret.sh/` via a
+  native Cloudflare redirect rule.
 
 Product Hunt can use a GitHub repo URL, but a small landing page is better. If
 we launch on Product Hunt, prefer `https://agent-secret.sh` with the GitHub
