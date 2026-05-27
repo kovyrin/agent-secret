@@ -20,6 +20,36 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.13] - 2026-05-27
+
+### Added
+
+- Added the final Agent Secret app icon to release builds and public website
+  assets.
+- Added the public launch website at `agent-secret.sh`, including install
+  instructions, product screenshots, privacy policy, terms of service, sitemap,
+  robots.txt, and Cloudflare Pages headers.
+- Added a public launch plan for coordinating release, Homebrew, website,
+  content, and announcement work.
+- Added repository-wide Agent Secret configuration for Cloudflare Pages deploy
+  operations.
+
+### Changed
+
+- Updated README, security, configuration, threat-model, PRD, and distribution
+  docs for the public launch positioning and current 1Password-only macOS scope.
+- Reworked the public website copy and layout around the real approval flow,
+  local-only privacy model, security boundary, and Homebrew install path.
+
+### Fixed
+
+- Fixed Cloudflare Pages Git deployments by correcting the project build watch
+  paths and documenting the deployment status in the launch plan.
+- Prevented Cloudflare response transforms from rewriting code samples on the
+  public website.
+- Ignored local Claude worktree artifacts so generated scratch work does not
+  appear in release status checks.
+
 ## [0.0.12] - 2026-05-11
 
 ### Added
