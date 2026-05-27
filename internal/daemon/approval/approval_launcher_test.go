@@ -190,7 +190,10 @@ func TestGCPOAuthLoginPromptLauncherLaunchesAppPrompt(t *testing.T) {
 
 	argsPath := filepath.Join(t.TempDir(), "args.txt")
 	helper := filepath.Join(t.TempDir(), "approver-helper")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + strconv.Quote(argsPath) + "\nwhile true; do sleep 1; done\n"
+	argsTmpPath := argsPath + ".tmp"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + strconv.Quote(argsTmpPath) +
+		"\nmv " + strconv.Quote(argsTmpPath) + " " + strconv.Quote(argsPath) +
+		"\nwhile true; do sleep 1; done\n"
 	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil { //nolint:gosec // G306: launcher tests need runnable helper executables.
 		t.Fatalf("write helper: %v", err)
 	}

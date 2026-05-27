@@ -120,13 +120,13 @@ Agent Secret can also broker short-lived Google Cloud access for approved
 Application Default Credentials.
 
 GCP support requires Google-side IAM setup first: a narrow service account and
-a Token Creator binding that lets the human Google account mint short-lived
-tokens for that service account. Agent Secret release builds use a bundled
-Google OAuth Desktop client for local login, so normal operators do not need to
-create, export, or share OAuth client JSON. Start with
+a Token Creator binding that lets a least-privileged Google account mint
+short-lived tokens for that service account. Agent Secret release builds use a
+bundled Google OAuth Desktop client for local login, so normal operators do not
+need to create, export, or share OAuth client JSON. Start with
 [GCP Integration](docs/gcp.md) before using these commands.
 
-Log in a local Google bootstrap alias:
+Log in a local Google account alias:
 
 ```bash
 agent-secret gcp auth login \

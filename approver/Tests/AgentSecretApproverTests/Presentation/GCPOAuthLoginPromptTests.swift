@@ -20,7 +20,8 @@ final class GCPOAuthLoginPromptTests: XCTestCase {
         )
         XCTAssertTrue(GCPOAuthLoginPromptCopy.meaningText.contains("does not create service accounts"))
         XCTAssertTrue(GCPOAuthLoginPromptCopy.meaningText.contains("does not"))
-        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("narrow bootstrap account"))
+        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("least-privileged Google account"))
+        XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("Avoid Owner/IAM Admin accounts"))
         XCTAssertTrue(GCPOAuthLoginPromptCopy.adminRiskText.contains("Token Creator"))
         XCTAssertTrue(GCPOAuthLoginPromptCopy.retryText.contains("wrong Chrome profile"))
     }
