@@ -1,7 +1,7 @@
 # Agent Secret Public Launch Plan
 
 Status: Active tracker
-Last updated: 2026-05-27
+Last updated: 2026-05-31
 Owner: Oleksiy Kovyrin
 Primary repo: [kovyrin/agent-secret][repo]
 
@@ -75,6 +75,9 @@ Success looks like:
   `doctor`, and upgrade no-op checks passed.
 - [x] A real `agent-secret exec` smoke using the Cloudflare Pages profile
   completed without printing the secret value.
+- [x] Dedicated 1Password guest account and single-vault test secret selected
+  for clean-machine validation.
+- [x] macOS VM validation runbook and UTM clean-install runner added.
 
 ## Outstanding Work
 
@@ -82,7 +85,7 @@ Success looks like:
 
 - [ ] Verify the published product page has install, demo, limitations, privacy,
   terms, and security model links.
-- [ ] Run a clean-machine install drill against the launch release.
+- [ ] Run the UTM clean-machine install drill against the launch release.
 - [ ] Do a public-docs pass on README, configuration docs, threat model, and
   security contact.
 

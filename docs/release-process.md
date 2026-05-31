@@ -173,6 +173,10 @@ user account or VM:
 Record evidence in the public release prep issue before treating the candidate
 as public-announcement ready.
 
+The repeatable UTM-based version of this drill is documented in
+`docs/macos-vm-validation.md` and can be launched with
+`scripts/validate-utm-clean-install.sh` after the golden VM is prepared.
+
 ## Local Release Smoke Scripts
 
 The public docs and release automation contracts are covered by these smoke

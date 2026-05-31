@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.14] - Pending
+
+### Added
+
+- Added a macOS VM validation runbook and UTM-based clean-install runner for
+  release smoke testing with a dedicated 1Password guest account and test-only
+  secret reference.
+
 ## [0.0.13] - 2026-05-27
 
 ### Added
