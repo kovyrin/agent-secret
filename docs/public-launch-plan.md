@@ -78,6 +78,8 @@ Success looks like:
 - [x] Dedicated 1Password guest account and single-vault test secret selected
   for clean-machine validation.
 - [x] macOS VM validation runbook and UTM clean-install runner added.
+- [x] UTM clean-machine install drill passed against launch release `v0.0.13`
+  with `doctor`, dry-run validation, and real approval smoke.
 
 ## Outstanding Work
 
@@ -85,7 +87,6 @@ Success looks like:
 
 - [ ] Verify the published product page has install, demo, limitations, privacy,
   terms, and security model links.
-- [ ] Run the UTM clean-machine install drill against the launch release.
 - [ ] Do a public-docs pass on README, configuration docs, threat model, and
   security contact.
 
