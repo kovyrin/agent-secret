@@ -5,6 +5,8 @@ an agent request exact 1Password secret references, shows you a native approval
 prompt with the command and reason, then injects approved values only into that
 child process.
 
+Website: <https://agent-secret.sh>
+
 ## Install
 
 Requirements:
@@ -198,7 +200,19 @@ Out of scope:
   credential helpers, file-descriptor delivery, or socket value reads.
 
 Read [Threat Model](docs/threat-model.md) for the detailed model and review
-ledger.
+ledger. Use the [Security Policy](SECURITY.md) for private vulnerability
+reporting.
+
+## Known Limitations
+
+The launch build is intentionally narrow:
+
+- macOS on Apple Silicon only.
+- 1Password Desktop only.
+- `agent-secret exec` only; no long-lived shell sessions.
+- No writing, updating, or rotating secrets yet.
+- No GCP Secret Manager or GCP token minting support yet.
+- No sandbox guarantee after you approve a child process.
 
 ## Uninstall
 

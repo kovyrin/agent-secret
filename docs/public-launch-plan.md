@@ -1,7 +1,7 @@
 # Agent Secret Public Launch Plan
 
 Status: Active tracker
-Last updated: 2026-05-31
+Last updated: 2026-06-01
 Owner: Oleksiy Kovyrin
 Primary repo: [kovyrin/agent-secret][repo]
 
@@ -80,15 +80,12 @@ Success looks like:
 - [x] macOS VM validation runbook and UTM clean-install runner added.
 - [x] UTM clean-machine install drill passed against launch release `v0.0.13`
   with `doctor`, dry-run validation, and real approval smoke.
+- [x] Published product page verified for GitHub, install, demo, limitations,
+  privacy, terms, and threat-model links.
+- [x] Public README, configuration docs, threat model, and security contact path
+  reviewed for launch readiness.
 
 ## Outstanding Work
-
-### Launch-Critical
-
-- [ ] Verify the published product page has install, demo, limitations, privacy,
-  terms, and security model links.
-- [ ] Do a public-docs pass on README, configuration docs, threat model, and
-  security contact.
 
 ### Launch Content
 
@@ -479,16 +476,16 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [x] Homebrew cask installs the launch release.
 - [x] `agent-secret.sh` resolves over HTTPS.
 - [x] `www.agent-secret.sh` redirects to the apex domain.
-- [ ] Product page links to GitHub, install docs, demo, limitations, and threat
+- [x] Product page links to GitHub, install docs, demo, limitations, and threat
   model.
-- [ ] Clean-machine install succeeds.
+- [x] Clean-machine install succeeds.
 - [x] `agent-secret doctor` succeeds or gives actionable diagnostics.
 - [x] One real `agent-secret exec` flow works without printing secrets.
-- [ ] README install path matches the launch recommendation.
-- [ ] README makes macOS and 1Password requirements obvious.
-- [ ] README makes exec-only and no-write limits obvious.
-- [ ] Threat model is linked from the README.
-- [ ] Security contact path is clear.
+- [x] README install path matches the launch recommendation.
+- [x] README makes macOS and 1Password requirements obvious.
+- [x] README makes exec-only and no-write limits obvious.
+- [x] Threat model is linked from the README.
+- [x] Security contact path is clear.
 - [ ] Blog article draft exists.
 - [ ] Demo video is recorded.
 - [ ] X post and thread are drafted.
