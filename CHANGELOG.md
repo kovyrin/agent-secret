@@ -65,6 +65,9 @@ version numbers for public releases.
 - Kept the temporary 1Password SDK fork as a documented release exception
   because upstream SDK replacement still needs live desktop-integration proof
   before public release.
+- Added an opt-in live 1Password Desktop fork-removal matrix and confirmed the
+  temporary fork still passes a multi-account case that upstream `v0.4.0`
+  fails.
 
 ## [0.0.13] - 2026-05-27
 
