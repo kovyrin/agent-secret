@@ -129,7 +129,7 @@ jobs:
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
           AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
         run: |
-          trusted_mise="$HOME/.local/bin/mise"
+          trusted_mise="$HOME/.local/share/mise/bin/mise"
           test -x "$trusted_mise"
           AGENT_SECRET_IN_MISE=1 \
             AGENT_SECRET_TRUSTED_MISE="$trusted_mise" \

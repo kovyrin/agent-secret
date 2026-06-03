@@ -50,7 +50,8 @@ version numbers for public releases.
   Cloudflare HTTP/2 status lines, avoids `pipefail` false negatives in the
   root-page asset check, and reports the failed live subcheck while waiting.
 - Fixed the tag-triggered release ancestry guard so it runs inside the trusted
-  `main` checkout before building release artifacts.
+  `main` checkout before building release artifacts, and aligned the release
+  artifact job with the mise binary path installed by CI.
 
 ### Security
 
