@@ -293,12 +293,18 @@ while ((SECONDS < deadline)); do
       fi
 
       printf '[deploy-site] purging Cloudflare cache for %s\n' "$cloudflare_zone"
-      curl -fsS -X POST \
-        -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-        -H "Content-Type: application/json" \
-        --data '{"purge_everything":true}' \
-        "$api/zones/$zone_id/purge_cache" \
-        | jq -e '.success == true' >/dev/null
+      if ! purge_result="$(
+        curl -fsS -X POST \
+          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data '{"purge_everything":true}' \
+          "$api/zones/$zone_id/purge_cache"
+      )"; then
+        printf '[deploy-site] error: cache purge failed. The Cloudflare token needs Zone / Cache Purge / Edit for %s.\n' "$cloudflare_zone" >&2
+        exit 1
+      fi
+
+      printf '%s' "$purge_result" | jq -e '.success == true' >/dev/null
       exit 0
       ;;
     failure)
