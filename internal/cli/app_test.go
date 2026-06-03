@@ -549,6 +549,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 		"exec",
 		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		os.Args[0], "-test.run=TestAppExecAllowsChildAfterDaemonStoppedStartedAudit", "--", "child",
