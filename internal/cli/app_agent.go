@@ -179,6 +179,7 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--force-refresh", Type: "bool", Description: "Refetch values for a matching reusable approval before delivery."},
 				{Name: "--dry-run", Type: "bool", Description: "Validate request and print preflight output without prompting or spawning."},
 				{Name: "--reuse-only", Type: "bool", Description: "Use an existing reusable approval or fail without prompting."},
+				{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
 				{Name: "--json", Type: "bool", Description: "Only valid with --dry-run."},
 			},
 			Outputs: []string{"child passthrough", "dry-run text", "dry-run json"},

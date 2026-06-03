@@ -27,9 +27,9 @@ import Foundation
                     decision: .approveOnce,
                     icon: "clock",
                     title: "Allow once",
-                    subtitle: viewModel.isExpired ? "Request expired" : "Enter",
+                    subtitle: viewModel.isExpired ? "Request expired" : "Click to approve",
                     role: .secondary,
-                    keyboardShortcut: .defaultAction,
+                    keyboardShortcut: nil,
                     isEnabled: !viewModel.isExpired
                 )
             ]

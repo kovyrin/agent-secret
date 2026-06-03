@@ -17,19 +17,20 @@ import (
 )
 
 type execFlags struct {
-	reason       string
-	cwd          string
-	ttl          time.Duration
-	profileName  string
-	configPath   string
-	account      string
-	overrideEnv  bool
-	forceRefresh bool
-	dryRun       bool
-	reuseOnly    bool
-	secrets      secretFlags
-	only         onlyFlags
-	envFiles     envFileFlags
+	reason                 string
+	cwd                    string
+	ttl                    time.Duration
+	profileName            string
+	configPath             string
+	account                string
+	overrideEnv            bool
+	forceRefresh           bool
+	dryRun                 bool
+	reuseOnly              bool
+	allowMutableExecutable bool
+	secrets                secretFlags
+	only                   onlyFlags
+	envFiles               envFileFlags
 }
 
 type execInputs struct {
@@ -84,6 +85,12 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	fs.BoolVar(&execOpts.forceRefresh, "force-refresh", false, "refresh reusable approval values")
 	fs.BoolVar(&execOpts.dryRun, "dry-run", false, "validate request and print preflight output without prompting or spawning")
 	fs.BoolVar(&execOpts.reuseOnly, "reuse-only", false, "use an existing reusable approval or fail without prompting")
+	fs.BoolVar(
+		&execOpts.allowMutableExecutable,
+		"allow-mutable-executable",
+		false,
+		"allow a user-owned or writable executable path after showing an approval warning",
+	)
 	jsonOutput := fs.Bool("json", false, "unsupported")
 	reuse := fs.Bool("reuse", false, "unsupported")
 	fs.Var(&execOpts.secrets, "secret", "secret mapping")
@@ -108,15 +115,16 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	}
 
 	req, err := buildExecRequest(execRequestBuildOptions{
-		reason:       inputs.reason,
-		command:      command,
-		cwd:          execOpts.cwd,
-		env:          inputs.env,
-		secrets:      inputs.secrets,
-		ttl:          inputs.ttl,
-		overrideEnv:  execOpts.overrideEnv,
-		forceRefresh: execOpts.forceRefresh,
-		reuseOnly:    execOpts.reuseOnly,
+		reason:                 inputs.reason,
+		command:                command,
+		cwd:                    execOpts.cwd,
+		env:                    inputs.env,
+		secrets:                inputs.secrets,
+		ttl:                    inputs.ttl,
+		overrideEnv:            execOpts.overrideEnv,
+		forceRefresh:           execOpts.forceRefresh,
+		reuseOnly:              execOpts.reuseOnly,
+		allowMutableExecutable: execOpts.allowMutableExecutable,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build exec request: %w", err)
@@ -314,7 +322,7 @@ func execAccountFallback(cliAccount string) string {
 	if account := strings.TrimSpace(os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT")); account != "" {
 		return account
 	}
-	return opaccount.SelectDesktopAccount("", os.Getenv("OP_ACCOUNT"))
+	return opaccount.SelectConcreteDesktopAccount("", os.Getenv("OP_ACCOUNT"), opaccount.DetectDefaultDesktopAccount)
 }
 
 func newOnlySet(aliases []string) map[string]struct{} {

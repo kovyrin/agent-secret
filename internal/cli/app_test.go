@@ -57,6 +57,7 @@ func runConfigProfileExec(
 	stderr.Reset()
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReReadsConfigAccountForRunningDaemon", "--", "child",
 	})
@@ -92,6 +93,7 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=" + ref,
 		"--",
@@ -132,6 +134,7 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
@@ -359,6 +362,7 @@ func TestAppExecRetriesOnceWhenDaemonRetiresBeforeSpawn(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
@@ -476,6 +480,7 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--env-file", envFilePath,
 		"--",
@@ -508,6 +513,7 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
@@ -536,6 +542,7 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
@@ -777,6 +784,7 @@ func TestAppExecDryRunJSONDoesNotStartDaemonPromptOrSpawn(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--dry-run",
 		"--json",
 		"--reuse-only",
@@ -820,8 +828,10 @@ func TestAppExecDryRunTextDescribesPromptAndCommand(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--dry-run",
 		"--reason", "Preflight deploy",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		"tool", "arg with space", "plain",
@@ -835,7 +845,7 @@ func TestAppExecDryRunTextDescribesPromptAndCommand(t *testing.T) {
 		"would spawn: false",
 		"command: '",
 		"'arg with space'",
-		"TOKEN=op://Example/Item/token account=(default desktop account)",
+		"TOKEN=op://Example/Item/token account=Work",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("dry-run stdout = %q, want %q", stdout.String(), want)
@@ -1423,6 +1433,7 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
@@ -1457,6 +1468,7 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
 		"--secret", "TOKEN=" + ref,
 		"--",

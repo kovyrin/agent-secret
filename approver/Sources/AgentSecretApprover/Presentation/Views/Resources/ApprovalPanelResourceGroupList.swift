@@ -9,7 +9,7 @@ import Foundation
         let heading: String
         let groups: [ResourceVaultGroupViewModel]
 
-        @State private var expandedVaultNames: Set<String> = []
+        @State private var collapsedVaultNames: Set<String> = []
 
         var body: some View {
             VStack(alignment: .leading, spacing: Metric.groupListSpacing) {
@@ -20,7 +20,7 @@ import Foundation
                     ForEach(groups, id: \.vaultName) { group in
                         ApprovalPanelResourceGroupRow(
                             group: group,
-                            isExpanded: expandedVaultNames.contains(group.vaultName)
+                            isExpanded: !collapsedVaultNames.contains(group.vaultName)
                         ) {
                             toggle(group)
                         }
@@ -47,11 +47,12 @@ import Foundation
         }
 
         private func toggle(_ group: ResourceVaultGroupViewModel) {
-            if expandedVaultNames.contains(group.vaultName) {
-                expandedVaultNames.remove(group.vaultName)
+            if collapsedVaultNames.contains(group.vaultName) {
+                collapsedVaultNames.remove(group.vaultName)
             } else {
-                expandedVaultNames.insert(group.vaultName)
+                collapsedVaultNames.insert(group.vaultName)
             }
         }
     }
+
 #endif

@@ -66,7 +66,7 @@ func TestBrokerReusableApprovalUsesCacheAndForceRefreshRefetches(t *testing.T) {
 	if third.Env["TOKEN"] != "second" {
 		t.Fatalf("force refresh did not update cached value: %+v", third.Env)
 	}
-	if value, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); !ok || value != "second" {
+	if value, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); !ok || value != "second" {
 		t.Fatalf("force refresh cache value = %q, %v; want second, true", value, ok)
 	}
 	if len(resolver.Calls()) != 2 {
@@ -157,7 +157,7 @@ func TestBrokerReusableApprovalUsesApprovedUseLimit(t *testing.T) {
 		t.Fatalf("second delivery did not reuse cached first value: %+v", second.Env)
 	}
 	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("two-use approval cache scope remained after two deliveries")
 	}
 
@@ -277,7 +277,7 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 		t.Fatalf("first deliverExec returned error: %v", err)
 	}
 	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); !ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); !ok {
 		t.Fatal("expected first reusable value in cache")
 	}
 
@@ -294,7 +294,7 @@ func TestBrokerClearsReusableCacheOnExpiry(t *testing.T) {
 	if second.approvalID == first.approvalID {
 		t.Fatalf("fresh approval reused expired approval id %q", second.approvalID)
 	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("expired reusable approval cache scope remained reachable")
 	}
 }
@@ -323,7 +323,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 		t.Fatalf("first deliverExec returned error: %v", err)
 	}
 	requireActiveRequest(t, broker, testCorrelation("req_1", "nonce_1"))
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); !ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); !ok {
 		t.Fatal("expected reusable value in cache before force refresh")
 	}
 
@@ -341,7 +341,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresDuringForceRefresh(t *testing.T
 	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected expired reusable approval during refresh, got %v", err)
 	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("expired reusable approval cache scope remained after force refresh")
 	}
 	if _, _, err := broker.grants.reusable.store.MatchReusable(req); !errors.Is(err, policy.ErrMismatch) {
@@ -388,7 +388,7 @@ func TestBrokerRejectsReusableApprovalThatExpiresBeforePayloadDelivery(t *testin
 	if !errors.Is(err, approval.ErrRequestExpired) {
 		t.Fatalf("expected reusable approval expiry before payload delivery, got %v", err)
 	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("expired reusable approval cache scope remained before payload delivery")
 	}
 	requireNoActiveRequest(t, broker, testCorrelation("req_2", ""), ErrUnknownRequest)
@@ -448,7 +448,7 @@ func TestBrokerDoesNotReturnPostWriteReusableFinalizationError(t *testing.T) {
 	if second.Env["TOKEN"] != "first" {
 		t.Fatalf("returned grant env = %+v, want first value", second.Env)
 	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: first.approvalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("expired reusable approval cache scope remained after post-write finalization")
 	}
 	requireActiveRequest(t, broker, testCorrelation("req_2", "nonce_2"))
@@ -471,11 +471,11 @@ func TestBrokerStopClearsReusableCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deliverExec returned error: %v", err)
 	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: grant.approvalID, Ref: ref}); !ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: grant.approvalID, Ref: ref, Account: "Work"}); !ok {
 		t.Fatal("expected reusable value in cache")
 	}
 	broker.StopWithAuditEvent(context.Background(), audit.Event{})
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: grant.approvalID, Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: grant.approvalID, Ref: ref, Account: "Work"}); ok {
 		t.Fatal("daemon stop left reusable cache scope reachable")
 	}
 }

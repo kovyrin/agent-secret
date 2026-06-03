@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -78,16 +79,28 @@ func requireNoActiveRequest(t *testing.T, b *Broker, correlation protocol.Correl
 
 func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		t.Fatalf("resolve executable: %v", err)
+	}
+	identity, err := fileidentity.Capture(exe)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
 	}
 	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
 		Reason:             "Inspect item metadata",
 		Command:            []string{"agent-secret", "item", "describe", "op://Example/Item"},
 		CWD:                dir,
 		ResolvedExecutable: exe,
+		ExecutableIdentity: identity,
 		Ref:                "op://Example/Item",
 		Account:            "Work",
 		TTL:                time.Minute,
@@ -226,7 +239,13 @@ func (m *mockResolver) Resolve(_ context.Context, ref string, account string) (s
 	if err := m.errs[key]; err != nil {
 		return "", err
 	}
-	return m.values[key], nil
+	if err := m.errs[ref]; err != nil {
+		return "", err
+	}
+	if value, ok := m.values[key]; ok {
+		return value, nil
+	}
+	return m.values[ref], nil
 }
 
 func (m *mockResolver) DescribeItem(
@@ -532,6 +551,9 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 
 	reqSecrets := make([]request.Secret, 0, len(secrets))
 	for _, spec := range secrets {
+		if spec.Account == "" {
+			spec.Account = "Work"
+		}
 		ref, err := request.ParseSecretRef(spec.Ref)
 		if err != nil {
 			t.Fatalf("ParseSecretRef returned error: %v", err)
@@ -540,11 +562,12 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 	}
 
 	return request.ExecRequest{
-		Reason:             "Run Terraform plan",
-		Command:            []string{"terraform", "plan"},
-		ResolvedExecutable: "/opt/homebrew/bin/terraform",
-		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
-		CWD:                "/tmp/project",
+		Reason:                 "Run Terraform plan",
+		Command:                []string{"terraform", "plan"},
+		ResolvedExecutable:     "/opt/homebrew/bin/terraform",
+		ExecutableIdentity:     fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
+		AllowMutableExecutable: true,
+		CWD:                    "/tmp/project",
 		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{
 			"PATH=/opt/homebrew/bin",
 			"NODE_OPTIONS=--require ./safe.js",

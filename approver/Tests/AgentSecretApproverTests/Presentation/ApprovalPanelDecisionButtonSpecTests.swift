@@ -29,13 +29,13 @@ import XCTest
             return ApprovalPanelDecisionButtonSpec.makeAll(viewModel: viewModel)
         }
 
-        func testAllowOnceIsTheOnlyDefaultApprovalPanelAction() {
+        func testNoApprovalPanelActionUsesDefaultKeyboardShortcut() {
             let specs = Self.sampleButtonSpecs()
 
             XCTAssertEqual(specs.map(\.decision), [.deny, .approveOnce, .approveReusable])
             XCTAssertEqual(
                 specs.filter { spec in spec.keyboardShortcut == .defaultAction }.map(\.decision),
-                [.approveOnce]
+                []
             )
         }
 
@@ -57,11 +57,11 @@ import XCTest
                 specs.first { spec in spec.decision == .approveReusable }
             )
 
-            XCTAssertEqual(approveOnce.keyboardShortcut, .defaultAction)
+            XCTAssertNil(approveOnce.keyboardShortcut)
             XCTAssertNil(approveReusable.keyboardShortcut)
             XCTAssertTrue(approveOnce.isEnabled)
             XCTAssertTrue(approveReusable.isEnabled)
-            XCTAssertEqual(approveOnce.subtitle, "Enter")
+            XCTAssertEqual(approveOnce.subtitle, "Click to approve")
             XCTAssertFalse(approveReusable.subtitle.localizedCaseInsensitiveContains("default"))
         }
 

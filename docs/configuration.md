@@ -193,6 +193,8 @@ Current flags:
   the daemon, prompting for approval, resolving values, or spawning the child.
 - `--reuse-only`: use an existing matching reusable approval or fail without
   opening a new approval prompt.
+- `--allow-mutable-executable`: allow a user-owned or writable executable path
+  after surfacing that trust-boundary warning in the approval UI.
 - `--json`: print machine-readable preflight output. Only valid with
   `--dry-run`.
 - `-h`, `--help`: print detailed `exec` help.

@@ -135,18 +135,11 @@ func desktopAccountWithDetector(
 	opAccount string,
 	detectDefaultAccount func() string,
 ) (string, error) {
-	account := opaccount.SelectDesktopAccount(accountOverride, opAccount)
+	account := opaccount.SelectConcreteDesktopAccount(accountOverride, opAccount, detectDefaultAccount)
 	if account != "" {
 		return account, nil
 	}
-	if detectDefaultAccount == nil {
-		return "", ErrAccountUnknown
-	}
-	account = strings.TrimSpace(detectDefaultAccount())
-	if account == "" {
-		return "", ErrAccountUnknown
-	}
-	return account, nil
+	return "", ErrAccountUnknown
 }
 
 func normalizeDesktopOptions(opts ClientOptions) ClientOptions {

@@ -34,6 +34,9 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 
 	reqSecrets := make([]request.Secret, 0, len(secrets))
 	for _, spec := range secrets {
+		if spec.Account == "" {
+			spec.Account = "Work"
+		}
 		ref, err := request.ParseSecretRef(spec.Ref)
 		if err != nil {
 			t.Fatalf("ParseSecretRef returned error: %v", err)
@@ -42,15 +45,16 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 	}
 
 	return request.ExecRequest{
-		Reason:             "Run Terraform plan",
-		Command:            []string{"terraform", "plan"},
-		ResolvedExecutable: "/opt/homebrew/bin/terraform",
-		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
-		CWD:                "/tmp/project",
-		Secrets:            reqSecrets,
-		TTL:                request.DefaultExecTTL,
-		ReceivedAt:         now,
-		ExpiresAt:          now.Add(request.DefaultExecTTL),
+		Reason:                 "Run Terraform plan",
+		Command:                []string{"terraform", "plan"},
+		ResolvedExecutable:     "/opt/homebrew/bin/terraform",
+		ExecutableIdentity:     fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
+		AllowMutableExecutable: true,
+		CWD:                    "/tmp/project",
+		Secrets:                reqSecrets,
+		TTL:                    request.DefaultExecTTL,
+		ReceivedAt:             now,
+		ExpiresAt:              now.Add(request.DefaultExecTTL),
 	}
 }
 

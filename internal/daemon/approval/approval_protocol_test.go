@@ -16,11 +16,12 @@ func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 
 	expiresAt := time.Now().Add(time.Minute).UTC()
 	req := request.ExecRequest{
-		Reason:             "ship safely",
-		Command:            []string{"/bin/echo", "hello"},
-		CWD:                "/tmp",
-		ResolvedExecutable: "/bin/echo",
-		ExpiresAt:          expiresAt,
+		Reason:                 "ship safely",
+		Command:                []string{"/bin/echo", "hello"},
+		CWD:                    "/tmp",
+		ResolvedExecutable:     "/bin/echo",
+		AllowMutableExecutable: true,
+		ExpiresAt:              expiresAt,
 		Secrets: []request.Secret{
 			{
 				Alias: "TOKEN",
@@ -49,6 +50,9 @@ func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 	}
 	if payload.ReusableUses != request.DefaultReusableUses {
 		t.Fatalf("reusable uses = %d, want default %d", payload.ReusableUses, request.DefaultReusableUses)
+	}
+	if !payload.AllowMutableExecutable {
+		t.Fatal("AllowMutableExecutable = false, want true")
 	}
 	if payload.ExpiresAt != expiresAt {
 		t.Fatalf("expires at = %v, want %v", payload.ExpiresAt, expiresAt)

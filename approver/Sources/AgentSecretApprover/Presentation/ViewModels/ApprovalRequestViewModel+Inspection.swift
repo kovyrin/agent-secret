@@ -9,6 +9,7 @@ extension ApprovalRequestViewModel {
                 commandArgumentRows: commandArguments.map(\.inspectorLine),
                 cwd: cwd,
                 resolvedExecutable: resolvedExecutable,
+                allowMutableExecutable: allowMutableExecutable,
                 overrideEnv: overrideEnv,
                 overriddenAliases: overriddenAliases,
                 resourceSectionTitle: Self.inspectionResourceSectionTitle(for: operation),
@@ -26,6 +27,7 @@ extension ApprovalRequestViewModel {
         let commandArgumentRows: [String]
         let cwd: String
         let resolvedExecutable: String
+        let allowMutableExecutable: Bool
         let overrideEnv: Bool
         let overriddenAliases: [String]
         let resourceSectionTitle: String
@@ -52,6 +54,7 @@ extension ApprovalRequestViewModel {
         lines.append(contentsOf: input.commandArgumentRows)
         lines.append("Working directory: \(input.cwd)")
         lines.append("Resolved binary: \(input.resolvedExecutable)")
+        lines.append("Mutable executable allowed: \(input.allowMutableExecutable ? "yes" : "no")")
         lines.append("Override existing environment: \(input.overrideEnv ? "yes" : "no")")
         if input.overriddenAliases.isEmpty {
             lines.append("Overridden aliases: none")

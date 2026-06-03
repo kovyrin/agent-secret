@@ -213,6 +213,8 @@ Flags:
   --force-refresh     For matching reusable approvals, refetch approved refs before delivery.
   --dry-run           Validate request and print preflight output without prompting or spawning.
   --reuse-only        Use an existing reusable approval or fail without prompting.
+  --allow-mutable-executable
+                     Allow a user-owned or writable executable path after showing an approval warning.
   --json              Print JSON output. Only valid with --dry-run.
   -h, --help          Show this help.
 

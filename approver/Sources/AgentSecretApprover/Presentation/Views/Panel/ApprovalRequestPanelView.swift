@@ -20,7 +20,6 @@ import Foundation
         var body: some View {
             VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
                 scrollableRequestSummary
-                decisionButtons
                 footer
             }
             .padding(.horizontal, Metric.cardHorizontalPadding)
@@ -60,6 +59,7 @@ import Foundation
                         caution
                     }
                     details
+                    decisionButtons
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

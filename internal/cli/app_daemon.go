@@ -331,9 +331,10 @@ func doctorOnePasswordAccount() (string, string, error) {
 }
 
 func defaultOnePasswordAccount() string {
-	return opaccount.SelectDesktopAccount(
+	return opaccount.SelectConcreteDesktopAccount(
 		os.Getenv("AGENT_SECRET_1PASSWORD_ACCOUNT"),
 		os.Getenv("OP_ACCOUNT"),
+		opaccount.DetectDefaultDesktopAccount,
 	)
 }
 

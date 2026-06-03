@@ -267,7 +267,7 @@ func TestFromExecRequestUsesValidatedTrimmedReason(t *testing.T) {
 		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=" + dir}),
 		ReceivedAt:             time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),
 		Secrets: []request.SecretSpec{
-			{Alias: "TOKEN", Ref: "op://Example Vault/Item/token"},
+			{Alias: "TOKEN", Ref: "op://Example Vault/Item/token", Account: "Work"},
 		},
 	})
 	if err != nil {
@@ -291,11 +291,17 @@ func TestFromItemDescribeRequestUsesMetadataOnly(t *testing.T) {
 
 	dir := t.TempDir()
 	writeExecutable(t, dir, "agent-secret")
+	executable := filepath.Join(dir, "agent-secret")
+	identity, err := fileidentity.Capture(executable)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
 	req, err := request.NewItemDescribe(request.ItemDescribeOptions{
 		Reason:             "  Inspect item fields  ",
 		Command:            []string{"agent-secret", "item", "describe", "op://Example Vault/Deploy Token"},
 		CWD:                dir,
-		ResolvedExecutable: filepath.Join(dir, "agent-secret"),
+		ResolvedExecutable: executable,
+		ExecutableIdentity: identity,
 		Ref:                "op://Example Vault/Deploy Token/*",
 		Account:            " Work ",
 		ReceivedAt:         time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC),

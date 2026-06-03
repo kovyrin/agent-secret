@@ -25,6 +25,20 @@ func SelectDesktopAccount(accountOverride string, opAccount string) string {
 	return DefaultDesktopAccount
 }
 
+func SelectConcreteDesktopAccount(
+	accountOverride string,
+	opAccount string,
+	detectDefaultAccount func() string,
+) string {
+	if account := SelectDesktopAccount(accountOverride, opAccount); account != "" {
+		return account
+	}
+	if detectDefaultAccount == nil {
+		return ""
+	}
+	return strings.TrimSpace(detectDefaultAccount())
+}
+
 func SelectDefaultDesktopAccount(accounts []DesktopAccount) string {
 	activeAccounts := activeDesktopAccounts(accounts)
 	if account := selectDesktopAccount(activeAccounts, isPersonalSignInURLAccount); account != "" {

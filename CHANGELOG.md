@@ -68,6 +68,12 @@ version numbers for public releases.
 - Added an opt-in live 1Password Desktop fork-removal matrix and confirmed the
   temporary fork still passes a multi-account case that upstream `v0.4.0`
   fails.
+- Bound implicit 1Password desktop accounts before approval, reusable grants,
+  resolver calls, and secret cache keys; added default executable trust checks
+  that reject mutable command paths unless the operator explicitly opts in.
+- Hardened the native approval prompt so Return no longer approves by default,
+  large grouped requests expose exact refs immediately, and approval actions
+  stay after the scrollable request context.
 
 ## [0.0.13] - 2026-05-27
 

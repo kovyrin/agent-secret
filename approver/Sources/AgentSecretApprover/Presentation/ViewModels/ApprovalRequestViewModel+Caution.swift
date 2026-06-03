@@ -11,6 +11,11 @@ extension ApprovalRequestViewModel {
         "This command can print environment variables.\nOnly approve if you expected this."
     }
 
+    private static var mutableExecutableWarningText: String {
+        "This approval allows a mutable executable path.\n" +
+            "Only approve if you trust the current file and its parent directories."
+    }
+
     static func warningPresentation(
         for request: ApprovalRequest,
         highScopeWarning: Bool
@@ -23,7 +28,8 @@ extension ApprovalRequestViewModel {
             cautionMessages: cautionMessages(
                 printsEnvironmentWarning: printsEnvironment,
                 highScopeWarning: highScopeWarning,
-                overrideWarning: override
+                overrideWarning: override,
+                allowMutableExecutable: request.allowMutableExecutable
             )
         )
     }
@@ -39,11 +45,15 @@ extension ApprovalRequestViewModel {
     private static func cautionMessages(
         printsEnvironmentWarning: Bool,
         highScopeWarning: Bool,
-        overrideWarning: String?
+        overrideWarning: String?,
+        allowMutableExecutable: Bool
     ) -> [String] {
         var messages: [String] = []
         if printsEnvironmentWarning, !highScopeWarning {
             messages.append(environmentWarningText)
+        }
+        if allowMutableExecutable {
+            messages.append(mutableExecutableWarningText)
         }
         if let overrideWarning {
             messages.append(overrideWarning)

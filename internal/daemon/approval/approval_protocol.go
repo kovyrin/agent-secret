@@ -10,19 +10,20 @@ import (
 )
 
 type ApprovalRequestPayload struct {
-	Operation          ApprovalOperation           `json:"operation"`
-	AllowsReusable     bool                        `json:"allows_reusable"`
-	RequestID          string                      `json:"request_id"`
-	Nonce              string                      `json:"nonce"`
-	Reason             string                      `json:"reason"`
-	Command            []string                    `json:"command"`
-	CWD                string                      `json:"cwd"`
-	ResolvedExecutable string                      `json:"resolved_executable"`
-	ExpiresAt          time.Time                   `json:"expires_at"`
-	Resources          []ApprovalRequestedResource `json:"resources"`
-	OverrideEnv        bool                        `json:"override_env"`
-	OverriddenAliases  []string                    `json:"overridden_aliases"`
-	ReusableUses       int                         `json:"reusable_uses"`
+	Operation              ApprovalOperation           `json:"operation"`
+	AllowsReusable         bool                        `json:"allows_reusable"`
+	RequestID              string                      `json:"request_id"`
+	Nonce                  string                      `json:"nonce"`
+	Reason                 string                      `json:"reason"`
+	Command                []string                    `json:"command"`
+	CWD                    string                      `json:"cwd"`
+	ResolvedExecutable     string                      `json:"resolved_executable"`
+	AllowMutableExecutable bool                        `json:"allow_mutable_executable"`
+	ExpiresAt              time.Time                   `json:"expires_at"`
+	Resources              []ApprovalRequestedResource `json:"resources"`
+	OverrideEnv            bool                        `json:"override_env"`
+	OverriddenAliases      []string                    `json:"overridden_aliases"`
+	ReusableUses           int                         `json:"reusable_uses"`
 }
 
 type ApprovalOperation string
@@ -69,19 +70,20 @@ func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) A
 		overriddenAliases = []string{}
 	}
 	return ApprovalRequestPayload{
-		Operation:          ApprovalOperationExec,
-		AllowsReusable:     true,
-		RequestID:          correlation.RequestID,
-		Nonce:              correlation.Nonce,
-		Reason:             req.Reason,
-		Command:            slices.Clone(req.Command),
-		CWD:                req.CWD,
-		ResolvedExecutable: req.ResolvedExecutable,
-		ExpiresAt:          req.ExpiresAt,
-		Resources:          resources,
-		OverrideEnv:        req.OverrideEnv,
-		OverriddenAliases:  overriddenAliases,
-		ReusableUses:       request.ReusableUsesOrDefault(req.ReusableUses),
+		Operation:              ApprovalOperationExec,
+		AllowsReusable:         true,
+		RequestID:              correlation.RequestID,
+		Nonce:                  correlation.Nonce,
+		Reason:                 req.Reason,
+		Command:                slices.Clone(req.Command),
+		CWD:                    req.CWD,
+		ResolvedExecutable:     req.ResolvedExecutable,
+		AllowMutableExecutable: req.AllowMutableExecutable,
+		ExpiresAt:              req.ExpiresAt,
+		Resources:              resources,
+		OverrideEnv:            req.OverrideEnv,
+		OverriddenAliases:      overriddenAliases,
+		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 	}
 }
 
@@ -90,15 +92,16 @@ func NewItemDescribePayload(
 	req request.ItemDescribeRequest,
 ) ApprovalRequestPayload {
 	return ApprovalRequestPayload{
-		Operation:          ApprovalOperationItemDescribe,
-		AllowsReusable:     false,
-		RequestID:          correlation.RequestID,
-		Nonce:              correlation.Nonce,
-		Reason:             req.Reason,
-		Command:            slices.Clone(req.Command),
-		CWD:                req.CWD,
-		ResolvedExecutable: req.ResolvedExecutable,
-		ExpiresAt:          req.ExpiresAt,
+		Operation:              ApprovalOperationItemDescribe,
+		AllowsReusable:         false,
+		RequestID:              correlation.RequestID,
+		Nonce:                  correlation.Nonce,
+		Reason:                 req.Reason,
+		Command:                slices.Clone(req.Command),
+		CWD:                    req.CWD,
+		ResolvedExecutable:     req.ResolvedExecutable,
+		AllowMutableExecutable: false,
+		ExpiresAt:              req.ExpiresAt,
 		Resources: []ApprovalRequestedResource{
 			{
 				Alias:   req.Ref.Item,
