@@ -360,7 +360,12 @@ verify_content_type() {
 }
 
 verify_live_site_once() {
-  if ! curl -fsS --max-time 20 "$site_url/" | grep -Fq "$demo_video_path"; then
+  local root_html
+  if ! root_html="$(curl -fsS --max-time 20 "$site_url/")"; then
+    log "live check pending: root page is not reachable"
+    return 1
+  fi
+  if ! grep -Fq "$demo_video_path" <<<"$root_html"; then
     log "live check pending: root page does not reference $demo_video_path"
     return 1
   fi

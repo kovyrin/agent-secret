@@ -45,8 +45,8 @@ version numbers for public releases.
 ### Fixed
 
 - Fixed the website deployment verifier so the `www` redirect check accepts
-  Cloudflare HTTP/2 status lines and reports the failed live subcheck while
-  waiting.
+  Cloudflare HTTP/2 status lines, avoids `pipefail` false negatives in the
+  root-page asset check, and reports the failed live subcheck while waiting.
 
 ## [0.0.13] - 2026-05-27
 
