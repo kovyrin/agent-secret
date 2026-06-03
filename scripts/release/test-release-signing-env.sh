@@ -7,6 +7,14 @@ check_script="$project_root/scripts/release/check-release-signing-env.sh"
 build_release="$project_root/scripts/release/build-release.sh"
 import_certificate="$project_root/scripts/release/import-codesign-certificate.sh"
 test_path="${PATH:-/usr/bin:/bin}"
+latest_version="$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' "$project_root/CHANGELOG.md" | head -n 1)"
+if [[ "$latest_version" == "" ]]; then
+  latest_version="$(sed -n 's/^## \([^ ]*\) .*/\1/p' "$project_root/CHANGELOG.md" | head -n 1)"
+fi
+if [[ "$latest_version" == "" ]]; then
+  echo "test-release-signing-env: could not derive latest changelog version" >&2
+  exit 1
+fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-signing-test.XXXXXX")"
 cleanup() {
@@ -53,6 +61,21 @@ expect_failure "AGENT_SECRET_CODESIGN_IDENTITY must use Developer ID Team ID B6L
   "$check_script"
 
 env -i "PATH=$test_path" "${release_env[@]}" AGENT_SECRET_NOTARIZE=1 "$check_script"
+
+expect_failure "production signing requires AGENT_SECRET_TRUSTED_MISE" \
+  env -i \
+  "PATH=$test_path" \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  "$build_release" "$latest_version" --require-production-signing --output "$tmp_dir/out"
+
+expect_failure "production signing requires AGENT_SECRET_TRUSTED_MISE" \
+  env -i \
+  "PATH=$test_path" \
+  AGENT_SECRET_IN_MISE=1 \
+  "${release_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
+  "$build_release" "$latest_version" --require-production-signing --output "$tmp_dir/out"
 
 expect_failure "production release requires AGENT_SECRET_CODESIGN_IDENTITY" \
   env -i \

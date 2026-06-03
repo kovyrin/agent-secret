@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+original_args=("$@")
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -26,10 +28,40 @@ project_root="$(cd -- "$script_dir/../.." && pwd)"
 # shellcheck disable=SC1091
 source "$project_root/scripts/lib/bundle-metadata.sh"
 
+production_toolchain_requested() {
+  [[ "${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}" != "" && "${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}" != "-" ]] ||
+    [[ "${AGENT_SECRET_NOTARIZE:-0}" == "1" ]]
+}
+
+require_trusted_mise() {
+  local path="${AGENT_SECRET_TRUSTED_MISE:-}"
+
+  if [[ "$path" == "" ]]; then
+    echo "build-app-bundle: production signing requires AGENT_SECRET_TRUSTED_MISE to point at the pinned mise binary" >&2
+    exit 1
+  fi
+  if [[ "$path" != /* ]]; then
+    echo "build-app-bundle: AGENT_SECRET_TRUSTED_MISE must be absolute: $path" >&2
+    exit 1
+  fi
+  if [[ ! -x "$path" ]]; then
+    echo "build-app-bundle: AGENT_SECRET_TRUSTED_MISE is not executable: $path" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$path"
+}
+
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
+  if production_toolchain_requested; then
+    trusted_mise="$(require_trusted_mise)"
+    export AGENT_SECRET_IN_MISE=1
+    exec "$trusted_mise" exec -- "$0" "${original_args[@]}"
+  fi
+
   if command -v mise >/dev/null 2>&1; then
     export AGENT_SECRET_IN_MISE=1
-    exec mise exec -- "$0" "$@"
+    exec mise exec -- "$0" "${original_args[@]}"
   fi
 fi
 
@@ -113,7 +145,35 @@ resolve_path_tool() {
   printf '%s\n' "$path"
 }
 
-tool_go="$(resolve_path_tool go)"
+resolve_mise_tool() {
+  local name="$1"
+  local path=""
+  local trusted_mise=""
+
+  trusted_mise="$(require_trusted_mise)"
+  if ! path="$("$trusted_mise" which "$name")"; then
+    echo "build-app-bundle: trusted mise could not resolve required command: $name" >&2
+    exit 1
+  fi
+  if [[ "$path" != /* ]]; then
+    echo "build-app-bundle: trusted mise returned a non-absolute command path for $name: $path" >&2
+    exit 1
+  fi
+
+  require_tool "$name" "$path"
+  printf '%s\n' "$path"
+}
+
+resolve_go_tool() {
+  if production_toolchain_requested; then
+    resolve_mise_tool go
+    return
+  fi
+
+  resolve_path_tool go
+}
+
+tool_go="$(resolve_go_tool)"
 tool_swift="/usr/bin/swift"
 tool_mktemp="/usr/bin/mktemp"
 tool_rm="/bin/rm"

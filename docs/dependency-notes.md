@@ -34,6 +34,20 @@ Upstream tracking:
 - Validate a fork update with `go mod tidy`, `mise exec -- go test ./...`, and
   `mise run lint:go` from this repository.
 
+Release decision for `0.0.14`:
+
+- On 2026-06-03, upstream `github.com/1password/onepassword-sdk-go` `v0.4.0`
+  was compile-checked against `internal/opresolver`; normal unit tests passed
+  with fake SDK behavior.
+- The live opt-in fork-removal matrix in
+  `internal/opresolver/fork_matrix_integration_test.go` passed against the fork
+  with `AGENT_SECRET_LIVE_FORK_MATRIX=1`.
+- The same matrix failed against upstream `v0.4.0` in the multi-account
+  resolver case: after resolving the primary account, the fixture-account ref
+  could not find its vault/item.
+- Keep the fork for `0.0.14`; treat the scanner finding as an accepted
+  temporary dependency exception until upstream passes the matrix.
+
 Removal criteria:
 
 - the upstream SDK exposes the item metadata APIs Agent Secret uses;

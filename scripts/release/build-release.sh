@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+original_args=("$@")
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -25,18 +27,39 @@ project_root="$(cd -- "$script_dir/../.." && pwd)"
 output_dir="$project_root/_dist"
 require_production_signing=0
 
-if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
-  if command -v mise >/dev/null 2>&1; then
-    export AGENT_SECRET_IN_MISE=1
-    exec mise exec -- "$0" "$@"
-  fi
-fi
-
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 notarize="${AGENT_SECRET_NOTARIZE:-0}"
 notary_key="${AGENT_SECRET_NOTARY_KEY:-}"
 notary_key_id="${AGENT_SECRET_NOTARY_KEY_ID:-}"
 notary_issuer_id="${AGENT_SECRET_NOTARY_ISSUER_ID:-}"
+
+production_signing_requested() {
+  [[ "$require_production_signing" == "1" ]] ||
+    [[ "$codesign_identity" != "" && "$codesign_identity" != "-" ]] ||
+    [[ "$notarize" == "1" ]] ||
+    [[ "$notary_key" != "" ]] ||
+    [[ "$notary_key_id" != "" ]] ||
+    [[ "$notary_issuer_id" != "" ]]
+}
+
+require_trusted_mise() {
+  local path="${AGENT_SECRET_TRUSTED_MISE:-}"
+
+  if [[ "$path" == "" ]]; then
+    echo "build-release: production signing requires AGENT_SECRET_TRUSTED_MISE to point at the pinned mise binary" >&2
+    exit 1
+  fi
+  if [[ "$path" != /* ]]; then
+    echo "build-release: AGENT_SECRET_TRUSTED_MISE must be absolute: $path" >&2
+    exit 1
+  fi
+  if [[ ! -x "$path" ]]; then
+    echo "build-release: AGENT_SECRET_TRUSTED_MISE is not executable: $path" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$path"
+}
 
 if [[ $# -eq 0 ]]; then
   usage >&2
@@ -81,6 +104,19 @@ done
 if [[ "$version" == "" ]]; then
   echo "build-release: VERSION is required" >&2
   exit 2
+fi
+
+if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
+  if production_signing_requested; then
+    trusted_mise="$(require_trusted_mise)"
+    export AGENT_SECRET_IN_MISE=1
+    exec "$trusted_mise" exec -- "$0" "${original_args[@]}"
+  fi
+
+  if command -v mise >/dev/null 2>&1; then
+    export AGENT_SECRET_IN_MISE=1
+    exec mise exec -- "$0" "${original_args[@]}"
+  fi
 fi
 
 require_production_release_signing() {
