@@ -25,6 +25,7 @@ version numbers for public releases.
 ### Changed
 
 - Updated the public website proof note to describe longer-term daily usage.
+- Removed a redundant public website link to the limitations list.
 
 ### Fixed
 
