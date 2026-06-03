@@ -52,6 +52,8 @@ version numbers for public releases.
 - Fixed the tag-triggered release ancestry guard so it runs inside the trusted
   `main` checkout before building release artifacts, and aligned the release
   artifact job with the mise binary path installed by CI.
+- Fixed the release installer upgrade path when an existing command symlink
+  chain already resolves to the intended bundled `agent-secret` executable.
 
 ### Security
 

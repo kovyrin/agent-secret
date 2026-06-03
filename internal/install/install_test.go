@@ -177,6 +177,40 @@ func TestInstallCLIKeepsExistingMatchingSymlink(t *testing.T) {
 	}
 }
 
+func TestInstallCLIKeepsExistingSymlinkChainToExecutable(t *testing.T) {
+	t.Parallel()
+
+	homeBinDir := filepath.Join(t.TempDir(), "home-bin")
+	brewBinDir := filepath.Join(t.TempDir(), "brew-bin")
+	if err := os.MkdirAll(homeBinDir, 0o750); err != nil {
+		t.Fatalf("create home bin dir: %v", err)
+	}
+	if err := os.MkdirAll(brewBinDir, 0o750); err != nil {
+		t.Fatalf("create brew bin dir: %v", err)
+	}
+	executable := writeInstallTestExecutable(t, t.TempDir())
+	resolvedExecutable := resolveInstallTestPath(t, executable)
+	brewLinkPath := filepath.Join(brewBinDir, CommandName)
+	homeLinkPath := filepath.Join(homeBinDir, CommandName)
+	if err := os.Symlink(resolvedExecutable, brewLinkPath); err != nil {
+		t.Fatalf("create brew symlink: %v", err)
+	}
+	if err := os.Symlink(brewLinkPath, homeLinkPath); err != nil {
+		t.Fatalf("create home symlink: %v", err)
+	}
+
+	if _, err := InstallCLI(CLIOptions{BinDir: homeBinDir, ExecutablePath: executable}); err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	target, err := os.Readlink(homeLinkPath)
+	if err != nil {
+		t.Fatalf("read symlink: %v", err)
+	}
+	if target != brewLinkPath {
+		t.Fatalf("symlink target = %q, want existing chained target %q", target, brewLinkPath)
+	}
+}
+
 func TestInstallCLIRefusesExistingDifferentSymlinkWithoutForce(t *testing.T) {
 	t.Parallel()
 
