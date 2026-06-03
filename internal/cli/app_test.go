@@ -1228,10 +1228,70 @@ func TestAppInstallCLIWarnsWhenCommandDirIsNotOnPath(t *testing.T) {
 	if !strings.Contains(stdout.String(), "is not on PATH") {
 		t.Fatalf("install-cli stdout = %q, want PATH warning", stdout.String())
 	}
-	wantOneLiner := "grep -qxF 'export PATH=\"$HOME/.local/bin:$PATH\"' \"$HOME/.zprofile\" 2>/dev/null || " +
-		"printf '\\n%s\\n' 'export PATH=\"$HOME/.local/bin:$PATH\"' >> \"$HOME/.zprofile\"; exec zsh -l"
+	wantExportLine := fmt.Sprintf("export PATH=%s:\"$PATH\"", shellSingleQuote(binDir))
+	wantQuotedLine := shellSingleQuote(wantExportLine)
+	wantOneLiner := fmt.Sprintf(
+		"grep -qxF %s \"$HOME/.zprofile\" 2>/dev/null || printf '\\n%%s\\n' %s >> \"$HOME/.zprofile\"; exec zsh -l",
+		wantQuotedLine,
+		wantQuotedLine,
+	)
 	if !strings.Contains(stdout.String(), wantOneLiner) {
 		t.Fatalf("install-cli stdout = %q, want zsh setup one-liner %q", stdout.String(), wantOneLiner)
+	}
+}
+
+func TestAppInstallCLIWarnsWhenEarlierPathEntryShadowsCommand(t *testing.T) {
+	staleBinDir := t.TempDir()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	writeExecutable(t, staleBinDir, "agent-secret")
+	t.Setenv("PATH", strings.Join([]string{staleBinDir, binDir}, string(os.PathListSeparator)))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(binDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "An earlier PATH entry contains agent-secret") ||
+		!strings.Contains(stdout.String(), filepath.Join(staleBinDir, "agent-secret")) {
+		t.Fatalf("install-cli stdout = %q, want shadowing warning", stdout.String())
+	}
+}
+
+func TestAppInstallCLIJSONReportsShadowedCommand(t *testing.T) {
+	staleBinDir := t.TempDir()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	writeExecutable(t, staleBinDir, "agent-secret")
+	t.Setenv("PATH", strings.Join([]string{staleBinDir, binDir}, string(os.PathListSeparator)))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(binDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir, "--json"})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var output installOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("decode install output: %v", err)
+	}
+	if output.PathWarning == nil || output.PathWarning.ShadowedBy != filepath.Join(staleBinDir, "agent-secret") {
+		t.Fatalf("path warning = %+v, want shadowed command", output.PathWarning)
 	}
 }
 
