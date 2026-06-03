@@ -5,12 +5,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/executabletrust"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/opref"
 )
@@ -61,6 +63,7 @@ type ExecOptions struct {
 	Command                []string
 	ResolvedExecutable     string
 	ExecutableIdentity     fileidentity.Identity
+	AllowMutableExecutable bool
 	CWD                    string
 	EnvironmentFingerprint string
 	Secrets                []SecretSpec
@@ -78,6 +81,7 @@ type ExecRequest struct {
 	Command                []string              `json:"command"`
 	ResolvedExecutable     string                `json:"resolved_executable"`
 	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
+	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 	CWD                    string                `json:"cwd"`
 	EnvironmentFingerprint string                `json:"environment_fingerprint"`
 	Secrets                []Secret              `json:"secrets"`
@@ -119,6 +123,20 @@ func (r ExecRequest) ValidateForDaemon() error {
 	}
 	if err := validateEnvironmentFingerprint(r.EnvironmentFingerprint); err != nil {
 		return err
+	}
+	if err := validateDaemonPreparedPath("cwd", r.CWD, false); err != nil {
+		return err
+	}
+	if err := validateDaemonPreparedPath("resolved executable", r.ResolvedExecutable, true); err != nil {
+		return err
+	}
+	if err := fileidentity.Verify(r.ResolvedExecutable, r.ExecutableIdentity); err != nil {
+		return fmt.Errorf("%w: executable identity changed: %w", ErrInvalidRequest, err)
+	}
+	if !r.AllowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(r.ResolvedExecutable); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
 	}
 	if err := validateDaemonLifecycle(daemonLifecycle{
 		Reason:             r.Reason,
@@ -235,6 +253,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		Command:                command,
 		ResolvedExecutable:     opts.ResolvedExecutable,
 		ExecutableIdentity:     opts.ExecutableIdentity,
+		AllowMutableExecutable: opts.AllowMutableExecutable,
 		CWD:                    opts.CWD,
 		EnvironmentFingerprint: opts.EnvironmentFingerprint,
 		Secrets:                secrets,
@@ -320,6 +339,36 @@ func validatePreparedPath(name string, path string, executable bool) error {
 	return nil
 }
 
+func validateDaemonPreparedPath(name string, path string, executable bool) error {
+	if err := validatePreparedPath(name, path, executable); err != nil {
+		return err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return fmt.Errorf("%w: %s must exist and be symlink-resolved: %w", ErrInvalidRequest, name, err)
+	}
+	if resolved != path {
+		return fmt.Errorf("%w: %s must be symlink-resolved", ErrInvalidRequest, name)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("%w: %s must exist: %w", ErrInvalidRequest, name, err)
+	}
+	if executable {
+		if info.IsDir() {
+			return fmt.Errorf("%w: %s must name a file", ErrInvalidCommand, name)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			return fmt.Errorf("%w: %s must be executable", ErrInvalidCommand, name)
+		}
+		return nil
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s must name a directory", ErrInvalidRequest, name)
+	}
+	return nil
+}
+
 func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("%w: at least one secret is required", ErrInvalidReference)
@@ -340,7 +389,11 @@ func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 		if err != nil {
 			return nil, err
 		}
-		secrets = append(secrets, Secret{Alias: spec.Alias, Ref: ref, Account: strings.TrimSpace(spec.Account)})
+		account := strings.TrimSpace(spec.Account)
+		if account == "" {
+			return nil, fmt.Errorf("%w: account is required", ErrInvalidReference)
+		}
+		secrets = append(secrets, Secret{Alias: spec.Alias, Ref: ref, Account: account})
 	}
 
 	return secrets, nil

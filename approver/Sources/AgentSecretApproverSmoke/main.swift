@@ -52,6 +52,7 @@ private func sampleRequestData() -> Data {
         "expires_at": "2027-01-15T08:00:00Z",
         "operation": "exec",
         "allows_reusable": true,
+        "allow_mutable_executable": false,
         "resources": [
             {
                 "alias": "EXAMPLE_TOKEN",

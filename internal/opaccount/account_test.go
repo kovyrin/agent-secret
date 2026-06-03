@@ -45,6 +45,25 @@ func TestSelectDesktopAccountUsesDesktopDefaultWhenUnset(t *testing.T) {
 	}
 }
 
+func TestSelectConcreteDesktopAccountBindsDefault(t *testing.T) {
+	got := SelectConcreteDesktopAccount("", "", func() string {
+		return " DetectedAccount "
+	})
+	if got != "DetectedAccount" {
+		t.Fatalf("account = %q, want detected account", got)
+	}
+}
+
+func TestSelectConcreteDesktopAccountPreservesExplicitFallbacks(t *testing.T) {
+	got := SelectConcreteDesktopAccount(" OverrideAccount ", "EnvAccount", func() string {
+		t.Fatal("detector should not run when explicit account is present")
+		return ""
+	})
+	if got != "OverrideAccount" {
+		t.Fatalf("account = %q, want override account", got)
+	}
+}
+
 func TestSelectSingleAccount(t *testing.T) {
 	tests := []struct {
 		name     string

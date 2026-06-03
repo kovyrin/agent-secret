@@ -213,7 +213,7 @@ func TestBrokerRollsBackReusableApprovalWhenCommandStartingAuditFails(t *testing
 	if len(cache.clearedScopes) != 1 {
 		t.Fatalf("cleared scopes = %v, want one command_starting rollback clear", cache.clearedScopes)
 	}
-	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: cache.clearedScopes[0], Ref: ref}); ok {
+	if _, ok := cache.Get(secretcache.CacheKey{ScopeID: cache.clearedScopes[0], Ref: ref, Account: "Work"}); ok {
 		t.Fatal("reusable cache scope survived command_starting audit failure")
 	}
 	if _, _, err := store.MatchReusable(req); !errors.Is(err, policy.ErrMismatch) {

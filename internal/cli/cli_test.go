@@ -20,9 +20,11 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "  Terraform plan  ",
 		"--cwd", dir,
 		"--ttl", "90s",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example Vault/Cloudflare/token",
 		"--force-refresh",
 		"--",
@@ -43,6 +45,49 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	}
 	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
 		t.Fatalf("client request times = received %s expires %s, want daemon-owned zero values", req.ReceivedAt, req.ExpiresAt)
+	}
+}
+
+func TestParseExecRejectsMutableExecutableWithoutOptIn(t *testing.T) {
+	dir := t.TempDir()
+	writeExecutable(t, dir, "tool")
+	t.Setenv("PATH", dir)
+
+	_, err := NewParser().Parse([]string{
+		"exec",
+		"--reason", "Run tool",
+		"--account", "Work",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool",
+	})
+	if err == nil {
+		t.Fatal("Parse returned nil error, want mutable executable rejection")
+	}
+	if !strings.Contains(err.Error(), "--allow-mutable-executable") {
+		t.Fatalf("error = %v, want opt-in guidance", err)
+	}
+}
+
+func TestParseExecMutableExecutableOptInIsRecorded(t *testing.T) {
+	dir := t.TempDir()
+	writeExecutable(t, dir, "tool")
+	t.Setenv("PATH", dir)
+
+	command, err := NewParser().Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Run tool",
+		"--account", "Work",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !command.ExecRequest.AllowMutableExecutable {
+		t.Fatalf("AllowMutableExecutable = false, want true")
 	}
 }
 
@@ -73,6 +118,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "terraform-cloudflare",
 		"--",
 		"terraform", "plan",
@@ -124,6 +170,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "ansible",
 		"--only", "B_TOKEN,A_TOKEN",
 		"--secret", "EXTRA_TOKEN=op://Example/Extra/token",
@@ -175,7 +222,9 @@ NEXT=op://Example/Next/token
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Env file command",
+		"--account", "Work",
 		"--env-file", firstEnv,
 		"--env-file", secondEnv,
 		"--",
@@ -235,6 +284,7 @@ profiles:
 
 	_, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Plain env file",
 		"--env-file", envPath,
 		"--",
@@ -265,7 +315,9 @@ PLAIN=kept
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Env file command",
+		"--account", "Work",
 		"--env-file", envPath,
 		"--only", "BETA_TOKEN",
 		"--",
@@ -316,6 +368,7 @@ PLAIN=kept
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "deploy",
 		"--env-file", envPath,
 		"--only", "PROFILE_KEEP,FILE_KEEP",
@@ -351,7 +404,6 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 		appAccount string
 		want       string
 	}{
-		{name: "desktop default", want: ""},
 		{name: "OP_ACCOUNT", opAccount: " Personal ", want: "Personal"},
 		{name: "app account", opAccount: " Personal ", appAccount: " Work ", want: "Work"},
 	}
@@ -373,7 +425,7 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 			}
 
 			command, err := NewParser().Parse([]string{
-				"exec", "--reason", "Account default",
+				"exec", "--allow-mutable-executable", "--reason", "Account default",
 				"--secret", "TOKEN=op://Example/Item/token",
 				"--", "tool",
 			})
@@ -404,6 +456,7 @@ account: Project Account
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Deploy",
 		"--account", "CLI Account",
 		"--secret", "TOKEN=op://Example/Item/token",
@@ -444,6 +497,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "deploy",
 		"--account", "CLI Account",
 		"--env-file", envPath,
@@ -496,6 +550,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "deploy",
 		"--account", "CLI Account",
 		"--env-file", envPath,
@@ -538,6 +593,7 @@ profiles:
 
 	_, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "one",
 		"--only", "MISSING_TOKEN",
 		"--",
@@ -549,6 +605,7 @@ profiles:
 
 	_, err = parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Explicit only",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--only", "TOKEN",
@@ -584,6 +641,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--",
 		"terraform", "plan",
 	})
@@ -629,7 +687,9 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--config", configPath,
+		"--account", "Work",
 		"--",
 		"terraform", "plan",
 	})
@@ -669,6 +729,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Explicit only",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
@@ -704,6 +765,7 @@ account: fixture.1password.com
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Explicit only",
 		"--secret", "TOKEN=op://Fixture Infra/PlanetScale Slow Logs Token/credential",
 		"--",
@@ -723,6 +785,7 @@ account: fixture.1password.com
 
 	command, err = parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--config", filepath.Join(root, "agent-secret.yml"),
 		"--reason", "Explicit config only",
 		"--secret", "TOKEN=op://Fixture Infra/PlanetScale Slow Logs Token/credential",
@@ -760,6 +823,7 @@ profiles:
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--profile", "ansible",
 		"--reason", "CLI reason",
 		"--ttl", "90s",
@@ -893,11 +957,13 @@ func TestParseMachineReadableFlags(t *testing.T) {
 
 	command, err := parser.Parse([]string{
 		"exec",
+		"--allow-mutable-executable",
 		"--dry-run",
 		"--json",
 		"--reuse-only",
 		"--reason", "Preflight",
 		"--cwd", dir,
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		"./tool",
@@ -1057,7 +1123,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "exec",
 			args:  []string{"exec", "--help"},
-			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "--account", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "--dry-run", "--reuse-only", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "--account", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "--dry-run", "--reuse-only", "--allow-mutable-executable", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
 		},
 		{
 			name:  "profile",

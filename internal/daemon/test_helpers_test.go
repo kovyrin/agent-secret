@@ -286,6 +286,9 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 
 	reqSecrets := make([]request.Secret, 0, len(secrets))
 	for _, spec := range secrets {
+		if spec.Account == "" {
+			spec.Account = "Work"
+		}
 		ref, err := request.ParseSecretRef(spec.Ref)
 		if err != nil {
 			t.Fatalf("ParseSecretRef returned error: %v", err)
@@ -311,11 +314,12 @@ func testExecRequestAt(t *testing.T, now time.Time, secrets []request.SecretSpec
 	}
 
 	return request.ExecRequest{
-		Reason:             "Run Terraform plan",
-		Command:            []string{"terraform", "plan"},
-		ResolvedExecutable: executable,
-		ExecutableIdentity: executableIdentity,
-		CWD:                cwd,
+		Reason:                 "Run Terraform plan",
+		Command:                []string{"terraform", "plan"},
+		ResolvedExecutable:     executable,
+		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: true,
+		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{
 			"PATH=" + executableDir,
 			"NODE_OPTIONS=--require ./safe.js",
@@ -339,6 +343,10 @@ func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
 	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon tests need a runnable fixture executable.
 		t.Fatalf("write executable: %v", err)
 	}
+	executableIdentity, err := fileidentity.Capture(executable)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
 	ref, err := itemmetadata.ParseRef("op://Example/Item")
 	if err != nil {
 		t.Fatalf("ParseRef returned error: %v", err)
@@ -347,6 +355,7 @@ func testItemDescribeRequest(t *testing.T) request.ItemDescribeRequest {
 		Reason:             "Inspect item metadata",
 		Command:            []string{"agent-secret", "item", "describe", ref.Raw},
 		ResolvedExecutable: executable,
+		ExecutableIdentity: executableIdentity,
 		CWD:                cwd,
 		Ref:                ref,
 		Account:            "Work",

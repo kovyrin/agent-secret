@@ -15,6 +15,7 @@
   "reason": "Run Terraform plan for staging",
   "request_id": "req_123",
   "resolved_executable": "/opt/homebrew/bin/terraform",
+  "allow_mutable_executable": false,
   "reusable_uses": 3,
   "resources": [
     {

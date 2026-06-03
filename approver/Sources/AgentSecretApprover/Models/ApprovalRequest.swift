@@ -14,6 +14,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case reason
         case requestID = "request_id"
         case resolvedExecutable = "resolved_executable"
+        case allowMutableExecutable = "allow_mutable_executable"
         case reusableUses = "reusable_uses"
         case resources
     }
@@ -29,6 +30,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var command: [String]
     public var cwd: String
     public var resolvedExecutable: String
+    public var allowMutableExecutable: Bool
     public var expiresAt: Date
     public var operation: ApprovalOperation
     public var allowsReusable: Bool
@@ -46,6 +48,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         expiresAt: Date,
         resources: [RequestedResource],
         resolvedExecutable: String,
+        allowMutableExecutable: Bool = false,
         operation: ApprovalOperation = .exec,
         allowsReusable: Bool = true,
         overrideEnv: Bool = false,
@@ -58,6 +61,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.command = command
         self.cwd = cwd
         self.resolvedExecutable = resolvedExecutable
+        self.allowMutableExecutable = allowMutableExecutable
         self.expiresAt = expiresAt
         self.operation = operation
         self.allowsReusable = allowsReusable
@@ -76,6 +80,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         command = try container.decode([String].self, forKey: .command)
         cwd = try container.decode(String.self, forKey: .cwd)
         resolvedExecutable = try container.decode(String.self, forKey: .resolvedExecutable)
+        allowMutableExecutable = try container.decode(Bool.self, forKey: .allowMutableExecutable)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         operation = try container.decode(ApprovalOperation.self, forKey: .operation)
         allowsReusable = try container.decode(Bool.self, forKey: .allowsReusable)

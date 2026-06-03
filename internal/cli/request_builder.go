@@ -8,21 +8,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/executabletrust"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type execRequestBuildOptions struct {
-	reason       string
-	command      []string
-	cwd          string
-	env          []string
-	secrets      []request.SecretSpec
-	ttl          time.Duration
-	overrideEnv  bool
-	forceRefresh bool
-	reuseOnly    bool
+	reason                 string
+	command                []string
+	cwd                    string
+	env                    []string
+	secrets                []request.SecretSpec
+	ttl                    time.Duration
+	overrideEnv            bool
+	forceRefresh           bool
+	reuseOnly              bool
+	allowMutableExecutable bool
 }
 
 func buildExecRequest(opts execRequestBuildOptions) (request.ExecRequest, error) {
@@ -38,6 +40,14 @@ func buildExecRequest(opts execRequestBuildOptions) (request.ExecRequest, error)
 	command, resolvedExecutable, err := resolveCommand(cwd, env, opts.command)
 	if err != nil {
 		return request.ExecRequest{}, err
+	}
+	if !opts.allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return request.ExecRequest{}, fmt.Errorf(
+				"%w: rerun with --allow-mutable-executable only if you trust the executable path",
+				err,
+			)
+		}
 	}
 	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
 	if err != nil {
@@ -57,6 +67,7 @@ func buildExecRequest(opts execRequestBuildOptions) (request.ExecRequest, error)
 		Command:                command,
 		ResolvedExecutable:     resolvedExecutable,
 		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: opts.allowMutableExecutable,
 		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint(env),
 		Secrets:                opts.secrets,
@@ -94,12 +105,17 @@ func buildItemDescribeRequest(opts itemDescribeRequestBuildOptions) (request.Ite
 	if err != nil {
 		return request.ItemDescribeRequest{}, err
 	}
+	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
+	if err != nil {
+		return request.ItemDescribeRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
+	}
 
 	return request.NewItemDescribe(request.ItemDescribeOptions{
 		Reason:             opts.reason,
 		Command:            opts.command,
 		CWD:                cwd,
 		ResolvedExecutable: resolvedExecutable,
+		ExecutableIdentity: executableIdentity,
 		Ref:                opts.ref,
 		Account:            opts.account,
 		TTL:                opts.ttl,

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 )
 
@@ -16,6 +17,7 @@ type ItemDescribeOptions struct {
 	Command            []string
 	CWD                string
 	ResolvedExecutable string
+	ExecutableIdentity fileidentity.Identity
 	Ref                string
 	Account            string
 	TTL                time.Duration
@@ -23,15 +25,16 @@ type ItemDescribeOptions struct {
 }
 
 type ItemDescribeRequest struct {
-	Reason             string           `json:"reason"`
-	Command            []string         `json:"command"`
-	ResolvedExecutable string           `json:"resolved_executable"`
-	CWD                string           `json:"cwd"`
-	Ref                itemmetadata.Ref `json:"ref"`
-	Account            string           `json:"account"`
-	TTL                time.Duration    `json:"ttl"`
-	ReceivedAt         time.Time        `json:"received_at"`
-	ExpiresAt          time.Time        `json:"expires_at"`
+	Reason             string                `json:"reason"`
+	Command            []string              `json:"command"`
+	ResolvedExecutable string                `json:"resolved_executable"`
+	ExecutableIdentity fileidentity.Identity `json:"executable_identity"`
+	CWD                string                `json:"cwd"`
+	Ref                itemmetadata.Ref      `json:"ref"`
+	Account            string                `json:"account"`
+	TTL                time.Duration         `json:"ttl"`
+	ReceivedAt         time.Time             `json:"received_at"`
+	ExpiresAt          time.Time             `json:"expires_at"`
 }
 
 func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
@@ -57,6 +60,12 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 	if err := validatePreparedPath("resolved executable", opts.ResolvedExecutable, true); err != nil {
 		return ItemDescribeRequest{}, err
 	}
+	if opts.ExecutableIdentity.IsZero() {
+		return ItemDescribeRequest{}, fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
+	}
+	if account == "" {
+		return ItemDescribeRequest{}, fmt.Errorf("%w: account is required", ErrInvalidReference)
+	}
 	command := slices.Clone(opts.Command)
 	if len(command) == 0 || command[0] == "" {
 		return ItemDescribeRequest{}, fmt.Errorf("%w: argv is required", ErrInvalidCommand)
@@ -70,6 +79,7 @@ func NewItemDescribe(opts ItemDescribeOptions) (ItemDescribeRequest, error) {
 		Reason:             reason,
 		Command:            command,
 		ResolvedExecutable: opts.ResolvedExecutable,
+		ExecutableIdentity: opts.ExecutableIdentity,
 		CWD:                opts.CWD,
 		Ref:                ref,
 		Account:            account,
@@ -101,6 +111,18 @@ func (r ItemDescribeRequest) ValidateForDaemon() error {
 	}); err != nil {
 		return err
 	}
+	if r.ExecutableIdentity.IsZero() {
+		return fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
+	}
+	if err := validateDaemonPreparedPath("cwd", r.CWD, false); err != nil {
+		return err
+	}
+	if err := validateDaemonPreparedPath("resolved executable", r.ResolvedExecutable, true); err != nil {
+		return err
+	}
+	if err := fileidentity.Verify(r.ResolvedExecutable, r.ExecutableIdentity); err != nil {
+		return fmt.Errorf("%w: executable identity changed: %w", ErrInvalidRequest, err)
+	}
 	parsed, err := itemmetadata.ParseRef(r.Ref.Raw)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidReference, err)
@@ -110,6 +132,9 @@ func (r ItemDescribeRequest) ValidateForDaemon() error {
 	}
 	if strings.TrimSpace(r.Account) != r.Account {
 		return fmt.Errorf("%w: item account must be trimmed", ErrInvalidReference)
+	}
+	if r.Account == "" {
+		return fmt.Errorf("%w: account is required", ErrInvalidReference)
 	}
 	return nil
 }

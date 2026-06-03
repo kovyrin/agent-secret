@@ -1472,7 +1472,7 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	}
 }
 
-func TestServerAllowsDesktopDefaultAccountExecRequest(t *testing.T) {
+func TestServerRejectsUnboundAccountExecRequest(t *testing.T) {
 	t.Parallel()
 
 	approver := &mockApprover{decision: approval.Decision{Approved: true}}
@@ -1484,15 +1484,16 @@ func TestServerAllowsDesktopDefaultAccountExecRequest(t *testing.T) {
 	})
 	defer cleanup()
 
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token"}})
-	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err != nil {
-		t.Fatalf("RequestExec returned error: %v", err)
+	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"}})
+	req.Secrets[0].Account = ""
+	if _, err := client.RequestExec(context.Background(), testCorrelation("req_1", "nonce_1"), req); err == nil {
+		t.Fatal("RequestExec returned nil error, want rejection")
 	}
-	if approver.calls != 1 {
-		t.Fatalf("approver calls = %d, want 1", approver.calls)
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
 	}
-	if calls := resolver.Calls(); len(calls) != 1 || calls[0] != "op://Example/Item/token" {
-		t.Fatalf("resolver calls = %v, want default account ref", calls)
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver calls = %v, want none", calls)
 	}
 }
 

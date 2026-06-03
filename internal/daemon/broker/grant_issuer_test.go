@@ -37,7 +37,7 @@ func TestBrokerApprovesBeforeResolvingAndAuditsBeforePayload(t *testing.T) {
 	if got := grant.Env["TOKEN"]; got != canarySecretValue {
 		t.Fatalf("env TOKEN = %q", got)
 	}
-	if !reflect.DeepEqual(order, []string{"approve", "resolve:op://Example/Item/token"}) {
+	if !reflect.DeepEqual(order, []string{"approve", "resolve:Work|op://Example/Item/token"}) {
 		t.Fatalf("unexpected operation order: %v", order)
 	}
 	events := aud.Events()

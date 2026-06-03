@@ -42,4 +42,19 @@ final class ApprovalCautionWarningTests: XCTestCase {
             message.contains("Will replace existing variables: EXAMPLE_TOKEN, PATH")
         })
     }
+
+    func testMutableExecutableWarningIsVisibleOutsideCollapsedDetails() {
+        var request: ApprovalRequest = Self.sampleRequest
+        request.allowMutableExecutable = true
+        let viewModel = ApprovalRequestViewModel(
+            request: request,
+            now: Date(timeIntervalSince1970: Self.viewModelNow)
+        )
+
+        XCTAssertTrue(viewModel.allowMutableExecutable)
+        XCTAssertTrue(viewModel.cautionMessages.contains { message in
+            message.contains("mutable executable path")
+        })
+        XCTAssertTrue(viewModel.requestInspectionText.contains("Mutable executable allowed: yes"))
+    }
 }

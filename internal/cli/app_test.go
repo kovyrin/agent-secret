@@ -57,6 +57,7 @@ func runConfigProfileExec(
 	stderr.Reset()
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReReadsConfigAccountForRunningDaemon", "--", "child",
 	})
@@ -92,7 +93,9 @@ func TestAppExecRunsChildWithApprovedEnvAndPassthrough(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=" + ref,
 		"--",
 		os.Args[0], "-test.run=TestAppExecRunsChildWithApprovedEnvAndPassthrough", "--", "child",
@@ -132,7 +135,9 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		os.Args[0], "-test.run=TestAppExecUsesManagerClientWithoutSocket", "--", "child",
@@ -359,7 +364,9 @@ func TestAppExecRetriesOnceWhenDaemonRetiresBeforeSpawn(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		os.Args[0], "-test.run=TestAppExecRetriesOnceWhenDaemonRetiresBeforeSpawn", "--", "child",
@@ -476,7 +483,9 @@ func TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--env-file", envFilePath,
 		"--",
 		os.Args[0], "-test.run=TestAppExecRunsChildWithEnvFileSecretsAndPlainEnv", "--", "child",
@@ -508,7 +517,9 @@ func TestAppExecStopsBeforeSpawnOnApprovalDenial(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		os.Args[0], "-test.run=TestAppExecStopsBeforeSpawnOnApprovalDenial", "--", "child",
@@ -536,7 +547,9 @@ func TestAppExecAllowsChildAfterDaemonStoppedStartedAudit(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		os.Args[0], "-test.run=TestAppExecAllowsChildAfterDaemonStoppedStartedAudit", "--", "child",
@@ -777,10 +790,12 @@ func TestAppExecDryRunJSONDoesNotStartDaemonPromptOrSpawn(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--dry-run",
 		"--json",
 		"--reuse-only",
 		"--reason", "Preflight deploy",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		"tool",
@@ -820,8 +835,10 @@ func TestAppExecDryRunTextDescribesPromptAndCommand(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--dry-run",
 		"--reason", "Preflight deploy",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		"tool", "arg with space", "plain",
@@ -835,7 +852,7 @@ func TestAppExecDryRunTextDescribesPromptAndCommand(t *testing.T) {
 		"would spawn: false",
 		"command: '",
 		"'arg with space'",
-		"TOKEN=op://Example/Item/token account=(default desktop account)",
+		"TOKEN=op://Example/Item/token account=Work",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("dry-run stdout = %q, want %q", stdout.String(), want)
@@ -1423,7 +1440,9 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
 		os.Args[0], "-test.run=TestAppExecReportsDaemonStartFailureBeforeSpawn", "--", "child",
@@ -1457,7 +1476,9 @@ func TestAppExecReportsRandomIDFailureBeforeRequest(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"exec",
+		"--allow-mutable-executable",
 		"--reason", "Run helper",
+		"--account", "Work",
 		"--secret", "TOKEN=" + ref,
 		"--",
 		os.Args[0], "-test.run=TestAppExecReportsRandomIDFailureBeforeRequest", "--", "child",

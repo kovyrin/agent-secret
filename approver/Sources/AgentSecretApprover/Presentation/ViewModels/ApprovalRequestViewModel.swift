@@ -18,6 +18,7 @@ struct ApprovalRequestViewModel: Equatable {
         let cwd: String
         let scopeSummary: String
         let resolvedExecutable: String
+        let allowMutableExecutable: Bool
         let resourceRows: [String]
         let timeRemaining: String
         let cautionMessages: [String]
@@ -38,6 +39,7 @@ struct ApprovalRequestViewModel: Equatable {
     let cwd: String
     let projectFolder: String
     let resolvedExecutable: String
+    let allowMutableExecutable: Bool
     let requestedResources: [RequestedResourceRowViewModel]
     let requestedResourcesHeading: String
     let resourceRows: [String]
@@ -60,20 +62,41 @@ struct ApprovalRequestViewModel: Equatable {
     let overrideWarning: String?
     let cautionMessages: [String]
     let footerMessage: String
-    let renderedText: String
+    var renderedText: String {
+        Self.renderedText(
+            operation: operation,
+            allowsReusableApproval: allowsReusableApproval,
+            reusableUses: reusableUses,
+            viewModel: SelfRenderInput(
+                title: title,
+                reason: reason,
+                command: command,
+                commandArgumentRows: commandArguments.map(\.inspectorLine),
+                cwd: cwd,
+                scopeSummary: scopeSummary,
+                resolvedExecutable: resolvedExecutable,
+                allowMutableExecutable: allowMutableExecutable,
+                resourceRows: resourceRows,
+                timeRemaining: timeRemaining,
+                cautionMessages: cautionMessages
+            )
+        )
+    }
 
     /// Builds a prompt view model without including raw secret values.
     init(request: ApprovalRequest, now: Date = Date()) {
         (operation, title) = (request.operation, Self.title(for: request.operation))
         reason = Self.sanitizedDisplayText(request.reason)
-        executable = Self.sanitizedDisplayText(Self.executableName(request.resolvedExecutable))
+        let pathPresentation: ApprovalRequestPathPresentation = Self.pathPresentation(for: request)
+        executable = pathPresentation.executable
+        cwd = pathPresentation.cwd
+        projectFolder = pathPresentation.projectFolder
+        resolvedExecutable = pathPresentation.resolvedExecutable
+        allowMutableExecutable = pathPresentation.allowMutableExecutable
         commandArguments = Self.commandArguments(request.command)
         command = Self.commandDisplay(commandArguments)
         commandNeedsInspector = Self.commandNeedsInspector(command, arguments: commandArguments)
         commandInspectionText = Self.commandInspectionText(commandArguments)
-        cwd = Self.sanitizedDisplayText(request.cwd)
-        projectFolder = Self.sanitizedDisplayText(Self.displayPath(request.cwd))
-        resolvedExecutable = Self.sanitizedDisplayText(request.resolvedExecutable)
         let resourcePresentation: ResourcePresentation = Self.resourcePresentation(for: request.resources)
         requestedResources = resourcePresentation.rows
         requestedResourcesHeading = Self.requestedResourcesHeading(
@@ -99,20 +122,15 @@ struct ApprovalRequestViewModel: Equatable {
         overrideEnv = request.overrideEnv
         overriddenAliases = request.overriddenAliases.map(Self.sanitizedDisplayText)
         footerMessage = copy.footerMessage
-        renderedText = Self.renderedText(
-            for: request,
-            viewModel: SelfRenderInput(
-                title: title,
-                reason: reason,
-                command: command,
-                commandArgumentRows: commandArguments.map(\.inspectorLine),
-                cwd: cwd,
-                scopeSummary: scopeSummary,
-                resolvedExecutable: resolvedExecutable,
-                resourceRows: resourceRows,
-                timeRemaining: timeRemaining,
-                cautionMessages: cautionMessages
-            )
+    }
+
+    private static func pathPresentation(for request: ApprovalRequest) -> ApprovalRequestPathPresentation {
+        ApprovalRequestPathPresentation(
+            executable: sanitizedDisplayText(executableName(request.resolvedExecutable)),
+            cwd: sanitizedDisplayText(request.cwd),
+            projectFolder: sanitizedDisplayText(displayPath(request.cwd)),
+            resolvedExecutable: sanitizedDisplayText(request.resolvedExecutable),
+            allowMutableExecutable: request.allowMutableExecutable
         )
     }
 
@@ -157,7 +175,9 @@ struct ApprovalRequestViewModel: Equatable {
     }
 
     private static func renderedText(
-        for request: ApprovalRequest,
+        operation: ApprovalOperation,
+        allowsReusableApproval: Bool,
+        reusableUses: Int,
         viewModel: SelfRenderInput
     ) -> String {
         var lines: [String] = [
@@ -172,13 +192,14 @@ struct ApprovalRequestViewModel: Equatable {
             "Scope: \(viewModel.scopeSummary)"
         ])
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
-        lines.append(request.operation == .itemDescribe ? "Item metadata:" : "Secrets:")
+        lines.append("Mutable executable allowed: \(viewModel.allowMutableExecutable ? "yes" : "no")")
+        lines.append(operation == .itemDescribe ? "Item metadata:" : "Secrets:")
         lines.append(contentsOf: viewModel.resourceRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
-        if request.allowsReusable {
+        if allowsReusableApproval {
             lines.append(
                 "Reusable approval keeps values in daemon memory for this window " +
-                    "and is limited to \(request.reusableUses) uses."
+                    "and is limited to \(reusableUses) uses."
             )
         } else {
             lines.append("Approval is limited to one metadata lookup.")
