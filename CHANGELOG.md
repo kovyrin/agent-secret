@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.15] - Pending
+
+### Fixed
+
+- Added Homebrew cask release verification so release operators can compare the
+  published DMG checksum against `Casks/agent-secret.rb` before treating a
+  release as complete.
+
 ## [0.0.14] - 2026-06-03
 
 ### Added
