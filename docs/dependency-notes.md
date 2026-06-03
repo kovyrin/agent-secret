@@ -34,6 +34,16 @@ Upstream tracking:
 - Validate a fork update with `go mod tidy`, `mise exec -- go test ./...`, and
   `mise run lint:go` from this repository.
 
+Release decision for `0.0.14`:
+
+- On 2026-06-03, upstream `github.com/1password/onepassword-sdk-go` `v0.4.0`
+  was compile-checked against `internal/opresolver`; normal unit tests passed
+  with fake SDK behavior.
+- That does not satisfy the fork removal criteria because the live opt-in
+  desktop-integration tests were not run against upstream.
+- Keep the fork for `0.0.14`; treat the scanner finding as an accepted
+  temporary dependency exception until live tests prove the criteria below.
+
 Removal criteria:
 
 - the upstream SDK exposes the item metadata APIs Agent Secret uses;

@@ -59,6 +59,12 @@ version numbers for public releases.
 - Fixed pre-release hardening issues in audit-failure handling, explicit
   1Password account precedence, uninstall trust checks, and committed public
   documentation guardrails.
+- Hardened release builds so production signing and notarization use an
+  explicit trusted `mise` toolchain path, and release tag ancestry checks run
+  from trusted `main` content.
+- Kept the temporary 1Password SDK fork as a documented release exception
+  because upstream SDK replacement still needs live desktop-integration proof
+  before public release.
 
 ## [0.0.13] - 2026-05-27
 
