@@ -10,6 +10,8 @@ www_url="${AGENT_SECRET_WWW_URL:-https://www.agent-secret.sh}"
 cloudflare_project="${AGENT_SECRET_CLOUDFLARE_PAGES_PROJECT:-agent-secret}"
 cloudflare_profile="${AGENT_SECRET_CLOUDFLARE_PROFILE:-cloudflare-pages}"
 cloudflare_zone="${AGENT_SECRET_CLOUDFLARE_ZONE:-agent-secret.sh}"
+demo_video_path="${AGENT_SECRET_DEMO_VIDEO_PATH:-assets/agent-secret-demo-20260603.mp4}"
+demo_poster_path="${AGENT_SECRET_DEMO_POSTER_PATH:-assets/agent-secret-demo-poster-20260603.jpg}"
 max_asset_bytes="${AGENT_SECRET_CLOUDFLARE_MAX_ASSET_BYTES:-26214400}"
 poll_timeout_seconds="${AGENT_SECRET_DEPLOY_POLL_TIMEOUT_SECONDS:-300}"
 poll_interval_seconds="${AGENT_SECRET_DEPLOY_POLL_INTERVAL_SECONDS:-5}"
@@ -168,8 +170,8 @@ for anchor in ("demo", "install", "boundary"):
         errors.append(f"index.html missing anchor #{anchor}")
 
 for asset in (
-    "assets/agent-secret-demo.mp4",
-    "assets/agent-secret-demo-poster.jpg",
+    "assets/agent-secret-demo-20260603.mp4",
+    "assets/agent-secret-demo-poster-20260603.jpg",
 ):
     if not (site / asset).exists():
         errors.append(f"missing demo asset {asset}")
@@ -292,19 +294,20 @@ while ((SECONDS < deadline)); do
         exit 1
       fi
 
-      printf '[deploy-site] purging Cloudflare cache for %s\n' "$cloudflare_zone"
+      printf '[deploy-site] attempting Cloudflare cache purge for %s\n' "$cloudflare_zone"
       if ! purge_result="$(
-        curl -fsS -X POST \
+        curl -sS -X POST \
           -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
           -H "Content-Type: application/json" \
           --data '{"purge_everything":true}' \
           "$api/zones/$zone_id/purge_cache"
       )"; then
-        printf '[deploy-site] error: cache purge failed. The Cloudflare token needs Zone / Cache Purge / Edit for %s.\n' "$cloudflare_zone" >&2
-        exit 1
+        printf '[deploy-site] warning: cache purge request failed; continuing with versioned asset URLs\n' >&2
+      elif ! printf '%s' "$purge_result" | jq -e '.success == true' >/dev/null; then
+        printf '[deploy-site] warning: cache purge was not accepted; continuing with versioned asset URLs\n' >&2
+      else
+        printf '[deploy-site] Cloudflare cache purge accepted\n'
       fi
-
-      printf '%s' "$purge_result" | jq -e '.success == true' >/dev/null
       exit 0
       ;;
     failure)
@@ -357,7 +360,7 @@ verify_content_type() {
 }
 
 verify_live_site_once() {
-  curl -fsS --max-time 20 "$site_url/" | grep -Fq 'assets/agent-secret-demo.mp4' ||
+  curl -fsS --max-time 20 "$site_url/" | grep -Fq "$demo_video_path" ||
     return 1
 
   curl -fsS --max-time 20 "$site_url/privacy" >/dev/null || return 1
@@ -365,8 +368,8 @@ verify_live_site_once() {
   curl -fsS --max-time 20 "$site_url/sitemap.xml" >/dev/null || return 1
   curl -fsS --max-time 20 "$site_url/robots.txt" >/dev/null || return 1
 
-  content_type_matches "/assets/agent-secret-demo.mp4" "video/mp4" || return 1
-  content_type_matches "/assets/agent-secret-demo-poster.jpg" "image/jpeg" || return 1
+  content_type_matches "/$demo_video_path" "video/mp4" || return 1
+  content_type_matches "/$demo_poster_path" "image/jpeg" || return 1
 
   local www_headers
   www_headers="$(curl -fsSI --max-time 20 "$www_url/" | tr -d '\r')" || return 1
@@ -386,10 +389,10 @@ verify_live_site() {
 
   while ((SECONDS < deadline)); do
     if verify_live_site_once; then
-      verify_content_type "/assets/agent-secret-demo.mp4" "video/mp4" ||
-        fail "$site_url/assets/agent-secret-demo.mp4 returned the wrong content type"
-      verify_content_type "/assets/agent-secret-demo-poster.jpg" "image/jpeg" ||
-        fail "$site_url/assets/agent-secret-demo-poster.jpg returned the wrong content type"
+      verify_content_type "/$demo_video_path" "video/mp4" ||
+        fail "$site_url/$demo_video_path returned the wrong content type"
+      verify_content_type "/$demo_poster_path" "image/jpeg" ||
+        fail "$site_url/$demo_poster_path returned the wrong content type"
       log "live site verification passed"
       return 0
     fi
