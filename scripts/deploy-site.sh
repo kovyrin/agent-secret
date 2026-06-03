@@ -360,21 +360,50 @@ verify_content_type() {
 }
 
 verify_live_site_once() {
-  curl -fsS --max-time 20 "$site_url/" | grep -Fq "$demo_video_path" ||
+  if ! curl -fsS --max-time 20 "$site_url/" | grep -Fq "$demo_video_path"; then
+    log "live check pending: root page does not reference $demo_video_path"
     return 1
+  fi
 
-  curl -fsS --max-time 20 "$site_url/privacy" >/dev/null || return 1
-  curl -fsS --max-time 20 "$site_url/terms" >/dev/null || return 1
-  curl -fsS --max-time 20 "$site_url/sitemap.xml" >/dev/null || return 1
-  curl -fsS --max-time 20 "$site_url/robots.txt" >/dev/null || return 1
+  if ! curl -fsS --max-time 20 "$site_url/privacy" >/dev/null; then
+    log "live check pending: privacy page is not reachable"
+    return 1
+  fi
+  if ! curl -fsS --max-time 20 "$site_url/terms" >/dev/null; then
+    log "live check pending: terms page is not reachable"
+    return 1
+  fi
+  if ! curl -fsS --max-time 20 "$site_url/sitemap.xml" >/dev/null; then
+    log "live check pending: sitemap is not reachable"
+    return 1
+  fi
+  if ! curl -fsS --max-time 20 "$site_url/robots.txt" >/dev/null; then
+    log "live check pending: robots.txt is not reachable"
+    return 1
+  fi
 
-  content_type_matches "/$demo_video_path" "video/mp4" || return 1
-  content_type_matches "/$demo_poster_path" "image/jpeg" || return 1
+  if ! content_type_matches "/$demo_video_path" "video/mp4"; then
+    log "live check pending: demo video content type is not video/mp4"
+    return 1
+  fi
+  if ! content_type_matches "/$demo_poster_path" "image/jpeg"; then
+    log "live check pending: demo poster content type is not image/jpeg"
+    return 1
+  fi
 
   local www_headers
-  www_headers="$(curl -fsSI --max-time 20 "$www_url/" | tr -d '\r')" || return 1
-  printf '%s\n' "$www_headers" | grep -Eq '^HTTP/[^[:space:]]+ 301' || return 1
-  printf '%s\n' "$www_headers" | grep -Fqi "location: $site_url/" || return 1
+  if ! www_headers="$(curl -fsSI --max-time 20 "$www_url/" | tr -d '\r')"; then
+    log "live check pending: www redirect headers are not reachable"
+    return 1
+  fi
+  if ! printf '%s\n' "$www_headers" | grep -Eq '^HTTP/[^[:space:]]+ 301'; then
+    log "live check pending: www redirect did not return HTTP 301"
+    return 1
+  fi
+  if ! printf '%s\n' "$www_headers" | grep -Fqi "location: $site_url/"; then
+    log "live check pending: www redirect location is not $site_url/"
+    return 1
+  fi
 }
 
 verify_live_site() {
