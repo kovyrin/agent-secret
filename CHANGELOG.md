@@ -34,6 +34,9 @@ version numbers for public releases.
 
 ### Changed
 
+- Tightened product website section spacing so main-page content no longer has
+  oversized empty bands before and after every section.
+- Refined the product website footer metadata layout.
 - Reworked the product website demo caption to describe the approval context
   instead of the recording length.
 

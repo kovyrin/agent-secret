@@ -355,7 +355,7 @@ h3 {
 }
 
 .band {
-  padding: clamp(70px, 10vw, 136px) 0;
+  padding: clamp(34px, 5vw, 64px) 0;
   border-top: 1px solid rgba(244, 241, 234, 0.08);
 }
 
@@ -758,15 +758,15 @@ li + li {
 }
 
 .closing {
-  padding-bottom: clamp(88px, 13vw, 160px);
+  padding-bottom: clamp(34px, 5vw, 64px);
 }
 
 .footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 28px 0 44px;
+  gap: 1.3rem;
+  padding: 22px 0 36px;
   border-top: 1px solid rgba(244, 241, 234, 0.08);
   color: var(--dim);
 }
@@ -774,15 +774,47 @@ li + li {
 .footer-meta {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.52rem;
 }
 
-.footer-brand {
-  color: var(--muted);
+.footer-product {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.58rem;
+  width: fit-content;
+  color: #e4e2dc;
+  font-size: 0.96rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.footer-product img {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .footer-copy {
-  font-size: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.46rem;
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.license-pill {
+  padding: 0.18rem 0.44rem;
+  border: 1px solid rgba(244, 241, 234, 0.1);
+  border-radius: 999px;
+  background: rgba(244, 241, 234, 0.035);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .footer-meta a {
@@ -904,6 +936,7 @@ li + li {
 
   .footer {
     flex-direction: column;
+    align-items: flex-start;
   }
 
   .terminal code,
