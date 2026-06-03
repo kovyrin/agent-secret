@@ -34,6 +34,8 @@ version numbers for public releases.
 
 ### Changed
 
+- Updated the pinned Go toolchain to `1.26.4` and refreshed Go module
+  dependencies.
 - Tightened product website section spacing so main-page content no longer has
   oversized empty bands before and after every section.
 - Refined the product website footer metadata layout.
@@ -47,6 +49,13 @@ version numbers for public releases.
 - Fixed the website deployment verifier so the `www` redirect check accepts
   Cloudflare HTTP/2 status lines, avoids `pipefail` false negatives in the
   root-page asset check, and reports the failed live subcheck while waiting.
+
+### Security
+
+- Picked up Go standard library vulnerability fixes by moving the release
+  toolchain from Go `1.26.3` to Go `1.26.4`.
+- Updated the markdown lint toolchain lockfile to pick up the fixed
+  `brace-expansion` release.
 
 ## [0.0.13] - 2026-05-27
 
