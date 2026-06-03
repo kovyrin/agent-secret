@@ -306,6 +306,16 @@ content_type_for() {
     head -n 1
 }
 
+content_type_matches() {
+  local path="$1"
+  local expected_prefix="$2"
+  local url="$site_url$path"
+  local content_type
+
+  content_type="$(content_type_for "$url")"
+  [[ "$content_type" == "$expected_prefix"* ]]
+}
+
 verify_content_type() {
   local path="$1"
   local expected_prefix="$2"
@@ -314,9 +324,27 @@ verify_content_type() {
 
   content_type="$(content_type_for "$url")"
   [[ "$content_type" == "$expected_prefix"* ]] ||
-    fail "$url returned content type '$content_type', expected '$expected_prefix'"
+    return 1
 
   log "verified $path as $content_type"
+}
+
+verify_live_site_once() {
+  curl -fsS --max-time 20 "$site_url/" | grep -Fq 'assets/agent-secret-demo.mp4' ||
+    return 1
+
+  curl -fsS --max-time 20 "$site_url/privacy" >/dev/null || return 1
+  curl -fsS --max-time 20 "$site_url/terms" >/dev/null || return 1
+  curl -fsS --max-time 20 "$site_url/sitemap.xml" >/dev/null || return 1
+  curl -fsS --max-time 20 "$site_url/robots.txt" >/dev/null || return 1
+
+  content_type_matches "/assets/agent-secret-demo.mp4" "video/mp4" || return 1
+  content_type_matches "/assets/agent-secret-demo-poster.jpg" "image/jpeg" || return 1
+
+  local www_headers
+  www_headers="$(curl -fsSI --max-time 20 "$www_url/" | tr -d '\r')" || return 1
+  printf '%s\n' "$www_headers" | grep -Eq '^HTTP/[0-9.]+ 301' || return 1
+  printf '%s\n' "$www_headers" | grep -Fqi "location: $site_url/" || return 1
 }
 
 verify_live_site() {
@@ -326,25 +354,24 @@ verify_live_site() {
 
   log "verifying live site"
 
-  curl -fsS --max-time 20 "$site_url/" | grep -Fq 'assets/agent-secret-demo.mp4' ||
-    fail "$site_url/ does not include the demo video"
+  local deadline
+  deadline=$((SECONDS + poll_timeout_seconds))
 
-  curl -fsS --max-time 20 "$site_url/privacy" >/dev/null
-  curl -fsS --max-time 20 "$site_url/terms" >/dev/null
-  curl -fsS --max-time 20 "$site_url/sitemap.xml" >/dev/null
-  curl -fsS --max-time 20 "$site_url/robots.txt" >/dev/null
+  while ((SECONDS < deadline)); do
+    if verify_live_site_once; then
+      verify_content_type "/assets/agent-secret-demo.mp4" "video/mp4" ||
+        fail "$site_url/assets/agent-secret-demo.mp4 returned the wrong content type"
+      verify_content_type "/assets/agent-secret-demo-poster.jpg" "image/jpeg" ||
+        fail "$site_url/assets/agent-secret-demo-poster.jpg returned the wrong content type"
+      log "live site verification passed"
+      return 0
+    fi
 
-  verify_content_type "/assets/agent-secret-demo.mp4" "video/mp4"
-  verify_content_type "/assets/agent-secret-demo-poster.jpg" "image/jpeg"
+    log "waiting for production alias to serve the latest deployment"
+    sleep "$poll_interval_seconds"
+  done
 
-  local www_headers
-  www_headers="$(curl -fsSI --max-time 20 "$www_url/" | tr -d '\r')"
-  printf '%s\n' "$www_headers" | grep -Eq '^HTTP/[0-9.]+ 301' ||
-    fail "$www_url/ did not return a 301"
-  printf '%s\n' "$www_headers" | grep -Fqi "location: $site_url/" ||
-    fail "$www_url/ did not redirect to $site_url/"
-
-  log "live site verification passed"
+  fail "live site did not serve the latest deployment within ${poll_timeout_seconds}s"
 }
 
 deploy() {
