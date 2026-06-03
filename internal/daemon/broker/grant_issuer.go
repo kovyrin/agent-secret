@@ -416,24 +416,23 @@ func (g *grantIssuer) fetchUniqueRefs(ctx context.Context, identities []secretId
 	fetchCtx, cancelFetches := context.WithCancel(ctx)
 	defer cancelFetches()
 
-	sem := make(chan struct{}, g.fetchLimit)
-	results := make(chan uniqueRefFetchResult, len(identities))
-	for _, identity := range identities {
-		go func(identity secretIdentity) {
+	workerCount := max(min(g.fetchLimit, len(identities)), 1)
+
+	jobs := make(chan secretIdentity)
+	results := make(chan uniqueRefFetchResult, workerCount)
+	for range workerCount {
+		go g.fetchUniqueRefWorker(fetchCtx, jobs, results)
+	}
+	go func() {
+		defer close(jobs)
+		for _, identity := range identities {
 			select {
-			case sem <- struct{}{}:
+			case jobs <- identity:
 			case <-fetchCtx.Done():
 				return
 			}
-			defer func() { <-sem }()
-
-			value, err := g.resolver.Resolve(fetchCtx, identity.ref, identity.account)
-			select {
-			case results <- uniqueRefFetchResult{identity: identity, value: value, err: err}:
-			case <-fetchCtx.Done():
-			}
-		}(identity)
-	}
+		}
+	}()
 
 	resolved := make(map[secretIdentity]string, len(identities))
 	pending := make(map[secretIdentity]struct{}, len(identities))
@@ -466,6 +465,29 @@ func (g *grantIssuer) fetchUniqueRefs(ctx context.Context, identities []secretId
 	}
 
 	return uniqueRefFetch{resolved: resolved}
+}
+
+func (g *grantIssuer) fetchUniqueRefWorker(
+	ctx context.Context,
+	jobs <-chan secretIdentity,
+	results chan<- uniqueRefFetchResult,
+) {
+	for {
+		select {
+		case identity, ok := <-jobs:
+			if !ok {
+				return
+			}
+			value, err := g.resolver.Resolve(ctx, identity.ref, identity.account)
+			select {
+			case results <- uniqueRefFetchResult{identity: identity, value: value, err: err}:
+			case <-ctx.Done():
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (g *grantIssuer) recordApprovalError(

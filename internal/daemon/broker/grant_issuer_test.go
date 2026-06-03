@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
+	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
@@ -531,6 +533,24 @@ func assertApprovalFailureAudited(t *testing.T, tc approvalFailureAuditCase) {
 	assertAuditEventsValueFree(t, events)
 }
 
+type blockingSecretResolver struct {
+	started chan struct{}
+}
+
+func (r *blockingSecretResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+	r.started <- struct{}{}
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (r *blockingSecretResolver) DescribeItem(
+	_ context.Context,
+	_ itemmetadata.Ref,
+	_ string,
+) (itemmetadata.Metadata, error) {
+	return itemmetadata.Metadata{}, errors.New("unexpected item metadata lookup")
+}
+
 func TestBrokerDeduplicatesRefsAndPreservesEmptyValues(t *testing.T) {
 	t.Parallel()
 
@@ -674,6 +694,53 @@ func TestBrokerCancelsOutstandingFetchesAfterFirstFailure(t *testing.T) {
 	failure := events[len(events)-1]
 	if len(failure.SecretRefs) != 1 || failure.SecretRefs[0].Alias != "FAIL" || failure.SecretRefs[0].Ref != failRef {
 		t.Fatalf("fetch failure refs = %+v", failure.SecretRefs)
+	}
+}
+
+func TestBrokerSecretFetchUsesBoundedGoroutines(t *testing.T) {
+	const fetchLimit = 2
+	const refCount = 200
+
+	resolver := &blockingSecretResolver{started: make(chan struct{}, refCount)}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Approver:   &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver:   resolver,
+		Audit:      aud,
+		FetchLimit: fetchLimit,
+	})
+	secrets := make([]request.SecretSpec, 0, refCount)
+	for index := range refCount {
+		secrets = append(secrets, request.SecretSpec{
+			Alias: fmt.Sprintf("TOKEN_%03d", index),
+			Ref:   fmt.Sprintf("op://Example/Item/token-%03d", index),
+		})
+	}
+
+	before := runtime.NumGoroutine()
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := deliverExecForTest(ctx, broker, testCorrelation("req_1", "nonce_1"), testExecRequest(t, secrets))
+		errCh <- err
+	}()
+	for range fetchLimit {
+		receiveBrokerSignal(t, resolver.started, "bounded resolver did not start expected fetches")
+	}
+	time.Sleep(50 * time.Millisecond)
+	if delta := runtime.NumGoroutine() - before; delta > 25 {
+		cancel()
+		t.Fatalf("secret fetch started too many goroutines: delta=%d for %d refs", delta, refCount)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("deliverExec returned nil error after cancellation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("deliverExec did not return after cancellation")
 	}
 }
 

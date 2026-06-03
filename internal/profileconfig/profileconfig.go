@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -16,6 +17,9 @@ import (
 )
 
 const currentVersion = 1
+const maxConfigFileBytes = 1 << 20
+const maxProfileIncludeDepth = 32
+const maxProfileIncludeCount = 128
 
 var (
 	ErrConfigNotFound  = errors.New("profile config not found")
@@ -147,7 +151,7 @@ func Load(opts LoadOptions) (Profile, error) {
 		return Profile{}, fmt.Errorf("%w: %s default_profile is required when no profile name is provided", ErrProfileNotFound, path)
 	}
 
-	resolved, err := resolveProfile(doc, path, profileName, nil)
+	resolved, err := newProfileResolver(doc, path).resolve(profileName, nil)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -197,7 +201,7 @@ func Inspect(opts LoadOptions) (ConfigInfo, error) {
 	slices.Sort(names)
 	for _, name := range names {
 		rawProfile := doc.Profiles[name]
-		resolved, err := resolveProfile(doc, path, name, nil)
+		resolved, err := newProfileResolver(doc, path).resolve(name, nil)
 		if err != nil {
 			return ConfigInfo{}, err
 		}
@@ -227,10 +231,9 @@ func loadConfigFile(opts LoadOptions) (string, configFile, error) {
 		return "", configFile{}, err
 	}
 
-	//nolint:gosec // G304: config path is selected from explicit project config discovery and parsed as configuration only.
-	data, err := os.ReadFile(path)
+	data, err := readConfigFile(path)
 	if err != nil {
-		return "", configFile{}, fmt.Errorf("read profile config %s: %w", path, err)
+		return "", configFile{}, err
 	}
 
 	var doc configFile
@@ -245,27 +248,95 @@ func loadConfigFile(opts LoadOptions) (string, configFile, error) {
 	return path, doc, nil
 }
 
-func resolveProfile(doc configFile, path string, profileName string, stack []string) (resolvedProfile, error) {
-	rawProfile, ok := doc.Profiles[profileName]
+func readConfigFile(path string) ([]byte, error) {
+	//nolint:gosec // G304: config path is selected from explicit project config discovery and parsed as configuration only.
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read profile config %s: %w", path, err)
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat profile config %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s must be a regular file", ErrInvalidConfig, path)
+	}
+	if info.Size() > maxConfigFileBytes {
+		return nil, fmt.Errorf("%w: %s exceeds %d bytes", ErrInvalidConfig, path, maxConfigFileBytes)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(file, maxConfigFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read profile config %s: %w", path, err)
+	}
+	if len(data) > maxConfigFileBytes {
+		return nil, fmt.Errorf("%w: %s exceeds %d bytes", ErrInvalidConfig, path, maxConfigFileBytes)
+	}
+	return data, nil
+}
+
+type profileResolver struct {
+	doc          configFile
+	path         string
+	memo         map[string]resolvedProfile
+	includeCount int
+}
+
+func newProfileResolver(doc configFile, path string) *profileResolver {
+	return &profileResolver{
+		doc:  doc,
+		path: path,
+		memo: make(map[string]resolvedProfile),
+	}
+}
+
+func (r *profileResolver) resolve(profileName string, stack []string) (resolvedProfile, error) {
+	if cached, ok := r.memo[profileName]; ok {
+		return cloneResolvedProfile(cached), nil
+	}
+	if len(stack) >= maxProfileIncludeDepth {
+		return resolvedProfile{}, fmt.Errorf(
+			"%w: %s profile include depth exceeds %d at %q",
+			ErrInvalidConfig,
+			r.path,
+			maxProfileIncludeDepth,
+			profileName,
+		)
+	}
+
+	rawProfile, ok := r.doc.Profiles[profileName]
 	if !ok {
-		return resolvedProfile{}, fmt.Errorf("%w: %q in %s", ErrProfileNotFound, profileName, path)
+		return resolvedProfile{}, fmt.Errorf("%w: %q in %s", ErrProfileNotFound, profileName, r.path)
 	}
 	if slices.Contains(stack, profileName) {
 		cycle := append(slices.Clone(stack), profileName)
-		return resolvedProfile{}, fmt.Errorf("%w: %s profile include cycle: %s", ErrInvalidConfig, path, strings.Join(cycle, " -> "))
+		return resolvedProfile{}, fmt.Errorf("%w: %s profile include cycle: %s", ErrInvalidConfig, r.path, strings.Join(cycle, " -> "))
 	}
 
 	result := resolvedProfile{
-		account: effectiveAccount(doc.Account, rawProfile.Account),
+		account: effectiveAccount(r.doc.Account, rawProfile.Account),
 		secrets: make(map[string]resolvedSecret),
 	}
 	nextStack := append(slices.Clone(stack), profileName)
 	for _, includeName := range rawProfile.Include {
 		includeName = strings.TrimSpace(includeName)
 		if includeName == "" {
-			return resolvedProfile{}, fmt.Errorf("%w: %s profile %q has empty include", ErrInvalidConfig, path, profileName)
+			return resolvedProfile{}, fmt.Errorf("%w: %s profile %q has empty include", ErrInvalidConfig, r.path, profileName)
 		}
-		included, err := resolveProfile(doc, path, includeName, nextStack)
+		r.includeCount++
+		if r.includeCount > maxProfileIncludeCount {
+			return resolvedProfile{}, fmt.Errorf(
+				"%w: %s profile include count exceeds %d",
+				ErrInvalidConfig,
+				r.path,
+				maxProfileIncludeCount,
+			)
+		}
+		included, err := r.resolve(includeName, nextStack)
 		if err != nil {
 			return resolvedProfile{}, err
 		}
@@ -278,7 +349,7 @@ func resolveProfile(doc configFile, path string, profileName string, stack []str
 		}
 	}
 
-	ttl, err := parseTTL(rawProfile.TTL, path, profileName)
+	ttl, err := parseTTL(rawProfile.TTL, r.path, profileName)
 	if err != nil {
 		return resolvedProfile{}, err
 	}
@@ -288,13 +359,23 @@ func resolveProfile(doc configFile, path string, profileName string, stack []str
 	if ttl != 0 {
 		result.ttl = ttl
 	}
-	if err := mergeSecrets(result.secrets, rawProfile.Secrets, result.account, path, profileName); err != nil {
+	if err := mergeSecrets(result.secrets, rawProfile.Secrets, result.account, r.path, profileName); err != nil {
 		return resolvedProfile{}, err
 	}
 	if len(result.secrets) == 0 {
-		return resolvedProfile{}, fmt.Errorf("%w: %s profile %q must define or include at least one secret", ErrInvalidConfig, path, profileName)
+		return resolvedProfile{}, fmt.Errorf("%w: %s profile %q must define or include at least one secret", ErrInvalidConfig, r.path, profileName)
 	}
+	r.memo[profileName] = cloneResolvedProfile(result)
 	return result, nil
+}
+
+func cloneResolvedProfile(profile resolvedProfile) resolvedProfile {
+	return resolvedProfile{
+		account: profile.account,
+		reason:  profile.reason,
+		secrets: maps.Clone(profile.secrets),
+		ttl:     profile.ttl,
+	}
 }
 
 func Find(configPath string, startDir string) (string, error) {
@@ -319,8 +400,13 @@ func Find(configPath string, startDir string) (string, error) {
 		for _, name := range []string{"agent-secret.yml", ".agent-secret.yml"} {
 			candidate := filepath.Join(dir, name)
 			info, err := os.Stat(candidate)
-			if err == nil && !info.IsDir() {
-				return candidate, nil
+			if err == nil {
+				if info.Mode().IsRegular() {
+					return candidate, nil
+				}
+				if !info.IsDir() {
+					return "", fmt.Errorf("%w: %s must be a regular file", ErrInvalidConfig, candidate)
+				}
 			}
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return "", fmt.Errorf("stat profile config %s: %w", candidate, err)
@@ -347,8 +433,8 @@ func findExplicit(configPath string) (string, error) {
 		}
 		return "", fmt.Errorf("%w: %s", ErrConfigNotFound, path)
 	}
-	if info.IsDir() {
-		return "", fmt.Errorf("%w: %s is a directory", ErrInvalidConfig, path)
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: %s must be a regular file", ErrInvalidConfig, path)
 	}
 	return path, nil
 }

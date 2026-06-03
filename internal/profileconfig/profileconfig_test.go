@@ -2,9 +2,11 @@ package profileconfig
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -217,6 +219,39 @@ profiles:
 	_, err = Load(LoadOptions{Name: "one", StartDir: root})
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("expected ErrInvalidConfig for include cycle, got %v", err)
+	}
+}
+
+func TestLoadRejectsExcessiveIncludeDepthAndCount(t *testing.T) {
+	root := t.TempDir()
+	var deep strings.Builder
+	deep.WriteString("version: 1\nprofiles:\n")
+	for index := range maxProfileIncludeDepth + 1 {
+		next := index + 1
+		if index == maxProfileIncludeDepth {
+			writeConfigSnippetf(t, &deep, "  p%d:\n    secrets:\n      TOKEN: op://Example/Item/token\n", index)
+			continue
+		}
+		writeConfigSnippetf(t, &deep, "  p%d:\n    include:\n      - p%d\n", index, next)
+	}
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), deep.String())
+	_, err := Load(LoadOptions{Name: "p0", StartDir: root})
+	if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "include depth") {
+		t.Fatalf("expected include depth ErrInvalidConfig, got %v", err)
+	}
+
+	var wide strings.Builder
+	wide.WriteString("version: 1\nprofiles:\n  deploy:\n    include:\n")
+	for index := range maxProfileIncludeCount + 1 {
+		writeConfigSnippetf(t, &wide, "      - base%d\n", index)
+	}
+	for index := range maxProfileIncludeCount + 1 {
+		writeConfigSnippetf(t, &wide, "  base%d:\n    secrets:\n      TOKEN_%d: op://Example/Item/token-%d\n", index, index, index)
+	}
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), wide.String())
+	_, err = Load(LoadOptions{Name: "deploy", StartDir: root})
+	if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "include count") {
+		t.Fatalf("expected include count ErrInvalidConfig, got %v", err)
 	}
 }
 
@@ -470,6 +505,27 @@ profiles:
 	}
 }
 
+func TestLoadRejectsNonRegularAndOversizedConfigFiles(t *testing.T) {
+	root := t.TempDir()
+	fifoPath := filepath.Join(root, "agent-secret.yml")
+	if err := syscall.Mkfifo(fifoPath, 0o600); err != nil {
+		t.Fatalf("create fifo: %v", err)
+	}
+	_, err := Load(LoadOptions{Name: "one", ConfigPath: fifoPath})
+	if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "regular file") {
+		t.Fatalf("expected regular-file ErrInvalidConfig, got %v", err)
+	}
+
+	largePath := filepath.Join(root, "large.yml")
+	if err := os.WriteFile(largePath, []byte(strings.Repeat("#", maxConfigFileBytes+1)), 0o600); err != nil {
+		t.Fatalf("write large config: %v", err)
+	}
+	_, err = Load(LoadOptions{Name: "one", ConfigPath: largePath})
+	if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected oversized ErrInvalidConfig, got %v", err)
+	}
+}
+
 func TestFindPreservesExplicitConfigStatErrors(t *testing.T) {
 	root := t.TempDir()
 	filePath := filepath.Join(root, "not-a-directory")
@@ -515,5 +571,13 @@ func writeConfig(t *testing.T, path string, contents string) {
 
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
+	}
+}
+
+func writeConfigSnippetf(t *testing.T, builder *strings.Builder, format string, args ...any) {
+	t.Helper()
+
+	if _, err := fmt.Fprintf(builder, format, args...); err != nil {
+		t.Fatalf("write config snippet: %v", err)
 	}
 }
