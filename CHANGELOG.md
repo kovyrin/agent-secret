@@ -22,6 +22,10 @@ version numbers for public releases.
 
 ## [0.0.15] - Pending
 
+### Changed
+
+- Updated the public website proof note to describe longer-term daily usage.
+
 ### Fixed
 
 - Added Homebrew cask release verification so release operators can compare the
