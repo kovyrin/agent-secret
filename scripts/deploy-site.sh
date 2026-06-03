@@ -9,6 +9,7 @@ site_url="${AGENT_SECRET_SITE_URL:-https://agent-secret.sh}"
 www_url="${AGENT_SECRET_WWW_URL:-https://www.agent-secret.sh}"
 cloudflare_project="${AGENT_SECRET_CLOUDFLARE_PAGES_PROJECT:-agent-secret}"
 cloudflare_profile="${AGENT_SECRET_CLOUDFLARE_PROFILE:-cloudflare-pages}"
+cloudflare_zone="${AGENT_SECRET_CLOUDFLARE_ZONE:-agent-secret.sh}"
 max_asset_bytes="${AGENT_SECRET_CLOUDFLARE_MAX_ASSET_BYTES:-26214400}"
 poll_timeout_seconds="${AGENT_SECRET_DEPLOY_POLL_TIMEOUT_SECONDS:-300}"
 poll_interval_seconds="${AGENT_SECRET_DEPLOY_POLL_INTERVAL_SECONDS:-5}"
@@ -216,14 +217,16 @@ poll_cloudflare_deployment() {
   agent-secret exec --profile "$cloudflare_profile" -- bash -s -- \
     "$head_sha" \
     "$cloudflare_project" \
+    "$cloudflare_zone" \
     "$poll_timeout_seconds" \
     "$poll_interval_seconds" <<'BASH'
 set -euo pipefail
 
 head_sha="$1"
 cloudflare_project="$2"
-poll_timeout_seconds="$3"
-poll_interval_seconds="$4"
+cloudflare_zone="$3"
+poll_timeout_seconds="$4"
+poll_interval_seconds="$5"
 api="https://api.cloudflare.com/client/v4"
 
 account_id="$(
@@ -278,6 +281,24 @@ while ((SECONDS < deadline)); do
 
   case "$stage_status" in
     success)
+      zone_id="$(
+        curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+          "$api/zones?name=$cloudflare_zone" \
+          | jq -r '.result[0].id // empty'
+      )"
+
+      if [[ -z "$zone_id" ]]; then
+        printf '[deploy-site] error: Cloudflare API token could not read zone %s\n' "$cloudflare_zone" >&2
+        exit 1
+      fi
+
+      printf '[deploy-site] purging Cloudflare cache for %s\n' "$cloudflare_zone"
+      curl -fsS -X POST \
+        -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data '{"purge_everything":true}' \
+        "$api/zones/$zone_id/purge_cache" \
+        | jq -e '.success == true' >/dev/null
       exit 0
       ;;
     failure)
