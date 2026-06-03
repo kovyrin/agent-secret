@@ -67,6 +67,9 @@ Success looks like:
   Cloudflare Pages deploy token.
 - [x] Cloudflare Pages build watch paths reset from `site/**` to `*`; the
   skipped Git deployment for `40c89b0` was retried and completed successfully.
+- [x] Site deployment script added at `scripts/deploy-site.sh` to validate the
+  `site/` tree, enforce Cloudflare Pages asset limits, push `main`, poll the
+  Pages deployment, and verify live URLs through the repo Agent Secret profile.
 - [x] Pages headers now send `Cache-Control: no-transform` so Cloudflare Email
   Obfuscation does not rewrite code examples.
 - [x] Launch release `v0.0.13` with the final transparent icon was signed,
@@ -85,6 +88,8 @@ Success looks like:
 - [x] Public README, configuration docs, threat model, and security contact path
   reviewed for launch readiness.
 - [x] Demo video recorded and added to the product page as a launch asset.
+- [x] Demo video compressed without trimming so it fits Cloudflare Pages' 25 MiB
+  per-file limit.
 
 ## Outstanding Work
 

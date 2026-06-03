@@ -24,6 +24,9 @@ version numbers for public releases.
 
 ### Added
 
+- Added a single website deployment script that validates public docs and site
+  assets, enforces the Cloudflare Pages asset size limit, pushes `main`, polls
+  the Pages deployment through Agent Secret, and verifies the live site.
 - Added the public demo video to the product website launch page.
 - Added a macOS VM validation runbook and UTM-based clean-install runner for
   release smoke testing with a dedicated 1Password guest account and test-only
