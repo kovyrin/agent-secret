@@ -74,6 +74,9 @@ version numbers for public releases.
 - Hardened the native approval prompt so Return no longer approves by default,
   large grouped requests expose exact refs immediately, and approval actions
   stay after the scrollable request context.
+- Bounded local resource use for approved secret fetches and project profile
+  loading by using a fixed secret-resolution worker pool, rejecting oversized or
+  non-regular profile config files, and capping profile include expansion.
 
 ## [0.0.13] - 2026-05-27
 
