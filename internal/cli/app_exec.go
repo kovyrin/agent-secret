@@ -217,6 +217,7 @@ func isFatalCommandStartedAuditFailure(err error) bool {
 		return false
 	}
 	return protocolErr.Code == protocol.ErrorCodeBadCommandStarted ||
+		protocolErr.Code == protocol.ErrorCodeAuditFailed ||
 		protocolErr.Code == protocol.ErrorCodeBadEnvelope ||
 		protocolErr.Code == protocol.ErrorCodeBadType ||
 		protocolErr.Code == protocol.ErrorCodeInvalidNonce ||
