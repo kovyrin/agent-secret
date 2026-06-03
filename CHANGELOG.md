@@ -24,6 +24,7 @@ version numbers for public releases.
 
 ### Added
 
+- Added the public demo video to the product website launch page.
 - Added a macOS VM validation runbook and UTM-based clean-install runner for
   release smoke testing with a dedicated 1Password guest account and test-only
   secret reference.

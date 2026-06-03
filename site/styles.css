@@ -444,6 +444,28 @@ h3 {
   height: auto;
 }
 
+.demo-media {
+  margin: clamp(1.8rem, 4vw, 3rem) 0 0;
+}
+
+.demo-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #050707;
+  box-shadow: var(--shadow);
+}
+
+.demo-media figcaption {
+  max-width: 760px;
+  margin: 0.92rem 0 0;
+  color: var(--dim);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
 .terminal,
 .code-panel,
 .inline-command {

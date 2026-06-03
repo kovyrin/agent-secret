@@ -84,13 +84,13 @@ Success looks like:
   privacy, terms, and threat-model links.
 - [x] Public README, configuration docs, threat model, and security contact path
   reviewed for launch readiness.
+- [x] Demo video recorded and added to the product page as a launch asset.
 
 ## Outstanding Work
 
 ### Launch Content
 
 - [ ] Write the blog article.
-- [ ] Record the 45 to 90 second demo video.
 - [ ] Draft the X launch post and thread.
 - [ ] Draft the LinkedIn narrative post.
 - [ ] Prepare the HN title and human-written first comment.
@@ -257,7 +257,6 @@ Completed:
 
 Outstanding:
 
-- Demo video, 45 to 90 seconds.
 - Blog hero image or screenshot.
 - X thread copy.
 - LinkedIn post copy.
@@ -272,9 +271,10 @@ Nice to have:
 
 ## Demo Video
 
-Target length: 45 to 90 seconds.
+Recorded asset: 97 seconds, accepted as-is for launch and embedded on
+`https://agent-secret.sh/#demo`.
 
-Recommended flow:
+Flow:
 
 1. Show the problem: a script or agent workflow needs a secret.
 2. Show why a generic 1Password approval is not enough context.
@@ -487,7 +487,7 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [x] Threat model is linked from the README.
 - [x] Security contact path is clear.
 - [ ] Blog article draft exists.
-- [ ] Demo video is recorded.
+- [x] Demo video is recorded.
 - [ ] X post and thread are drafted.
 - [ ] LinkedIn post is drafted.
 - [ ] HN title and human-written first comment are prepared.
