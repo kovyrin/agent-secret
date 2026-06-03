@@ -81,7 +81,8 @@ jobs:
           fetch-depth: 0
 
       - name: Verify release tag ancestry
-        run: _trusted-main/scripts/release/check-release-ancestry.sh "$GITHUB_REF_NAME"
+        working-directory: _trusted-main
+        run: scripts/release/check-release-ancestry.sh "$GITHUB_REF_NAME"
 
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

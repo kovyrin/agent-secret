@@ -49,6 +49,8 @@ version numbers for public releases.
 - Fixed the website deployment verifier so the `www` redirect check accepts
   Cloudflare HTTP/2 status lines, avoids `pipefail` false negatives in the
   root-page asset check, and reports the failed live subcheck while waiting.
+- Fixed the tag-triggered release ancestry guard so it runs inside the trusted
+  `main` checkout before building release artifacts.
 
 ### Security
 
