@@ -231,9 +231,25 @@ poll_timeout_seconds="$4"
 poll_interval_seconds="$5"
 api="https://api.cloudflare.com/client/v4"
 
+cloudflare_api() {
+  local curl_status
+  local config
+  config="$(mktemp)"
+  chmod 600 "$config"
+  {
+    printf 'header = "Authorization: Bearer %s"\n' "$CLOUDFLARE_API_TOKEN"
+    printf 'header = "Content-Type: application/json"\n'
+  } >"$config"
+  set +e
+  curl -fsS --config "$config" "$@"
+  curl_status=$?
+  set -e
+  rm -f "$config"
+  return "$curl_status"
+}
+
 account_id="$(
-  curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-    "$api/accounts" \
+  cloudflare_api "$api/accounts" \
     | jq -r '.result[0].id // empty'
 )"
 
@@ -247,8 +263,7 @@ seen_deployment=""
 
 while ((SECONDS < deadline)); do
   deployments="$(
-    curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-      "$api/accounts/$account_id/pages/projects/$cloudflare_project/deployments?per_page=20"
+    cloudflare_api "$api/accounts/$account_id/pages/projects/$cloudflare_project/deployments?per_page=20"
   )"
 
   row="$(
@@ -284,8 +299,7 @@ while ((SECONDS < deadline)); do
   case "$stage_status" in
     success)
       zone_id="$(
-        curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-          "$api/zones?name=$cloudflare_zone" \
+        cloudflare_api "$api/zones?name=$cloudflare_zone" \
           | jq -r '.result[0].id // empty'
       )"
 
@@ -296,9 +310,7 @@ while ((SECONDS < deadline)); do
 
       printf '[deploy-site] attempting Cloudflare cache purge for %s\n' "$cloudflare_zone"
       if ! purge_result="$(
-        curl -sS -X POST \
-          -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-          -H "Content-Type: application/json" \
+        cloudflare_api -X POST \
           --data '{"purge_everything":true}' \
           "$api/zones/$zone_id/purge_cache"
       )"; then
@@ -312,8 +324,7 @@ while ((SECONDS < deadline)); do
       ;;
     failure)
       printf '[deploy-site] Cloudflare deployment failed; build logs follow\n' >&2
-      curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-        "$api/accounts/$account_id/pages/projects/$cloudflare_project/deployments/$deployment_id/history/logs" \
+      cloudflare_api "$api/accounts/$account_id/pages/projects/$cloudflare_project/deployments/$deployment_id/history/logs" \
         | jq -r '.result.data[]?.line // empty' >&2
       exit 1
       ;;

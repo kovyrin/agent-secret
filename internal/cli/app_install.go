@@ -18,8 +18,9 @@ type installOutput struct {
 }
 
 type pathWarning struct {
-	Directory string `json:"directory"`
-	Command   string `json:"command"`
+	Directory  string `json:"directory"`
+	Command    string `json:"command"`
+	ShadowedBy string `json:"shadowed_by,omitempty"`
 }
 
 func (a App) runInstallCLI(command Command) int {
@@ -42,9 +43,8 @@ func (a App) runInstallCLI(command Command) int {
 			LinkPath:      result.LinkPath,
 			TargetPath:    result.TargetPath,
 		}
-		binDir := filepath.Dir(result.LinkPath)
-		if !pathContainsDir(os.Getenv("PATH"), binDir) {
-			output.PathWarning = &pathWarning{Directory: displayHomePath(binDir), Command: zshPathSetupCommand(binDir)}
+		if warning := commandPathWarning(os.Getenv("PATH"), result.LinkPath); warning != nil {
+			output.PathWarning = warning
 		}
 		if err := a.writeJSON(output); err != nil {
 			a.stderrf("agent-secret: write install-cli json: %v\n", err)
@@ -99,29 +99,60 @@ func (a App) stderrf(format string, args ...any) {
 }
 
 func (a App) warnIfCommandDirMissingFromPath(binDir string) {
-	if pathContainsDir(os.Getenv("PATH"), binDir) {
+	warning := commandPathWarning(os.Getenv("PATH"), filepath.Join(binDir, install.CommandName))
+	if warning == nil {
+		return
+	}
+	if warning.ShadowedBy != "" {
+		a.stdoutf(
+			"\nAn earlier PATH entry contains agent-secret, so Terminal may run %s instead of %s.\n"+
+				"Remove the stale command or put %s first on PATH.\n"+
+				"For zsh, run this one-liner:\n\n"+
+				"  %s\n",
+			warning.ShadowedBy,
+			filepath.Join(warning.Directory, install.CommandName),
+			warning.Directory,
+			warning.Command,
+		)
 		return
 	}
 	a.stdoutf(
 		"\n%s is not on PATH, so `agent-secret` may not work by command name in Terminal.\n"+
 			"For zsh, run this one-liner:\n\n"+
 			"  %s\n",
-		displayHomePath(binDir),
-		zshPathSetupCommand(binDir),
+		warning.Directory,
+		warning.Command,
 	)
 }
 
-func pathContainsDir(pathValue string, dir string) bool {
-	if pathValue == "" || dir == "" {
-		return false
+func commandPathWarning(pathValue string, linkPath string) *pathWarning {
+	binDir := filepath.Dir(linkPath)
+	command := zshPathSetupCommand(binDir)
+	warning := &pathWarning{Directory: displayHomePath(binDir), Command: command}
+	if pathValue == "" || binDir == "" {
+		return warning
 	}
-	want := filepath.Clean(dir)
+	want := filepath.Clean(binDir)
 	for _, entry := range filepath.SplitList(pathValue) {
-		if entry != "" && filepath.Clean(entry) == want {
-			return true
+		if entry == "" {
+			continue
+		}
+		cleanEntry := filepath.Clean(entry)
+		if cleanEntry == want {
+			return nil
+		}
+		candidate := filepath.Join(entry, install.CommandName)
+		if executableFileExists(candidate) {
+			warning.ShadowedBy = candidate
+			return warning
 		}
 	}
-	return false
+	return warning
+}
+
+func executableFileExists(path string) bool {
+	info, err := os.Stat(path) // #nosec G703 -- probing PATH-derived candidates only checks executable existence; it does not read or execute the path.
+	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }
 
 func displayHomePath(path string) string {
@@ -139,23 +170,8 @@ func displayHomePath(path string) string {
 	return path
 }
 
-func shellPathPrefix(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	if path == home {
-		return "$HOME"
-	}
-	prefix := home + string(os.PathSeparator)
-	if suffix, ok := strings.CutPrefix(path, prefix); ok {
-		return "$HOME/" + suffix
-	}
-	return path
-}
-
 func zshPathSetupCommand(binDir string) string {
-	exportLine := fmt.Sprintf("export PATH=\"%s:$PATH\"", shellPathPrefix(binDir))
+	exportLine := fmt.Sprintf("export PATH=%s:\"$PATH\"", shellSingleQuote(binDir))
 	quotedLine := shellSingleQuote(exportLine)
 	return fmt.Sprintf(
 		"grep -qxF %s \"$HOME/.zprofile\" 2>/dev/null || printf '\\n%%s\\n' %s >> \"$HOME/.zprofile\"; exec zsh -l",

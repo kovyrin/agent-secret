@@ -2,7 +2,3 @@ title = "Agent Secret gitleaks configuration"
 
 [extend]
 useDefault = true
-
-[[allowlists]]
-description = "Ignored local desloppify tool state"
-paths = ['''^\.desloppify/''']

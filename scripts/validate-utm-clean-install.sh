@@ -355,12 +355,38 @@ ssh_options() {
   printf '%s\n' \
     -o BatchMode=yes \
     -o ConnectTimeout=10 \
-    -o StrictHostKeyChecking=accept-new \
+    -o StrictHostKeyChecking=yes \
     -o "Port=$ssh_port" \
     -o "UserKnownHostsFile=$report_dir/ssh-known-hosts"
   if [ -n "$ssh_key" ] && [ -f "$ssh_key" ]; then
     printf '%s\n' -i "$ssh_key"
   fi
+}
+
+ensure_ssh_known_host() {
+  local host="$1"
+  local known_hosts="$report_dir/ssh-known-hosts"
+  local lookup="$host"
+  local scan_tmp
+
+  if [ "$ssh_port" != "22" ]; then
+    lookup="[$host]:$ssh_port"
+  fi
+  mkdir -p "$(dirname -- "$known_hosts")"
+  touch "$known_hosts"
+  chmod 600 "$known_hosts"
+  if ssh-keygen -F "$lookup" -f "$known_hosts" >/dev/null 2>&1; then
+    return
+  fi
+
+  log "bootstrapping SSH host key for $lookup"
+  scan_tmp="$known_hosts.tmp.$$"
+  if ! ssh-keyscan -p "$ssh_port" -T 10 "$host" >"$scan_tmp" 2>"$report_dir/ssh-keyscan.log"; then
+    rm -f "$scan_tmp"
+    fail "could not bootstrap SSH host key for $lookup; see $report_dir/ssh-keyscan.log"
+  fi
+  cat "$scan_tmp" >>"$known_hosts"
+  rm -f "$scan_tmp"
 }
 
 ssh_target_for_host() {
@@ -376,6 +402,7 @@ ssh_probe() {
   local opts
 
   target="$(ssh_target_for_host "$host")"
+  ensure_ssh_known_host "$host"
   opts=()
   while IFS= read -r opt; do
     opts+=("$opt")

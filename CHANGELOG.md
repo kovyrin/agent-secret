@@ -77,6 +77,11 @@ version numbers for public releases.
 - Bounded local resource use for approved secret fetches and project profile
   loading by using a fixed secret-resolution worker pool, rejecting oversized or
   non-regular profile config files, and capping profile include expansion.
+- Hardened release-adjacent scripts and installer guidance by warning about
+  stale `agent-secret` commands earlier on `PATH`, generating shell-safe zsh
+  PATH setup, keeping Cloudflare API tokens out of `curl` process arguments,
+  narrowing local secret-scan allowlists, copying git hooks instead of pointing
+  Git at tracked hook files, and pinning SSH known hosts for UTM validation.
 
 ## [0.0.13] - 2026-05-27
 
