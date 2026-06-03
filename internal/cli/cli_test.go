@@ -387,6 +387,37 @@ func TestParseExecAccountDefaultPrecedence(t *testing.T) {
 	}
 }
 
+func TestParseExecExplicitAccountBeatsProjectConfigForDirectSecrets(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	writeExecutable(t, binDir, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+account: Project Account
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	parser := NewParser()
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--reason", "Deploy",
+		"--account", "CLI Account",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if got := command.ExecRequest.Secrets[0].Account; got != "CLI Account" {
+		t.Fatalf("direct secret account = %q, want CLI Account: %+v", got, command.ExecRequest.Secrets)
+	}
+}
+
 func TestParseExecAccountPrecedenceInCombinedSources(t *testing.T) {
 	root := t.TempDir()
 	binDir := filepath.Join(root, "bin")

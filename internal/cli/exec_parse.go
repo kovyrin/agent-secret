@@ -217,7 +217,7 @@ func assembleExecSecrets(
 
 func execSecretAccountFallback(flags execFlags, sources execInputSources) string {
 	accountFallback := execAccountFallback(flags.account)
-	if !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
+	if strings.TrimSpace(flags.account) == "" && !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
 		return sources.configAccount
 	}
 	return accountFallback

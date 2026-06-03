@@ -1,6 +1,8 @@
 import Foundation
 
 #if canImport(AppKit)
+    import AppKit
+
     @MainActor
     final class AppKitModalDecisionCoordinator {
         private static let modalStopRunLoopModes: [RunLoop.Mode] = [

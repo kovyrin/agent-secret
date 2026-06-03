@@ -449,7 +449,8 @@ func (b *Broker) ReportCompleted(ctx context.Context, correlation protocol.Corre
 	}
 
 	event := audit.FromExecRequest(audit.EventCommandCompleted, correlation.RequestID, active.req)
-	event.ExitCode = new(exitCode)
+	exit := exitCode
+	event.ExitCode = &exit
 	event.Signal = signal
 	if err := recordRequiredAudit(ctx, b.audit, event); err != nil {
 		return err

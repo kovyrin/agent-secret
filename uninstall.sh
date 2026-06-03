@@ -57,7 +57,7 @@ codesign_team_id() {
 
   details="$("$codesign_path" -dv --verbose=4 "$path" 2>&1)" || return 1
   printf '%s\n' "$details" |
-    awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }'
+    /usr/bin/awk -F= '$1 == "TeamIdentifier" { print $2; found = 1; exit } END { if (!found) exit 1 }'
 }
 
 team_id_matches() {

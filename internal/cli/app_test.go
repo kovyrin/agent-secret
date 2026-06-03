@@ -1499,6 +1499,10 @@ func TestDaemonAuditReporterFatalStartedAuditClassification(t *testing.T) {
 	if !isFatalCommandStartedAuditFailure(protocolErr) {
 		t.Fatal("invalid nonce protocol error was not classified as fatal")
 	}
+	auditErr := &control.ProtocolError{Code: protocol.ErrorCodeAuditFailed, Message: "audit failed"}
+	if !isFatalCommandStartedAuditFailure(auditErr) {
+		t.Fatal("audit_failed protocol error was not classified as fatal")
+	}
 	stoppedErr := &control.ProtocolError{Code: protocol.ErrorCodeDaemonStopped, Message: "daemon stopped"}
 	if isFatalCommandStartedAuditFailure(stoppedErr) {
 		t.Fatal("daemon stopped protocol error was classified as fatal")

@@ -21,15 +21,15 @@ scan_files=(
 )
 
 private_terms=(
-  "account: Fixture"
-  "Fixture Preview"
-  "fixture.1password.com"
+  "account: Internal Consumer"
+  "Internal Consumer Preview"
+  "internal-consumer.1password.example"
 )
 
 for term in "${private_terms[@]}"; do
   matches="$(grep -n -F -- "$term" "${scan_files[@]}" || true)"
   if [ -n "$matches" ]; then
-    fail "public docs contain private consumer name '$term': $matches"
+    fail "public docs contain private or internal consumer name '$term': $matches"
   fi
 done
 

@@ -56,6 +56,9 @@ version numbers for public releases.
   toolchain from Go `1.26.3` to Go `1.26.4`.
 - Updated the markdown lint toolchain lockfile to pick up the fixed
   `brace-expansion` release.
+- Fixed pre-release hardening issues in audit-failure handling, explicit
+  1Password account precedence, uninstall trust checks, and committed public
+  documentation guardrails.
 
 ## [0.0.13] - 2026-05-27
 
