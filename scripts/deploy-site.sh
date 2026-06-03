@@ -373,7 +373,7 @@ verify_live_site_once() {
 
   local www_headers
   www_headers="$(curl -fsSI --max-time 20 "$www_url/" | tr -d '\r')" || return 1
-  printf '%s\n' "$www_headers" | grep -Eq '^HTTP/[0-9.]+ 301' || return 1
+  printf '%s\n' "$www_headers" | grep -Eq '^HTTP/[^[:space:]]+ 301' || return 1
   printf '%s\n' "$www_headers" | grep -Fqi "location: $site_url/" || return 1
 }
 

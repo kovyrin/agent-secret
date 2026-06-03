@@ -42,6 +42,11 @@ version numbers for public releases.
 - Reworked the product website demo caption to describe the approval context
   instead of the recording length.
 
+### Fixed
+
+- Fixed the website deployment verifier so the `www` redirect check accepts
+  Cloudflare HTTP/2 status lines.
+
 ## [0.0.13] - 2026-05-27
 
 ### Added
