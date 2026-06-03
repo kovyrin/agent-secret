@@ -32,6 +32,11 @@ version numbers for public releases.
   release smoke testing with a dedicated 1Password guest account and test-only
   secret reference.
 
+### Changed
+
+- Reworked the product website demo caption to describe the approval context
+  instead of the recording length.
+
 ## [0.0.13] - 2026-05-27
 
 ### Added
