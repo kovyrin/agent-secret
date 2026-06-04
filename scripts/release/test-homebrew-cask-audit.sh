@@ -25,6 +25,10 @@ if ! grep -F 'cask "agent-secret" do' "$cask" >/dev/null; then
   fail "Homebrew cask does not define agent-secret"
 fi
 
+if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
+  export HOMEBREW_GITHUB_API_TOKEN="$GITHUB_TOKEN"
+fi
+
 cleanup() {
   brew untap "$tap_name" >/dev/null 2>&1 || true
 }
