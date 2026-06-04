@@ -20,6 +20,17 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.16] - Pending
+
+### Added
+
+- Added public website sitemap validation so deploy checks catch missing or
+  non-canonical URLs before Google Search Console submission.
+
+### Changed
+
+- Updated the public website sitemap metadata for the current launch page.
+
 ## [0.0.15] - 2026-06-04
 
 ### Changed
