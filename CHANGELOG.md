@@ -31,6 +31,11 @@ version numbers for public releases.
 
 - Updated the public website sitemap metadata for the current launch page.
 
+### Fixed
+
+- Updated the checked-in Homebrew cask to the published `0.0.15` artifact so
+  cask audit matches the latest release.
+
 ## [0.0.15] - 2026-06-04
 
 ### Changed
