@@ -211,10 +211,12 @@ AGENT_SECRET_IN_MISE=1 scripts/release/test-release-ancestry.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-publish.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-version.sh
-AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
+AGENT_SECRET_IN_MISE=1 scripts/checks/test-cloudflare-curl-token-handling.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask-audit.sh
 cd approver && swift run agent-secret-app-smoke
 ```
 

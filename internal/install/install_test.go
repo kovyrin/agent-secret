@@ -177,7 +177,7 @@ func TestInstallCLIKeepsExistingMatchingSymlink(t *testing.T) {
 	}
 }
 
-func TestInstallCLIKeepsExistingSymlinkChainToExecutable(t *testing.T) {
+func TestInstallCLIRefusesExistingSymlinkChainToExecutableWithoutForce(t *testing.T) {
 	t.Parallel()
 
 	homeBinDir := filepath.Join(t.TempDir(), "home-bin")
@@ -199,8 +199,9 @@ func TestInstallCLIKeepsExistingSymlinkChainToExecutable(t *testing.T) {
 		t.Fatalf("create home symlink: %v", err)
 	}
 
-	if _, err := InstallCLI(CLIOptions{BinDir: homeBinDir, ExecutablePath: executable}); err != nil {
-		t.Fatalf("InstallCLI returned error: %v", err)
+	_, err := InstallCLI(CLIOptions{BinDir: homeBinDir, ExecutablePath: executable})
+	if !errors.Is(err, ErrRefuseOverwrite) {
+		t.Fatalf("InstallCLI error = %v, want ErrRefuseOverwrite", err)
 	}
 	target, err := os.Readlink(homeLinkPath)
 	if err != nil {
@@ -208,6 +209,40 @@ func TestInstallCLIKeepsExistingSymlinkChainToExecutable(t *testing.T) {
 	}
 	if target != brewLinkPath {
 		t.Fatalf("symlink target = %q, want existing chained target %q", target, brewLinkPath)
+	}
+}
+
+func TestInstallCLIForceReplacesExistingSymlinkChainToExecutable(t *testing.T) {
+	t.Parallel()
+
+	homeBinDir := filepath.Join(t.TempDir(), "home-bin")
+	brewBinDir := filepath.Join(t.TempDir(), "brew-bin")
+	if err := os.MkdirAll(homeBinDir, 0o750); err != nil {
+		t.Fatalf("create home bin dir: %v", err)
+	}
+	if err := os.MkdirAll(brewBinDir, 0o750); err != nil {
+		t.Fatalf("create brew bin dir: %v", err)
+	}
+	executable := writeInstallTestExecutable(t, t.TempDir())
+	resolvedExecutable := resolveInstallTestPath(t, executable)
+	brewLinkPath := filepath.Join(brewBinDir, CommandName)
+	homeLinkPath := filepath.Join(homeBinDir, CommandName)
+	if err := os.Symlink(resolvedExecutable, brewLinkPath); err != nil {
+		t.Fatalf("create brew symlink: %v", err)
+	}
+	if err := os.Symlink(brewLinkPath, homeLinkPath); err != nil {
+		t.Fatalf("create home symlink: %v", err)
+	}
+
+	if _, err := InstallCLI(CLIOptions{BinDir: homeBinDir, ExecutablePath: executable, Force: true}); err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	target, err := os.Readlink(homeLinkPath)
+	if err != nil {
+		t.Fatalf("read replacement symlink: %v", err)
+	}
+	if target != resolvedExecutable {
+		t.Fatalf("replacement symlink target = %q, want direct executable target %q", target, resolvedExecutable)
 	}
 }
 

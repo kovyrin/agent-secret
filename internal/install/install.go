@@ -231,10 +231,6 @@ func shouldReplaceSymlink(linkPath string, targetPath string, force bool) (bool,
 	if currentTarget == targetPath {
 		return false, nil
 	}
-	resolvedCurrentTarget, err := pathresolve.Strict(linkPath)
-	if err == nil && resolvedCurrentTarget == targetPath {
-		return false, nil
-	}
 	if !force {
 		return false, fmt.Errorf("%w: %s points to %s", ErrRefuseOverwrite, linkPath, currentTarget)
 	}

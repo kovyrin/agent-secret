@@ -233,18 +233,13 @@ api="https://api.cloudflare.com/client/v4"
 
 cloudflare_api() {
   local curl_status
-  local config
-  config="$(mktemp)"
-  chmod 600 "$config"
+  set +e
   {
     printf 'header = "Authorization: Bearer %s"\n' "$CLOUDFLARE_API_TOKEN"
     printf 'header = "Content-Type: application/json"\n'
-  } >"$config"
-  set +e
-  curl -fsS --config "$config" "$@"
+  } | curl -fsS --config - "$@"
   curl_status=$?
   set -e
-  rm -f "$config"
   return "$curl_status"
 }
 
