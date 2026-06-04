@@ -491,7 +491,7 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [x] README makes exec-only and no-write limits obvious.
 - [x] Threat model is linked from the README.
 - [x] Security contact path is clear.
-- [ ] Blog article draft exists.
+- [x] Blog article draft exists.
 - [x] Demo video is recorded.
 - [ ] X post and thread are drafted.
 - [ ] LinkedIn post is drafted.

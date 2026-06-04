@@ -26,6 +26,7 @@ version numbers for public releases.
 
 - Added public website sitemap validation so deploy checks catch missing or
   non-canonical URLs before Google Search Console submission.
+- Added an initial launch content draft for the public blog announcement.
 
 ### Changed
 
