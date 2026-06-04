@@ -480,8 +480,6 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	req.ReusableUses = 1
 	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
 	aud := &callbackAudit{}
-	events, unsubscribe := aud.Subscribe()
-	defer unsubscribe()
 	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
@@ -491,21 +489,23 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	var connMu sync.Mutex
 	var firstConn *net.UnixConn
 	var closeOnce sync.Once
-	aud.onRecord = func(event audit.Event) {
-		if event.Type != audit.EventCommandStarting || event.RequestID != "req_1" {
-			return
-		}
-		closeOnce.Do(func() {
-			connMu.Lock()
-			conn := firstConn
-			connMu.Unlock()
-			if conn != nil {
-				_ = conn.Close()
-			}
-		})
-	}
+	firstWriteAttempted := make(chan struct{})
 
-	path, stop := startRawServerWithBroker(t, broker, nil, allowPeerValidator{})
+	path, stop := startRawServerWithOptions(t, ServerOptions{
+		Broker:    broker,
+		Validator: allowPeerValidator{},
+		beforeExecResponseWrite: func() {
+			closeOnce.Do(func() {
+				connMu.Lock()
+				conn := firstConn
+				connMu.Unlock()
+				if conn != nil {
+					_ = conn.Close()
+				}
+				close(firstWriteAttempted)
+			})
+		},
+	})
 	defer stop()
 
 	conn, err := socket.Dial(context.Background(), path)
@@ -516,7 +516,11 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	firstConn = conn
 	connMu.Unlock()
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
-	waitForAuditEvent(t, &aud.memoryAudit, events, audit.EventCommandStarting, "req_1")
+	select {
+	case <-firstWriteAttempted:
+	case <-time.After(time.Second):
+		t.Fatal("server did not attempt first exec response write")
+	}
 
 	secondConn, err := socket.Dial(context.Background(), path)
 	if err != nil {
