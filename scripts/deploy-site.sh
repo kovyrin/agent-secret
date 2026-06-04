@@ -194,6 +194,9 @@ run_local_checks() {
   check_asset_sizes
   check_site_links
 
+  log "checking sitemap"
+  AGENT_SECRET_IN_MISE=1 scripts/checks/test-site-sitemap.sh
+
   log "running markdownlint"
   mise exec -- npx --no-install markdownlint '**/*.md'
 
