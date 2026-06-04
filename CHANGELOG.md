@@ -22,6 +22,11 @@ version numbers for public releases.
 
 ## [0.0.15] - Pending
 
+### Changed
+
+- Updated the public website proof note to describe longer-term daily usage.
+- Removed a redundant public website link to the limitations list.
+
 ### Security
 
 - Hardened website deployment polling so the Cloudflare API token is fed to
@@ -35,6 +40,9 @@ version numbers for public releases.
 
 - Updated the checked-in Homebrew cask to the published `0.0.14` artifact so
   cask audit matches the latest release.
+- Added Homebrew cask release verification so release operators can compare the
+  published DMG checksum against `Casks/agent-secret.rb` before treating a
+  release as complete.
 
 ### Internal
 

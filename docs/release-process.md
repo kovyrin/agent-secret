@@ -134,8 +134,9 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
 12. Confirm the published release page shows the expected notes and assets.
 
-13. Update the Homebrew cask to the published release. Use the SHA-256 digest
-    for the `Agent-Secret-vX.Y.Z-macos-arm64.dmg` asset:
+13. Update the Homebrew cask to the published release before announcing the
+    release. Use the SHA-256 digest for the
+    `Agent-Secret-vX.Y.Z-macos-arm64.dmg` asset:
 
     ```bash
     version="0.0.1"
@@ -149,8 +150,27 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
     ```bash
     brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
+    AGENT_SECRET_IN_MISE=1 scripts/release/check-homebrew-cask.sh "v$version"
     brew audit --cask --strict --online --tap=kovyrin/agent-secret agent-secret
+    git add Casks/agent-secret.rb
+    git commit -m "Bump Homebrew cask to v$version"
+    git push origin main
     ```
+
+14. Verify the public Homebrew upgrade path from a fresh tap update:
+
+    ```bash
+    brew update
+    brew upgrade --cask agent-secret
+    brew list --cask --versions agent-secret | grep "$version"
+    /opt/homebrew/bin/agent-secret --version | grep "$version"
+    /opt/homebrew/bin/agent-secret doctor
+    /opt/homebrew/bin/agent-secret skill-install --force
+    ```
+
+    Also run one test-only `agent-secret exec` flow that does not print secret
+    values. If the cask check or Homebrew upgrade fails, the release is not
+    complete.
 
 ## Clean-Machine Release Candidate Drill
 
@@ -196,12 +216,14 @@ AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-cloudflare-curl-token-handling.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask-audit.sh
 cd approver && swift run agent-secret-app-smoke
 ```
 
 The Homebrew cask should also be checked after every cask bump:
 
 ```bash
+AGENT_SECRET_IN_MISE=1 scripts/release/check-homebrew-cask.sh vX.Y.Z
 brew audit --cask --strict --online --tap=kovyrin/agent-secret agent-secret
 ```
 
