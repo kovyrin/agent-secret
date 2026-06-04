@@ -91,6 +91,8 @@ require_release_process_text "AGENT_SECRET_IN_MISE=1 scripts/release/test-releas
 require_release_process_text "AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh"
 require_release_process_text "AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh"
 require_release_process_text "AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh"
+require_release_process_text "AGENT_SECRET_IN_MISE=1 scripts/checks/test-cloudflare-curl-token-handling.sh"
+require_release_process_text "AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask.sh"
 require_release_process_text "swift run agent-secret-app-smoke"
 require_release_process_text "## Toolchain Pin Maintenance"
 require_release_process_text "## Installer Bootstrap Documentation"
