@@ -274,6 +274,38 @@ profiles:
       TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
 `,
 		},
+		{
+			name: "custom api endpoint",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      api_url: https://api.example.test
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
+		{
+			name: "custom identity endpoint",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      identity_url: https://identity.example.test
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -534,8 +566,6 @@ sources:
     work:
       kind: secrets_manager
       token_alias: work-token
-      api_url: https://api.example.test
-      identity_url: https://identity.example.test
 profiles:
   deploy:
     reason: Deploy
@@ -551,9 +581,7 @@ profiles:
 	if !ok {
 		t.Fatalf("Bitwarden source missing from inspect output: %+v", info.Sources)
 	}
-	if source.TokenAlias != "work-token" ||
-		source.APIURL != "https://api.example.test" ||
-		source.IdentityURL != "https://identity.example.test" {
+	if source.TokenAlias != "work-token" || source.APIURL != "" || source.IdentityURL != "" {
 		t.Fatalf("Bitwarden source metadata = %+v", source)
 	}
 	if info.Sources.IsZero() {

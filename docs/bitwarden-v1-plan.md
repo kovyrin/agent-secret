@@ -248,8 +248,6 @@ sources:
     work-secrets:
       kind: secrets_manager
       token_alias: work
-      api_url: https://api.bitwarden.com
-      identity_url: https://identity.bitwarden.com
 
 profiles:
   deploy:
@@ -376,14 +374,15 @@ Execution flow:
 The helper environment should be isolated:
 
 - start from an allowlist, not the daemon's full environment;
-- set `BWS_ACCESS_TOKEN` only for the `bws` subprocess;
-- set `BWS_CONFIG_FILE` to a private broker-owned file when needed;
-- disable `bws` state by default;
-- if live testing proves state is needed to avoid unacceptable auth limits,
-  store it only in a broker-owned private directory keyed by source alias and
-  endpoint profile;
+- set only `BWS_ACCESS_TOKEN` and `NO_COLOR=1` for the `bws` subprocess;
+- do not pass daemon `PATH`, `HOME`, `BWS_SERVER_URL`, `BWS_CONFIG_FILE`, proxy,
+  debug, or log variables;
+- disable `bws` state by default; if live testing proves state is needed to
+  avoid unacceptable auth limits, store it only in a broker-owned private
+  directory keyed by source alias;
 - force JSON output and no color;
-- remove proxy/debug/log variables unless explicitly needed.
+- resolve the helper from an explicit absolute path or fixed system candidates,
+  then reject mutable helper paths before passing token material to `bws`.
 
 `bws run` must not be used. It would create a second command execution path and
 could fetch a broader secret set than the approved refs.
@@ -483,9 +482,10 @@ token storage, audit contract, and tests should stay the same.
 ## Compatibility
 
 V1 should claim support for official Bitwarden Secrets Manager only. The plan
-can support custom `api_url` and `identity_url` settings so operators can test
-official self-hosted Bitwarden deployments, but docs should avoid claiming
-self-hosted compatibility until it has a live smoke fixture.
+should not support custom `api_url` or `identity_url` settings, because project
+config must not be able to redirect token-bearing `bws` requests. Official
+self-hosted Bitwarden deployments should be tracked as a later compatibility
+effort with a trusted endpoint model and live smoke fixture.
 
 Vaultwarden should be explicitly unsupported in v1. If Vaultwarden support is
 possible later, it should be tracked as a separate compatibility effort with
@@ -623,7 +623,7 @@ CLI adapter tests:
 - fake `bws` sees `BWS_ACCESS_TOKEN`;
 - approved child does not see `BWS_ACCESS_TOKEN`;
 - helper is invoked without a shell;
-- helper path and version are shown in approval/audit metadata;
+- mutable helper paths are rejected before token material is passed to `bws`;
 - helper receives only the approved secret ID;
 - invalid JSON fails safely;
 - missing `value` fails safely;

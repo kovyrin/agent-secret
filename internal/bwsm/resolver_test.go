@@ -38,7 +38,8 @@ func TestResolverFetchesBitwardenValueThroughBWS(t *testing.T) {
 		t.Fatalf("Put returned error: %v", err)
 	}
 	runner := &recordingRunner{output: []byte(`{"object":"secret","id":"synthetic-secret-id","value":"synthetic-value"}`)}
-	resolver := &Resolver{Store: store, Binary: "/usr/local/bin/bws", Runner: runner}
+	binary := trustedTestBWSBinary(t)
+	resolver := &Resolver{Store: store, Binary: binary, Runner: runner}
 
 	value, err := resolver.ResolveSecret(context.Background(), testBitwardenSecret())
 	if err != nil {
@@ -47,7 +48,7 @@ func TestResolverFetchesBitwardenValueThroughBWS(t *testing.T) {
 	if value != "synthetic-value" {
 		t.Fatalf("value = %q", value)
 	}
-	if runner.binary != "/usr/local/bin/bws" {
+	if runner.binary != binary {
 		t.Fatalf("binary = %q", runner.binary)
 	}
 	if !slices.Equal(runner.args, []string{
@@ -66,7 +67,7 @@ func TestResolverFetchesBitwardenValueThroughBWS(t *testing.T) {
 	}
 }
 
-func TestResolverDefaultsTokenAliasAndAddsServerURL(t *testing.T) {
+func TestResolverDefaultsTokenAliasAndUsesTrustedCommonBWSPath(t *testing.T) {
 	t.Parallel()
 
 	store := NewKeychainStore("test.service")
@@ -75,16 +76,21 @@ func TestResolverDefaultsTokenAliasAndAddsServerURL(t *testing.T) {
 		t.Fatalf("Put returned error: %v", err)
 	}
 	runner := &recordingRunner{output: []byte(`{"object":"secret","value":"synthetic-value"}`)}
-	resolver := &Resolver{Store: store, Runner: runner}
+	binary := trustedTestBWSBinary(t)
+	resolver := &Resolver{
+		Store:             store,
+		Runner:            runner,
+		CommonBinaryPaths: func() []string { return []string{binary} },
+	}
 	secret := testBitwardenSecret()
 	secret.Source = "work"
-	secret.Bitwarden = request.BitwardenSource{Alias: "work", APIURL: "https://api.example.test"}
+	secret.Bitwarden = request.BitwardenSource{Alias: "work"}
 
 	_, err := resolver.ResolveSecret(context.Background(), secret)
 	if err != nil {
 		t.Fatalf("ResolveSecret returned error: %v", err)
 	}
-	if runner.binary != resolveBWSBinary(DefaultBWSBinary, defaultCommonBWSBinaryPaths()) {
+	if runner.binary != binary {
 		t.Fatalf("binary = %q", runner.binary)
 	}
 	if !slices.Equal(runner.args, []string{
@@ -95,45 +101,106 @@ func TestResolverDefaultsTokenAliasAndAddsServerURL(t *testing.T) {
 		"json",
 		"--color",
 		"no",
-		"--server-url",
-		"https://api.example.test",
 	}) {
 		t.Fatalf("args = %#v", runner.args)
 	}
 }
 
-func TestResolverFallsBackToCommonBWSPath(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	candidate := filepath.Join(t.TempDir(), "bws")
-	if err := os.WriteFile(candidate, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil { //nolint:gosec // G306: fake bws executable must look runnable for fallback discovery.
-		t.Fatalf("write fake bws: %v", err)
+func TestResolverRejectsCustomBitwardenEndpoints(t *testing.T) {
+	t.Parallel()
+
+	resolver := &Resolver{Store: NewKeychainStore("test.service"), Runner: &recordingRunner{}}
+	secret := testBitwardenSecret()
+	secret.Bitwarden.APIURL = "https://api.example.test"
+
+	_, err := resolver.ResolveSecret(context.Background(), secret)
+	if !errors.Is(err, ErrUnsupportedEndpoint) {
+		t.Fatalf("ResolveSecret error = %v, want ErrUnsupportedEndpoint", err)
 	}
+}
+
+func TestResolverFallsBackToTrustedCommonBWSPath(t *testing.T) {
 	store := NewKeychainStore("test.service")
 	store.backend = newMemoryKeychainBackend().backend()
 	if err := store.Put(context.Background(), Token{Alias: "work", AccessToken: "synthetic-token"}); err != nil {
 		t.Fatalf("Put returned error: %v", err)
 	}
 	runner := &recordingRunner{output: []byte(`{"object":"secret","value":"synthetic-value"}`)}
+	binary := trustedTestBWSBinary(t)
 	resolver := &Resolver{
 		Store:             store,
 		Runner:            runner,
-		CommonBinaryPaths: func() []string { return []string{candidate} },
+		CommonBinaryPaths: func() []string { return []string{binary} },
 	}
 
 	if _, err := resolver.ResolveSecret(context.Background(), testBitwardenSecret()); err != nil {
 		t.Fatalf("ResolveSecret returned error: %v", err)
 	}
-	if runner.binary != candidate {
-		t.Fatalf("binary = %q, want fallback %q", runner.binary, candidate)
+	if runner.binary != binary {
+		t.Fatalf("binary = %q, want fallback %q", runner.binary, binary)
 	}
 }
 
-func TestResolveBWSBinaryHonorsExplicitPathAndCustomNames(t *testing.T) {
-	if got := resolveBWSBinary("/custom/bin/bws", nil); got != "/custom/bin/bws" {
-		t.Fatalf("explicit path = %q", got)
+func TestResolverIgnoresPATHBWS(t *testing.T) {
+	pathDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(pathDir, "bws"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil { //nolint:gosec // G306: fake bws executable must look runnable for PATH discovery.
+		t.Fatalf("write fake bws: %v", err)
 	}
-	if got := resolveBWSBinary("custom-bws", nil); got != "custom-bws" {
-		t.Fatalf("custom binary = %q", got)
+	t.Setenv("PATH", pathDir)
+
+	store := NewKeychainStore("test.service")
+	store.backend = newMemoryKeychainBackend().backend()
+	if err := store.Put(context.Background(), Token{Alias: "work", AccessToken: "synthetic-token"}); err != nil {
+		t.Fatalf("Put returned error: %v", err)
+	}
+	runner := &recordingRunner{output: []byte(`{"object":"secret","value":"synthetic-value"}`)}
+	binary := trustedTestBWSBinary(t)
+	resolver := &Resolver{
+		Store:             store,
+		Runner:            runner,
+		CommonBinaryPaths: func() []string { return []string{binary} },
+	}
+
+	if _, err := resolver.ResolveSecret(context.Background(), testBitwardenSecret()); err != nil {
+		t.Fatalf("ResolveSecret returned error: %v", err)
+	}
+	if runner.binary != binary {
+		t.Fatalf("binary = %q, want trusted common path %q", runner.binary, binary)
+	}
+}
+
+func TestResolveBWSBinaryValidatesHelperPath(t *testing.T) {
+	binary := trustedTestBWSBinary(t)
+	got, err := resolveBWSBinary(binary, nil)
+	if err != nil {
+		t.Fatalf("resolveBWSBinary explicit path returned error: %v", err)
+	}
+	if got != binary {
+		t.Fatalf("explicit path = %q, want %q", got, binary)
+	}
+	got, err = resolveBWSBinary(DefaultBWSBinary, []string{binary})
+	if err != nil {
+		t.Fatalf("resolveBWSBinary common path returned error: %v", err)
+	}
+	if got != binary {
+		t.Fatalf("common path = %q, want %q", got, binary)
+	}
+	if _, err := resolveBWSBinary("custom-bws", nil); !errors.Is(err, ErrBWSUnavailable) {
+		t.Fatalf("custom binary error = %v, want ErrBWSUnavailable", err)
+	}
+	if _, err := resolveBWSBinary("relative/bws", nil); !errors.Is(err, ErrBWSUnavailable) {
+		t.Fatalf("relative binary error = %v, want ErrBWSUnavailable", err)
+	}
+}
+
+func TestResolveBWSBinaryRejectsMutableHelperPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bws")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil { //nolint:gosec // G306: fake bws executable must look runnable for trust validation.
+		t.Fatalf("write fake bws: %v", err)
+	}
+
+	if _, err := resolveBWSBinary(path, nil); !errors.Is(err, ErrBWSUnavailable) {
+		t.Fatalf("mutable helper error = %v, want ErrBWSUnavailable", err)
 	}
 }
 
@@ -190,7 +257,7 @@ func TestResolverReturnsRunnerAndOutputErrors(t *testing.T) {
 		t.Fatalf("Put returned error: %v", err)
 	}
 	runnerErr := errors.New("bws failed")
-	resolver := &Resolver{Store: store, Runner: &recordingRunner{err: runnerErr}}
+	resolver := &Resolver{Store: store, Binary: trustedTestBWSBinary(t), Runner: &recordingRunner{err: runnerErr}}
 	if _, err := resolver.ResolveSecret(context.Background(), testBitwardenSecret()); !errors.Is(err, runnerErr) {
 		t.Fatalf("runner error = %v, want %v", err, runnerErr)
 	}
@@ -201,19 +268,20 @@ func TestResolverReturnsRunnerAndOutputErrors(t *testing.T) {
 	}
 }
 
-func TestBWSEnvironmentReplacesParentToken(t *testing.T) {
+func TestBWSEnvironmentUsesMinimalAllowlist(t *testing.T) {
 	t.Setenv("BWS_ACCESS_TOKEN", "parent-token")
 	t.Setenv("NO_COLOR", "already-set")
+	t.Setenv("BWS_SERVER_URL", "https://api.example.test")
+	t.Setenv("BWS_CONFIG_FILE", "/tmp/bws-config")
 
 	env := bwsEnvironment("runtime-token")
-	if containsEnv(env, "BWS_ACCESS_TOKEN=parent-token") {
-		t.Fatal("parent BWS_ACCESS_TOKEN survived in bws environment")
+	if !slices.Equal(env, []string{"BWS_ACCESS_TOKEN=runtime-token", "NO_COLOR=1"}) {
+		t.Fatalf("bws env = %#v", env)
 	}
-	if !containsEnv(env, "BWS_ACCESS_TOKEN=runtime-token") {
-		t.Fatal("runtime BWS_ACCESS_TOKEN was not installed in bws environment")
-	}
-	if !containsEnv(env, "NO_COLOR=already-set") {
-		t.Fatal("existing NO_COLOR was not preserved")
+	if containsEnv(env, "BWS_ACCESS_TOKEN=parent-token") ||
+		containsEnv(env, "BWS_SERVER_URL=https://api.example.test") ||
+		containsEnv(env, "BWS_CONFIG_FILE=/tmp/bws-config") {
+		t.Fatal("parent bws environment survived in helper environment")
 	}
 }
 
@@ -306,4 +374,16 @@ func containsEnv(env []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func trustedTestBWSBinary(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{"/bin/sh", "/usr/bin/true", "/bin/echo"} {
+		path, found, err := validateTrustedBWSBinary(candidate)
+		if err == nil && found {
+			return path
+		}
+	}
+	t.Fatal("no trusted system executable available for bws resolver test")
+	return ""
 }

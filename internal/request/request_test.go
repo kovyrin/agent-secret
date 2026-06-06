@@ -291,9 +291,16 @@ func TestExecRequestValidateForDaemonAcceptsBitwardenMetadata(t *testing.T) {
 		t.Fatalf("ValidateForDaemon returned error: %v", err)
 	}
 
-	req.Secrets[0].Bitwarden.TokenAlias = " work "
-	if err := req.ValidateForDaemon(); !errors.Is(err, ErrInvalidReference) {
+	unnormalized := cloneRequest(req)
+	unnormalized.Secrets[0].Bitwarden.TokenAlias = " work "
+	if err := unnormalized.ValidateForDaemon(); !errors.Is(err, ErrInvalidReference) {
 		t.Fatalf("ValidateForDaemon with unnormalized token alias = %v, want ErrInvalidReference", err)
+	}
+
+	customEndpoint := cloneRequest(req)
+	customEndpoint.Secrets[0].Bitwarden.APIURL = "https://api.example.test"
+	if err := customEndpoint.ValidateForDaemon(); !errors.Is(err, ErrInvalidReference) {
+		t.Fatalf("ValidateForDaemon with custom Bitwarden endpoint = %v, want ErrInvalidReference", err)
 	}
 }
 
@@ -654,9 +661,7 @@ func TestParseSecretsNormalizesBitwardenSources(t *testing.T) {
 			Ref:    "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
 			Source: "work",
 			Bitwarden: BitwardenSource{
-				TokenAlias:  "work-token",
-				APIURL:      " https://api.example.test ",
-				IdentityURL: " https://identity.example.test ",
+				TokenAlias: "work-token",
 			},
 		},
 		{
@@ -672,10 +677,8 @@ func TestParseSecretsNormalizesBitwardenSources(t *testing.T) {
 		t.Fatalf("first Bitwarden secret account/source = %q/%q", first.Account, first.Source)
 	}
 	if first.Bitwarden != (BitwardenSource{
-		Alias:       "work",
-		TokenAlias:  "work-token",
-		APIURL:      "https://api.example.test",
-		IdentityURL: "https://identity.example.test",
+		Alias:      "work",
+		TokenAlias: "work-token",
 	}) {
 		t.Fatalf("first Bitwarden metadata = %+v", first.Bitwarden)
 	}
@@ -739,6 +742,22 @@ func TestParseSecretsRejectsProviderSpecificMetadata(t *testing.T) {
 				Alias:     "TOKEN",
 				Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
 				Bitwarden: BitwardenSource{TokenAlias: "bad alias"},
+			},
+		},
+		{
+			name: "Bitwarden custom API endpoint",
+			spec: SecretSpec{
+				Alias:     "TOKEN",
+				Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+				Bitwarden: BitwardenSource{APIURL: "https://api.example.test"},
+			},
+		},
+		{
+			name: "Bitwarden custom identity endpoint",
+			spec: SecretSpec{
+				Alias:     "TOKEN",
+				Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+				Bitwarden: BitwardenSource{IdentityURL: "https://identity.example.test"},
 			},
 		},
 	}

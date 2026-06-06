@@ -11,13 +11,14 @@ const (
 )
 
 var (
-	ErrInvalidTokenAlias = errors.New("invalid Bitwarden Secrets Manager token alias")
-	ErrInvalidToken      = errors.New("invalid Bitwarden Secrets Manager token")
-	ErrTokenNotFound     = errors.New("bitwarden Secrets Manager token not found")
-	ErrKeychainAccess    = errors.New("bitwarden Secrets Manager Keychain access requires repair")
-	ErrUnsupportedStore  = errors.New("bitwarden Secrets Manager token store is unsupported on this platform")
-	ErrBWSUnavailable    = errors.New("bitwarden Secrets Manager CLI is unavailable")
-	ErrInvalidBWSOutput  = errors.New("invalid Bitwarden Secrets Manager CLI output")
+	ErrInvalidTokenAlias   = errors.New("invalid Bitwarden Secrets Manager token alias")
+	ErrInvalidToken        = errors.New("invalid Bitwarden Secrets Manager token")
+	ErrTokenNotFound       = errors.New("bitwarden Secrets Manager token not found")
+	ErrKeychainAccess      = errors.New("bitwarden Secrets Manager Keychain access requires repair")
+	ErrUnsupportedStore    = errors.New("bitwarden Secrets Manager token store is unsupported on this platform")
+	ErrUnsupportedEndpoint = errors.New("unsupported Bitwarden Secrets Manager endpoint")
+	ErrBWSUnavailable      = errors.New("bitwarden Secrets Manager CLI is unavailable")
+	ErrInvalidBWSOutput    = errors.New("invalid Bitwarden Secrets Manager CLI output")
 )
 
 type Token struct {

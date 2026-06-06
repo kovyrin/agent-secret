@@ -9,9 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 
+	"github.com/kovyrin/agent-secret/internal/executabletrust"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretref"
 )
@@ -58,6 +59,9 @@ func (r *Resolver) ResolveSecret(ctx context.Context, secret request.Secret) (st
 	if source.TokenAlias == "" {
 		return "", fmt.Errorf("%w: Bitwarden token alias is required", ErrInvalidTokenAlias)
 	}
+	if source.APIURL != "" || source.IdentityURL != "" {
+		return "", fmt.Errorf("%w: custom Bitwarden endpoints are not supported in v1", ErrUnsupportedEndpoint)
+	}
 	store := r.Store
 	if store == nil {
 		store = NewKeychainStore("")
@@ -73,15 +77,15 @@ func (r *Resolver) ResolveSecret(ctx context.Context, secret request.Secret) (st
 	if binary == "" {
 		binary = DefaultBWSBinary
 	}
-	binary = resolveBWSBinary(binary, r.commonBinaryPaths())
+	binary, err = resolveBWSBinary(binary, r.commonBinaryPaths())
+	if err != nil {
+		return "", err
+	}
 	runner := r.Runner
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
 	args := []string{"secret", "get", secret.Ref.SecretID, "--output", "json", "--color", "no"}
-	if source.APIURL != "" {
-		args = append(args, "--server-url", source.APIURL)
-	}
 	output, err := runner.Run(ctx, binary, args, bwsEnvironment(token.AccessToken))
 	if err != nil {
 		return "", err
@@ -104,7 +108,7 @@ func (ExecCommandRunner) Run(ctx context.Context, binary string, args []string, 
 		return output, nil
 	}
 	if errors.Is(err, exec.ErrNotFound) {
-		return nil, fmt.Errorf("%w: install the `bws` CLI and ensure it is on the daemon PATH", ErrBWSUnavailable)
+		return nil, fmt.Errorf("%w: install `bws` at a trusted system path such as /opt/homebrew/bin/bws or /usr/local/bin/bws", ErrBWSUnavailable)
 	}
 	message := strings.TrimSpace(stderr.String())
 	if message == "" {
@@ -120,66 +124,72 @@ func (r *Resolver) commonBinaryPaths() []string {
 	return defaultCommonBWSBinaryPaths()
 }
 
-func resolveBWSBinary(binary string, commonPaths []string) string {
+func resolveBWSBinary(binary string, commonPaths []string) (string, error) {
 	if strings.ContainsRune(binary, os.PathSeparator) {
-		return binary
-	}
-	if resolved, err := exec.LookPath(binary); err == nil {
-		return resolved
+		resolved, found, err := validateTrustedBWSBinary(binary)
+		if err != nil {
+			return "", err
+		}
+		if !found {
+			return "", fmt.Errorf("%w: bws helper %q does not exist", ErrBWSUnavailable, binary)
+		}
+		return resolved, nil
 	}
 	if binary != DefaultBWSBinary {
-		return binary
+		return "", fmt.Errorf("%w: custom bws helper names are not supported; use an absolute trusted path", ErrBWSUnavailable)
 	}
+	var firstErr error
 	for _, candidate := range commonPaths {
-		if executableFileExists(candidate) {
-			return candidate
+		resolved, found, err := validateTrustedBWSBinary(candidate)
+		if err == nil && found {
+			return resolved, nil
+		}
+		if err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return binary
+	if firstErr != nil {
+		return "", firstErr
+	}
+	return "", fmt.Errorf("%w: install `bws` at a trusted system path such as /opt/homebrew/bin/bws or /usr/local/bin/bws", ErrBWSUnavailable)
 }
 
 func defaultCommonBWSBinaryPaths() []string {
-	paths := []string{
+	return []string{
 		"/opt/homebrew/bin/bws",
 		"/usr/local/bin/bws",
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		paths = append(paths, filepath.Join(home, ".local", "bin", "bws"))
-	}
-	return paths
 }
 
-func executableFileExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
+func validateTrustedBWSBinary(path string) (string, bool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", false, nil
 	}
-	return !info.IsDir() && info.Mode().Perm()&0o111 != 0
+	if !strings.ContainsRune(path, os.PathSeparator) {
+		return "", false, fmt.Errorf("%w: bws helper path %q is not absolute", ErrBWSUnavailable, path)
+	}
+	if !filepath.IsAbs(path) {
+		return "", false, fmt.Errorf("%w: bws helper path %q is not absolute", ErrBWSUnavailable, path)
+	}
+	resolved, err := pathresolve.Strict(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("%w: resolve bws helper %q: %w", ErrBWSUnavailable, path, err)
+	}
+	if err := executabletrust.ValidateStableExecutable(resolved); err != nil {
+		return "", true, fmt.Errorf("%w: untrusted bws helper %q: %w", ErrBWSUnavailable, resolved, err)
+	}
+	return resolved, true, nil
 }
 
 func bwsEnvironment(accessToken string) []string {
-	env := make([]string, 0, len(os.Environ())+2)
-	for _, entry := range os.Environ() {
-		key, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			env = append(env, entry)
-			continue
-		}
-		switch key {
-		case "BWS_ACCESS_TOKEN":
-			continue
-		default:
-			env = append(env, entry)
-		}
+	return []string{
+		"BWS_ACCESS_TOKEN=" + accessToken,
+		"NO_COLOR=1",
 	}
-	env = append(env, "BWS_ACCESS_TOKEN="+accessToken)
-	if !slices.ContainsFunc(env, func(entry string) bool {
-		key, _, ok := strings.Cut(entry, "=")
-		return ok && key == "NO_COLOR"
-	}) {
-		env = append(env, "NO_COLOR=1")
-	}
-	return env
 }
 
 func secretValueFromBWSOutput(output []byte) (string, error) {

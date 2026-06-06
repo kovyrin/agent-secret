@@ -102,7 +102,7 @@ func TestNewReuseKeyIncludesBitwardenSourceMetadata(t *testing.T) {
 		mustParsePolicySecret(t, request.SecretSpec{
 			Alias:     "Z_TOKEN",
 			Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
-			Bitwarden: request.BitwardenSource{TokenAlias: "work-token", APIURL: "https://api.example.test"},
+			Bitwarden: request.BitwardenSource{TokenAlias: "work-token"},
 		}),
 		mustParsePolicySecret(t, request.SecretSpec{
 			Alias:     "A_TOKEN",
@@ -116,8 +116,7 @@ func TestNewReuseKeyIncludesBitwardenSourceMetadata(t *testing.T) {
 		t.Fatalf("secrets were not sorted in reuse key: %+v", key.Secrets)
 	}
 	if key.Secrets[1].Source != "work" ||
-		key.Secrets[1].BitwardenTokenAlias != "work-token" ||
-		key.Secrets[1].BitwardenAPIURL != "https://api.example.test" {
+		key.Secrets[1].BitwardenTokenAlias != "work-token" {
 		t.Fatalf("Bitwarden source metadata missing from reuse key: %+v", key.Secrets[1])
 	}
 

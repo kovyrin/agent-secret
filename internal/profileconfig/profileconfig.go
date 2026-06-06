@@ -690,11 +690,12 @@ func normalizeBitwardenSource(rawAlias string, spec bitwardenSourceYAML) (reques
 	if err != nil {
 		return request.BitwardenSource{}, fmt.Errorf("bitwarden source %q has invalid token_alias: %w", alias, err)
 	}
+	if strings.TrimSpace(spec.APIURL) != "" || strings.TrimSpace(spec.IdentityURL) != "" {
+		return request.BitwardenSource{}, fmt.Errorf("bitwarden source %q custom endpoints are not supported in v1", alias)
+	}
 	return request.BitwardenSource{
-		Alias:       alias,
-		TokenAlias:  tokenAlias,
-		APIURL:      strings.TrimSpace(spec.APIURL),
-		IdentityURL: strings.TrimSpace(spec.IdentityURL),
+		Alias:      alias,
+		TokenAlias: tokenAlias,
 	}, nil
 }
 

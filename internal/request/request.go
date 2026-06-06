@@ -533,13 +533,12 @@ func normalizeBitwardenSecretSource(ref SecretRef, source string, metadata Bitwa
 	if err != nil {
 		return BitwardenSource{}, fmt.Errorf("%w: invalid Bitwarden token alias: %w", ErrInvalidReference, err)
 	}
-	apiURL := strings.TrimSpace(metadata.APIURL)
-	identityURL := strings.TrimSpace(metadata.IdentityURL)
+	if strings.TrimSpace(metadata.APIURL) != "" || strings.TrimSpace(metadata.IdentityURL) != "" {
+		return BitwardenSource{}, fmt.Errorf("%w: custom Bitwarden endpoints are not supported in v1", ErrInvalidReference)
+	}
 	return BitwardenSource{
-		Alias:       alias,
-		TokenAlias:  tokenAlias,
-		APIURL:      apiURL,
-		IdentityURL: identityURL,
+		Alias:      alias,
+		TokenAlias: tokenAlias,
 	}, nil
 }
 

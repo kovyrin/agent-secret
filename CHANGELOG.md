@@ -39,6 +39,14 @@ version numbers for public releases.
 - Updated the checked-in Homebrew cask to the published `0.0.15` artifact so
   cask audit matches the latest release.
 
+### Security
+
+- Rejected custom Bitwarden `api_url` and `identity_url` settings in v1 so
+  project config cannot redirect token-bearing `bws` requests.
+- Hardened Bitwarden `bws` helper execution by removing daemon `PATH` and home
+  directory fallback resolution, requiring trusted helper paths, and passing
+  only the access token and no-color flag to the helper environment.
+
 ## [0.0.15] - 2026-06-04
 
 ### Changed
