@@ -21,6 +21,8 @@ import (
 
 const DefaultBWSBinary = "bws"
 const bitwardenDeveloperIDTeamID = "LTZ2PFU5D6"
+const defaultBWSServerBase = "https://vault.bitwarden.com"
+const isolatedBWSProfile = "agent-secret"
 
 type CommandRunner interface {
 	Run(ctx context.Context, binary string, args []string, env []string) ([]byte, error)
@@ -93,7 +95,24 @@ func (r *Resolver) ResolveSecret(ctx context.Context, secret request.Secret) (st
 	if runner == nil {
 		runner = ExecCommandRunner{}
 	}
-	args := []string{"secret", "get", secret.Ref.SecretID, "--output", "json", "--color", "no"}
+	configPath, cleanup, err := createIsolatedBWSConfig()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	args := []string{
+		"--config-file",
+		configPath,
+		"--profile",
+		isolatedBWSProfile,
+		"secret",
+		"get",
+		secret.Ref.SecretID,
+		"--output",
+		"json",
+		"--color",
+		"no",
+	}
 	output, err := runner.Run(ctx, binary, args, bwsEnvironment(token.AccessToken))
 	if err != nil {
 		return "", err
@@ -215,6 +234,25 @@ func bwsEnvironment(accessToken string) []string {
 		"BWS_ACCESS_TOKEN=" + accessToken,
 		"NO_COLOR=1",
 	}
+}
+
+func createIsolatedBWSConfig() (string, func(), error) {
+	dir, err := os.MkdirTemp("", "agent-secret-bws-")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("%w: create isolated bws config: %w", ErrBWSUnavailable, err)
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	path := filepath.Join(dir, "config")
+	config := fmt.Sprintf(
+		"[profiles.%s]\nserver_base = %q\nstate_opt_out = \"true\"\n",
+		isolatedBWSProfile,
+		defaultBWSServerBase,
+	)
+	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("%w: write isolated bws config: %w", ErrBWSUnavailable, err)
+	}
+	return path, cleanup, nil
 }
 
 func bwsFailureMessage(stderr string, fallback string) string {

@@ -52,17 +52,8 @@ func TestResolverFetchesBitwardenValueThroughBWS(t *testing.T) {
 	if runner.binary != binary {
 		t.Fatalf("binary = %q", runner.binary)
 	}
-	if !slices.Equal(runner.args, []string{
-		"secret",
-		"get",
-		"synthetic-secret-id",
-		"--output",
-		"json",
-		"--color",
-		"no",
-	}) {
-		t.Fatalf("args = %#v", runner.args)
-	}
+	assertBWSSecretGetArgs(t, runner.args, "synthetic-secret-id")
+	assertIsolatedBWSConfig(t, runner)
 	if !containsEnv(runner.env, "BWS_ACCESS_TOKEN=synthetic-token") {
 		t.Fatalf("BWS_ACCESS_TOKEN was not set in resolver env")
 	}
@@ -94,17 +85,7 @@ func TestResolverDefaultsTokenAliasAndUsesTrustedCommonBWSPath(t *testing.T) {
 	if runner.binary != binary {
 		t.Fatalf("binary = %q", runner.binary)
 	}
-	if !slices.Equal(runner.args, []string{
-		"secret",
-		"get",
-		"synthetic-secret-id",
-		"--output",
-		"json",
-		"--color",
-		"no",
-	}) {
-		t.Fatalf("args = %#v", runner.args)
-	}
+	assertBWSSecretGetArgs(t, runner.args, "synthetic-secret-id")
 }
 
 func TestResolverRejectsCustomBitwardenEndpoints(t *testing.T) {
@@ -312,6 +293,7 @@ func TestBWSEnvironmentUsesMinimalAllowlist(t *testing.T) {
 	t.Setenv("NO_COLOR", "already-set")
 	t.Setenv("BWS_SERVER_URL", "https://api.example.test")
 	t.Setenv("BWS_CONFIG_FILE", "/tmp/bws-config")
+	t.Setenv("BWS_PROFILE", "default")
 
 	env := bwsEnvironment("runtime-token")
 	if !slices.Equal(env, []string{"BWS_ACCESS_TOKEN=runtime-token", "NO_COLOR=1"}) {
@@ -319,7 +301,8 @@ func TestBWSEnvironmentUsesMinimalAllowlist(t *testing.T) {
 	}
 	if containsEnv(env, "BWS_ACCESS_TOKEN=parent-token") ||
 		containsEnv(env, "BWS_SERVER_URL=https://api.example.test") ||
-		containsEnv(env, "BWS_CONFIG_FILE=/tmp/bws-config") {
+		containsEnv(env, "BWS_CONFIG_FILE=/tmp/bws-config") ||
+		containsEnv(env, "BWS_PROFILE=default") {
 		t.Fatal("parent bws environment survived in helper environment")
 	}
 }
@@ -420,11 +403,14 @@ func TestBWSFailureMessagePreservesNormalColonErrors(t *testing.T) {
 }
 
 type recordingRunner struct {
-	binary string
-	args   []string
-	env    []string
-	output []byte
-	err    error
+	binary        string
+	args          []string
+	env           []string
+	configPath    string
+	configContent string
+	configMode    os.FileMode
+	output        []byte
+	err           error
 }
 
 type fixedTeamPathVerifier struct {
@@ -445,7 +431,67 @@ func (r *recordingRunner) Run(_ context.Context, binary string, args []string, e
 	r.binary = binary
 	r.args = slices.Clone(args)
 	r.env = slices.Clone(env)
+	if configPath := valueAfterFlag(args, "--config-file"); configPath != "" {
+		r.configPath = configPath
+		//nolint:gosec // G304: test reads the resolver-generated temporary config path captured from fake runner args.
+		if content, err := os.ReadFile(configPath); err == nil {
+			r.configContent = string(content)
+		}
+		if info, err := os.Stat(configPath); err == nil {
+			r.configMode = info.Mode().Perm()
+		}
+	}
 	return slices.Clone(r.output), r.err
+}
+
+func assertBWSSecretGetArgs(t *testing.T, args []string, secretID string) {
+	t.Helper()
+	if len(args) != 11 {
+		t.Fatalf("args = %#v", args)
+	}
+	if args[0] != "--config-file" || !filepath.IsAbs(args[1]) {
+		t.Fatalf("config-file args = %#v", args[:2])
+	}
+	want := []string{
+		"--profile",
+		isolatedBWSProfile,
+		"secret",
+		"get",
+		secretID,
+		"--output",
+		"json",
+		"--color",
+		"no",
+	}
+	if !slices.Equal(args[2:], want) {
+		t.Fatalf("args suffix = %#v, want %#v", args[2:], want)
+	}
+}
+
+func assertIsolatedBWSConfig(t *testing.T, runner *recordingRunner) {
+	t.Helper()
+	if runner.configPath == "" {
+		t.Fatal("runner did not receive an isolated bws config path")
+	}
+	wantContent := "[profiles.agent-secret]\nserver_base = \"https://vault.bitwarden.com\"\nstate_opt_out = \"true\"\n"
+	if runner.configContent != wantContent {
+		t.Fatalf("isolated bws config = %q, want %q", runner.configContent, wantContent)
+	}
+	if runner.configMode != 0o600 {
+		t.Fatalf("isolated bws config mode = %v, want 0600", runner.configMode)
+	}
+	if _, err := os.Stat(runner.configPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("isolated bws config cleanup error = %v, want removed", err)
+	}
+}
+
+func valueAfterFlag(args []string, flag string) string {
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func testBitwardenSecret() request.Secret {

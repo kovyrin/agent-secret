@@ -378,9 +378,11 @@ The helper environment should be isolated:
 - set only `BWS_ACCESS_TOKEN` and `NO_COLOR=1` for the `bws` subprocess;
 - do not pass daemon `PATH`, `HOME`, `BWS_SERVER_URL`, `BWS_CONFIG_FILE`, proxy,
   debug, or log variables;
-- disable `bws` state by default; if live testing proves state is needed to
-  avoid unacceptable auth limits, store it only in a broker-owned private
-  directory keyed by source alias;
+- pass an explicit broker-owned temporary config with `state_opt_out` enabled
+  and `server_base` pinned to `https://vault.bitwarden.com`;
+- do not read the user's default `bws` profile, config file, or state;
+- if live testing proves state is needed to avoid unacceptable auth limits,
+  store it only in a broker-owned private directory keyed by source alias;
 - force JSON output and no color;
 - resolve the helper from an explicit absolute path or fixed system candidates,
   then require either a stable system-owned path or the official Bitwarden

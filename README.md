@@ -88,9 +88,11 @@ scripts, pipe the token with `--from-stdin`.
 Bitwarden refs use `bws://<secret-uuid>` or
 `bws://<source-alias>/<secret-uuid>`. Project configs can define
 `sources.bitwarden` entries to map source aliases to token aliases. Agent
-Secret v1 supports official Bitwarden cloud endpoints only. It does not resolve
-`bws` from the daemon `PATH`; helper binaries must be at a fixed common path and
-either live under a stable system-owned path or be signed by Bitwarden Inc.
+Secret v1 supports official Bitwarden cloud endpoints only and invokes `bws`
+with a temporary state-disabled config pinned to `https://vault.bitwarden.com`.
+It does not resolve `bws` from the daemon `PATH`; helper binaries must be at a
+fixed common path and either live under a stable system-owned path or be signed
+by Bitwarden Inc.
 
 ## Quick Start
 
