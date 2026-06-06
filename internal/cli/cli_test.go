@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
+	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -233,6 +234,132 @@ func TestParseExecRejectsAmbiguousLocalBitwardenTokenAliases(t *testing.T) {
 	})
 	if !errors.Is(err, request.ErrInvalidReference) {
 		t.Fatalf("Parse error = %v, want invalid reference", err)
+	}
+}
+
+func TestParseExecUsesExplicitBitwardenSourceWithoutLocalAliasLookup(t *testing.T) {
+	parser := NewParser()
+	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
+		t.Fatal("explicit Bitwarden source should not list local token aliases")
+		return nil, nil
+	}
+
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Deploy",
+		"--secret", "API_TOKEN=bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	secret := command.ExecRequest.Secrets[0]
+	if secret.Source != "work" || secret.Bitwarden.TokenAlias != "work" {
+		t.Fatalf("Bitwarden secret metadata = %+v", secret)
+	}
+}
+
+func TestParseExecRejectsMissingLocalBitwardenTokenAlias(t *testing.T) {
+	parser := NewParser()
+	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
+		return nil, nil
+	}
+
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := parser.Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Deploy",
+		"--secret", "API_TOKEN=bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, request.ErrInvalidReference) {
+		t.Fatalf("Parse error = %v, want invalid reference", err)
+	}
+	if !strings.Contains(err.Error(), "install one token alias") {
+		t.Fatalf("Parse error = %v, want install guidance", err)
+	}
+}
+
+func TestParseExecRejectsConflictingBitwardenSourceMetadata(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: work
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      API_TOKEN:
+        ref: bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158
+        source: work
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := NewParser().Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--profile", "deploy",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, profileconfig.ErrInvalidConfig) {
+		t.Fatalf("Parse error = %v, want invalid config", err)
+	}
+	if !strings.Contains(err.Error(), "does not match ref source") {
+		t.Fatalf("Parse error = %v, want source mismatch", err)
+	}
+}
+
+func TestParseExecRejectsUnknownConfiguredBitwardenSource(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: work
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      API_TOKEN: bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := NewParser().Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--profile", "deploy",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, profileconfig.ErrInvalidConfig) {
+		t.Fatalf("Parse error = %v, want invalid config", err)
+	}
+	if !strings.Contains(err.Error(), "references unknown Bitwarden source") {
+		t.Fatalf("Parse error = %v, want unknown source", err)
 	}
 }
 

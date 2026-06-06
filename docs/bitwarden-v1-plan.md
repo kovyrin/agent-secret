@@ -305,7 +305,7 @@ agent-secret bitwarden secrets-manager token install --alias work --from-stdin
 agent-secret exec \
   --reason "Use test Bitwarden secret" \
   --secret API_TOKEN=bws://<secret-uuid> \
-  -- printenv API_TOKEN
+  -- python3 -c 'import hashlib, os; print(hashlib.sha256(os.environ["API_TOKEN"].encode()).hexdigest())'
 ```
 
 If more than one local token alias is installed, the direct ref must name the
@@ -315,7 +315,7 @@ source alias:
 agent-secret exec \
   --reason "Use work Bitwarden secret" \
   --secret API_TOKEN=bws://work/<secret-uuid> \
-  -- printenv API_TOKEN
+  -- python3 -c 'import hashlib, os; print(hashlib.sha256(os.environ["API_TOKEN"].encode()).hexdigest())'
 ```
 
 ## Token Lifecycle
