@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -281,6 +283,24 @@ func TestManagerWaitUntilUnavailableReturnsForMissingSocket(t *testing.T) {
 
 	if err := manager.waitUntilUnavailable(context.Background(), 0); err != nil {
 		t.Fatalf("waitUntilUnavailable returned error: %v", err)
+	}
+}
+
+func TestUnavailableDaemonStatusErrorAcceptsClosedConnectionRace(t *testing.T) {
+	t.Parallel()
+
+	for _, err := range []error{
+		fmt.Errorf("send daemon message %s: %w", protocol.TypeDaemonStatus, syscall.EPIPE),
+		fmt.Errorf("read daemon response %s: %w", protocol.TypeDaemonStatus, syscall.ECONNRESET),
+		io.EOF,
+		socket.ErrDaemonUnavailable,
+	} {
+		if !isUnavailableDaemonStatusError(err) {
+			t.Fatalf("isUnavailableDaemonStatusError(%v) = false, want true", err)
+		}
+	}
+	if isUnavailableDaemonStatusError(errors.New("permission denied")) {
+		t.Fatal("permission error was classified as daemon unavailable")
 	}
 }
 
