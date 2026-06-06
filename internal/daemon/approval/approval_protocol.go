@@ -34,9 +34,11 @@ const (
 )
 
 type ApprovalRequestedResource struct {
-	Alias   string `json:"alias"`
-	Ref     string `json:"ref"`
-	Account string `json:"account"`
+	Alias               string `json:"alias"`
+	Ref                 string `json:"ref"`
+	Account             string `json:"account"`
+	Source              string `json:"source,omitempty"`
+	BitwardenTokenAlias string `json:"bitwarden_token_alias,omitempty"`
 }
 
 type ApprovalDecisionKind string
@@ -60,9 +62,11 @@ func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) A
 	resources := make([]ApprovalRequestedResource, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
 		resources = append(resources, ApprovalRequestedResource{
-			Alias:   secret.Alias,
-			Ref:     secret.Ref.Raw,
-			Account: secret.Account,
+			Alias:               secret.Alias,
+			Ref:                 secret.Ref.Raw,
+			Account:             secret.Account,
+			Source:              secret.Source,
+			BitwardenTokenAlias: secret.Bitwarden.TokenAlias,
 		})
 	}
 	overriddenAliases := slices.Clone(req.OverriddenAliases)

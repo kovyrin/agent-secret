@@ -537,7 +537,7 @@ type blockingSecretResolver struct {
 	started chan struct{}
 }
 
-func (r *blockingSecretResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+func (r *blockingSecretResolver) Resolve(ctx context.Context, _ request.Secret) (string, error) {
 	r.started <- struct{}{}
 	<-ctx.Done()
 	return "", ctx.Err()

@@ -28,7 +28,7 @@ var (
 )
 
 type Resolver interface {
-	Resolve(ctx context.Context, ref string, account string) (string, error)
+	Resolve(ctx context.Context, secret request.Secret) (string, error)
 	DescribeItem(ctx context.Context, ref itemmetadata.Ref, account string) (itemmetadata.Metadata, error)
 }
 

@@ -24,6 +24,9 @@ version numbers for public releases.
 
 ### Added
 
+- Added Bitwarden Secrets Manager v1 support with `bws://` refs, project
+  `sources.bitwarden` config, Keychain-backed token aliases, and
+  `agent-secret bitwarden secrets-manager token install|status|remove`.
 - Added public website sitemap validation so deploy checks catch missing or
   non-canonical URLs before Google Search Console submission.
 

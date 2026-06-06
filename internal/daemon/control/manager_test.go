@@ -25,6 +25,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -54,8 +55,8 @@ type managerResolver struct {
 	values map[string]string
 }
 
-func (r managerResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
-	return r.values[resolverCallKey(ref, account)], nil
+func (r managerResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
+	return r.values[resolverCallKey(secret.Ref.Raw, secret.Account)], nil
 }
 
 func (r managerResolver) DescribeItem(

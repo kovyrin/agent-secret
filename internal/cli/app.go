@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/kovyrin/agent-secret/internal/bwsm"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/install"
@@ -18,8 +19,10 @@ type App struct {
 	Parser              Parser
 	InstallCLI          func(install.CLIOptions) (install.CLIResult, error)
 	InstallSkill        func(install.SkillOptions) (install.SkillResult, error)
+	BitwardenTokens     bwsm.Store
 	RandomReader        io.Reader
 	DoctorApproverCheck func(context.Context) error
+	Stdin               io.Reader
 	Stdout              io.Writer
 	Stderr              io.Writer
 	managerFactory      daemonManagerFactory
@@ -76,13 +79,15 @@ func NewApp(newManager ControlManagerFactory, stdout io.Writer, stderr io.Writer
 		}
 	}
 	return App{
-		Parser:         NewParser(),
-		InstallCLI:     install.InstallCLI,
-		InstallSkill:   install.InstallSkill,
-		RandomReader:   rand.Reader,
-		Stdout:         stdout,
-		Stderr:         stderr,
-		managerFactory: newDaemonManagerFactory(newManager),
+		Parser:          NewParser(),
+		InstallCLI:      install.InstallCLI,
+		InstallSkill:    install.InstallSkill,
+		BitwardenTokens: bwsm.NewKeychainStore(""),
+		RandomReader:    rand.Reader,
+		Stdin:           os.Stdin,
+		Stdout:          stdout,
+		Stderr:          stderr,
+		managerFactory:  newDaemonManagerFactory(newManager),
 	}
 }
 
@@ -133,6 +138,8 @@ func (a App) Run(ctx context.Context, args []string) int {
 		return a.runProfileList(command)
 	case KindProfileShow:
 		return a.runProfileShow(command)
+	case KindBitwarden:
+		return a.runBitwarden(ctx, command)
 	case KindDaemonStatus:
 		return a.runDaemonStatusWithOutput(ctx, command.OutputJSON)
 	case KindDaemonStart:

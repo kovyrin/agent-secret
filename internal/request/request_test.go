@@ -273,6 +273,30 @@ func TestExecRequestValidateForDaemonAcceptsClientNormalizedRequest(t *testing.T
 	}
 }
 
+func TestExecRequestValidateForDaemonAcceptsBitwardenMetadata(t *testing.T) {
+	t.Parallel()
+
+	dir := testResolvedDir(t)
+	req, err := NewExec(mutate(baseOptions(t, dir, "reason"), func(o *ExecOptions) {
+		o.Secrets = []SecretSpec{{
+			Alias: "TOKEN",
+			Ref:   "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+		}}
+	}))
+	if err != nil {
+		t.Fatalf("NewExec returned error: %v", err)
+	}
+	req = req.WithReceiptTime(time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC))
+	if err := req.ValidateForDaemon(); err != nil {
+		t.Fatalf("ValidateForDaemon returned error: %v", err)
+	}
+
+	req.Secrets[0].Bitwarden.TokenAlias = " work "
+	if err := req.ValidateForDaemon(); !errors.Is(err, ErrInvalidReference) {
+		t.Fatalf("ValidateForDaemon with unnormalized token alias = %v, want ErrInvalidReference", err)
+	}
+}
+
 func TestExecRequestValidateForDaemonRejectsFabricatedMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -603,6 +627,142 @@ func TestParseSecretRef(t *testing.T) {
 	}
 	if ref.Vault != "Example Vault" || ref.Item != "Item" || ref.Section != "API" || ref.Field != "token" {
 		t.Fatalf("unexpected parsed ref: %+v", ref)
+	}
+}
+
+func TestParseSecretRefParsesBitwarden(t *testing.T) {
+	t.Parallel()
+
+	ref, err := ParseSecretRef("bws://work/BE8E0AD8-D545-4017-A55A-B02F014D4158")
+	if err != nil {
+		t.Fatalf("ParseSecretRef returned error: %v", err)
+	}
+	if ref.Provider != "bitwarden-secrets-manager" ||
+		ref.Raw != "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158" ||
+		ref.Source != "work" ||
+		ref.SecretID != "be8e0ad8-d545-4017-a55a-b02f014d4158" {
+		t.Fatalf("unexpected Bitwarden ref: %+v", ref)
+	}
+}
+
+func TestParseSecretsNormalizesBitwardenSources(t *testing.T) {
+	t.Parallel()
+
+	secrets, err := ParseSecrets([]SecretSpec{
+		{
+			Alias:  "TOKEN",
+			Ref:    "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+			Source: "work",
+			Bitwarden: BitwardenSource{
+				TokenAlias:  "work-token",
+				APIURL:      " https://api.example.test ",
+				IdentityURL: " https://identity.example.test ",
+			},
+		},
+		{
+			Alias: "DEFAULT_TOKEN",
+			Ref:   "bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ParseSecrets returned error: %v", err)
+	}
+	first := secrets[0]
+	if first.Account != "" || first.Source != "work" {
+		t.Fatalf("first Bitwarden secret account/source = %q/%q", first.Account, first.Source)
+	}
+	if first.Bitwarden != (BitwardenSource{
+		Alias:       "work",
+		TokenAlias:  "work-token",
+		APIURL:      "https://api.example.test",
+		IdentityURL: "https://identity.example.test",
+	}) {
+		t.Fatalf("first Bitwarden metadata = %+v", first.Bitwarden)
+	}
+	second := secrets[1]
+	if second.Source != "personal" || second.Bitwarden.TokenAlias != "personal" {
+		t.Fatalf("second Bitwarden metadata = %+v", second)
+	}
+}
+
+func TestParseSecretsRejectsProviderSpecificMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		spec SecretSpec
+	}{
+		{
+			name: "1Password with source",
+			spec: SecretSpec{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work", Source: "work"},
+		},
+		{
+			name: "1Password with Bitwarden metadata",
+			spec: SecretSpec{
+				Alias:     "TOKEN",
+				Ref:       "op://Example/Item/token",
+				Account:   "Work",
+				Bitwarden: BitwardenSource{Alias: "work"},
+			},
+		},
+		{
+			name: "Bitwarden with account",
+			spec: SecretSpec{
+				Alias:   "TOKEN",
+				Ref:     "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+				Account: "Work",
+			},
+		},
+		{
+			name: "Bitwarden missing source",
+			spec: SecretSpec{Alias: "TOKEN", Ref: "bws://be8e0ad8-d545-4017-a55a-b02f014d4158"},
+		},
+		{
+			name: "Bitwarden source mismatch",
+			spec: SecretSpec{
+				Alias:  "TOKEN",
+				Ref:    "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+				Source: "personal",
+			},
+		},
+		{
+			name: "Bitwarden metadata alias mismatch",
+			spec: SecretSpec{
+				Alias:     "TOKEN",
+				Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+				Bitwarden: BitwardenSource{Alias: "personal"},
+			},
+		},
+		{
+			name: "Bitwarden invalid token alias",
+			spec: SecretSpec{
+				Alias:     "TOKEN",
+				Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+				Bitwarden: BitwardenSource{TokenAlias: "bad alias"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ParseSecrets([]SecretSpec{tt.spec})
+			if !errors.Is(err, ErrInvalidReference) {
+				t.Fatalf("ParseSecrets error = %v, want ErrInvalidReference", err)
+			}
+		})
+	}
+}
+
+func TestValidateReason(t *testing.T) {
+	t.Parallel()
+
+	if err := ValidateReason("Deploy with approved token"); err != nil {
+		t.Fatalf("ValidateReason returned error: %v", err)
+	}
+	if err := ValidateReason(" \t "); !errors.Is(err, ErrInvalidReason) {
+		t.Fatalf("ValidateReason blank error = %v, want ErrInvalidReason", err)
 	}
 }
 

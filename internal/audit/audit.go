@@ -49,9 +49,11 @@ const (
 )
 
 type SecretRef struct {
-	Alias   string `json:"alias"`
-	Ref     string `json:"ref"`
-	Account string `json:"account,omitempty"`
+	Alias               string `json:"alias"`
+	Ref                 string `json:"ref"`
+	Account             string `json:"account,omitempty"`
+	Source              string `json:"source,omitempty"`
+	BitwardenTokenAlias string `json:"bitwarden_token_alias,omitempty"`
 }
 
 type Event struct {
@@ -350,7 +352,13 @@ func fileOwnerUID(info os.FileInfo) (int, bool) {
 func secretRefs(secrets []request.Secret) []SecretRef {
 	refs := make([]SecretRef, 0, len(secrets))
 	for _, secret := range secrets {
-		refs = append(refs, SecretRef{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
+		refs = append(refs, SecretRef{
+			Alias:               secret.Alias,
+			Ref:                 secret.Ref.Raw,
+			Account:             secret.Account,
+			Source:              secret.Source,
+			BitwardenTokenAlias: secret.Bitwarden.TokenAlias,
+		})
 	}
 	return refs
 }

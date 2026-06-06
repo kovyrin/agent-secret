@@ -478,7 +478,7 @@ func (g *grantIssuer) fetchUniqueRefWorker(
 			if !ok {
 				return
 			}
-			value, err := g.resolver.Resolve(ctx, identity.ref, identity.account)
+			value, err := g.resolver.Resolve(ctx, identity.secret())
 			select {
 			case results <- uniqueRefFetchResult{identity: identity, value: value, err: err}:
 			case <-ctx.Done():

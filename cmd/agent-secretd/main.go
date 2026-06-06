@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/bwsm"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
@@ -16,6 +17,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
+	"github.com/kovyrin/agent-secret/internal/providerresolver"
 )
 
 func main() {
@@ -53,8 +55,11 @@ func run() int {
 
 	broker, err := daemonbroker.New(daemonbroker.Options{
 		Approver: approver,
-		Resolver: opresolver.NewDesktopPool(),
-		Audit:    auditWriter,
+		Resolver: providerresolver.New(
+			opresolver.NewDesktopPool(),
+			bwsm.NewResolver(bwsm.NewKeychainStore("")),
+		),
+		Audit: auditWriter,
 	})
 	if err != nil {
 		stderrf("agent-secretd: initialize broker: %v\n", err)

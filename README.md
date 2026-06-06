@@ -1,7 +1,7 @@
 # Agent Secret
 
 Agent Secret is a local macOS approval broker for coding-agent secrets. It lets
-an agent request exact 1Password secret references, shows you a native approval
+an agent request exact secret references, shows you a native approval
 prompt with the command and reason, then injects approved values only into that
 child process.
 
@@ -14,6 +14,10 @@ Requirements:
 - macOS on Apple Silicon.
 - 1Password desktop app signed in, unlocked, and with Developer Tools
   integration enabled.
+- Optional for Bitwarden Secrets Manager: the official `bws` CLI on the daemon
+  `PATH` or in a common macOS CLI location such as `/opt/homebrew/bin`,
+  `/usr/local/bin`, or `~/.local/bin`, plus a Secrets Manager access token
+  stored with Agent Secret.
 
 Install the latest signed and notarized release with Homebrew:
 
@@ -70,6 +74,20 @@ Agent Secret uses the 1Password desktop app SDK integration. In 1Password, open
 
 ![1Password Developer settings with SDK integration enabled](docs/images/1password-sdk-integration.png)
 
+## Enable Bitwarden Secrets Manager
+
+Install the official `bws` CLI, then store a local token alias in the macOS
+Keychain:
+
+```bash
+printf '%s' "$BWS_ACCESS_TOKEN" | \
+  agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+```
+
+Bitwarden refs use `bws://<secret-uuid>` or
+`bws://<source-alias>/<secret-uuid>`. Project configs can define
+`sources.bitwarden` entries to map source aliases to token aliases.
+
 ## Quick Start
 
 Run a command with an explicitly approved secret:
@@ -120,9 +138,9 @@ agent-secret profile show --json terraform-cloudflare
 ![Agent Secret approval prompt](docs/images/approval-request.png)
 
 The approval UI emphasizes the reason for the request, the command, the working
-directory, the approval scope, the requested aliases, and the exact 1Password
-secret references. Secret values are not shown in the UI and are not returned
-to the agent.
+directory, the approval scope, the requested aliases, and the exact secret
+references. Secret values are not shown in the UI and are not returned to the
+agent.
 
 Metadata inspection has its own approval prompt:
 

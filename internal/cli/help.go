@@ -4,13 +4,13 @@ import "strings"
 
 func TopHelp() string {
 	return strings.TrimSpace(`
-agent-secret controls short-lived local access to 1Password-backed secrets for coding agents.
+agent-secret controls short-lived local access to approved secret refs for coding agents.
 
 Secrets are never printed by agent-secret and are never written to disk. The normal path is:
 
   1. agent-secret validates the command, reason, cwd, TTL, and exact secret refs.
   2. agent-secret starts or connects to the per-user daemon.
-  3. The daemon asks the native macOS approver before any 1Password access.
+  3. The daemon asks the native macOS approver before any secret-provider access.
   4. If approved, the daemon fetches exactly the approved refs and sends an env payload to agent-secret exec.
   5. agent-secret exec spawns the child process and passes stdin/stdout/stderr through unchanged.
 
@@ -20,6 +20,7 @@ Commands:
   exec       Run a command with approved secrets injected as environment variables.
   item       Inspect 1Password item metadata without revealing secret values.
   profile    Inspect project profiles without resolving secret values.
+  bitwarden  Manage local Bitwarden Secrets Manager token aliases.
   install-cli Install or repair the agent-secret command symlink for this user.
   skill-install Install or repair the Agent Secret agent skill for this user.
   daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
@@ -58,10 +59,10 @@ Common examples:
 Safety rules:
 
   - --reason is required, trimmed, and capped at 240 characters.
-  - --secret must be ALIAS=op://vault/item[/section]/field-or-text-file.
+  - --secret must be ALIAS=REF, where REF starts with op:// or bws://.
   - --profile NAME loads refs and defaults from agent-secret.yml or .agent-secret.yml in the current directory or a parent.
   - If no --profile, --secret, or --env-file is provided, exec uses default_profile from the discovered project config.
-  - --env-file PATH loads dotenv-style KEY=VALUE entries. op:// values become approved secret refs; other values are passed only to the child.
+  - --env-file PATH loads dotenv-style KEY=VALUE entries. op:// and bws:// values become approved secret refs; other values are passed only to the child.
   - --only filters profile refs and env-file refs, but not deliberate one-off --secret refs.
   - Project configs can set account defaults at the file, profile, or secret level, and profiles may include other profiles.
   - --account sets a default 1Password account for CLI-provided refs when config does not already provide one.
@@ -184,20 +185,42 @@ Flags:
 `)
 }
 
+func BitwardenHelp() string {
+	return strings.TrimSpace(`
+agent-secret bitwarden manages local Bitwarden Secrets Manager setup metadata.
+
+Usage:
+
+  agent-secret bitwarden secrets-manager token install --alias ALIAS --from-stdin
+  agent-secret bitwarden secrets-manager token status --alias ALIAS
+  agent-secret bitwarden secrets-manager token remove --alias ALIAS
+
+The access token is stored in the user's macOS Keychain under the local alias.
+The token value is never printed. Pipe the token on stdin so it does not appear
+in shell history or command arguments.
+
+Examples:
+
+  printf '%s' "$BWS_ACCESS_TOKEN" | agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+  agent-secret bitwarden secrets-manager token status --alias work
+  agent-secret bitwarden secrets-manager token remove --alias work
+`)
+}
+
 func ExecHelp() string {
 	return strings.TrimSpace(`
 agent-secret exec validates a command request, asks the local daemon for approved secrets, and then runs the wrapped command.
 
 Usage:
 
-  agent-secret exec --reason TEXT --secret ALIAS=op://vault/item/field-or-text-file [flags] -- COMMAND [ARG...]
+  agent-secret exec --reason TEXT --secret ALIAS=REF [flags] -- COMMAND [ARG...]
   agent-secret exec --profile NAME [flags] -- COMMAND [ARG...]
   agent-secret exec --reason TEXT --env-file PATH [flags] -- COMMAND [ARG...]
 
 Required:
 
   --reason TEXT       Human-readable reason shown to the approver and used for reuse matching. Required unless the profile sets reason.
-  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field-or-text-file. Required unless a profile, default_profile, or --env-file supplies secret refs.
+  --secret MAPPING    Secret alias mapping. Repeat for multiple refs. Format: ALIAS=op://vault/item[/section]/field-or-text-file or ALIAS=bws://<source-alias>/<secret-uuid>. Required unless a profile, default_profile, or --env-file supplies secret refs.
   -- COMMAND [ARG...] Command argv to execute. The -- boundary is required.
 
 Flags:
@@ -252,7 +275,7 @@ Project profiles:
 
   --secret flags may be combined with --profile for one-off additional refs.
   --env-file may be combined with --profile or --secret. Values that start with
-  op:// are treated as secret refs; other values are passed to the child as
+  op:// and bws:// values are treated as secret refs; other values are passed to the child as
   plain environment entries. When multiple env files define the same key, the
   later file wins. Env-file keys override the caller environment for that child.
   --account applies when a loaded profile, config, or explicit secret entry does
@@ -265,6 +288,10 @@ Project profiles:
   Account precedence is per-secret account, profile account, top-level account,
   --account, OP_ACCOUNT / AGENT_SECRET_1PASSWORD_ACCOUNT, then the default
   personal 1Password desktop account.
+  Bitwarden Secrets Manager refs use source, not account. If a project config
+  has exactly one Bitwarden source, bws://<secret-uuid> refs use it. With no
+  project source, direct CLI and env-file refs can infer the single local token
+  alias installed by agent-secret bitwarden secrets-manager token install.
   Included profiles are resolved in order. Later includes and the selected
   profile override earlier secrets with the same alias.
   1Password text file/document refs are resolved into the alias env value with

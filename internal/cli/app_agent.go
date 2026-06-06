@@ -167,10 +167,10 @@ func agentContextCommands() map[string]commandContext {
 			Summary: "Run a command with approved secrets injected as environment variables.",
 			Flags: []flagContext{
 				{Name: "--reason", Type: "string", Description: "Human-readable reason shown to the approver."},
-				{Name: "--secret", Type: "mapping", Repeatable: true, Description: "Secret alias mapping: ALIAS=op://vault/item/field."},
+				{Name: "--secret", Type: "mapping", Repeatable: true, Description: "Secret alias mapping: ALIAS=op://vault/item/field or ALIAS=bws://source/secret-uuid."},
 				{Name: "--profile", Type: "string", Description: "Load a named project profile."},
 				{Name: "--only", Type: "string", Repeatable: true, Description: "Filter profile/env-file aliases; comma-separated values are accepted."},
-				{Name: "--env-file", Type: "path", Repeatable: true, Description: "Load dotenv entries; op:// values become approved refs."},
+				{Name: "--env-file", Type: "path", Repeatable: true, Description: "Load dotenv entries; op:// and bws:// values become approved refs."},
 				{Name: "--account", Type: "string", Description: "Default 1Password account for refs without a config account."},
 				{Name: "--config", Type: "path", Description: "Profile config path."},
 				{Name: "--cwd", Type: "path", Description: "Child working directory."},
@@ -192,6 +192,34 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--force", Type: "bool", Description: "Replace an existing regular file or different symlink."},
 			}, jsonFlag()...),
 			Outputs: []string{"text", "json"},
+		},
+		"bitwarden": {
+			Summary: "Manage local Bitwarden Secrets Manager token aliases.",
+			Subcommands: map[string]commandContext{
+				"secrets-manager token install": {
+					Summary: "Store a Bitwarden Secrets Manager access token in the macOS Keychain under a local alias.",
+					Flags: append([]flagContext{
+						{Name: "--alias", Type: "string", Description: "Local token alias."},
+						{Name: "--from-stdin", Type: "bool", Description: "Read the access token from stdin."},
+					}, jsonFlag()...),
+					Outputs: []string{"text", "json"},
+					Notes:   []string{"the token value is never printed"},
+				},
+				"secrets-manager token status": {
+					Summary: "Report whether a local Bitwarden token alias is installed.",
+					Flags: append([]flagContext{
+						{Name: "--alias", Type: "string", Description: "Local token alias."},
+					}, jsonFlag()...),
+					Outputs: []string{"text", "json"},
+				},
+				"secrets-manager token remove": {
+					Summary: "Remove a local Bitwarden token alias from the macOS Keychain.",
+					Flags: append([]flagContext{
+						{Name: "--alias", Type: "string", Description: "Local token alias."},
+					}, jsonFlag()...),
+					Outputs: []string{"text", "json"},
+				},
+			},
 		},
 		"item": {
 			Summary: "Inspect 1Password item metadata without revealing secret values.",

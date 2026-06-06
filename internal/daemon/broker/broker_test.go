@@ -227,10 +227,12 @@ type mockResolver struct {
 	order  *[]string
 }
 
-func (m *mockResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
+func (m *mockResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	ref := secret.Ref.Raw
+	account := secret.Account
 	key := resolverCallKey(ref, account)
 	m.calls = append(m.calls, key)
 	if m.order != nil {
@@ -281,8 +283,8 @@ type cancelObservingResolver struct {
 	slowCanceled chan struct{}
 }
 
-func (r *cancelObservingResolver) Resolve(ctx context.Context, ref string, _ string) (string, error) {
-	switch ref {
+func (r *cancelObservingResolver) Resolve(ctx context.Context, secret request.Secret) (string, error) {
+	switch secret.Ref.Raw {
 	case r.failRef:
 		select {
 		case <-r.slowStarted:
@@ -318,7 +320,7 @@ type deadlineObservingResolver struct {
 	done chan struct{}
 }
 
-func (r *deadlineObservingResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+func (r *deadlineObservingResolver) Resolve(ctx context.Context, _ request.Secret) (string, error) {
 	<-ctx.Done()
 	close(r.done)
 	return "", ctx.Err()
@@ -336,7 +338,7 @@ type itemDescribeDeadlineObservingResolver struct {
 	done chan struct{}
 }
 
-func (r *itemDescribeDeadlineObservingResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
+func (r *itemDescribeDeadlineObservingResolver) Resolve(_ context.Context, _ request.Secret) (string, error) {
 	return canarySecretValue, nil
 }
 
@@ -355,7 +357,7 @@ type blockingResolver struct {
 	canceled chan struct{}
 }
 
-func (r *blockingResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+func (r *blockingResolver) Resolve(ctx context.Context, _ request.Secret) (string, error) {
 	close(r.started)
 	<-ctx.Done()
 	close(r.canceled)
@@ -375,7 +377,7 @@ type contextIgnoringResolver struct {
 	release chan struct{}
 }
 
-func (r *contextIgnoringResolver) Resolve(ctx context.Context, _ string, _ string) (string, error) {
+func (r *contextIgnoringResolver) Resolve(ctx context.Context, _ request.Secret) (string, error) {
 	close(r.started)
 	<-r.release
 	return "", ctx.Err()
@@ -394,7 +396,7 @@ type itemDescribeContextIgnoringResolver struct {
 	release chan struct{}
 }
 
-func (r *itemDescribeContextIgnoringResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
+func (r *itemDescribeContextIgnoringResolver) Resolve(_ context.Context, _ request.Secret) (string, error) {
 	return canarySecretValue, nil
 }
 
@@ -413,7 +415,7 @@ type advancingResolver struct {
 	advance func()
 }
 
-func (r *advancingResolver) Resolve(_ context.Context, _ string, _ string) (string, error) {
+func (r *advancingResolver) Resolve(_ context.Context, _ request.Secret) (string, error) {
 	r.advance()
 	return r.value, nil
 }

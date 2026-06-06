@@ -93,6 +93,48 @@ func TestReusableApprovalMissesOnPolicyChanges(t *testing.T) {
 	}
 }
 
+func TestNewReuseKeyIncludesBitwardenSourceMetadata(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	req := testRequest(t, now)
+	req.Secrets = []request.Secret{
+		mustParsePolicySecret(t, request.SecretSpec{
+			Alias:     "Z_TOKEN",
+			Ref:       "bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+			Bitwarden: request.BitwardenSource{TokenAlias: "work-token", APIURL: "https://api.example.test"},
+		}),
+		mustParsePolicySecret(t, request.SecretSpec{
+			Alias:     "A_TOKEN",
+			Ref:       "bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158",
+			Bitwarden: request.BitwardenSource{TokenAlias: "personal-token"},
+		}),
+	}
+
+	key := NewReuseKey(req)
+	if key.Secrets[0].Alias != "A_TOKEN" || key.Secrets[1].Alias != "Z_TOKEN" {
+		t.Fatalf("secrets were not sorted in reuse key: %+v", key.Secrets)
+	}
+	if key.Secrets[1].Source != "work" ||
+		key.Secrets[1].BitwardenTokenAlias != "work-token" ||
+		key.Secrets[1].BitwardenAPIURL != "https://api.example.test" {
+		t.Fatalf("Bitwarden source metadata missing from reuse key: %+v", key.Secrets[1])
+	}
+
+	reordered := req
+	reordered.Secrets = append([]request.Secret(nil), req.Secrets[1], req.Secrets[0])
+	if !key.Equal(NewReuseKey(reordered)) {
+		t.Fatal("reuse key changed when secrets were reordered")
+	}
+
+	changed := req
+	changed.Secrets = append([]request.Secret(nil), req.Secrets...)
+	changed.Secrets[0].Bitwarden.TokenAlias = "other-token"
+	if key.Equal(NewReuseKey(changed)) {
+		t.Fatal("reuse key ignored Bitwarden token alias change")
+	}
+}
+
 func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
 	t.Parallel()
 
@@ -124,6 +166,31 @@ func TestReusableApprovalUsesRequestedUseLimit(t *testing.T) {
 	}
 	if _, _, err := store.MatchReusable(req); !errors.Is(err, ErrMismatch) {
 		t.Fatalf("expected two-use approval to be removed, got %v", err)
+	}
+}
+
+func TestStoreRemoveReusableAndClear(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 28, 10, 0, 0, 0, time.UTC)
+	store := NewStore(func() time.Time { return now })
+	req := testRequest(t, now)
+	if _, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_1", Nonce: "nonce_1"}); err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+	if !store.RemoveReusable("appr_1") {
+		t.Fatal("RemoveReusable returned false for existing approval")
+	}
+	if store.RemoveReusable("appr_1") {
+		t.Fatal("RemoveReusable returned true for missing approval")
+	}
+
+	if _, err := store.AddReusable(ReusableApprovalSpec{Request: req, ID: "appr_2", Nonce: "nonce_2"}); err != nil {
+		t.Fatalf("AddReusable returned error: %v", err)
+	}
+	store.Clear()
+	if _, _, err := store.MatchReusable(req); !errors.Is(err, ErrMismatch) {
+		t.Fatalf("MatchReusable after Clear = %v, want ErrMismatch", err)
 	}
 }
 
@@ -421,6 +488,16 @@ func testRequest(t *testing.T, now time.Time) request.ExecRequest {
 		ReceivedAt: now,
 		ExpiresAt:  now.Add(2 * time.Minute),
 	}
+}
+
+func mustParsePolicySecret(t *testing.T, spec request.SecretSpec) request.Secret {
+	t.Helper()
+
+	secrets, err := request.ParseSecrets([]request.SecretSpec{spec})
+	if err != nil {
+		t.Fatalf("ParseSecrets returned error: %v", err)
+	}
+	return secrets[0]
 }
 
 type failingRandomReader struct {

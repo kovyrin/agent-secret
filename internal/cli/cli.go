@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -28,6 +29,7 @@ const (
 	KindProfileList  Kind = "profile_list"
 	KindProfileShow  Kind = "profile_show"
 	KindDoctor       Kind = "doctor"
+	KindBitwarden    Kind = "bitwarden"
 	KindInstallCLI   Kind = "install_cli"
 	KindSkillInstall Kind = "skill_install"
 	KindDaemonStart  Kind = "daemon_start"
@@ -46,16 +48,19 @@ type Command struct {
 	ItemDescribePrefix  string
 	AgentContextOptions ConfigCommandOptions
 	ProfileOptions      ProfileCommandOptions
+	BitwardenOptions    BitwardenCommandOptions
 	InstallCLIOptions   install.CLIOptions
 	InstallSkillOptions install.SkillOptions
 	HelpText            string
 	VersionText         string
 }
 
-type Parser struct{}
+type Parser struct {
+	listBitwardenTokenAliases func(context.Context) ([]string, error)
+}
 
 func NewParser() Parser {
-	return Parser{}
+	return Parser{listBitwardenTokenAliases: defaultBitwardenTokenAliasLister}
 }
 
 func (p Parser) Parse(args []string) (Command, error) {
@@ -76,6 +81,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return p.parseItem(args[1:], args)
 	case "profile":
 		return parseProfile(args[1:])
+	case "bitwarden":
+		return parseBitwarden(args[1:])
 	case "daemon":
 		return parseDaemon(args[1:])
 	case "doctor":
@@ -86,7 +93,7 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseSkillInstall(args[1:])
 	default:
 		return Command{}, fmt.Errorf(
-			"%w: unknown command %q; expected one of: agent-context, daemon, doctor, exec, help, install-cli, item, profile, skill-install, version",
+			"%w: unknown command %q; expected one of: agent-context, bitwarden, daemon, doctor, exec, help, install-cli, item, profile, skill-install, version",
 			ErrInvalidArguments,
 			args[0],
 		)

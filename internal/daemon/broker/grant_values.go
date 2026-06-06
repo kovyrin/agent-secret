@@ -8,15 +8,17 @@ import (
 )
 
 type secretIdentity struct {
-	ref     string
-	account string
+	ref       request.SecretRef
+	account   string
+	source    string
+	bitwarden request.BitwardenSource
 }
 
 func uniqueSecretIdentities(secrets []request.Secret) []secretIdentity {
 	seen := make(map[secretIdentity]struct{}, len(secrets))
 	identities := make([]secretIdentity, 0, len(secrets))
 	for _, secret := range secrets {
-		identity := secretIdentity{ref: secret.Ref.Raw, account: secret.Account}
+		identity := identityForSecret(secret)
 		if _, ok := seen[identity]; ok {
 			continue
 		}
@@ -24,16 +26,40 @@ func uniqueSecretIdentities(secrets []request.Secret) []secretIdentity {
 		identities = append(identities, identity)
 	}
 	slices.SortFunc(identities, func(a secretIdentity, b secretIdentity) int {
-		if a.ref < b.ref {
+		if a.ref.Raw < b.ref.Raw {
 			return -1
 		}
-		if a.ref > b.ref {
+		if a.ref.Raw > b.ref.Raw {
 			return 1
 		}
 		if a.account < b.account {
 			return -1
 		}
 		if a.account > b.account {
+			return 1
+		}
+		if a.source < b.source {
+			return -1
+		}
+		if a.source > b.source {
+			return 1
+		}
+		if a.bitwarden.TokenAlias < b.bitwarden.TokenAlias {
+			return -1
+		}
+		if a.bitwarden.TokenAlias > b.bitwarden.TokenAlias {
+			return 1
+		}
+		if a.bitwarden.APIURL < b.bitwarden.APIURL {
+			return -1
+		}
+		if a.bitwarden.APIURL > b.bitwarden.APIURL {
+			return 1
+		}
+		if a.bitwarden.IdentityURL < b.bitwarden.IdentityURL {
+			return -1
+		}
+		if a.bitwarden.IdentityURL > b.bitwarden.IdentityURL {
 			return 1
 		}
 		return 0
@@ -54,7 +80,7 @@ func pendingIdentities(ordered []secretIdentity, pending map[secretIdentity]stru
 func fanoutValues(secrets []request.Secret, refValues map[secretIdentity]string) map[string]string {
 	values := make(map[string]string, len(secrets))
 	for _, secret := range secrets {
-		values[secret.Alias] = refValues[secretIdentity{ref: secret.Ref.Raw, account: secret.Account}]
+		values[secret.Alias] = refValues[identityForSecret(secret)]
 	}
 	return values
 }
@@ -62,17 +88,24 @@ func fanoutValues(secrets []request.Secret, refValues map[secretIdentity]string)
 func auditRefsForIdentity(secrets []request.Secret, identity secretIdentity) []audit.SecretRef {
 	refs := []audit.SecretRef{}
 	for _, secret := range secrets {
-		if secret.Ref.Raw != identity.ref || secret.Account != identity.account {
+		if identityForSecret(secret) != identity {
 			continue
 		}
 		refs = append(refs, audit.SecretRef{
-			Alias:   secret.Alias,
-			Ref:     secret.Ref.Raw,
-			Account: secret.Account,
+			Alias:               secret.Alias,
+			Ref:                 secret.Ref.Raw,
+			Account:             secret.Account,
+			Source:              secret.Source,
+			BitwardenTokenAlias: secret.Bitwarden.TokenAlias,
 		})
 	}
 	if len(refs) == 0 {
-		return []audit.SecretRef{{Ref: identity.ref, Account: identity.account}}
+		return []audit.SecretRef{{
+			Ref:                 identity.ref.Raw,
+			Account:             identity.account,
+			Source:              identity.source,
+			BitwardenTokenAlias: identity.bitwarden.TokenAlias,
+		}}
 	}
 	return refs
 }
@@ -85,22 +118,47 @@ func auditRefsForIdentities(secrets []request.Secret, identities []secretIdentit
 	}
 	matched := make(map[secretIdentity]struct{}, len(identities))
 	for _, secret := range secrets {
-		identity := secretIdentity{ref: secret.Ref.Raw, account: secret.Account}
+		identity := identityForSecret(secret)
 		if _, ok := seen[identity]; !ok {
 			continue
 		}
 		matched[identity] = struct{}{}
 		refs = append(refs, audit.SecretRef{
-			Alias:   secret.Alias,
-			Ref:     secret.Ref.Raw,
-			Account: secret.Account,
+			Alias:               secret.Alias,
+			Ref:                 secret.Ref.Raw,
+			Account:             secret.Account,
+			Source:              secret.Source,
+			BitwardenTokenAlias: secret.Bitwarden.TokenAlias,
 		})
 	}
 	for _, identity := range identities {
 		if _, ok := matched[identity]; ok {
 			continue
 		}
-		refs = append(refs, audit.SecretRef{Ref: identity.ref, Account: identity.account})
+		refs = append(refs, audit.SecretRef{
+			Ref:                 identity.ref.Raw,
+			Account:             identity.account,
+			Source:              identity.source,
+			BitwardenTokenAlias: identity.bitwarden.TokenAlias,
+		})
 	}
 	return refs
+}
+
+func identityForSecret(secret request.Secret) secretIdentity {
+	return secretIdentity{
+		ref:       secret.Ref,
+		account:   secret.Account,
+		source:    secret.Source,
+		bitwarden: secret.Bitwarden,
+	}
+}
+
+func (i secretIdentity) secret() request.Secret {
+	return request.Secret{
+		Ref:       i.ref,
+		Account:   i.account,
+		Source:    i.source,
+		Bitwarden: i.bitwarden,
+	}
 }
