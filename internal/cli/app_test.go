@@ -491,6 +491,51 @@ func TestAppBitwardenTokenRemoveMissingJSON(t *testing.T) {
 	}
 }
 
+func TestAppBitwardenTokenStoreErrors(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{
+		tokens: make(map[string]bwsm.Token),
+		getErr: errors.New("keychain denied"),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"status",
+		"--alias", "work",
+	})
+	if code != 1 {
+		t.Fatalf("status exit code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), `inspect Bitwarden token alias "work": keychain denied`) {
+		t.Fatalf("status stderr = %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	store.getErr = nil
+	store.deleteErr = errors.New("delete denied")
+	code = app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"remove",
+		"--alias", "work",
+	})
+	if code != 1 {
+		t.Fatalf("remove exit code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), `remove Bitwarden token alias "work": delete denied`) {
+		t.Fatalf("remove stderr = %q", stderr.String())
+	}
+}
+
 func TestAppBitwardenRejectsUnsupportedOperation(t *testing.T) {
 	t.Parallel()
 
@@ -2165,25 +2210,40 @@ func (r *appResolver) DescribeItem(
 type fakeBitwardenStore struct {
 	tokens          map[string]bwsm.Token
 	interactivePuts int
+	getErr          error
+	putErr          error
+	deleteErr       error
 }
 
 func (s *fakeBitwardenStore) Get(_ context.Context, alias string) (bwsm.Token, bool, error) {
+	if s.getErr != nil {
+		return bwsm.Token{}, false, s.getErr
+	}
 	token, ok := s.tokens[alias]
 	return token, ok, nil
 }
 
 func (s *fakeBitwardenStore) Put(_ context.Context, token bwsm.Token) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
 	s.tokens[token.Alias] = token
 	return nil
 }
 
 func (s *fakeBitwardenStore) PutAllowingUserInteraction(_ context.Context, token bwsm.Token) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
 	s.interactivePuts++
 	s.tokens[token.Alias] = token
 	return nil
 }
 
 func (s *fakeBitwardenStore) Delete(_ context.Context, alias string) (bool, error) {
+	if s.deleteErr != nil {
+		return false, s.deleteErr
+	}
 	if _, ok := s.tokens[alias]; !ok {
 		return false, nil
 	}
