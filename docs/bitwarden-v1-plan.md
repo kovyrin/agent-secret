@@ -64,7 +64,7 @@ Bitwarden-specific commands should be setup and diagnostics commands,
 not a separate command execution mode:
 
 ```bash
-agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+agent-secret bitwarden secrets-manager token install --alias work
 agent-secret bitwarden secrets-manager token status --alias work
 agent-secret bitwarden secrets-manager token remove --alias work
 agent-secret doctor bitwarden
@@ -298,7 +298,7 @@ When there is no project config source, direct CLI and env-file refs may use a
 single locally installed token alias as the default official Bitwarden source:
 
 ```bash
-agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+agent-secret bitwarden secrets-manager token install --alias work
 
 agent-secret exec \
   --reason "Use test Bitwarden secret" \
@@ -321,14 +321,15 @@ agent-secret exec \
 V1 should add explicit Bitwarden Secrets Manager token commands:
 
 ```bash
-agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+agent-secret bitwarden secrets-manager token install --alias work
 agent-secret bitwarden secrets-manager token status --alias work
 agent-secret bitwarden secrets-manager token remove --alias work
 ```
 
 Token requirements:
 
-- token values are read from stdin in v1;
+- token values are read with hidden terminal input by default;
+- token values can be piped with `--from-stdin` for scripts;
 - token values are stored in macOS Keychain under an Agent Secret service name;
 - token aliases are local operator labels, not project secrets;
 - token aliases are normalized labels, such as `work`, `personal-secrets`, or
@@ -382,7 +383,8 @@ The helper environment should be isolated:
   directory keyed by source alias;
 - force JSON output and no color;
 - resolve the helper from an explicit absolute path or fixed system candidates,
-  then reject mutable helper paths before passing token material to `bws`.
+  then require either a stable system-owned path or the official Bitwarden
+  Developer ID signature before passing token material to `bws`.
 
 `bws run` must not be used. It would create a second command execution path and
 could fetch a broader secret set than the approved refs.
@@ -399,7 +401,8 @@ V1 requirements:
   behavior with command-level checks rather than trusting only the version
   string;
 - reject missing or non-executable helper paths;
-- prefer root-owned or non-user-writable helper paths where practical;
+- accept stable system-owned helper paths and Bitwarden Inc Developer ID signed
+  helper binaries, including normal Homebrew installs under `/opt/homebrew`;
 - do not pass secret values or access tokens to shell strings;
 - invoke `bws` as argv, not through `sh -c`;
 - bound helper runtime with context cancellation and request expiry.
@@ -545,7 +548,8 @@ boundary unless Bitwarden exposes a comparable desktop integration.
 
 - Add Keychain token storage for Bitwarden Secrets Manager token aliases.
 - Add `agent-secret bitwarden secrets-manager token install/status/remove`.
-- Start with `--from-stdin`; defer `--from-ref` and native prompt input.
+- Support hidden interactive token install and `--from-stdin` for scripts;
+  defer `--from-ref`.
 - Add value-redaction tests around token setup commands.
 - Add `doctor` diagnostics for token alias configuration and `bws`
   availability.
@@ -612,7 +616,7 @@ Request and policy tests:
 
 Token store tests:
 
-- install reads from stdin without echoing token;
+- install reads from hidden prompt or stdin without echoing token;
 - status does not print token;
 - remove deletes the alias;
 - missing alias produces a value-free error;

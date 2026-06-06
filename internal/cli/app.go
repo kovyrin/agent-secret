@@ -20,6 +20,7 @@ type App struct {
 	InstallCLI          func(install.CLIOptions) (install.CLIResult, error)
 	InstallSkill        func(install.SkillOptions) (install.SkillResult, error)
 	BitwardenTokens     bwsm.Store
+	SecretPrompt        func(prompt string) (string, error)
 	RandomReader        io.Reader
 	DoctorApproverCheck func(context.Context) error
 	Stdin               io.Reader

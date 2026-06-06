@@ -191,16 +191,18 @@ agent-secret bitwarden manages local Bitwarden Secrets Manager setup metadata.
 
 Usage:
 
-  agent-secret bitwarden secrets-manager token install --alias ALIAS --from-stdin
+  agent-secret bitwarden secrets-manager token install --alias ALIAS [--from-stdin]
   agent-secret bitwarden secrets-manager token status --alias ALIAS
   agent-secret bitwarden secrets-manager token remove --alias ALIAS
 
 The access token is stored in the user's macOS Keychain under the local alias.
-The token value is never printed. Pipe the token on stdin so it does not appear
+The token value is never printed. By default, install prompts for the token with
+hidden terminal input. Use --from-stdin for scripts so the token does not appear
 in shell history or command arguments.
 
 Examples:
 
+  agent-secret bitwarden secrets-manager token install --alias work
   printf '%s' "$BWS_ACCESS_TOKEN" | agent-secret bitwarden secrets-manager token install --alias work --from-stdin
   agent-secret bitwarden secrets-manager token status --alias work
   agent-secret bitwarden secrets-manager token remove --alias work

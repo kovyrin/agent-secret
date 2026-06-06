@@ -563,6 +563,7 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 		"-n",
 		appPath,
 		"--args",
+		daemonprocess.AppLaunchSubcommand,
 		"--socket",
 		"/tmp/d.sock",
 	} {

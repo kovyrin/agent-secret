@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -171,24 +172,24 @@ func TestResolverIgnoresPATHBWS(t *testing.T) {
 
 func TestResolveBWSBinaryValidatesHelperPath(t *testing.T) {
 	binary := trustedTestBWSBinary(t)
-	got, err := resolveBWSBinary(binary, nil)
+	got, err := resolveBWSBinary(binary, nil, nil)
 	if err != nil {
 		t.Fatalf("resolveBWSBinary explicit path returned error: %v", err)
 	}
 	if got != binary {
 		t.Fatalf("explicit path = %q, want %q", got, binary)
 	}
-	got, err = resolveBWSBinary(DefaultBWSBinary, []string{binary})
+	got, err = resolveBWSBinary(DefaultBWSBinary, []string{binary}, nil)
 	if err != nil {
 		t.Fatalf("resolveBWSBinary common path returned error: %v", err)
 	}
 	if got != binary {
 		t.Fatalf("common path = %q, want %q", got, binary)
 	}
-	if _, err := resolveBWSBinary("custom-bws", nil); !errors.Is(err, ErrBWSUnavailable) {
+	if _, err := resolveBWSBinary("custom-bws", nil, nil); !errors.Is(err, ErrBWSUnavailable) {
 		t.Fatalf("custom binary error = %v, want ErrBWSUnavailable", err)
 	}
-	if _, err := resolveBWSBinary("relative/bws", nil); !errors.Is(err, ErrBWSUnavailable) {
+	if _, err := resolveBWSBinary("relative/bws", nil, nil); !errors.Is(err, ErrBWSUnavailable) {
 		t.Fatalf("relative binary error = %v, want ErrBWSUnavailable", err)
 	}
 }
@@ -199,8 +200,46 @@ func TestResolveBWSBinaryRejectsMutableHelperPath(t *testing.T) {
 		t.Fatalf("write fake bws: %v", err)
 	}
 
-	if _, err := resolveBWSBinary(path, nil); !errors.Is(err, ErrBWSUnavailable) {
+	if _, err := resolveBWSBinary(path, nil, rejectingPathVerifier{}); !errors.Is(err, ErrBWSUnavailable) {
 		t.Fatalf("mutable helper error = %v, want ErrBWSUnavailable", err)
+	}
+}
+
+func TestResolveBWSBinaryAcceptsBitwardenSignedMutableHelperPath(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("codesign identity fallback is macOS-specific")
+	}
+
+	path := filepath.Join(t.TempDir(), "bws")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil { //nolint:gosec // G306: fake bws executable must look runnable for trust validation.
+		t.Fatalf("write fake bws: %v", err)
+	}
+
+	got, err := resolveBWSBinary(path, nil, fixedTeamPathVerifier{teamID: bitwardenDeveloperIDTeamID})
+	if err != nil {
+		t.Fatalf("Bitwarden-signed mutable helper error = %v", err)
+	}
+	want, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("resolve helper fixture: %v", err)
+	}
+	if got != want {
+		t.Fatalf("resolved helper = %q, want %q", got, want)
+	}
+}
+
+func TestResolveBWSBinaryRejectsNonBitwardenSignedMutableHelperPath(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("codesign identity fallback is macOS-specific")
+	}
+
+	path := filepath.Join(t.TempDir(), "bws")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil { //nolint:gosec // G306: fake bws executable must look runnable for trust validation.
+		t.Fatalf("write fake bws: %v", err)
+	}
+
+	if _, err := resolveBWSBinary(path, nil, fixedTeamPathVerifier{teamID: "NOTBITWARDEN"}); !errors.Is(err, ErrBWSUnavailable) {
+		t.Fatalf("non-Bitwarden signed mutable helper error = %v, want ErrBWSUnavailable", err)
 	}
 }
 
@@ -336,12 +375,70 @@ func TestExecCommandRunnerReportsMissingAndFailedBWS(t *testing.T) {
 	}
 }
 
+func TestExecCommandRunnerSanitizesRustDiagnosticBWSFailures(t *testing.T) {
+	t.Parallel()
+
+	script := filepath.Join(t.TempDir(), "bws")
+	body := `#!/bin/sh
+cat >&2 <<'EOF'
+Error:
+   0: Doesn't contain a decryption key
+
+Location:
+   crates/bws/src/main.rs:67
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+EOF
+exit 1
+`
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil { //nolint:gosec // G306: fake bws executable must be runnable by this test.
+		t.Fatalf("write failing bws: %v", err)
+	}
+
+	_, err := ExecCommandRunner{}.Run(context.Background(), script, nil, nil)
+	if !errors.Is(err, ErrBWSUnavailable) {
+		t.Fatalf("failed bws error = %v, want ErrBWSUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "Doesn't contain a decryption key") {
+		t.Fatalf("failed bws error = %v, want sanitized diagnostic", err)
+	}
+	for _, leaked := range []string{"Location:", "crates/bws", "Backtrace", "RUST_BACKTRACE"} {
+		if strings.Contains(err.Error(), leaked) {
+			t.Fatalf("failed bws error leaked %q: %v", leaked, err)
+		}
+	}
+}
+
+func TestBWSFailureMessagePreservesNormalColonErrors(t *testing.T) {
+	t.Parallel()
+
+	got := bwsFailureMessage("permission denied: try again\n", "exit status 1")
+	if got != "permission denied: try again" {
+		t.Fatalf("message = %q, want full normal error", got)
+	}
+}
+
 type recordingRunner struct {
 	binary string
 	args   []string
 	env    []string
 	output []byte
 	err    error
+}
+
+type fixedTeamPathVerifier struct {
+	teamID string
+}
+
+func (v fixedTeamPathVerifier) VerifyPath(string) (string, error) {
+	return v.teamID, nil
+}
+
+type rejectingPathVerifier struct{}
+
+func (rejectingPathVerifier) VerifyPath(string) (string, error) {
+	return "", errors.New("signature rejected")
 }
 
 func (r *recordingRunner) Run(_ context.Context, binary string, args []string, env []string) ([]byte, error) {
@@ -379,7 +476,7 @@ func containsEnv(env []string, expected string) bool {
 func trustedTestBWSBinary(t *testing.T) string {
 	t.Helper()
 	for _, candidate := range []string{"/bin/sh", "/usr/bin/true", "/bin/echo"} {
-		path, found, err := validateTrustedBWSBinary(candidate)
+		path, found, err := validateTrustedBWSBinary(candidate, nil)
 		if err == nil && found {
 			return path
 		}

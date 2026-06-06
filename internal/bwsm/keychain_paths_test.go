@@ -21,12 +21,12 @@ func TestTrustedKeychainApplicationPathsForBundledCLI(t *testing.T) {
 	}
 
 	got := trustedKeychainApplicationPathsForExecutable(cliPath)
-	for _, want := range []string{cliPath, daemonApp} {
+	for _, want := range []string{cliPath, daemonApp, daemonExecutable} {
 		if !slices.Contains(got, want) {
 			t.Fatalf("trusted paths = %v, want %q", got, want)
 		}
 	}
-	for _, unwanted := range []string{appRoot, mainExecutable, daemonExecutable} {
+	for _, unwanted := range []string{appRoot, mainExecutable} {
 		if slices.Contains(got, unwanted) {
 			t.Fatalf("trusted paths = %v, did not expect %q", got, unwanted)
 		}
@@ -76,7 +76,8 @@ func TestTrustedKeychainApplicationPathsResolveSymlinkedCLI(t *testing.T) {
 		"Helpers",
 		agentSecretDaemonBundleName,
 	)
-	for _, want := range []string{symlinkPath, resolvedCLIPath, resolvedDaemonApp} {
+	resolvedDaemonExecutable := filepath.Join(resolvedDaemonApp, "Contents", "MacOS", agentSecretAppExecutable)
+	for _, want := range []string{symlinkPath, resolvedCLIPath, resolvedDaemonApp, resolvedDaemonExecutable} {
 		if !slices.Contains(got, want) {
 			t.Fatalf("trusted paths = %v, want %q", got, want)
 		}

@@ -213,6 +213,69 @@ func TestParseExecInfersSingleLocalBitwardenTokenAlias(t *testing.T) {
 	}
 }
 
+func TestResolveImplicitBitwardenSourceFromLocalAliases(t *testing.T) {
+	t.Parallel()
+
+	cache := bitwardenLocalAliasCache{
+		list: func(context.Context) ([]string, error) {
+			return []string{"work"}, nil
+		},
+	}
+	source, err := resolveImplicitBitwardenSource(
+		"bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		profileconfig.Sources{},
+		&cache,
+	)
+	if err != nil {
+		t.Fatalf("resolveImplicitBitwardenSource returned error: %v", err)
+	}
+	if source != "work" {
+		t.Fatalf("source = %q, want work", source)
+	}
+}
+
+func TestResolveImplicitBitwardenSourceRejectsLocalAliasAmbiguity(t *testing.T) {
+	t.Parallel()
+
+	cache := bitwardenLocalAliasCache{
+		list: func(context.Context) ([]string, error) {
+			return []string{"personal", "work"}, nil
+		},
+	}
+	_, err := resolveImplicitBitwardenSource(
+		"bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		profileconfig.Sources{},
+		&cache,
+	)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("resolveImplicitBitwardenSource error = %v, want ambiguity", err)
+	}
+}
+
+func TestSingleConfiguredBitwardenSource(t *testing.T) {
+	t.Parallel()
+
+	if _, ok := singleConfiguredBitwardenSource(profileconfig.Sources{}); ok {
+		t.Fatal("empty sources returned ok=true")
+	}
+	source, ok := singleConfiguredBitwardenSource(profileconfig.Sources{
+		Bitwarden: map[string]request.BitwardenSource{
+			"work": {Alias: "work", TokenAlias: "work-token"},
+		},
+	})
+	if !ok || source.Alias != "work" || source.TokenAlias != "work-token" {
+		t.Fatalf("single source = %+v ok=%v", source, ok)
+	}
+	if _, ok := singleConfiguredBitwardenSource(profileconfig.Sources{
+		Bitwarden: map[string]request.BitwardenSource{
+			"personal": {Alias: "personal"},
+			"work":     {Alias: "work"},
+		},
+	}); ok {
+		t.Fatal("multiple sources returned ok=true")
+	}
+}
+
 func TestParseExecRejectsAmbiguousLocalBitwardenTokenAliases(t *testing.T) {
 	parser := NewParser()
 	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
@@ -386,6 +449,22 @@ func TestParseBitwardenTokenCommands(t *testing.T) {
 		t.Fatalf("install command = %+v", command)
 	}
 
+	interactive, err := NewParser().Parse([]string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+	})
+	if err != nil {
+		t.Fatalf("Parse interactive install returned error: %v", err)
+	}
+	if interactive.BitwardenOptions.Operation != BitwardenTokenInstall ||
+		interactive.BitwardenOptions.Alias != "work" ||
+		interactive.BitwardenOptions.FromStdin {
+		t.Fatalf("interactive install command = %+v", interactive)
+	}
+
 	status, err := NewParser().Parse([]string{
 		"bitwarden",
 		"secrets-manager",
@@ -420,7 +499,6 @@ func TestParseBitwardenRejectsInvalidTokenCommands(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"bitwarden", "sm", "token", "install", "--alias", "work", "--from-stdin"},
-		{"bitwarden", "secrets-manager", "token", "install", "--alias", "work"},
 		{"bitwarden", "secrets-manager", "token", "status", "--alias", "work", "--from-stdin"},
 		{"bitwarden", "secrets-manager", "token", "remove"},
 		{"bitwarden", "secrets-manager", "token", "status", "--alias", "work", "extra"},

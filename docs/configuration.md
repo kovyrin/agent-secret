@@ -152,15 +152,17 @@ Aliases must look like environment variable names, for example
 
 Bitwarden support uses the official `bws` CLI and a local macOS Keychain token
 alias. Agent Secret v1 uses official Bitwarden cloud endpoints only and looks
-for `bws` at trusted system paths such as `/opt/homebrew/bin/bws` and
-`/usr/local/bin/bws`. It does not resolve the helper from the daemon `PATH` or
-user-writable helper locations. Install a token alias before using Bitwarden
-refs:
+for `bws` at fixed common paths such as `/opt/homebrew/bin/bws` and
+`/usr/local/bin/bws`. It does not resolve the helper from the daemon `PATH`;
+helper binaries must either live under a stable system-owned path or be signed
+by Bitwarden Inc. Install a token alias before using Bitwarden refs:
 
 ```bash
-printf '%s' "$BWS_ACCESS_TOKEN" | \
-  agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+agent-secret bitwarden secrets-manager token install --alias work
 ```
+
+The install command prompts for the token with hidden terminal input. For
+scripts, pipe the token with `--from-stdin`.
 
 Project configs can declare one or more Bitwarden Secrets Manager sources:
 

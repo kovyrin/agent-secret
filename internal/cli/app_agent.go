@@ -200,10 +200,10 @@ func agentContextCommands() map[string]commandContext {
 					Summary: "Store a Bitwarden Secrets Manager access token in the macOS Keychain under a local alias.",
 					Flags: append([]flagContext{
 						{Name: "--alias", Type: "string", Description: "Local token alias."},
-						{Name: "--from-stdin", Type: "bool", Description: "Read the access token from stdin."},
+						{Name: "--from-stdin", Type: "bool", Description: "Read the access token from stdin instead of prompting with hidden terminal input."},
 					}, jsonFlag()...),
 					Outputs: []string{"text", "json"},
-					Notes:   []string{"the token value is never printed"},
+					Notes:   []string{"the token value is never printed", "without --from-stdin, install requires an interactive terminal"},
 				},
 				"secrets-manager token status": {
 					Summary: "Report whether a local Bitwarden token alias is installed.",

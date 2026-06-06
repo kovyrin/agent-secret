@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/executabletrust"
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -18,9 +20,14 @@ import (
 )
 
 const DefaultBWSBinary = "bws"
+const bitwardenDeveloperIDTeamID = "LTZ2PFU5D6"
 
 type CommandRunner interface {
 	Run(ctx context.Context, binary string, args []string, env []string) ([]byte, error)
+}
+
+type PathSignatureVerifier interface {
+	VerifyPath(path string) (string, error)
 }
 
 type ExecCommandRunner struct{}
@@ -30,6 +37,7 @@ type Resolver struct {
 	Binary            string
 	Runner            CommandRunner
 	CommonBinaryPaths func() []string
+	BWSVerifier       PathSignatureVerifier
 }
 
 type secretObject struct {
@@ -77,7 +85,7 @@ func (r *Resolver) ResolveSecret(ctx context.Context, secret request.Secret) (st
 	if binary == "" {
 		binary = DefaultBWSBinary
 	}
-	binary, err = resolveBWSBinary(binary, r.commonBinaryPaths())
+	binary, err = resolveBWSBinary(binary, r.commonBinaryPaths(), r.bwsVerifier())
 	if err != nil {
 		return "", err
 	}
@@ -110,10 +118,7 @@ func (ExecCommandRunner) Run(ctx context.Context, binary string, args []string, 
 	if errors.Is(err, exec.ErrNotFound) {
 		return nil, fmt.Errorf("%w: install `bws` at a trusted system path such as /opt/homebrew/bin/bws or /usr/local/bin/bws", ErrBWSUnavailable)
 	}
-	message := strings.TrimSpace(stderr.String())
-	if message == "" {
-		message = err.Error()
-	}
+	message := bwsFailureMessage(stderr.String(), err.Error())
 	return nil, fmt.Errorf("%w: bws secret get failed: %s", ErrBWSUnavailable, message)
 }
 
@@ -124,9 +129,16 @@ func (r *Resolver) commonBinaryPaths() []string {
 	return defaultCommonBWSBinaryPaths()
 }
 
-func resolveBWSBinary(binary string, commonPaths []string) (string, error) {
+func (r *Resolver) bwsVerifier() PathSignatureVerifier {
+	if r.BWSVerifier != nil {
+		return r.BWSVerifier
+	}
+	return trust.CodesignSignatureVerifier{}
+}
+
+func resolveBWSBinary(binary string, commonPaths []string, verifier PathSignatureVerifier) (string, error) {
 	if strings.ContainsRune(binary, os.PathSeparator) {
-		resolved, found, err := validateTrustedBWSBinary(binary)
+		resolved, found, err := validateTrustedBWSBinary(binary, verifier)
 		if err != nil {
 			return "", err
 		}
@@ -140,7 +152,7 @@ func resolveBWSBinary(binary string, commonPaths []string) (string, error) {
 	}
 	var firstErr error
 	for _, candidate := range commonPaths {
-		resolved, found, err := validateTrustedBWSBinary(candidate)
+		resolved, found, err := validateTrustedBWSBinary(candidate, verifier)
 		if err == nil && found {
 			return resolved, nil
 		}
@@ -161,7 +173,7 @@ func defaultCommonBWSBinaryPaths() []string {
 	}
 }
 
-func validateTrustedBWSBinary(path string) (string, bool, error) {
+func validateTrustedBWSBinary(path string, verifier PathSignatureVerifier) (string, bool, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", false, nil
@@ -179,10 +191,23 @@ func validateTrustedBWSBinary(path string) (string, bool, error) {
 		}
 		return "", false, fmt.Errorf("%w: resolve bws helper %q: %w", ErrBWSUnavailable, path, err)
 	}
-	if err := executabletrust.ValidateStableExecutable(resolved); err != nil {
+	if err := executabletrust.ValidateStableExecutable(resolved); err == nil {
+		return resolved, true, nil
+	} else if !isBitwardenSignedBWSBinary(resolved, verifier) {
 		return "", true, fmt.Errorf("%w: untrusted bws helper %q: %w", ErrBWSUnavailable, resolved, err)
 	}
 	return resolved, true, nil
+}
+
+func isBitwardenSignedBWSBinary(path string, verifier PathSignatureVerifier) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	if verifier == nil {
+		verifier = trust.CodesignSignatureVerifier{}
+	}
+	teamID, err := verifier.VerifyPath(path)
+	return err == nil && teamID == bitwardenDeveloperIDTeamID
 }
 
 func bwsEnvironment(accessToken string) []string {
@@ -190,6 +215,46 @@ func bwsEnvironment(accessToken string) []string {
 		"BWS_ACCESS_TOKEN=" + accessToken,
 		"NO_COLOR=1",
 	}
+}
+
+func bwsFailureMessage(stderr string, fallback string) string {
+	fallback = strings.TrimSpace(fallback)
+	for line := range strings.SplitSeq(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "Error:" {
+			continue
+		}
+		if line == "Location:" || strings.HasPrefix(line, "Backtrace ") ||
+			strings.HasPrefix(line, "Run with RUST_BACKTRACE=") {
+			break
+		}
+		return stripBWSDiagnosticPrefix(line)
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "unknown error"
+}
+
+func stripBWSDiagnosticPrefix(line string) string {
+	prefix, message, ok := strings.Cut(line, ":")
+	if !ok {
+		return line
+	}
+	prefix = strings.TrimSpace(prefix)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return line
+	}
+	if strings.EqualFold(prefix, "error") {
+		return message
+	}
+	for _, r := range prefix {
+		if r < '0' || r > '9' {
+			return line
+		}
+	}
+	return message
 }
 
 func secretValueFromBWSOutput(output []byte) (string, error) {

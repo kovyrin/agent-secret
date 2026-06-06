@@ -125,6 +125,58 @@ func TestKeychainStoreRepairsInaccessibleIndex(t *testing.T) {
 	}
 }
 
+func TestKeychainStorePutAllowingUserInteractionUsesInteractiveWrites(t *testing.T) {
+	t.Parallel()
+
+	backend := newMemoryKeychainBackend()
+	store := NewKeychainStore("test.service")
+	store.backend = backend.backend()
+	var normalPuts []string
+	var interactivePuts []string
+	store.backend.put = func(ctx context.Context, service string, account string, value []byte) error {
+		normalPuts = append(normalPuts, account)
+		return backend.put(ctx, service, account, value)
+	}
+	store.backend.putInteractive = func(ctx context.Context, service string, account string, value []byte) error {
+		interactivePuts = append(interactivePuts, account)
+		return backend.put(ctx, service, account, value)
+	}
+
+	err := store.PutAllowingUserInteraction(context.Background(), Token{Alias: "work", AccessToken: "synthetic-token"})
+	if err != nil {
+		t.Fatalf("PutAllowingUserInteraction returned error: %v", err)
+	}
+	if len(normalPuts) != 0 {
+		t.Fatalf("normal writes = %v, want none", normalPuts)
+	}
+	wantInteractive := []string{"work", keychainIndexAccount}
+	if strings.Join(interactivePuts, ",") != strings.Join(wantInteractive, ",") {
+		t.Fatalf("interactive writes = %v, want %v", interactivePuts, wantInteractive)
+	}
+}
+
+func TestKeychainStorePutAllowingUserInteractionReplacesInaccessibleIndex(t *testing.T) {
+	t.Parallel()
+
+	backend := newMemoryKeychainBackend()
+	store := NewKeychainStore("test.service")
+	store.backend = backend.backend()
+	store.backend.get = func(ctx context.Context, service string, account string) ([]byte, error) {
+		if account == keychainIndexAccount {
+			return nil, ErrKeychainAccess
+		}
+		return backend.get(ctx, service, account)
+	}
+	store.backend.delete = func(context.Context, string, string) (bool, error) {
+		return false, errors.New("non-interactive delete should not be used")
+	}
+
+	err := store.PutAllowingUserInteraction(context.Background(), Token{Alias: "work", AccessToken: "synthetic-token"})
+	if err != nil {
+		t.Fatalf("PutAllowingUserInteraction returned error: %v", err)
+	}
+}
+
 func TestKeychainStoreRepairsInaccessibleToken(t *testing.T) {
 	t.Parallel()
 
@@ -220,9 +272,10 @@ func newMemoryKeychainBackend() *memoryKeychainBackend {
 
 func (b *memoryKeychainBackend) backend() keychainBackend {
 	return keychainBackend{
-		get:    b.get,
-		put:    b.put,
-		delete: b.delete,
+		get:            b.get,
+		put:            b.put,
+		putInteractive: b.put,
+		delete:         b.delete,
 	}
 }
 

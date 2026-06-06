@@ -25,6 +25,10 @@ static CFMutableDictionaryRef agentSecretBWSMKeychainQuery(CFStringRef service, 
 	return query;
 }
 
+static void agentSecretBWSMAllowAuthenticationUI(CFMutableDictionaryRef query) {
+	CFDictionaryRemoveValue(query, kSecUseAuthenticationUI);
+}
+
 static CFMutableArrayRef agentSecretBWSMTrustedApplicationArray(void) {
 	return CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 }
@@ -115,6 +119,14 @@ static OSStatus agentSecretBWSMSecItemDeleteNoUI(CFDictionaryRef query) {
 	return status;
 }
 
+static OSStatus agentSecretBWSMSecItemAddAllowUI(CFDictionaryRef query) {
+	return SecItemAdd(query, NULL);
+}
+
+static OSStatus agentSecretBWSMSecItemDeleteAllowUI(CFDictionaryRef query) {
+	return SecItemDelete(query);
+}
+
 #pragma clang diagnostic pop
 */
 import "C"
@@ -164,6 +176,14 @@ func keychainGet(ctx context.Context, service string, account string) ([]byte, e
 }
 
 func keychainPut(ctx context.Context, service string, account string, data []byte) error {
+	return keychainPutWithInteraction(ctx, service, account, data, false)
+}
+
+func keychainPutAllowingUserInteraction(ctx context.Context, service string, account string, data []byte) error {
+	return keychainPutWithInteraction(ctx, service, account, data, true)
+}
+
+func keychainPutWithInteraction(ctx context.Context, service string, account string, data []byte, allowUserInteraction bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -176,6 +196,9 @@ func keychainPut(ctx context.Context, service string, account string, data []byt
 
 	query := C.agentSecretBWSMKeychainQuery(serviceRef, accountRef)
 	defer C.CFRelease(C.CFTypeRef(query))
+	if allowUserInteraction {
+		C.agentSecretBWSMAllowAuthenticationUI(query)
+	}
 
 	access, err := keychainAccess(trustedKeychainApplicationPaths())
 	if err != nil {
@@ -186,19 +209,36 @@ func keychainPut(ctx context.Context, service string, account string, data []byt
 	}
 	addQuery := C.agentSecretBWSMKeychainAddQuery(serviceRef, accountRef, dataRef, access)
 	defer C.CFRelease(C.CFTypeRef(addQuery))
+	if allowUserInteraction {
+		C.agentSecretBWSMAllowAuthenticationUI(addQuery)
+	}
 	keychainInteractionMu.Lock()
 	defer keychainInteractionMu.Unlock()
-	status := C.agentSecretBWSMSecItemAddNoUI(C.CFDictionaryRef(addQuery))
+	status := keychainAddItem(C.CFDictionaryRef(addQuery), allowUserInteraction)
 	if status == C.errSecDuplicateItem {
-		status = C.agentSecretBWSMSecItemDeleteNoUI(C.CFDictionaryRef(query))
+		status = keychainDeleteItem(C.CFDictionaryRef(query), allowUserInteraction)
 		if status == C.errSecSuccess || status == C.errSecItemNotFound {
-			status = C.agentSecretBWSMSecItemAddNoUI(C.CFDictionaryRef(addQuery))
+			status = keychainAddItem(C.CFDictionaryRef(addQuery), allowUserInteraction)
 		}
 	}
 	if status != C.errSecSuccess {
 		return keychainStatusError("write", status)
 	}
 	return nil
+}
+
+func keychainAddItem(query C.CFDictionaryRef, allowUserInteraction bool) C.OSStatus {
+	if allowUserInteraction {
+		return C.agentSecretBWSMSecItemAddAllowUI(query)
+	}
+	return C.agentSecretBWSMSecItemAddNoUI(query)
+}
+
+func keychainDeleteItem(query C.CFDictionaryRef, allowUserInteraction bool) C.OSStatus {
+	if allowUserInteraction {
+		return C.agentSecretBWSMSecItemDeleteAllowUI(query)
+	}
+	return C.agentSecretBWSMSecItemDeleteNoUI(query)
 }
 
 func keychainDelete(ctx context.Context, service string, account string) (bool, error) {

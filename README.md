@@ -14,9 +14,9 @@ Requirements:
 - macOS on Apple Silicon.
 - 1Password desktop app signed in, unlocked, and with Developer Tools
   integration enabled.
-- Optional for Bitwarden Secrets Manager: the official `bws` CLI installed at a
-  trusted system path such as `/opt/homebrew/bin/bws` or `/usr/local/bin/bws`,
-  plus a Secrets Manager access token stored with Agent Secret.
+- Optional for Bitwarden Secrets Manager: the official Bitwarden-signed `bws`
+  CLI installed at `/opt/homebrew/bin/bws` or `/usr/local/bin/bws`, plus a
+  Secrets Manager access token stored with Agent Secret.
 
 Install the latest signed and notarized release with Homebrew:
 
@@ -79,15 +79,18 @@ Install the official `bws` CLI, then store a local token alias in the macOS
 Keychain:
 
 ```bash
-printf '%s' "$BWS_ACCESS_TOKEN" | \
-  agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+agent-secret bitwarden secrets-manager token install --alias work
 ```
+
+The install command prompts for the token with hidden terminal input. For
+scripts, pipe the token with `--from-stdin`.
 
 Bitwarden refs use `bws://<secret-uuid>` or
 `bws://<source-alias>/<secret-uuid>`. Project configs can define
 `sources.bitwarden` entries to map source aliases to token aliases. Agent
-Secret v1 supports official Bitwarden cloud endpoints only, and does not resolve
-`bws` from the daemon `PATH` or user-writable helper locations.
+Secret v1 supports official Bitwarden cloud endpoints only. It does not resolve
+`bws` from the daemon `PATH`; helper binaries must be at a fixed common path and
+either live under a stable system-owned path or be signed by Bitwarden Inc.
 
 ## Quick Start
 

@@ -12,7 +12,7 @@ const (
 func keychainStatusErrorFromStatus(operation string, status int) error {
 	if isKeychainInteractionStatus(status) {
 		return fmt.Errorf(
-			"%w: macOS refused non-interactive Keychain %s for Agent Secret Bitwarden Secrets Manager tokens; reinstall the token with `agent-secret bitwarden secrets-manager token install --alias ALIAS --from-stdin`",
+			"%w: macOS refused non-interactive Keychain %s for Agent Secret Bitwarden Secrets Manager tokens; reinstall the token with `agent-secret bitwarden secrets-manager token install --alias ALIAS`",
 			ErrKeychainAccess,
 			operation,
 		)

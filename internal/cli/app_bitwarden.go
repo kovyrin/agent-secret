@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/bwsm"
+	"golang.org/x/term"
 )
 
 type BitwardenTokenOperation string
@@ -22,6 +25,10 @@ type BitwardenCommandOptions struct {
 	Operation BitwardenTokenOperation `json:"operation"`
 	Alias     string                  `json:"alias"`
 	FromStdin bool                    `json:"from_stdin,omitempty"`
+}
+
+type bitwardenInteractiveTokenStore interface {
+	PutAllowingUserInteraction(ctx context.Context, token bwsm.Token) error
 }
 
 func parseBitwarden(args []string) (Command, error) {
@@ -65,9 +72,6 @@ func parseBitwardenToken(args []string, operation BitwardenTokenOperation) (Comm
 	if operation != BitwardenTokenInstall && opts.FromStdin {
 		return Command{}, fmt.Errorf("%w: --from-stdin is only valid with token install", ErrInvalidArguments)
 	}
-	if operation == BitwardenTokenInstall && !opts.FromStdin {
-		return Command{}, fmt.Errorf("%w: token install requires --from-stdin", ErrInvalidArguments)
-	}
 	return Command{Kind: KindBitwarden, OutputJSON: *jsonOutput, BitwardenOptions: opts}, nil
 }
 
@@ -90,26 +94,84 @@ func (a App) runBitwarden(ctx context.Context, command Command) int {
 }
 
 func (a App) runBitwardenTokenInstall(ctx context.Context, store bwsm.Store, command Command) int {
-	raw, err := io.ReadAll(io.LimitReader(a.stdin(), 64*1024+1))
+	tokenValue, err := a.readBitwardenTokenValue(command.BitwardenOptions)
 	if err != nil {
-		a.stderrf("agent-secret: read Bitwarden token from stdin: %v\n", err)
-		return 1
-	}
-	if len(raw) > 64*1024 {
-		a.stderrf("agent-secret: Bitwarden token from stdin exceeds 65536 bytes\n")
-		return 1
-	}
-	tokenValue := strings.TrimSpace(string(raw))
-	if tokenValue == "" {
-		a.stderrf("agent-secret: Bitwarden token from stdin is empty\n")
+		a.stderrf("agent-secret: %v\n", err)
 		return 1
 	}
 	token := bwsm.Token{Alias: command.BitwardenOptions.Alias, AccessToken: tokenValue}
-	if err := store.Put(ctx, token); err != nil {
+	if err := putBitwardenToken(ctx, store, token, !command.BitwardenOptions.FromStdin); err != nil {
 		a.stderrf("agent-secret: install Bitwarden token alias %q: %v\n", command.BitwardenOptions.Alias, err)
 		return 1
 	}
 	return a.writeBitwardenTokenResult(command, true, "installed")
+}
+
+func putBitwardenToken(ctx context.Context, store bwsm.Store, token bwsm.Token, allowUserInteraction bool) error {
+	if allowUserInteraction {
+		if interactiveStore, ok := store.(bitwardenInteractiveTokenStore); ok {
+			return interactiveStore.PutAllowingUserInteraction(ctx, token)
+		}
+	}
+	return store.Put(ctx, token)
+}
+
+func (a App) readBitwardenTokenValue(opts BitwardenCommandOptions) (string, error) {
+	if opts.FromStdin {
+		return readBitwardenTokenFromReader(a.stdin(), "stdin")
+	}
+	prompt := a.SecretPrompt
+	if prompt == nil {
+		prompt = readSecretFromTerminal
+	}
+	tokenValue, err := prompt(fmt.Sprintf("Bitwarden Secrets Manager access token for alias %q: ", opts.Alias))
+	if err != nil {
+		return "", fmt.Errorf("read Bitwarden token interactively: %w", err)
+	}
+	tokenValue = strings.TrimSpace(tokenValue)
+	if tokenValue == "" {
+		return "", errors.New("bitwarden token from interactive prompt is empty")
+	}
+	if len(tokenValue) > 64*1024 {
+		return "", errors.New("bitwarden token from interactive prompt exceeds 65536 bytes")
+	}
+	return tokenValue, nil
+}
+
+func readBitwardenTokenFromReader(reader io.Reader, source string) (string, error) {
+	raw, err := io.ReadAll(io.LimitReader(reader, 64*1024+1))
+	if err != nil {
+		return "", fmt.Errorf("read Bitwarden token from %s: %w", source, err)
+	}
+	if len(raw) > 64*1024 {
+		return "", fmt.Errorf("bitwarden token from %s exceeds 65536 bytes", source)
+	}
+	tokenValue := strings.TrimSpace(string(raw))
+	if tokenValue == "" {
+		return "", fmt.Errorf("bitwarden token from %s is empty", source)
+	}
+	return tokenValue, nil
+}
+
+func readSecretFromTerminal(prompt string) (string, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return "", fmt.Errorf("open controlling terminal: %w", err)
+	}
+	defer func() { _ = tty.Close() }()
+
+	if prompt != "" {
+		if _, err := fmt.Fprint(tty, prompt); err != nil {
+			return "", fmt.Errorf("write prompt: %w", err)
+		}
+	}
+	fd := int(tty.Fd()) //nolint:gosec // G115: file descriptors returned by os.File fit term.ReadPassword's int API.
+	raw, err := term.ReadPassword(fd)
+	_, _ = fmt.Fprintln(tty)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 func (a App) runBitwardenTokenStatus(ctx context.Context, store bwsm.Store, command Command) int {

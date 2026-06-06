@@ -62,6 +62,7 @@ func appendBundleTrustedPaths(path string, appendPath func(string)) {
 	)
 	appendPath(filepath.Join(appRoot, "Contents", "Resources", "bin", agentSecretCLIBinaryName))
 	appendPath(daemonApp)
+	appendPath(filepath.Join(daemonApp, "Contents", "MacOS", agentSecretAppExecutable))
 }
 
 func appendSiblingDaemonPaths(path string, appendPath func(string)) {
