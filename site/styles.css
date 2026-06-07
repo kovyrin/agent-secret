@@ -868,6 +868,133 @@ li + li {
   overflow-wrap: anywhere;
 }
 
+.docs-main {
+  max-width: none;
+}
+
+.docs-hero {
+  max-width: 980px;
+}
+
+.docs-hero h1 {
+  max-width: 13ch;
+  font-size: clamp(3.2rem, 6.7vw, 6.8rem);
+}
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 250px) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4.6rem);
+  align-items: start;
+}
+
+.docs-sidebar {
+  position: sticky;
+  top: 92px;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.docs-sidebar nav {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.docs-sidebar a {
+  display: block;
+  padding: 0.46rem 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.docs-sidebar a:hover {
+  color: var(--teal);
+  border-color: currentColor;
+}
+
+.docs-content {
+  min-width: 0;
+  max-width: 920px;
+}
+
+.docs-section {
+  padding: clamp(2.5rem, 5vw, 4.6rem) 0;
+  border-top: 1px solid var(--line);
+}
+
+.docs-section:first-child {
+  padding-top: 0;
+}
+
+.docs-section h2 {
+  max-width: 18ch;
+}
+
+.docs-section p {
+  color: var(--muted);
+  font-size: clamp(1rem, 1.4vw, 1.15rem);
+  line-height: 1.68;
+}
+
+.docs-section code {
+  overflow-wrap: anywhere;
+}
+
+.docs-section .code-panel {
+  margin: 1.35rem 0;
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 1.4rem 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.docs-grid > div {
+  min-width: 0;
+  padding: clamp(1.15rem, 2vw, 1.45rem);
+  background: rgba(12, 17, 16, 0.84);
+}
+
+.docs-grid p {
+  margin-bottom: 0;
+  font-size: 0.98rem;
+}
+
+.docs-qa-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.35rem;
+}
+
+.docs-qa-list details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(12, 17, 16, 0.78);
+}
+
+.docs-qa-list summary {
+  cursor: pointer;
+  padding: 1rem 1.1rem;
+  color: var(--text);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.docs-qa-list p {
+  margin: 0;
+  padding: 0 1.1rem 1.1rem;
+  font-size: 0.98rem;
+}
+
 @media (max-width: 960px) {
   .hero,
   .two-column,
@@ -876,8 +1003,22 @@ li + li {
   .closing,
   .code-grid,
   .boundary-grid,
-  .gtk-grid {
+  .gtk-grid,
+  .docs-layout,
+  .docs-grid {
     grid-template-columns: 1fr;
+  }
+
+  .docs-sidebar {
+    position: static;
+    top: auto;
+    padding: 0 0 1.2rem;
+  }
+
+  .docs-sidebar nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem 1rem;
   }
 
   .hero {
