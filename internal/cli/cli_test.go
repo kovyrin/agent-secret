@@ -1503,6 +1503,78 @@ func TestParseSessionListDestroyAndHelp(t *testing.T) {
 	}
 }
 
+func TestParseSessionCreateBuildsMultiSecretBagFromProfileAndCLI(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  deploy:
+    account: Work
+    reason: Deploy workflow
+    ttl: 10m
+    secrets:
+      A_TOKEN: op://Example/A/token
+      B_TOKEN: op://Example/B/token
+`)
+	t.Chdir(root)
+
+	command, err := NewParser().Parse([]string{
+		"session",
+		"create",
+		"--profile", "deploy",
+		"--secret", "CLI_TOKEN=op://Example/CLI/token",
+		"--max-reads", "3",
+		"--json",
+	})
+	if err != nil {
+		t.Fatalf("Parse session create returned error: %v", err)
+	}
+	if command.Kind != KindSessionCreate || !command.OutputJSON {
+		t.Fatalf("command = %+v, want session create json", command)
+	}
+	req := command.SessionCreateRequest
+	if req.Reason != "Deploy workflow" || req.TTL != 10*time.Minute || req.MaxReads != 3 {
+		t.Fatalf("session create policy = %+v", req)
+	}
+	aliases := make([]string, 0, len(req.Secrets))
+	for _, secret := range req.Secrets {
+		aliases = append(aliases, secret.Alias)
+		if secret.Account != "Work" {
+			t.Fatalf("secret %s account = %q, want Work", secret.Alias, secret.Account)
+		}
+	}
+	if strings.Join(aliases, ",") != "A_TOKEN,B_TOKEN,CLI_TOKEN" {
+		t.Fatalf("secret aliases = %v", aliases)
+	}
+}
+
+func TestParseWithSessionRecordsRequestedAliases(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	command, err := NewParser().Parse([]string{
+		"with-session",
+		"asess_abc123",
+		"--cwd", root,
+		"--only", "B_TOKEN,A_TOKEN",
+		"--allow-mutable-executable",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse with-session returned error: %v", err)
+	}
+	if command.Kind != KindWithSession {
+		t.Fatalf("kind = %s, want with-session", command.Kind)
+	}
+	req := command.SessionResolveRequest
+	if strings.Join(req.RequestedAliases, ",") != "A_TOKEN,B_TOKEN" {
+		t.Fatalf("requested aliases = %v, want sorted A_TOKEN,B_TOKEN", req.RequestedAliases)
+	}
+}
+
 func TestParseSessionRejectsInvalidForms(t *testing.T) {
 	t.Parallel()
 
@@ -1575,7 +1647,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "with-session",
 			args:  []string{"with-session", "--help"},
-			wants: []string{"with-session SESSION_ID", "--cwd", "--allow-mutable-executable", "never printed"},
+			wants: []string{"with-session SESSION_ID", "--cwd", "--only", "--allow-mutable-executable", "never printed"},
 		},
 		{
 			name:  "profile",

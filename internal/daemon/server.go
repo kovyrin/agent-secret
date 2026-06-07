@@ -924,6 +924,8 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeSessionPeerMismatch
 	case errors.Is(err, daemonbroker.ErrSessionReadExhausted):
 		return protocol.ErrorCodeSessionReadExhausted
+	case errors.Is(err, request.ErrInvalidAlias):
+		return protocol.ErrorCodeBadRequest
 	case errors.Is(err, ErrRequestAlreadyActive):
 		return protocol.ErrorCodeRequestActive
 	case errors.Is(err, daemonbroker.ErrDaemonStopped):

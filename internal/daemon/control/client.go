@@ -172,7 +172,7 @@ func (c *Client) ResolveSession(
 	if err != nil {
 		return protocol.SessionResolveResponsePayload{}, err
 	}
-	if err := validateSessionResolveResponsePayload(payload); err != nil {
+	if err := validateSessionResolveResponsePayload(payload, req); err != nil {
 		return protocol.SessionResolveResponsePayload{}, err
 	}
 	return payload, nil
@@ -342,12 +342,15 @@ func validateSessionCreateResponsePayload(payload protocol.SessionCreateResponse
 	return nil
 }
 
-func validateSessionResolveResponsePayload(payload protocol.SessionResolveResponsePayload) error {
+func validateSessionResolveResponsePayload(payload protocol.SessionResolveResponsePayload, req request.SessionResolveRequest) error {
 	if payload.Env == nil {
 		return fmt.Errorf("%w: session.resolve response missing env", protocol.ErrMalformedEnvelope)
 	}
 	if gotAliases := envAliases(payload.Env); !slices.Equal(gotAliases, payload.SecretAliases) {
 		return fmt.Errorf("%w: session.resolve response env aliases do not match secret aliases", protocol.ErrMalformedEnvelope)
+	}
+	if len(req.RequestedAliases) > 0 && !slices.Equal(payload.SecretAliases, req.RequestedAliases) {
+		return fmt.Errorf("%w: session.resolve response secret aliases do not match requested aliases", protocol.ErrMalformedEnvelope)
 	}
 	return nil
 }

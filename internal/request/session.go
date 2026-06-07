@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
@@ -57,6 +58,7 @@ type SessionResolveRequest struct {
 	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
 	CWD                    string                `json:"cwd"`
 	EnvironmentFingerprint string                `json:"environment_fingerprint"`
+	RequestedAliases       []string              `json:"requested_aliases,omitempty"`
 	ExpectedPeer           peercred.Expected     `json:"expected_peer"`
 }
 
@@ -215,6 +217,15 @@ func (r SessionResolveRequest) WithExpectedPeer(expected peercred.Expected) Sess
 	return r
 }
 
+func (r SessionResolveRequest) WithRequestedAliases(aliases []string) (SessionResolveRequest, error) {
+	normalized, err := NormalizeAliases(aliases)
+	if err != nil {
+		return SessionResolveRequest{}, err
+	}
+	r.RequestedAliases = normalized
+	return r, nil
+}
+
 func (r SessionResolveRequest) ValidateForDaemon() error {
 	if err := ValidateSessionID(r.SessionID); err != nil {
 		return err
@@ -223,6 +234,9 @@ func (r SessionResolveRequest) ValidateForDaemon() error {
 		return fmt.Errorf("%w: argv is required", ErrInvalidCommand)
 	}
 	if err := validateEnvironmentFingerprint(r.EnvironmentFingerprint); err != nil {
+		return err
+	}
+	if err := validateNormalizedAliases(r.RequestedAliases); err != nil {
 		return err
 	}
 	if err := validateDaemonPreparedPath("cwd", r.CWD, false); err != nil {
@@ -259,6 +273,38 @@ func (r SessionDestroyRequest) ValidateForDaemon() error {
 func ValidateSessionID(sessionID string) error {
 	if !sessionIDPattern.MatchString(sessionID) {
 		return fmt.Errorf("%w: %q", ErrInvalidSessionID, sessionID)
+	}
+	return nil
+}
+
+func NormalizeAliases(aliases []string) ([]string, error) {
+	if len(aliases) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(aliases))
+	normalized := make([]string, 0, len(aliases))
+	for _, raw := range aliases {
+		alias := strings.TrimSpace(raw)
+		if !aliasPattern.MatchString(alias) {
+			return nil, fmt.Errorf("%w: alias must match [A-Z_][A-Z0-9_]*, for example API_TOKEN (got: %q)", ErrInvalidAlias, raw)
+		}
+		if _, ok := seen[alias]; ok {
+			return nil, fmt.Errorf("%w: duplicate alias %q", ErrInvalidAlias, alias)
+		}
+		seen[alias] = struct{}{}
+		normalized = append(normalized, alias)
+	}
+	slices.Sort(normalized)
+	return normalized, nil
+}
+
+func validateNormalizedAliases(aliases []string) error {
+	normalized, err := NormalizeAliases(aliases)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(aliases, normalized) {
+		return fmt.Errorf("%w: aliases must be sorted and trimmed", ErrInvalidAlias)
 	}
 	return nil
 }

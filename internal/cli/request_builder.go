@@ -139,6 +139,7 @@ type sessionResolveRequestBuildOptions struct {
 	cwd                    string
 	env                    []string
 	allowMutableExecutable bool
+	requestedAliases       []string
 }
 
 func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request.SessionResolveRequest, error) {
@@ -163,7 +164,7 @@ func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request
 	if err != nil {
 		return request.SessionResolveRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
 	}
-	return request.NewSessionResolve(
+	req, err := request.NewSessionResolve(
 		opts.sessionID,
 		command,
 		resolvedExecutable,
@@ -171,6 +172,10 @@ func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request
 		cwd,
 		request.EnvironmentFingerprint(env),
 	)
+	if err != nil {
+		return request.SessionResolveRequest{}, err
+	}
+	return req.WithRequestedAliases(opts.requestedAliases)
 }
 
 func buildItemDescribeRequest(opts itemDescribeRequestBuildOptions) (request.ItemDescribeRequest, error) {

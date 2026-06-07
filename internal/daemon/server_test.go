@@ -247,6 +247,76 @@ func TestServerSessionProtocolLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerSessionResolveRejectsUnapprovedAliasProjection(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("absolute cwd: %v", err)
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatalf("resolve cwd: %v", err)
+	}
+	peerExe := currentExecutable(t)
+	exe, err := filepath.EvalSymlinks(peerExe)
+	if err != nil {
+		t.Fatalf("resolve executable: %v", err)
+	}
+	identity, err := fileidentity.Capture(exe)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
+	createReq, err := request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             "Run deploy workflow",
+		Command:            []string{"agent-secret", "session", "create"},
+		ResolvedExecutable: exe,
+		ExecutableIdentity: identity,
+		CWD:                cwd,
+		Secrets:            []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		TTL:                time.Minute,
+		MaxReads:           1,
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	created, err := client.CreateSession(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+	resolveReq, err := request.NewSessionResolve(
+		created.SessionID,
+		[]string{exe, "-test.run=TestServerSessionResolveRejectsUnapprovedAliasProjection", "--", "child"},
+		exe,
+		identity,
+		cwd,
+		request.EnvironmentFingerprint([]string{"PATH=/usr/bin"}),
+	)
+	if err != nil {
+		t.Fatalf("NewSessionResolve returned error: %v", err)
+	}
+	resolveReq, err = resolveReq.WithRequestedAliases([]string{"MISSING_TOKEN"})
+	if err != nil {
+		t.Fatalf("WithRequestedAliases returned error: %v", err)
+	}
+	peer := peerInfoForTest(t, os.Getpid(), peerExe)
+	peer.CWD = cwd
+	resolveReq = resolveReq.WithExpectedPeer(peercred.Expected(peer))
+
+	_, err = client.ResolveSession(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq)
+	if !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("ResolveSession error = %v, want bad_request", err)
+	}
+}
+
 func TestServerSessionListAndDestroyProtocol(t *testing.T) {
 	t.Parallel()
 

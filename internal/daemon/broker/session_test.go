@@ -78,6 +78,86 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 	}
 }
 
+func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
+	specs := []request.SecretSpec{
+		{Alias: "A_TOKEN", Ref: "op://Example/Item/a", Account: "Work"},
+		{Alias: "B_TOKEN", Ref: "op://Example/Item/b", Account: "Work"},
+		{Alias: "C_TOKEN", Ref: "op://Example/Item/c", Account: "Work"},
+	}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Now:      func() time.Time { return now },
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{
+			resolverCallKey("op://Example/Item/a", "Work"): "a-value",
+			resolverCallKey("op://Example/Item/b", "Work"): "b-value",
+			resolverCallKey("op://Example/Item/c", "Work"): "c-value",
+		}},
+		Audit: aud,
+	})
+
+	createReq := testSessionCreateRequest(t, now, specs, 2)
+	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	if err != nil {
+		t.Fatalf("HandleSessionCreate returned error: %v", err)
+	}
+	if !reflect.DeepEqual(created.SecretAliases, []string{"A_TOKEN", "B_TOKEN", "C_TOKEN"}) {
+		t.Fatalf("created secret aliases = %v", created.SecretAliases)
+	}
+
+	peer := testSessionPeer(t, createReq.CWD)
+	missingReq := testSessionResolveRequest(t, created.SessionID, createReq.CWD, peer)
+	missingReq, err = missingReq.WithRequestedAliases([]string{"MISSING_TOKEN"})
+	if err != nil {
+		t.Fatalf("WithRequestedAliases returned error: %v", err)
+	}
+	if _, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_missing", "nonce_missing"), missingReq, peer); !errors.Is(err, request.ErrInvalidAlias) {
+		t.Fatalf("missing alias PrepareSessionResolve error = %v, want ErrInvalidAlias", err)
+	}
+
+	resolveReq := testSessionResolveRequest(t, created.SessionID, createReq.CWD, peer)
+	resolveReq, err = resolveReq.WithRequestedAliases([]string{"B_TOKEN", "A_TOKEN"})
+	if err != nil {
+		t.Fatalf("WithRequestedAliases returned error: %v", err)
+	}
+	delivery, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq, peer)
+	if err != nil {
+		t.Fatalf("PrepareSessionResolve returned error: %v", err)
+	}
+	payload := delivery.Payload()
+	wantAliases := []string{"A_TOKEN", "B_TOKEN"}
+	if !reflect.DeepEqual(payload.SecretAliases, wantAliases) {
+		t.Fatalf("payload secret aliases = %v, want %v", payload.SecretAliases, wantAliases)
+	}
+	if !reflect.DeepEqual(payload.Env, map[string]string{"A_TOKEN": "a-value", "B_TOKEN": "b-value"}) {
+		t.Fatalf("payload env = %+v", payload.Env)
+	}
+	if err := delivery.BeforeWrite(context.Background()); err != nil {
+		t.Fatalf("BeforeWrite returned error: %v", err)
+	}
+	delivery.CommitDelivered()
+
+	var resolvedRefs []audit.SecretRef
+	var commandRefs []audit.SecretRef
+	for _, event := range aud.Events() {
+		if event.Type == audit.EventSessionResolved {
+			resolvedRefs = event.SecretRefs
+		}
+		if event.Type == audit.EventCommandStarting {
+			commandRefs = event.SecretRefs
+		}
+	}
+	if !reflect.DeepEqual(secretRefAliases(resolvedRefs), wantAliases) {
+		t.Fatalf("session_resolved refs = %+v, want aliases %v", resolvedRefs, wantAliases)
+	}
+	if !reflect.DeepEqual(secretRefAliases(commandRefs), wantAliases) {
+		t.Fatalf("command_starting refs = %+v, want aliases %v", commandRefs, wantAliases)
+	}
+}
+
 func TestBrokerSessionResolveAbortRestoresRead(t *testing.T) {
 	t.Parallel()
 

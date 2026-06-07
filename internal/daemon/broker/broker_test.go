@@ -621,6 +621,14 @@ func auditEventTypes(events []audit.Event) []audit.EventType {
 	return types
 }
 
+func secretRefAliases(refs []audit.SecretRef) []string {
+	aliases := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		aliases = append(aliases, ref.Alias)
+	}
+	return aliases
+}
+
 func assertAuditEventsValueFree(t *testing.T, events []audit.Event) {
 	t.Helper()
 	encoded, err := json.Marshal(events)

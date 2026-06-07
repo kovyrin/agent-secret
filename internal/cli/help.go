@@ -358,7 +358,7 @@ func SessionHelp() string {
 
 	  agent-secret session create --profile terraform-cloudflare --max-reads 2
 	  agent-secret with-session asess_123 -- terraform plan
-	  agent-secret with-session asess_123 -- terraform apply
+	  agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN,STATE_TOKEN -- terraform apply
 	  agent-secret session destroy asess_123
 
 	Values are never printed. Session values live in daemon memory only until TTL,
@@ -372,17 +372,19 @@ func WithSessionHelp() string {
 
 	Usage:
 
-	  agent-secret with-session SESSION_ID [--cwd DIR] -- COMMAND [ARG...]
+	  agent-secret with-session SESSION_ID [--cwd DIR] [--only ALIAS[,ALIAS...]] -- COMMAND [ARG...]
 
 	Flags:
 
 	  --cwd DIR       Child working directory. Defaults to caller cwd and must match the session cwd.
+	  --only ALIAS    Inject only selected aliases from the approved session. Repeat or pass comma-separated aliases.
 	  --allow-mutable-executable
 	                  Allow a user-owned or writable executable path after showing the approval warning.
 	  -h, --help      Show this help.
 
 	The session id must come from agent-secret session create. Secret values are
 	injected into the child environment only and are never printed by agent-secret.
+	Without --only, every approved session alias is injected for that command.
 	`)
 }
 

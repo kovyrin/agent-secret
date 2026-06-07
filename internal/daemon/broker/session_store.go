@@ -114,14 +114,18 @@ func (s *sessionStore) reserve(req request.SessionResolveRequest, peer peercred.
 		return sessionReservation{}, ErrSessionReadExhausted
 	}
 
+	secrets, env, aliases, err := selectSessionAliases(record, req.RequestedAliases)
+	if err != nil {
+		return sessionReservation{}, err
+	}
 	record.ReservedReads++
 	return sessionReservation{
 		SessionID:      record.ID,
 		Reason:         record.Reason,
 		CWD:            record.CWD,
-		Secrets:        slices.Clone(record.Secrets),
-		Env:            cloneEnv(record.Env),
-		SecretAliases:  slices.Clone(record.SecretAliases),
+		Secrets:        secrets,
+		Env:            env,
+		SecretAliases:  aliases,
 		ExpiresAt:      record.ExpiresAt,
 		MaxReads:       record.MaxReads,
 		RemainingReads: record.remainingReads(),
@@ -211,6 +215,37 @@ func (s sessionRecord) remainingReads() int {
 		return 0
 	}
 	return remaining
+}
+
+func selectSessionAliases(record *sessionRecord, requested []string) ([]request.Secret, map[string]string, []string, error) {
+	aliases, err := request.NormalizeAliases(requested)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(aliases) == 0 {
+		aliases = slices.Clone(record.SecretAliases)
+	}
+	slices.Sort(aliases)
+
+	secretByAlias := make(map[string]request.Secret, len(record.Secrets))
+	for _, secret := range record.Secrets {
+		secretByAlias[secret.Alias] = secret
+	}
+	secrets := make([]request.Secret, 0, len(aliases))
+	env := make(map[string]string, len(aliases))
+	for _, alias := range aliases {
+		secret, ok := secretByAlias[alias]
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("%w: session has no approved alias %q", request.ErrInvalidAlias, alias)
+		}
+		value, ok := record.Env[alias]
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("%w: session value missing for alias %q", request.ErrInvalidAlias, alias)
+		}
+		secrets = append(secrets, secret)
+		env[alias] = value
+	}
+	return secrets, env, aliases, nil
 }
 
 func cloneEnv(env map[string]string) map[string]string {

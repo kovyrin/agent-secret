@@ -690,12 +690,17 @@ exhausted, the daemon stops, or the session is destroyed.
 The agent receives a session ID but must wrap each command:
 
 ```bash
-agent-secret with-session asess_123 -- terraform apply
+agent-secret with-session asess_123 \
+  --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
+  -- terraform apply
 ```
 
 The wrapper asks the daemon to resolve approved secrets and injects them only
-into the child process. It must keep the daemon connection open while the child
-runs so command lifecycle audit events stay daemon-owned.
+into the child process. By default it injects every approved session alias for
+that command. With `--only`, it injects only the requested aliases and fails
+before spawning when any requested alias was not part of the approved session.
+It must keep the daemon connection open while the child runs so command
+lifecycle audit events stay daemon-owned.
 
 ### Mode 4: Credential Helpers
 
@@ -843,7 +848,7 @@ V1 commands:
 ```bash
 agent-secret exec [options] -- command [args...]
 agent-secret session create [options]
-agent-secret with-session asess_123 -- command [args...]
+agent-secret with-session asess_123 [--only ALIAS[,ALIAS...]] -- command [args...]
 agent-secret session list
 agent-secret session destroy asess_123
 agent-secret daemon status

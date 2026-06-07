@@ -617,6 +617,10 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		t.Parallel()
 
 		req := testSessionResolveRequest(t)
+		req, err := req.WithRequestedAliases([]string{"TOKEN"})
+		if err != nil {
+			t.Fatalf("WithRequestedAliases returned error: %v", err)
+		}
 		requests := make(chan protocol.Envelope, 1)
 		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
 			requests <- env
@@ -645,6 +649,30 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		}
 		if got.SessionID != req.SessionID || got.CWD != req.CWD {
 			t.Fatalf("unexpected session resolve request: %+v", got)
+		}
+		if len(got.RequestedAliases) != 1 || got.RequestedAliases[0] != "TOKEN" {
+			t.Fatalf("requested aliases = %v, want TOKEN", got.RequestedAliases)
+		}
+	})
+
+	t.Run("resolve rejects wrong projected aliases", func(t *testing.T) {
+		t.Parallel()
+
+		req := testSessionResolveRequest(t)
+		req, err := req.WithRequestedAliases([]string{"TOKEN"})
+		if err != nil {
+			t.Fatalf("WithRequestedAliases returned error: %v", err)
+		}
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			return okResponseFrame(t, env, protocol.SessionResolveResponsePayload{
+				Env:           map[string]string{"OTHER_TOKEN": "synthetic-secret-value"},
+				SecretAliases: []string{"OTHER_TOKEN"},
+			})
+		})
+		defer cleanup()
+
+		if _, err := client.ResolveSession(context.Background(), testCorrelation("req_1", "nonce_1"), req); !errors.Is(err, protocol.ErrMalformedEnvelope) {
+			t.Fatalf("ResolveSession error = %v, want ErrMalformedEnvelope", err)
 		}
 	})
 

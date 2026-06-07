@@ -596,6 +596,7 @@ func TestAppWithSessionRunsChildWithResolvedEnv(t *testing.T) {
 		"with-session",
 		"asess_test",
 		"--cwd", root,
+		"--only", "TOKEN",
 		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppWithSessionRunsChildWithResolvedEnv", "--", "child",
@@ -615,6 +616,9 @@ func TestAppWithSessionRunsChildWithResolvedEnv(t *testing.T) {
 	req := client.sessionResolveRequests[0]
 	if req.SessionID != "asess_test" || req.ExpectedPeer.PID <= 0 || req.CWD == "" {
 		t.Fatalf("session resolve request = %+v", req)
+	}
+	if len(req.RequestedAliases) != 1 || req.RequestedAliases[0] != "TOKEN" {
+		t.Fatalf("requested aliases = %v, want TOKEN", req.RequestedAliases)
 	}
 	if len(client.startedPIDs) != 1 || len(client.completedExitCodes) != 1 {
 		t.Fatalf("audit calls: started=%v completed=%v", client.startedPIDs, client.completedExitCodes)

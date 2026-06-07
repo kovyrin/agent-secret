@@ -3,6 +3,7 @@ package request
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -137,11 +138,52 @@ func TestSessionResolveValidation(t *testing.T) {
 		CWD:            dir,
 	}
 	req = req.WithExpectedPeer(expected)
+	req, err = req.WithRequestedAliases([]string{" B_TOKEN ", "A_TOKEN"})
+	if err != nil {
+		t.Fatalf("WithRequestedAliases returned error: %v", err)
+	}
 	if req.ExpectedPeer != expected {
 		t.Fatalf("expected peer not applied: %+v", req.ExpectedPeer)
 	}
+	if !slices.Equal(req.RequestedAliases, []string{"A_TOKEN", "B_TOKEN"}) {
+		t.Fatalf("requested aliases = %v, want sorted subset", req.RequestedAliases)
+	}
 	if err := req.ValidateForDaemon(); err != nil {
 		t.Fatalf("ValidateForDaemon returned error: %v", err)
+	}
+}
+
+func TestSessionResolveRejectsInvalidRequestedAliases(t *testing.T) {
+	t.Parallel()
+
+	dir := testResolvedDir(t)
+	bin, identity := testExecutable(t, dir, "terraform")
+	req, err := NewSessionResolve(
+		"asess_abc123",
+		[]string{bin, "plan"},
+		bin,
+		identity,
+		dir,
+		EnvironmentFingerprint([]string{"PATH=" + filepath.Dir(bin)}),
+	)
+	if err != nil {
+		t.Fatalf("NewSessionResolve returned error: %v", err)
+	}
+	if _, err := req.WithRequestedAliases([]string{"TOKEN", "TOKEN"}); !errors.Is(err, ErrInvalidAlias) {
+		t.Fatalf("WithRequestedAliases duplicate error = %v, want ErrInvalidAlias", err)
+	}
+
+	expected := peercred.Expected{
+		UID:            501,
+		GID:            20,
+		PID:            12345,
+		ExecutablePath: bin,
+		CWD:            dir,
+	}
+	req = req.WithExpectedPeer(expected)
+	req.RequestedAliases = []string{"B_TOKEN", "A_TOKEN"}
+	if err := req.ValidateForDaemon(); !errors.Is(err, ErrInvalidAlias) {
+		t.Fatalf("ValidateForDaemon unsorted aliases error = %v, want ErrInvalidAlias", err)
 	}
 }
 

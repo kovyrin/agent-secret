@@ -27,6 +27,8 @@ version numbers for public releases.
 - Added bounded session support with `agent-secret session create|list|destroy`
   and `agent-secret with-session` for multi-command workflows that keep values
   in daemon memory and inject them only into wrapped child processes.
+- Added `agent-secret with-session --only` to inject a per-command subset of an
+  approved session's aliases.
 - Added metadata-only session audit events for create, resolve, and destroy.
 
 ### Fixed

@@ -128,8 +128,10 @@ Approve a bounded multi-command session and run commands through the wrapper:
 
 ```bash
 agent-secret session create --profile terraform-cloudflare --max-reads 2
-agent-secret with-session asess_123 -- terraform plan
-agent-secret with-session asess_123 -- terraform apply
+agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
+agent-secret with-session asess_123 \
+  --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
+  -- terraform apply
 agent-secret session destroy asess_123
 ```
 
@@ -178,6 +180,7 @@ profiles:
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+      STATE_TOKEN: op://Example/Terraform State/token
 ```
 
 With `default_profile`, this works from the project directory:
@@ -195,7 +198,8 @@ precedence, env-file migration, and the full schema.
 - `agent-secret session create|list|destroy`: manage bounded daemon-held
   sessions.
 - `agent-secret with-session SESSION_ID -- COMMAND [ARG...]`: run one command
-  with secrets from an approved session.
+  with secrets from an approved session. Add `--only ALIAS[,ALIAS...]` to inject
+  a per-command subset of the approved session bag.
 - `agent-secret item describe REF`: inspect 1Password item fields without
   values.
 - `agent-secret agent-context --json`: print a machine-readable command and

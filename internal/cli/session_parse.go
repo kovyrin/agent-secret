@@ -28,6 +28,7 @@ type sessionCreateFlags struct {
 type withSessionFlags struct {
 	cwd                    string
 	allowMutableExecutable bool
+	only                   onlyFlags
 }
 
 func (p Parser) parseSession(args []string) (Command, error) {
@@ -157,6 +158,7 @@ func (p Parser) parseWithSession(args []string) (Command, error) {
 		false,
 		"allow a user-owned or writable executable path after showing the approval warning",
 	)
+	fs.Var(&flags.only, "only", "session alias filter")
 	if err := fs.Parse(args[1:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
@@ -170,6 +172,7 @@ func (p Parser) parseWithSession(args []string) (Command, error) {
 		cwd:                    flags.cwd,
 		env:                    env,
 		allowMutableExecutable: flags.allowMutableExecutable,
+		requestedAliases:       flags.only.aliases,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build with-session request: %w", err)
