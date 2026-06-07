@@ -1,6 +1,6 @@
 cask "agent-secret" do
-  version "0.0.15"
-  sha256 "50ab881c8520c4700787743a044e2bc0877ae09ee37cf57dd88aabcf885877eb"
+  version "0.0.16"
+  sha256 "4a6abce04e8acfedc78fb675df633b1de1fdc5cba4e5e9d3d42aae35ff19849b"
 
   url "https://github.com/kovyrin/agent-secret/releases/download/v#{version}/Agent-Secret-v#{version}-macos-arm64.dmg"
   name "Agent Secret"
