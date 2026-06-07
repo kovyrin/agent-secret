@@ -34,6 +34,8 @@ version numbers for public releases.
 
 ### Changed
 
+- Updated the README, public website, privacy policy, terms, and threat model
+  for 1Password plus Bitwarden provider support.
 - Updated the public website sitemap metadata for the current launch page.
 
 ### Fixed

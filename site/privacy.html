@@ -47,17 +47,18 @@
           posture is intentionally simple: no hosted Agent Secret account, no
           website analytics, and no maintainer collection of raw secret values.
         </p>
-        <p class="legal-date">Last updated: May 27, 2026</p>
+        <p class="legal-date">Last updated: June 7, 2026</p>
       </section>
 
       <section class="legal-content" aria-label="Privacy policy content">
         <h2>What This Policy Covers</h2>
         <p>
           This policy covers the Agent Secret website, the published Agent
-          Secret macOS app and CLI, and planned provider integrations such as
-          Google OAuth for GCP token minting. It does not replace the privacy
+          Secret macOS app and CLI, and provider integrations such as
+          1Password, Bitwarden Secrets Manager, and planned Google OAuth for
+          GCP token minting. It does not replace the privacy
           policies for third-party services you connect to Agent Secret, such as
-          1Password, Google Cloud, GitHub, or Homebrew.
+          1Password, Bitwarden, Google Cloud, GitHub, or Homebrew.
         </p>
 
         <h2>Website Privacy</h2>
@@ -94,6 +95,16 @@
           terms and privacy policy.
         </p>
 
+        <h2>Bitwarden Secrets Manager Integration</h2>
+        <p>
+          Bitwarden support uses the official Bitwarden-signed <code>bws</code>
+          CLI and a local macOS Keychain token alias. Agent Secret invokes
+          <code>bws</code> only after local approval and passes the token only
+          to that helper subprocess. Bitwarden organization, project, secret
+          metadata, service-account access, and provider-side logs are governed
+          by Bitwarden's terms and privacy policy.
+        </p>
+
         <h2>Google OAuth And GCP Token Minting</h2>
         <p>
           GCP token minting is planned. When you choose to use a Google
@@ -116,9 +127,9 @@
         <p>
           Agent Secret does not operate a backend service that receives your
           secrets. Data is shared only when you cause it to be shared: for
-          example, when the local app talks to 1Password or Google, when a
-          command receives an approved environment variable, when you open a
-          GitHub issue, or when you send a security report.
+          example, when the local app talks to 1Password, Bitwarden, or Google,
+          when a command receives an approved environment variable, when you
+          open a GitHub issue, or when you send a security report.
         </p>
 
         <h2>Retention And Deletion</h2>
