@@ -42,21 +42,28 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    git status -sb
    ```
 
-2. Review `CHANGELOG.md` for the target version. The section should be
+1. Review `CHANGELOG.md` for the target version. The section should be
    practical release-note material, not a raw commit log.
 
-3. Replace `Pending` with the release date in `YYYY-MM-DD` form.
+1. Audit user-facing docs and the bundled coding-agent skill for every app
+   functionality change before tagging. If CLI commands, secret reference
+   schemes, setup flows, diagnostics, migration paths, or safe verification
+   guidance changed, update `.agents/skills/agent-secret/SKILL.md` in the same
+   release. If no skill update is needed, record why in the release prep issue
+   or release PR.
 
-4. Run the local checks:
+1. Replace `Pending` with the release date in `YYYY-MM-DD` form.
+
+1. Run the local checks:
 
    ```bash
    mise run lint
    mise run build
    ```
 
-5. Commit and push the changelog date update.
+1. Commit and push the changelog date update.
 
-6. Create and push the release tag:
+1. Create and push the release tag:
 
    ```bash
    version="0.0.1"
@@ -68,7 +75,7 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    current `origin/main` commit before validating signing secrets or building
    release artifacts.
 
-7. Watch the tag-triggered CI run until `Draft Release Artifacts` passes.
+1. Watch the tag-triggered CI run until `Draft Release Artifacts` passes.
    The job rejects tags whose changelog section is missing, still marked
    `Pending`, or empty. It should create or update a draft GitHub Release with
    notes from the dated changelog section and these assets:
@@ -78,7 +85,7 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    checksums.txt
    ```
 
-8. Download the draft release assets and verify the DMG:
+1. Download the draft release assets and verify the DMG:
 
    ```bash
    shasum -a 256 -c checksums.txt
@@ -92,7 +99,7 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    hdiutil verify "$artifact"
    ```
 
-9. Mount the DMG and verify the app inside:
+1. Mount the DMG and verify the app inside:
 
    ```bash
    hdiutil attach -readonly -nobrowse \
@@ -117,7 +124,7 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    hdiutil detach "$mount_dir"
    ```
 
-10. Confirm the draft release notes match the dated changelog section for the
+1. Confirm the draft release notes match the dated changelog section for the
     tag:
 
     ```bash
@@ -125,16 +132,16 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
     gh release view "v$version" --json body --jq .body
     ```
 
-11. Publish the draft release only after CI and local artifact verification
+1. Publish the draft release only after CI and local artifact verification
     pass:
 
     ```bash
     gh release edit "v$version" --draft=false
     ```
 
-12. Confirm the published release page shows the expected notes and assets.
+1. Confirm the published release page shows the expected notes and assets.
 
-13. Update the Homebrew cask to the published release before announcing the
+1. Update the Homebrew cask to the published release before announcing the
     release. Use the SHA-256 digest for the
     `Agent-Secret-vX.Y.Z-macos-arm64.dmg` asset:
 
@@ -157,7 +164,7 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
     git push origin main
     ```
 
-14. Verify the public Homebrew upgrade path from a fresh tap update:
+1. Verify the public Homebrew upgrade path from a fresh tap update:
 
     ```bash
     brew update
