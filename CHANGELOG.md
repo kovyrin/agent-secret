@@ -26,6 +26,11 @@ version numbers for public releases.
 
 - Added a public docs page for install, 1Password setup, Bitwarden Secrets
   Manager setup, project profiles, validation, troubleshooting, and FAQ.
+- Updated the bundled coding-agent skill with Bitwarden Secrets Manager setup,
+  `bws://` reference, source-selection, verification, and troubleshooting
+  guidance.
+- Updated the release checklist to require a bundled coding-agent skill audit
+  whenever app functionality changes.
 
 ## [0.0.16] - 2026-06-07
 
