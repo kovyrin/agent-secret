@@ -1,13 +1,13 @@
 ---
 name: agent-secret
-description: Use Agent Secret safely in a project, including general command execution, project profiles, env-file use, 1Password migration, and verification without exposing secret values.
+description: Use Agent Secret safely in a project, including 1Password and Bitwarden Secrets Manager refs, project profiles, env-file use, migration, and verification without exposing secret values.
 ---
 
 # Agent Secret
 
 Use this skill when a project needs secrets through Agent Secret, when an agent
 needs to understand how to run `agent-secret`, or when migrating direct
-1Password CLI usage to Agent Secret.
+1Password or Bitwarden Secrets Manager CLI usage to Agent Secret.
 
 ## Goals
 
@@ -15,17 +15,19 @@ needs to understand how to run `agent-secret`, or when migrating direct
 - Keep secret refs in command flags, env files, or `agent-secret.yml`; never
   store resolved values.
 - Use project-local profiles for repeated multi-secret workflows.
-- Migrate direct `op` usage to `agent-secret exec` while preserving command
-  behavior.
+- Migrate direct provider CLI usage to `agent-secret exec` while preserving
+  command behavior.
 - Inspect 1Password item metadata when field names are unknown, without
   revealing secret values.
 - Verify real behavior with safe checks that do not leak secrets.
 
 ## Safety Rules
 
-- Do not run `op` unless the user explicitly asks for a diagnostic that requires
-  it.
+- Do not run `op` or `bws` unless the user explicitly asks for a diagnostic
+  that requires the provider CLI.
 - Never echo, log, diff, commit, or write resolved secret values.
+- Never ask the user to paste a Bitwarden access token into chat, an issue, or
+  a pull request. Use interactive token install instead.
 - Avoid `env`, `printenv`, `set`, shell tracing (`set -x`), and debug logs in
   secret-backed runs.
 - Do not add long-lived plaintext `.env` files as a shortcut.
@@ -53,6 +55,15 @@ agent-secret exec \
   --reason "Terraform DNS management" \
   --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
   -- terraform plan
+```
+
+Run a command with a Bitwarden Secrets Manager secret:
+
+```bash
+agent-secret exec \
+  --reason "Deploy with Bitwarden-managed API token" \
+  --secret API_TOKEN=bws://work/<secret-uuid> \
+  -- deploy-tool
 ```
 
 Run a command with a project profile:
@@ -100,6 +111,30 @@ shell strings. Normal `exec` does not have JSON output because child
 stdin/stdout/stderr pass through unchanged; only `exec --dry-run --json`
 returns JSON.
 
+## Provider Setup
+
+For 1Password refs, make sure the 1Password desktop app is signed in, unlocked,
+and has Developer Tools SDK integration enabled. `agent-secret doctor` reports
+non-secret diagnostic state.
+
+For Bitwarden Secrets Manager refs, install the official Bitwarden-signed `bws`
+CLI, then install a local token alias in Agent Secret:
+
+```bash
+agent-secret bitwarden secrets-manager token status --alias work
+agent-secret bitwarden secrets-manager token install --alias work
+```
+
+The install command prompts with hidden terminal input. For non-interactive
+setup scripts, pipe the token to the stdin-only install form:
+
+```bash
+agent-secret bitwarden secrets-manager token install --alias work --from-stdin
+```
+
+Do not echo the token or put it in shell history. The approved child command
+receives only the resolved secret value, never the Bitwarden access token.
+
 ## Project Profiles
 
 Create `agent-secret.yml` or `.agent-secret.yml` at the project root when a
@@ -110,6 +145,11 @@ version: 1
 
 account: my.1password.com
 default_profile: terraform
+
+sources:
+  bitwarden:
+    work-secrets:
+      token_alias: work
 
 profiles:
   cloudflare:
@@ -131,6 +171,14 @@ profiles:
     ttl: 10m
     secrets:
       CADDY_TOKEN: op://Example/Caddy/token
+
+  deploy:
+    reason: Deploy with Bitwarden-managed API token
+    ttl: 10m
+    secrets:
+      API_TOKEN:
+        ref: bws://<secret-uuid>
+        source: work-secrets
 ```
 
 Use nested profiles to avoid duplicated secret lists. Use `--only` when a
@@ -149,6 +197,19 @@ shell environment when a project needs a specific 1Password account. Use
 `--account` for one-off wrappers or env-file migrations that should not require
 a project config yet.
 
+`account` is only for 1Password account selection. For Bitwarden Secrets
+Manager, use a `sources.bitwarden` entry and refer to it with `source` or with a
+source-qualified ref such as `bws://work-secrets/<secret-uuid>`. `source` is
+Agent Secret terminology for a configured place to resolve a secret ref; it is
+not a Bitwarden UI object.
+
+Bare `bws://<secret-uuid>` refs are valid only when there is a single
+unambiguous Bitwarden Secrets Manager source. If a profile config has multiple
+Bitwarden sources, set `source` on the secret or use
+`bws://<source-alias>/<secret-uuid>`. If no project source is configured, a bare
+Bitwarden ref can use the single locally installed token alias; multiple local
+token aliases require the source-qualified form.
+
 ## Env Files
 
 Use `--env-file` as the migration path for commands that currently use
@@ -159,9 +220,9 @@ agent-secret exec --reason "Deploy application" --env-file .env.deploy -- \
   npm run deploy
 ```
 
-Entries whose values start with `op://` become approved secret refs. Other
-entries are passed only to the child command as plain environment variables.
-Later `--env-file` values override earlier files.
+Entries whose values start with `op://` or `bws://` become approved secret refs.
+Other entries are passed only to the child command as plain environment
+variables. Later `--env-file` values override earlier files.
 
 Use `--only` when one env file contains refs for multiple command surfaces:
 
@@ -175,8 +236,9 @@ agent-secret exec \
 ```
 
 `--only` filters profile and env-file secret refs. It does not filter deliberate
-one-off `--secret` flags. If an env file has no `op://` refs, skip Agent Secret
-and run the command directly instead of using it as a generic dotenv runner.
+one-off `--secret` flags. If an env file has no `op://` or `bws://` refs, skip
+Agent Secret and run the command directly instead of using it as a generic
+dotenv runner.
 
 ## Text File Secrets
 
@@ -196,6 +258,9 @@ Do not migrate binary attachments this way; env vars cannot carry NUL bytes. If
 the existing script expects a file path, prefer passing contents to its
 env-first path and let the approved child process create any temp file it
 already owns.
+
+Bitwarden Secrets Manager v1 resolves secret values only. It does not provide
+an Agent Secret file-attachment mode.
 
 ## Item Metadata Inspection
 
@@ -231,13 +296,19 @@ does not already define the intended account or when an explicit one-off
 override is needed. Do not fall back to `op item get` unless the user explicitly
 asks for that diagnostic.
 
-## Migrating From 1Password CLI
+There is no equivalent Agent Secret metadata inspection command for Bitwarden
+Secrets Manager in v1. Use the Bitwarden UI or existing non-secret project docs
+to identify the secret UUID; do not call `bws secret get` just to discover or
+verify a value.
 
-Inventory direct 1Password usage:
+## Migrating From Provider CLIs
+
+Inventory direct provider CLI usage:
 
 ```bash
 rg -n '\bop\b|op://|1Password' .
 rg -n 'ONEPASSWORD|OP_ACCOUNT|OP_SERVICE_ACCOUNT|OP_CONNECT' .
+rg -n '\bbws\b|bws://|BWS_ACCESS_TOKEN|BITWARDEN' .
 ```
 
 Classify each call site:
@@ -254,6 +325,12 @@ Classify each call site:
   remove them when a profile can express the same secret set.
 - Static `op://` catalogs: keep them as references only if they are useful
   documentation; they are not instructions to call `op`.
+- `bws secret get` value loaders: replace with an env alias delivered by
+  `agent-secret exec`.
+- Scripts that export `BWS_ACCESS_TOKEN`: replace token handling with a local
+  Agent Secret token alias and keep the Bitwarden token out of child commands.
+- Static `bws://` catalogs: keep them as references only if they are useful
+  documentation; they are not instructions to call `bws`.
 
 Pick the smallest useful migration surface first: a plan, dry-run, deploy, or
 validation command that already expects env vars and can be verified without
@@ -270,6 +347,15 @@ agent-secret exec \
   --reason "Terraform DNS management" \
   --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
   -- terraform plan
+```
+
+Replace direct Bitwarden value loading with an approved env alias:
+
+```bash
+agent-secret exec \
+  --reason "Deploy with Bitwarden-managed API token" \
+  --secret API_TOKEN=bws://work/<secret-uuid> \
+  -- deploy-tool
 ```
 
 Replace `op run`:
@@ -305,6 +391,9 @@ exec agent-secret exec --profile deploy -- "$@"
 Do not replace a direct secret read with a command that prints the value. Agent
 Secret intentionally has no raw `read` command for secret values.
 
+Do not migrate Bitwarden Password Manager `bw` vault automation to `bws://`.
+Agent Secret v1 supports Bitwarden Secrets Manager only.
+
 ## Verification
 
 Before reporting success, prove the migrated path works:
@@ -332,14 +421,39 @@ agent-secret exec \
   -- sh -c 'test -n "${TOKEN:-}"'
 ```
 
+For smoke tests where presence is not enough, print only bounded metadata such
+as length and a short hash:
+
+```bash
+agent-secret exec \
+  --reason "Check Bitwarden secret delivery" \
+  --secret TOKEN=bws://work/<secret-uuid> \
+  -- /usr/bin/python3 -c '
+import hashlib, os
+v = os.environ["TOKEN"].encode()
+digest = hashlib.sha256(v).hexdigest()[:12]
+print(f"len={len(v)} sha256={digest}")
+'
+```
+
 ## Troubleshooting
 
 - `agent-secret doctor` shows non-secret local diagnostics.
 - `agent-secret daemon status` confirms whether the daemon is running.
 - `agent-secret daemon stop` clears daemon-owned in-memory approvals and cached
   values.
+- `agent-secret bitwarden secrets-manager token status --alias ALIAS` checks
+  whether a Bitwarden token alias exists without printing the token.
+- `agent-secret bitwarden secrets-manager token install --alias ALIAS`
+  reinstalls a Bitwarden token alias with hidden input. Use it when Keychain
+  access requires repair.
 - `agent-secret skill-install` installs or repairs this skill in
   `~/.agents/skills/agent-secret`.
+- If Bitwarden resolution says the `bws` CLI is unavailable, install the
+  official Bitwarden-signed `bws` CLI or fix the system-owned helper path.
+- If a bare `bws://<secret-uuid>` ref is ambiguous, add a project
+  `sources.bitwarden` entry and set `source`, or use
+  `bws://<source-alias>/<secret-uuid>`.
 - If the approval UI shows the wrong command or reason, fix the wrapper before
   approving.
 - If a command has no safe way to prove consumption without printing a value,
@@ -351,6 +465,6 @@ When done, report:
 
 - Files changed.
 - Commands migrated.
-- Secret aliases and `op://` refs involved, never resolved values.
+- Secret aliases and `op://` or `bws://` refs involved, never resolved values.
 - Verification commands and outcomes.
-- Any call sites intentionally left on direct 1Password access and why.
+- Any call sites intentionally left on direct provider CLI access and why.
