@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Docs · Agent Secret</title>
+    <meta
+      name="description"
+      content="Practical setup docs for Agent Secret with 1Password, Bitwarden Secrets Manager, project profiles, validation, troubleshooting, and FAQ."
+    >
+    <meta property="og:title" content="Docs · Agent Secret">
+    <meta
+      property="og:description"
+      content="Install Agent Secret, connect 1Password or Bitwarden Secrets Manager, configure project profiles, and run safe secret-injection checks."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://agent-secret.sh/docs">
+    <meta property="og:image" content="https://agent-secret.sh/assets/app-icon-512.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="theme-color" content="#071011">
+    <link rel="canonical" href="https://agent-secret.sh/docs">
+    <link rel="icon" href="assets/app-icon-180.png">
+    <link rel="apple-touch-icon" href="assets/app-icon-180.png">
+    <link rel="stylesheet" href="styles.css?v=20260607-1">
+  </head>
+  <body class="legal-page docs-page">
+    <header class="site-header" aria-label="Primary">
+      <a class="brand" href="index.html" aria-label="Agent Secret home">
+        <img src="assets/app-icon-180.png" alt="" width="40" height="40">
+        <span>Agent Secret</span>
+      </a>
+      <nav class="nav" aria-label="Site">
+        <a href="index.html#how">How it works</a>
+        <a aria-current="page" href="docs.html">Docs</a>
+        <a href="index.html#demo">Demo</a>
+        <a href="index.html#install">Install</a>
+        <a href="index.html#boundary">Security</a>
+        <a href="https://github.com/kovyrin/agent-secret">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="legal-main docs-main">
+      <section class="legal-hero docs-hero" aria-labelledby="docs-title">
+        <p class="eyebrow">Agent Secret docs</p>
+        <h1 id="docs-title">Set up approved secret access for coding agents.</h1>
+        <p class="lede">
+          Install the local macOS app, connect either 1Password or Bitwarden
+          Secrets Manager, keep references in project profiles, and validate
+          requests without printing secret values.
+        </p>
+        <p class="legal-date">Last updated: June 7, 2026</p>
+      </section>
+
+      <div class="docs-layout">
+        <aside class="docs-sidebar" aria-label="Docs navigation">
+          <nav>
+            <a href="#install">Install</a>
+            <a href="#onepassword">1Password</a>
+            <a href="#bitwarden">Bitwarden</a>
+            <a href="#profiles">Profiles</a>
+            <a href="#validate">Validate</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+        </aside>
+
+        <div class="docs-content">
+          <section id="install" class="docs-section">
+            <div class="section-kicker">Install</div>
+            <h2>Start with the signed macOS release.</h2>
+            <p>
+              Homebrew installs the notarized app into <code>/Applications</code>
+              and links the bundled <code>agent-secret</code> command into
+              Homebrew's <code>bin</code> directory.
+            </p>
+            <div class="code-panel">
+              <pre><code>brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
+brew install --cask agent-secret
+agent-secret skill-install
+agent-secret doctor</code></pre>
+            </div>
+            <p>
+              Run <code>agent-secret doctor</code> after install or upgrade. It
+              starts the daemon if needed and checks the socket directory, audit
+              log, native approver, and 1Password desktop integration without
+              resolving any item references.
+            </p>
+          </section>
+
+          <section id="onepassword" class="docs-section">
+            <div class="section-kicker">1Password</div>
+            <h2>Use <code>op://</code> refs for desktop-backed secrets.</h2>
+            <p>
+              Agent Secret uses the 1Password desktop app SDK integration. In
+              1Password, open <code>Settings -> Developer</code> and enable
+              <code>Integrate with other apps</code> under
+              <code>Integrate with the 1Password SDKs</code>.
+            </p>
+            <div class="docs-grid">
+              <div>
+                <h3>Reference shape</h3>
+                <p>
+                  Use the same references 1Password copies for item fields:
+                  <code>op://Vault/Item/field</code>. The reference stays in
+                  config; the resolved value is delivered only after approval.
+                </p>
+              </div>
+              <div>
+                <h3>Account selection</h3>
+                <p>
+                  If there is one usable desktop account, Agent Secret can infer
+                  it. If multiple accounts make a request ambiguous, set
+                  <code>account</code> in config or pass <code>--account</code>.
+                </p>
+              </div>
+            </div>
+            <div class="code-panel">
+              <pre><code>agent-secret exec --reason "Run Terraform plan" \
+  --secret CLOUDFLARE_API_TOKEN=op://Example/Cloudflare/token \
+  -- terraform plan</code></pre>
+            </div>
+            <p>
+              Agents can inspect item metadata without seeing values:
+              <code>agent-secret item describe --format env-refs
+              "op://Example Infra/Database Credentials"</code>.
+            </p>
+          </section>
+
+          <section id="bitwarden" class="docs-section">
+            <div class="section-kicker">Bitwarden Secrets Manager</div>
+            <h2>Use <code>bws://</code> refs for Bitwarden secrets.</h2>
+            <p>
+              Bitwarden support uses the official Bitwarden-signed
+              <code>bws</code> CLI and a local macOS Keychain token alias. Agent
+              Secret v1 supports official Bitwarden cloud endpoints and looks
+              for <code>bws</code> at fixed common paths such as
+              <code>/opt/homebrew/bin/bws</code> and <code>/usr/local/bin/bws</code>.
+            </p>
+            <div class="code-panel">
+              <pre><code>agent-secret bitwarden secrets-manager token install --alias work
+agent-secret bitwarden secrets-manager token status --alias work</code></pre>
+            </div>
+            <p>
+              The token install command uses hidden terminal input by default.
+              Use <code>--from-stdin</code> only for scripts that already hold
+              the token outside shell history.
+            </p>
+            <div class="docs-grid">
+              <div>
+                <h3>Reference shape</h3>
+                <p>
+                  Use <code>bws://&lt;secret-uuid&gt;</code> when a single source is
+                  available, or <code>bws://&lt;source-alias&gt;/&lt;secret-uuid&gt;</code>
+                  when multiple Bitwarden sources need disambiguation.
+                </p>
+              </div>
+              <div>
+                <h3>What "source" means</h3>
+                <p>
+                  Source is Agent Secret terminology. For Bitwarden Secrets
+                  Manager, a source is a local config alias that points at one
+                  local token alias. It is not a Bitwarden UI object.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section id="profiles" class="docs-section">
+            <div class="section-kicker">Project profiles</div>
+            <h2>Commit references and request metadata, never values.</h2>
+            <p>
+              Put <code>agent-secret.yml</code> or <code>.agent-secret.yml</code>
+              at the project root. Profiles keep the reason, TTL, references,
+              and provider disambiguation in the repo so an agent can request a
+              known workflow without carrying raw credentials.
+            </p>
+            <div class="code-panel">
+              <pre><code>version: 1
+default_profile: deploy
+
+sources:
+  bitwarden:
+    work-secrets:
+      kind: secrets_manager
+      token_alias: work
+
+profiles:
+  deploy:
+    account: Example Corp
+    reason: Deploy application
+    ttl: 10m
+    secrets:
+      CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+      RELEASE_WEBHOOK:
+        ref: bws://5f3f59f6-cb33-4d7a-9f92-86f75b5ce4c1
+        source: work-secrets</code></pre>
+            </div>
+            <p>
+              With <code>default_profile</code>, running
+              <code>agent-secret exec -- terraform plan</code> from the project
+              directory uses that profile. Use <code>--profile NAME</code> when
+              a repo has multiple workflows.
+            </p>
+          </section>
+
+          <section id="validate" class="docs-section">
+            <div class="section-kicker">Validation</div>
+            <h2>Check requests without leaking values.</h2>
+            <p>
+              Use <code>--dry-run --json</code> to inspect exactly what an agent
+              is about to ask for. Dry runs do not start the daemon, prompt for
+              approval, resolve secret values, or spawn the child process.
+            </p>
+            <div class="code-panel">
+              <pre><code>agent-secret exec --dry-run --json --profile deploy -- terraform plan</code></pre>
+            </div>
+            <p>
+              For a live smoke test, print metadata only. Lengths and hashes are
+              enough to prove delivery without exposing the secret:
+            </p>
+            <div class="code-panel">
+              <pre><code>agent-secret exec \
+  --reason "Bitwarden smoke test" \
+  --secret BITWARDEN_SMOKE=bws://work/00000000-0000-0000-0000-000000000000 \
+  -- python3 -c 'import os, hashlib; v=os.environ["BITWARDEN_SMOKE"].encode(); print(len(v), hashlib.sha256(v).hexdigest()[:12])'</code></pre>
+            </div>
+          </section>
+
+          <section id="troubleshooting" class="docs-section">
+            <div class="section-kicker">Troubleshooting</div>
+            <h2>Most failures are setup or trust state.</h2>
+            <div class="docs-qa-list">
+              <details open>
+                <summary>macOS says <code>bws</code> cannot be verified.</summary>
+                <p>
+                  Use the official Bitwarden-signed binary. If you downloaded it
+                  manually, clear Gatekeeper quarantine only after verifying the
+                  source and checksum. Homebrew-installed <code>bws</code> under
+                  <code>/opt/homebrew/bin/bws</code> avoids most path issues.
+                </p>
+              </details>
+              <details>
+                <summary>Bitwarden token reads require repair.</summary>
+                <p>
+                  Reinstall the token alias with the currently installed
+                  released CLI:
+                  <code>agent-secret bitwarden secrets-manager token install --alias work</code>.
+                  This refreshes the macOS Keychain access control for the app
+                  bundle that will resolve the token.
+                </p>
+              </details>
+              <details>
+                <summary>Doctor reports an untrusted daemon peer.</summary>
+                <p>
+                  An old development daemon may still be listening on the socket.
+                  Stop it with the matching old CLI or restart the Mac, then run
+                  <code>/opt/homebrew/bin/agent-secret doctor</code> again.
+                </p>
+              </details>
+              <details>
+                <summary>Approval is denied because the computer is locked.</summary>
+                <p>
+                  Agent Secret refuses to show native approval while the screen
+                  is locked. Unlock the Mac and rerun the command.
+                </p>
+              </details>
+            </div>
+          </section>
+
+          <section id="faq" class="docs-section">
+            <div class="section-kicker">FAQ</div>
+            <h2>Short answers for common integration questions.</h2>
+            <div class="docs-qa-list">
+              <details open>
+                <summary>Does Agent Secret store raw secret values?</summary>
+                <p>
+                  It does not write raw secret values to project files or audit
+                  logs. Reusable approvals may keep approved values in daemon
+                  memory until the TTL or use count expires, then they are
+                  cleared.
+                </p>
+              </details>
+              <details>
+                <summary>Can an approved child process leak a secret?</summary>
+                <p>
+                  Yes. Agent Secret is an approval broker, not a sandbox. After
+                  approval, the child process receives the environment variable
+                  and can use or leak it like any other process with that value.
+                </p>
+              </details>
+              <details>
+                <summary>Why does 1Password use account while Bitwarden uses source?</summary>
+                <p>
+                  A 1Password account is provider identity. A Bitwarden source is
+                  local Agent Secret routing metadata that selects a token alias.
+                  Both are shown only to make ambiguous references explicit.
+                </p>
+              </details>
+              <details>
+                <summary>Can I mix 1Password and Bitwarden in one profile?</summary>
+                <p>
+                  Yes. Each secret reference keeps its own provider metadata, and
+                  approval, audit, reuse, and cache matching include that
+                  metadata.
+                </p>
+              </details>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-meta">
+        <span class="footer-brand">Agent Secret · MIT licensed</span>
+        <span class="footer-copy">© 2026 <a href="https://kovyrin.net">Oleksiy Kovyrin</a> · <a href="https://x.com/kovyrin" aria-label="Oleksiy Kovyrin on X">@kovyrin</a></span>
+      </div>
+      <nav class="footer-links" aria-label="Legal">
+        <a aria-current="page" href="docs.html">Docs</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="https://github.com/kovyrin/agent-secret">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>

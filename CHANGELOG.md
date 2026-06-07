@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.17] - Pending
+
+### Changed
+
+- Added a public docs page for install, 1Password setup, Bitwarden Secrets
+  Manager setup, project profiles, validation, troubleshooting, and FAQ.
+
 ## [0.0.16] - 2026-06-07
 
 ### Added
