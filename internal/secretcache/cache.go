@@ -12,9 +12,13 @@ type SecretCache struct {
 }
 
 type CacheKey struct {
-	ScopeID string
-	Ref     string
-	Account string
+	ScopeID              string
+	Ref                  string
+	Account              string
+	Source               string
+	BitwardenTokenAlias  string
+	BitwardenAPIURL      string
+	BitwardenIdentityURL string
 }
 
 func NewSecretCache() *SecretCache {

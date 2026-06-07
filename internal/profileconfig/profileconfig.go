@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretref"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -36,6 +37,7 @@ type LoadOptions struct {
 type Metadata struct {
 	SourcePath string
 	Account    string
+	Sources    Sources
 }
 
 type ConfigInfo struct {
@@ -43,6 +45,7 @@ type ConfigInfo struct {
 	Version        int           `json:"version"`
 	Account        string        `json:"account,omitempty"`
 	DefaultProfile string        `json:"default_profile,omitempty"`
+	Sources        Sources       `json:"sources,omitzero"`
 	Profiles       []ProfileInfo `json:"profiles"`
 }
 
@@ -60,6 +63,7 @@ type Profile struct {
 	Name       string
 	SourcePath string
 	Account    string
+	Sources    Sources
 	Reason     string
 	Secrets    []request.SecretSpec
 	TTL        time.Duration
@@ -69,7 +73,27 @@ type configFile struct {
 	Version        int                    `yaml:"version"`
 	Account        string                 `yaml:"account"`
 	DefaultProfile string                 `yaml:"default_profile"`
+	Sources        sourceConfigYAML       `yaml:"sources"`
 	Profiles       map[string]profileYAML `yaml:"profiles"`
+}
+
+type Sources struct {
+	Bitwarden map[string]request.BitwardenSource `json:"bitwarden,omitempty"`
+}
+
+func (s Sources) IsZero() bool {
+	return len(s.Bitwarden) == 0
+}
+
+type sourceConfigYAML struct {
+	Bitwarden map[string]bitwardenSourceYAML `yaml:"bitwarden"`
+}
+
+type bitwardenSourceYAML struct {
+	Kind        string `yaml:"kind"`
+	TokenAlias  string `yaml:"token_alias"`
+	APIURL      string `yaml:"api_url"`
+	IdentityURL string `yaml:"identity_url"`
 }
 
 type profileYAML struct {
@@ -88,13 +112,16 @@ type resolvedProfile struct {
 }
 
 type resolvedSecret struct {
-	account string
-	ref     string
+	account   string
+	ref       string
+	source    string
+	bitwarden request.BitwardenSource
 }
 
 type secretYAML struct {
 	Ref     string
 	Account string
+	Source  string
 }
 
 func (s *secretYAML) UnmarshalYAML(value *yaml.Node) error {
@@ -127,6 +154,10 @@ func (s *secretYAML) unmarshalMapping(value *yaml.Node) error {
 			if err := item.Decode(&s.Account); err != nil {
 				return err
 			}
+		case "source":
+			if err := item.Decode(&s.Source); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown secret field %q", key)
 		}
@@ -142,6 +173,10 @@ func Load(opts LoadOptions) (Profile, error) {
 	if len(doc.Profiles) == 0 {
 		return Profile{}, fmt.Errorf("%w: %s must define at least one profile", ErrInvalidConfig, path)
 	}
+	sources, err := normalizeSources(doc.Sources)
+	if err != nil {
+		return Profile{}, fmt.Errorf("%w: %s: %w", ErrInvalidConfig, path, err)
+	}
 
 	profileName := opts.Name
 	if profileName == "" {
@@ -151,7 +186,7 @@ func Load(opts LoadOptions) (Profile, error) {
 		return Profile{}, fmt.Errorf("%w: %s default_profile is required when no profile name is provided", ErrProfileNotFound, path)
 	}
 
-	resolved, err := newProfileResolver(doc, path).resolve(profileName, nil)
+	resolved, err := newProfileResolver(doc, path, sources).resolve(profileName, nil)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -164,6 +199,7 @@ func Load(opts LoadOptions) (Profile, error) {
 		Name:       profileName,
 		SourcePath: path,
 		Account:    resolved.account,
+		Sources:    sources,
 		Reason:     resolved.reason,
 		Secrets:    secrets,
 		TTL:        resolved.ttl,
@@ -175,9 +211,14 @@ func LoadMetadata(opts LoadOptions) (Metadata, error) {
 	if err != nil {
 		return Metadata{}, err
 	}
+	sources, err := normalizeSources(doc.Sources)
+	if err != nil {
+		return Metadata{}, fmt.Errorf("%w: %s: %w", ErrInvalidConfig, path, err)
+	}
 	return Metadata{
 		SourcePath: path,
 		Account:    strings.TrimSpace(doc.Account),
+		Sources:    sources,
 	}, nil
 }
 
@@ -186,14 +227,20 @@ func Inspect(opts LoadOptions) (ConfigInfo, error) {
 	if err != nil {
 		return ConfigInfo{}, err
 	}
+	sources, err := normalizeSources(doc.Sources)
+	if err != nil {
+		return ConfigInfo{}, fmt.Errorf("%w: %s: %w", ErrInvalidConfig, path, err)
+	}
 
 	info := ConfigInfo{
 		SourcePath:     path,
 		Version:        doc.Version,
 		Account:        strings.TrimSpace(doc.Account),
 		DefaultProfile: strings.TrimSpace(doc.DefaultProfile),
+		Sources:        sources,
 		Profiles:       make([]ProfileInfo, 0, len(doc.Profiles)),
 	}
+	resolver := newProfileResolver(doc, path, sources)
 	names := make([]string, 0, len(doc.Profiles))
 	for name := range doc.Profiles {
 		names = append(names, name)
@@ -201,7 +248,7 @@ func Inspect(opts LoadOptions) (ConfigInfo, error) {
 	slices.Sort(names)
 	for _, name := range names {
 		rawProfile := doc.Profiles[name]
-		resolved, err := newProfileResolver(doc, path).resolve(name, nil)
+		resolved, err := resolver.resolve(name, nil)
 		if err != nil {
 			return ConfigInfo{}, err
 		}
@@ -282,15 +329,17 @@ func readConfigFile(path string) ([]byte, error) {
 type profileResolver struct {
 	doc          configFile
 	path         string
+	sources      Sources
 	memo         map[string]resolvedProfile
 	includeCount int
 }
 
-func newProfileResolver(doc configFile, path string) *profileResolver {
+func newProfileResolver(doc configFile, path string, sources Sources) *profileResolver {
 	return &profileResolver{
-		doc:  doc,
-		path: path,
-		memo: make(map[string]resolvedProfile),
+		doc:     doc,
+		path:    path,
+		sources: cloneSources(sources),
+		memo:    make(map[string]resolvedProfile),
 	}
 }
 
@@ -359,7 +408,7 @@ func (r *profileResolver) resolve(profileName string, stack []string) (resolvedP
 	if ttl != 0 {
 		result.ttl = ttl
 	}
-	if err := mergeSecrets(result.secrets, rawProfile.Secrets, result.account, r.path, profileName); err != nil {
+	if err := mergeSecrets(result.secrets, rawProfile.Secrets, result.account, r.sources, r.path, profileName); err != nil {
 		return resolvedProfile{}, err
 	}
 	if len(result.secrets) == 0 {
@@ -373,9 +422,13 @@ func cloneResolvedProfile(profile resolvedProfile) resolvedProfile {
 	return resolvedProfile{
 		account: profile.account,
 		reason:  profile.reason,
-		secrets: maps.Clone(profile.secrets),
+		secrets: cloneResolvedSecrets(profile.secrets),
 		ttl:     profile.ttl,
 	}
+}
+
+func cloneResolvedSecrets(secrets map[string]resolvedSecret) map[string]resolvedSecret {
+	return maps.Clone(secrets)
 }
 
 func Find(configPath string, startDir string) (string, error) {
@@ -450,14 +503,27 @@ func parseTTL(raw string, path string, profileName string) (time.Duration, error
 	return ttl, nil
 }
 
-func mergeSecrets(secrets map[string]resolvedSecret, raw map[string]secretYAML, account string, path string, profileName string) error {
+func mergeSecrets(
+	secrets map[string]resolvedSecret,
+	raw map[string]secretYAML,
+	account string,
+	sources Sources,
+	path string,
+	profileName string,
+) error {
 	for alias, spec := range raw {
 		if spec.Ref == "" {
 			return fmt.Errorf("%w: %s profile %q secret %q has empty ref", ErrInvalidConfig, path, profileName, alias)
 		}
+		source, bitwarden, err := resolveSecretSource(spec, sources, path, profileName, alias)
+		if err != nil {
+			return err
+		}
 		secrets[alias] = resolvedSecret{
-			account: effectiveAccount(account, spec.Account),
-			ref:     spec.Ref,
+			account:   effectiveAccount(account, spec.Account),
+			ref:       spec.Ref,
+			source:    source,
+			bitwarden: bitwarden,
 		}
 	}
 	return nil
@@ -478,12 +544,177 @@ func sortedSecrets(raw map[string]resolvedSecret, path string, profileName strin
 	for _, alias := range aliases {
 		spec := raw[alias]
 		secrets = append(secrets, request.SecretSpec{
-			Alias:   alias,
-			Ref:     spec.ref,
-			Account: spec.account,
+			Alias:     alias,
+			Ref:       spec.ref,
+			Account:   spec.account,
+			Source:    spec.source,
+			Bitwarden: spec.bitwarden,
 		})
 	}
 	return secrets, nil
+}
+
+func resolveSecretSource(
+	spec secretYAML,
+	sources Sources,
+	path string,
+	profileName string,
+	alias string,
+) (string, request.BitwardenSource, error) {
+	source := strings.TrimSpace(spec.Source)
+	parsed, err := secretref.Parse(spec.Ref)
+	if err != nil {
+		if secretref.IsBitwardenSecretsManager(spec.Ref) {
+			return "", request.BitwardenSource{}, fmt.Errorf(
+				"%w: %s profile %q secret %q has invalid Bitwarden ref: %w",
+				ErrInvalidConfig,
+				path,
+				profileName,
+				alias,
+				err,
+			)
+		}
+		if source != "" {
+			return "", request.BitwardenSource{}, fmt.Errorf(
+				"%w: %s profile %q secret %q source is only valid for Bitwarden refs",
+				ErrInvalidConfig,
+				path,
+				profileName,
+				alias,
+			)
+		}
+		return "", request.BitwardenSource{}, nil
+	}
+	if parsed.Provider != secretref.ProviderBitwardenSecretsManager {
+		if source != "" {
+			return "", request.BitwardenSource{}, fmt.Errorf(
+				"%w: %s profile %q secret %q source is only valid for Bitwarden refs",
+				ErrInvalidConfig,
+				path,
+				profileName,
+				alias,
+			)
+		}
+		return "", request.BitwardenSource{}, nil
+	}
+	if parsed.Source != "" {
+		if source != "" && source != parsed.Source {
+			return "", request.BitwardenSource{}, fmt.Errorf(
+				"%w: %s profile %q secret %q source %q does not match ref source %q",
+				ErrInvalidConfig,
+				path,
+				profileName,
+				alias,
+				source,
+				parsed.Source,
+			)
+		}
+		source = parsed.Source
+	}
+	if source == "" {
+		if inferred, ok := singleBitwardenSource(sources); ok {
+			source = inferred.Alias
+		} else if len(sources.Bitwarden) > 1 {
+			return "", request.BitwardenSource{}, fmt.Errorf(
+				"%w: %s profile %q secret %q must set source when multiple Bitwarden sources are configured",
+				ErrInvalidConfig,
+				path,
+				profileName,
+				alias,
+			)
+		}
+	}
+	if source == "" {
+		return "", request.BitwardenSource{}, nil
+	}
+	normalizedSource, err := secretref.NormalizeSourceAlias(source)
+	if err != nil {
+		return "", request.BitwardenSource{}, fmt.Errorf(
+			"%w: %s profile %q secret %q has invalid Bitwarden source: %w",
+			ErrInvalidConfig,
+			path,
+			profileName,
+			alias,
+			err,
+		)
+	}
+	if configured, ok := sources.Bitwarden[normalizedSource]; ok {
+		return normalizedSource, configured, nil
+	}
+	if len(sources.Bitwarden) > 0 {
+		return "", request.BitwardenSource{}, fmt.Errorf(
+			"%w: %s profile %q secret %q references unknown Bitwarden source %q",
+			ErrInvalidConfig,
+			path,
+			profileName,
+			alias,
+			normalizedSource,
+		)
+	}
+	return normalizedSource, request.BitwardenSource{Alias: normalizedSource, TokenAlias: normalizedSource}, nil
+}
+
+func normalizeSources(raw sourceConfigYAML) (Sources, error) {
+	out := Sources{}
+	if len(raw.Bitwarden) == 0 {
+		return out, nil
+	}
+	out.Bitwarden = make(map[string]request.BitwardenSource, len(raw.Bitwarden))
+	for rawAlias, spec := range raw.Bitwarden {
+		source, err := normalizeBitwardenSource(rawAlias, spec)
+		if err != nil {
+			return Sources{}, err
+		}
+		out.Bitwarden[source.Alias] = source
+	}
+	return out, nil
+}
+
+func normalizeBitwardenSource(rawAlias string, spec bitwardenSourceYAML) (request.BitwardenSource, error) {
+	alias, err := secretref.NormalizeSourceAlias(rawAlias)
+	if err != nil {
+		return request.BitwardenSource{}, fmt.Errorf("invalid bitwarden source alias %q: %w", rawAlias, err)
+	}
+	kind := strings.TrimSpace(spec.Kind)
+	if kind == "" {
+		kind = secretref.BitwardenSecretsManagerSourceKind
+	}
+	if kind != secretref.BitwardenSecretsManagerSourceKind {
+		return request.BitwardenSource{}, fmt.Errorf("bitwarden source %q kind must be %q", alias, secretref.BitwardenSecretsManagerSourceKind)
+	}
+	tokenAlias := strings.TrimSpace(spec.TokenAlias)
+	if tokenAlias == "" {
+		tokenAlias = alias
+	}
+	tokenAlias, err = secretref.NormalizeSourceAlias(tokenAlias)
+	if err != nil {
+		return request.BitwardenSource{}, fmt.Errorf("bitwarden source %q has invalid token_alias: %w", alias, err)
+	}
+	if strings.TrimSpace(spec.APIURL) != "" || strings.TrimSpace(spec.IdentityURL) != "" {
+		return request.BitwardenSource{}, fmt.Errorf("bitwarden source %q custom endpoints are not supported in v1", alias)
+	}
+	return request.BitwardenSource{
+		Alias:      alias,
+		TokenAlias: tokenAlias,
+	}, nil
+}
+
+func singleBitwardenSource(sources Sources) (request.BitwardenSource, bool) {
+	if len(sources.Bitwarden) != 1 {
+		return request.BitwardenSource{}, false
+	}
+	for _, source := range sources.Bitwarden {
+		return source, true
+	}
+	return request.BitwardenSource{}, false
+}
+
+func cloneSources(sources Sources) Sources {
+	out := Sources{}
+	if len(sources.Bitwarden) > 0 {
+		out.Bitwarden = maps.Clone(sources.Bitwarden)
+	}
+	return out
 }
 
 func effectiveAccount(defaultAccount string, overrideAccount string) string {

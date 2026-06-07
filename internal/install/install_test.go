@@ -338,6 +338,38 @@ func TestInstallSkillCreatesSymlinkToBundledSkill(t *testing.T) {
 	}
 }
 
+func TestInstallSkillFindsHostBundleFromDaemonHelperExecutable(t *testing.T) {
+	t.Parallel()
+
+	bundle := writeInstallTestBundle(t, t.TempDir())
+	executable := filepath.Join(
+		bundle,
+		"Contents",
+		"Library",
+		"Helpers",
+		"AgentSecretDaemon.app",
+		"Contents",
+		"MacOS",
+		"Agent Secret",
+	)
+	if err := os.MkdirAll(filepath.Dir(executable), 0o750); err != nil {
+		t.Fatalf("create daemon executable dir: %v", err)
+	}
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: installer tests need a runnable fixture executable.
+		t.Fatalf("write daemon executable: %v", err)
+	}
+	skillsDir := filepath.Join(t.TempDir(), "skills")
+
+	result, err := InstallSkill(SkillOptions{SkillsDir: skillsDir, ExecutablePath: executable})
+	if err != nil {
+		t.Fatalf("InstallSkill returned error: %v", err)
+	}
+	wantTarget := resolveInstallTestPath(t, filepath.Join(bundle, "Contents", "Resources", "skills", SkillName))
+	if result.TargetPath != wantTarget {
+		t.Fatalf("target path = %q, want %q", result.TargetPath, wantTarget)
+	}
+}
+
 func TestInstallSkillUsesExplicitSourcePath(t *testing.T) {
 	t.Parallel()
 

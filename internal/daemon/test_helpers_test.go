@@ -133,10 +133,12 @@ type mockResolver struct {
 	order  *[]string
 }
 
-func (m *mockResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
+func (m *mockResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	ref := secret.Ref.Raw
+	account := secret.Account
 	key := resolverCallKey(ref, account)
 	m.calls = append(m.calls, key)
 	if m.order != nil {

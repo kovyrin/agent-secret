@@ -93,9 +93,13 @@ type ReuseKey struct {
 }
 
 type SecretGrant struct {
-	Alias   string
-	Ref     string
-	Account string
+	Alias                string
+	Ref                  string
+	Account              string
+	Source               string
+	BitwardenTokenAlias  string
+	BitwardenAPIURL      string
+	BitwardenIdentityURL string
 }
 
 type DeliveryResult string
@@ -307,7 +311,15 @@ func (s *Store) Clear() {
 func NewReuseKey(req request.ExecRequest) ReuseKey {
 	secrets := make([]SecretGrant, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
-		secrets = append(secrets, SecretGrant{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
+		secrets = append(secrets, SecretGrant{
+			Alias:                secret.Alias,
+			Ref:                  secret.Ref.Raw,
+			Account:              secret.Account,
+			Source:               secret.Source,
+			BitwardenTokenAlias:  secret.Bitwarden.TokenAlias,
+			BitwardenAPIURL:      secret.Bitwarden.APIURL,
+			BitwardenIdentityURL: secret.Bitwarden.IdentityURL,
+		})
 	}
 	slices.SortFunc(secrets, func(a SecretGrant, b SecretGrant) int {
 		if a.Alias < b.Alias {
@@ -326,6 +338,30 @@ func NewReuseKey(req request.ExecRequest) ReuseKey {
 			return -1
 		}
 		if a.Account > b.Account {
+			return 1
+		}
+		if a.Source < b.Source {
+			return -1
+		}
+		if a.Source > b.Source {
+			return 1
+		}
+		if a.BitwardenTokenAlias < b.BitwardenTokenAlias {
+			return -1
+		}
+		if a.BitwardenTokenAlias > b.BitwardenTokenAlias {
+			return 1
+		}
+		if a.BitwardenAPIURL < b.BitwardenAPIURL {
+			return -1
+		}
+		if a.BitwardenAPIURL > b.BitwardenAPIURL {
+			return 1
+		}
+		if a.BitwardenIdentityURL < b.BitwardenIdentityURL {
+			return -1
+		}
+		if a.BitwardenIdentityURL > b.BitwardenIdentityURL {
 			return 1
 		}
 		return 0

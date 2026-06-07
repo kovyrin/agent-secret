@@ -18,7 +18,7 @@ func (s *secretFlags) String() string {
 func (s *secretFlags) Set(value string) error {
 	alias, ref, ok := strings.Cut(value, "=")
 	if !ok || alias == "" || ref == "" {
-		return fmt.Errorf("%w: --secret must be ALIAS=op://vault/item/field, for example API_TOKEN=op://Example/Item/token", ErrInvalidArguments)
+		return fmt.Errorf("%w: --secret must be ALIAS=REF, for example API_TOKEN=op://Example/Item/token or API_TOKEN=bws://<source-alias>/<secret-uuid>", ErrInvalidArguments)
 	}
 	s.specs = append(s.specs, request.SecretSpec{Alias: alias, Ref: ref})
 	return nil

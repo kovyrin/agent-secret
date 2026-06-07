@@ -50,12 +50,16 @@ package_floor() {
   local package_name="$1"
 
   case "$package_name" in
+    # Process bootstrap is validated mostly through daemon control tests and live install/smoke checks.
+    github.com/kovyrin/agent-secret/internal/daemon/app) printf '%s\n' "15" ;;
     github.com/kovyrin/agent-secret/internal/daemon/approval) printf '%s\n' "40" ;;
     github.com/kovyrin/agent-secret/internal/daemon/peertrust) printf '%s\n' "70" ;;
     github.com/kovyrin/agent-secret/internal/daemon/process) printf '%s\n' "45" ;;
     github.com/kovyrin/agent-secret/internal/daemon/protocol) printf '%s\n' "65" ;;
     github.com/kovyrin/agent-secret/internal/daemon/socket) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/daemon/trust) printf '%s\n' "1" ;;
+    # Includes Darwin Security.framework wrappers that are covered by live Keychain smoke tests, not unit tests.
+    github.com/kovyrin/agent-secret/internal/bwsm) printf '%s\n' "60" ;;
     github.com/kovyrin/agent-secret/internal/opresolver) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/policy) printf '%s\n' "75" ;;
     github.com/kovyrin/agent-secret/internal/profileconfig) printf '%s\n' "85" ;;

@@ -13,6 +13,8 @@ import (
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
+const AppLaunchSubcommand = "__agent-secret-daemon"
+
 func ConfigureDaemonProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
@@ -21,6 +23,7 @@ func StartCommand(ctx context.Context, path string, args []string) *exec.Cmd {
 	if runtime.GOOS == "darwin" && filepath.Ext(path) == ".app" {
 		openArgs := []string{"-g", "-n", path}
 		openArgs = append(openArgs, "--args")
+		openArgs = append(openArgs, AppLaunchSubcommand)
 		openArgs = append(openArgs, args...)
 		//nolint:gosec // G204: open path is fixed; app path comes from control.NewManager defaults or explicit test Manager setup.
 		return exec.CommandContext(ctx, "/usr/bin/open", openArgs...)
@@ -47,6 +50,9 @@ func DefaultDaemonAppPath() (string, bool) {
 		return "", false
 	}
 	if exe, err := os.Executable(); err == nil {
+		if appPath, ok := containingDaemonAppPath(exe); ok {
+			return appPath, true
+		}
 		if appPath, ok := daemonAppPathForExecutable(exe); ok {
 			return appPath, true
 		}
@@ -69,6 +75,29 @@ func DefaultDaemonAppPath() (string, bool) {
 		return "", false
 	}
 	return appPath, true
+}
+
+func containingDaemonAppPath(executable string) (string, bool) {
+	candidates := []string{executable}
+	if resolved := pathresolve.BestEffort(executable); resolved != executable {
+		candidates = append(candidates, resolved)
+	}
+	for _, candidate := range candidates {
+		for current := filepath.Dir(candidate); ; current = filepath.Dir(current) {
+			if filepath.Base(current) == "AgentSecretDaemon.app" {
+				info, err := os.Stat(current)
+				if err == nil && info.IsDir() {
+					return filepath.Clean(current), true
+				}
+				return "", false
+			}
+			parent := filepath.Dir(current)
+			if parent == current {
+				break
+			}
+		}
+	}
+	return "", false
 }
 
 func daemonAppPathForExecutable(executable string) (string, bool) {

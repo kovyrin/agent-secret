@@ -1,7 +1,7 @@
 # Agent Secret
 
 Agent Secret is a local macOS approval broker for coding-agent secrets. It lets
-an agent request exact 1Password secret references, shows you a native approval
+an agent request exact secret references, shows you a native approval
 prompt with the command and reason, then injects approved values only into that
 child process.
 
@@ -12,8 +12,12 @@ Website: <https://agent-secret.sh>
 Requirements:
 
 - macOS on Apple Silicon.
-- 1Password desktop app signed in, unlocked, and with Developer Tools
-  integration enabled.
+- At least one supported secret provider:
+  - 1Password desktop app signed in, unlocked, and with Developer Tools
+    integration enabled.
+  - Bitwarden Secrets Manager with the official Bitwarden-signed `bws` CLI
+    installed at `/opt/homebrew/bin/bws` or `/usr/local/bin/bws`, plus a local
+    access token alias stored with Agent Secret.
 
 Install the latest signed and notarized release with Homebrew:
 
@@ -70,6 +74,27 @@ Agent Secret uses the 1Password desktop app SDK integration. In 1Password, open
 
 ![1Password Developer settings with SDK integration enabled](docs/images/1password-sdk-integration.png)
 
+## Enable Bitwarden Secrets Manager
+
+Install the official `bws` CLI, then store a local token alias in the macOS
+Keychain:
+
+```bash
+agent-secret bitwarden secrets-manager token install --alias work
+```
+
+The install command prompts for the token with hidden terminal input. For
+scripts, pipe the token with `--from-stdin`.
+
+Bitwarden refs use `bws://<secret-uuid>` or
+`bws://<source-alias>/<secret-uuid>`. Project configs can define
+`sources.bitwarden` entries to map source aliases to token aliases. Agent
+Secret v1 supports official Bitwarden cloud endpoints only and invokes `bws`
+with a temporary state-disabled config pinned to `https://vault.bitwarden.com`.
+It does not resolve `bws` from the daemon `PATH`; helper binaries must be at a
+fixed common path and either live under a stable system-owned path or be signed
+by Bitwarden Inc.
+
 ## Quick Start
 
 Run a command with an explicitly approved secret:
@@ -120,9 +145,9 @@ agent-secret profile show --json terraform-cloudflare
 ![Agent Secret approval prompt](docs/images/approval-request.png)
 
 The approval UI emphasizes the reason for the request, the command, the working
-directory, the approval scope, the requested aliases, and the exact 1Password
-secret references. Secret values are not shown in the UI and are not returned
-to the agent.
+directory, the approval scope, the requested aliases, and the exact secret
+references. Secret values are not shown in the UI and are not returned to the
+agent.
 
 Metadata inspection has its own approval prompt:
 
@@ -131,8 +156,8 @@ Metadata inspection has its own approval prompt:
 ## Project Profiles
 
 Projects can store reusable secret mappings in `agent-secret.yml` or
-`.agent-secret.yml`. The file contains 1Password secret references and request
-metadata only, never resolved values.
+`.agent-secret.yml`. The file contains secret references and request metadata
+only, never resolved values.
 
 ```yaml
 version: 1
@@ -181,19 +206,19 @@ other process with that value.
 
 What Agent Secret does protect:
 
-- Project configs and command flags carry `op://` references, not resolved
-  values.
+- Project configs and command flags carry `op://` or `bws://` references, not
+  resolved values.
 - The daemon fetches only secrets approved for the current request.
 - Audit logs contain metadata only, not raw secret values.
-- Reusable approvals are bounded by command, cwd, secret references, account,
-  TTL, and use count.
+- Reusable approvals are bounded by command, cwd, secret references, account or
+  token alias, TTL, and use count.
 - Reusable cached values are kept in daemon memory and cleared when their scope
   is replaced, refreshed, expired, or when the daemon stops.
 
 Out of scope:
 
-- Root, the kernel, a compromised macOS user session, a compromised 1Password
-  app, or a malicious approved child process.
+- Root, the kernel, a compromised macOS user session, a compromised provider
+  app or helper, or a malicious approved child process.
 - Hiding env vars from the operating-system APIs needed to launch the approved
   child process.
 - Cross-platform secret management, background updates, session handles,
@@ -208,7 +233,7 @@ reporting.
 The launch build is intentionally narrow:
 
 - macOS on Apple Silicon only.
-- 1Password Desktop only.
+- 1Password Desktop and Bitwarden Secrets Manager only; no other providers yet.
 - `agent-secret exec` only; no long-lived shell sessions.
 - No writing, updating, or rotating secrets yet.
 - No GCP Secret Manager or GCP token minting support yet.

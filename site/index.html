@@ -6,12 +6,12 @@
     <title>Agent Secret — approve exactly what your agents unlock</title>
     <meta
       name="description"
-      content="Agent Secret is a local macOS approval broker for coding-agent secrets, backed by 1Password. Agents request exact secret references with a reason and command; you approve before any value is handed over."
+      content="Agent Secret is a local macOS approval broker for coding-agent secrets, backed by 1Password or Bitwarden Secrets Manager. Agents request exact secret references with a reason and command; you approve before any value is handed over."
     >
     <meta property="og:title" content="Agent Secret">
     <meta
       property="og:description"
-      content="Your agents ask for secrets. You approve exactly what they get. A local macOS approval broker for coding-agent secrets, backed by 1Password."
+      content="Your agents ask for secrets. You approve exactly what they get. A local macOS approval broker for coding-agent secrets, backed by 1Password or Bitwarden Secrets Manager."
     >
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://agent-secret.sh/">
@@ -46,11 +46,11 @@
     <main id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <p class="eyebrow">macOS · 1Password · coding agents</p>
+          <p class="eyebrow">macOS · 1Password · Bitwarden · coding agents</p>
           <h1 id="hero-title">Your agents ask for secrets. You approve exactly what they get.</h1>
           <p class="lede">
             Agent Secret is a local approval broker for coding agents on macOS.
-            Agents request specific 1Password references — with a reason and the
+            Agents request specific secret references — with a reason and the
             exact command that will use them — and you get a native prompt before
             a single value is handed over.
           </p>
@@ -61,7 +61,7 @@
           <p class="proof-note">
             We've run it daily for months — dozens of approvals a day across
             personal, work, and shared vaults. None of us want to go back to raw
-            <code>op</code> prompts.
+            secret-manager prompts.
           </p>
         </div>
 
@@ -71,7 +71,7 @@
           </div>
           <img
             src="assets/approval-request-1400.png"
-            alt="Agent Secret approval prompt showing the reason, command, working directory, and the three 1Password secrets being requested"
+            alt="Agent Secret approval prompt showing the reason, command, working directory, and the three secret references being requested"
           >
         </figure>
       </section>
@@ -87,9 +87,9 @@
             gets, the more dangerous broad, ambient access becomes.
           </p>
           <p>
-            Moving everything into 1Password helped, because <code>op</code>
-            gates each read behind Touch ID. But with several agents working in
-            parallel, that prompt only tells you <em>something</em> wants
+            Moving everything into a secret manager helped, because provider
+            tools can gate reads behind local approval. But with several agents
+            working in parallel, that prompt only tells you <em>something</em> wants
             <em>a secret</em> — not which agent, not which secret, not why, and
             not where the value is about to land. You end up approving blind, or
             quietly dumping secrets into <code>.env</code> files to kill the
@@ -114,12 +114,12 @@
           <article>
             <span>01</span>
             <h3>Exact references, not blanket access</h3>
-            <p>Agents ask for <code>op://vault/item/field</code>, not "the secrets." You approve the specific fields they named — nothing more.</p>
+            <p>Agents ask for <code>op://...</code> or <code>bws://...</code>, not "the secrets." You approve the specific references they named — nothing more.</p>
           </article>
           <article>
             <span>02</span>
             <h3>A reason, in plain language</h3>
-            <p>Every request carries why the secret is needed, written by the agent, before any value leaves 1Password.</p>
+            <p>Every request carries why the secret is needed, written by the agent, before any value leaves its provider.</p>
           </article>
           <article>
             <span>03</span>
@@ -182,7 +182,7 @@
           </video>
           <figcaption>
             Watch the approval moment: Agent Secret shows the reason, exact
-            command, working directory, and requested 1Password reference before
+            command, working directory, and requested secret reference before
             the approved value is injected into that command.
           </figcaption>
         </figure>
@@ -193,9 +193,10 @@
           <div class="section-kicker">The migration</div>
           <h2 id="migration-title">Trade <code>.env</code> files for references you can approve.</h2>
           <p class="section-intro">
-            Profiles keep <code>op://</code> references in your project. Real
-            values only appear at runtime, behind an approval — so your config
-            and your agent's logs never hold a live credential.
+            Profiles keep <code>op://</code> or <code>bws://</code> references
+            in your project. Real values only appear at runtime, behind an
+            approval — so your config and your agent's logs never hold a live
+            credential.
           </p>
         </div>
         <div class="code-grid before-after">
@@ -372,8 +373,7 @@ profiles:
             <h3>Requirements</h3>
             <ul class="plain-list">
               <li>macOS 14 or newer on Apple Silicon</li>
-              <li>1Password desktop app, signed in and unlocked</li>
-              <li>1Password Developer SDK integration enabled</li>
+              <li>1Password desktop app with SDK integration, or Bitwarden Secrets Manager with official <code>bws</code></li>
               <li>Homebrew for the recommended install path</li>
             </ul>
           </div>
@@ -382,7 +382,7 @@ profiles:
             <p>
               Agent Secret is a local app and CLI. The site runs no analytics or
               ad cookies, and the app never sends raw secret values to us. Your
-              credentials stay between you and 1Password.
+              credentials stay between you and your secret provider.
             </p>
             <a class="text-link" href="privacy.html">Read the privacy policy →</a>
           </div>

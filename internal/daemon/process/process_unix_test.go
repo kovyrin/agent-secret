@@ -53,6 +53,7 @@ func TestDaemonStartCommandUsesOpenForDarwinApp(t *testing.T) {
 		"-n",
 		"/Applications/Agent Secret.app",
 		"--args",
+		AppLaunchSubcommand,
 		"--socket",
 		"/tmp/d.sock",
 	}

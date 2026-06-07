@@ -135,9 +135,7 @@ struct ApprovalRequestViewModel: Equatable {
     }
 
     private static func resourcePresentation(for resources: [RequestedResource]) -> ResourcePresentation {
-        let rows: [RequestedResourceRowViewModel] = resources.map { resource -> RequestedResourceRowViewModel in
-            RequestedResourceRowViewModel(alias: resource.alias, ref: resource.ref, account: resource.account)
-        }
+        let rows: [RequestedResourceRowViewModel] = resources.map(RequestedResourceRowViewModel.init(resource:))
         let rowText: [String] = rows.map { resource -> String in
             Self.resourceRowText(resource)
         }

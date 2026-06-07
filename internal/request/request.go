@@ -14,7 +14,7 @@ import (
 
 	"github.com/kovyrin/agent-secret/internal/executabletrust"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
-	"github.com/kovyrin/agent-secret/internal/opref"
+	"github.com/kovyrin/agent-secret/internal/secretref"
 )
 
 const (
@@ -30,7 +30,7 @@ var (
 	ErrInvalidAlias        = errors.New("invalid secret alias")
 	ErrInvalidCommand      = errors.New("invalid command")
 	ErrInvalidReason       = errors.New("invalid reason")
-	ErrInvalidReference    = errors.New("invalid 1Password secret reference")
+	ErrInvalidReference    = errors.New("invalid secret reference")
 	ErrInvalidReusableUses = errors.New("invalid reusable use count")
 	ErrInvalidRequest      = errors.New("invalid request")
 	ErrInvalidTTL          = errors.New("invalid ttl")
@@ -39,23 +39,41 @@ var (
 var aliasPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 type SecretSpec struct {
-	Alias   string `json:"alias"`
-	Ref     string `json:"ref"`
-	Account string `json:"account,omitempty"`
+	Alias     string          `json:"alias"`
+	Ref       string          `json:"ref"`
+	Account   string          `json:"account,omitempty"`
+	Source    string          `json:"source,omitempty"`
+	Bitwarden BitwardenSource `json:"bitwarden,omitzero"`
 }
 
 type SecretRef struct {
-	Raw     string `json:"raw"`
-	Vault   string `json:"vault"`
-	Item    string `json:"item"`
-	Section string `json:"section,omitempty"`
-	Field   string `json:"field"`
+	Raw      string `json:"raw"`
+	Provider string `json:"provider,omitempty"`
+	Vault    string `json:"vault,omitempty"`
+	Item     string `json:"item,omitempty"`
+	Section  string `json:"section,omitempty"`
+	Field    string `json:"field,omitempty"`
+	Source   string `json:"source,omitempty"`
+	SecretID string `json:"secret_id,omitempty"`
+}
+
+type BitwardenSource struct {
+	Alias       string `json:"alias,omitempty"`
+	TokenAlias  string `json:"token_alias,omitempty"`
+	APIURL      string `json:"api_url,omitempty"`
+	IdentityURL string `json:"identity_url,omitempty"`
+}
+
+func (s BitwardenSource) IsZero() bool {
+	return s == BitwardenSource{}
 }
 
 type Secret struct {
-	Alias   string    `json:"alias"`
-	Ref     SecretRef `json:"ref"`
-	Account string    `json:"account,omitempty"`
+	Alias     string          `json:"alias"`
+	Ref       SecretRef       `json:"ref"`
+	Account   string          `json:"account,omitempty"`
+	Source    string          `json:"source,omitempty"`
+	Bitwarden BitwardenSource `json:"bitwarden,omitzero"`
 }
 
 type ExecOptions struct {
@@ -286,16 +304,19 @@ func ReusableUsesOrDefault(uses int) int {
 }
 
 func ParseSecretRef(ref string) (SecretRef, error) {
-	parsed, err := opref.Parse(ref)
+	parsed, err := secretref.Parse(ref)
 	if err != nil {
 		return SecretRef{}, fmt.Errorf("%w: %w", ErrInvalidReference, err)
 	}
 	return SecretRef{
-		Raw:     parsed.Raw,
-		Vault:   parsed.Vault,
-		Item:    parsed.Item,
-		Section: parsed.Section,
-		Field:   parsed.Field,
+		Raw:      parsed.Raw,
+		Provider: parsed.Provider,
+		Vault:    parsed.Vault,
+		Item:     parsed.Item,
+		Section:  parsed.Section,
+		Field:    parsed.Field,
+		Source:   parsed.Source,
+		SecretID: parsed.SecretID,
 	}, nil
 }
 
@@ -390,10 +411,39 @@ func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 			return nil, err
 		}
 		account := strings.TrimSpace(spec.Account)
-		if account == "" {
-			return nil, fmt.Errorf("%w: account is required", ErrInvalidReference)
+		source := strings.TrimSpace(spec.Source)
+		bitwardenSource := spec.Bitwarden
+		switch ref.Provider {
+		case secretref.ProviderOnePassword:
+			if account == "" {
+				return nil, fmt.Errorf("%w: account is required for 1Password refs", ErrInvalidReference)
+			}
+			if source != "" {
+				return nil, fmt.Errorf("%w: source is only valid for Bitwarden refs", ErrInvalidReference)
+			}
+			if bitwardenSource != (BitwardenSource{}) {
+				return nil, fmt.Errorf("%w: Bitwarden source metadata is only valid for Bitwarden refs", ErrInvalidReference)
+			}
+		case secretref.ProviderBitwardenSecretsManager:
+			normalized, err := normalizeBitwardenSecretSource(ref, source, bitwardenSource)
+			if err != nil {
+				return nil, err
+			}
+			source = normalized.Alias
+			bitwardenSource = normalized
+			if account != "" {
+				return nil, fmt.Errorf("%w: account is only valid for 1Password refs", ErrInvalidReference)
+			}
+		default:
+			return nil, fmt.Errorf("%w: unsupported secret provider %q", ErrInvalidReference, ref.Provider)
 		}
-		secrets = append(secrets, Secret{Alias: spec.Alias, Ref: ref, Account: account})
+		secrets = append(secrets, Secret{
+			Alias:     spec.Alias,
+			Ref:       ref,
+			Account:   account,
+			Source:    source,
+			Bitwarden: bitwardenSource,
+		})
 	}
 
 	return secrets, nil
@@ -405,6 +455,9 @@ func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
 		if strings.TrimSpace(secret.Account) != secret.Account {
 			return nil, fmt.Errorf("%w: secret %q account must be trimmed", ErrInvalidReference, secret.Alias)
 		}
+		if strings.TrimSpace(secret.Source) != secret.Source {
+			return nil, fmt.Errorf("%w: secret %q source must be trimmed", ErrInvalidReference, secret.Alias)
+		}
 		parsed, err := ParseSecretRef(secret.Ref.Raw)
 		if err != nil {
 			return nil, err
@@ -412,7 +465,13 @@ func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
 		if parsed != secret.Ref {
 			return nil, fmt.Errorf("%w: parsed reference metadata does not match raw ref", ErrInvalidReference)
 		}
-		specs = append(specs, SecretSpec{Alias: secret.Alias, Ref: secret.Ref.Raw, Account: secret.Account})
+		specs = append(specs, SecretSpec{
+			Alias:     secret.Alias,
+			Ref:       secret.Ref.Raw,
+			Account:   secret.Account,
+			Source:    secret.Source,
+			Bitwarden: secret.Bitwarden,
+		})
 	}
 	parsed, err := ParseSecrets(specs)
 	if err != nil {
@@ -427,6 +486,60 @@ func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
 		}
 	}
 	return parsed, nil
+}
+
+func normalizeBitwardenSecretSource(ref SecretRef, source string, metadata BitwardenSource) (BitwardenSource, error) {
+	if ref.Source != "" {
+		if source != "" && source != ref.Source {
+			return BitwardenSource{}, fmt.Errorf(
+				"%w: Bitwarden source %q does not match ref source %q",
+				ErrInvalidReference,
+				source,
+				ref.Source,
+			)
+		}
+		source = ref.Source
+	}
+	if metadata.Alias != "" {
+		alias, err := secretref.NormalizeSourceAlias(metadata.Alias)
+		if err != nil {
+			return BitwardenSource{}, err
+		}
+		if source != "" && alias != source {
+			return BitwardenSource{}, fmt.Errorf(
+				"%w: Bitwarden source metadata alias %q does not match source %q",
+				ErrInvalidReference,
+				alias,
+				source,
+			)
+		}
+		source = alias
+	}
+	if source == "" {
+		return BitwardenSource{}, fmt.Errorf(
+			"%w: Bitwarden refs require a source; use bws://<source-alias>/<secret-uuid> or configure one Bitwarden source",
+			ErrInvalidReference,
+		)
+	}
+	alias, err := secretref.NormalizeSourceAlias(source)
+	if err != nil {
+		return BitwardenSource{}, err
+	}
+	tokenAlias := strings.TrimSpace(metadata.TokenAlias)
+	if tokenAlias == "" {
+		tokenAlias = alias
+	}
+	tokenAlias, err = secretref.NormalizeSourceAlias(tokenAlias)
+	if err != nil {
+		return BitwardenSource{}, fmt.Errorf("%w: invalid Bitwarden token alias: %w", ErrInvalidReference, err)
+	}
+	if strings.TrimSpace(metadata.APIURL) != "" || strings.TrimSpace(metadata.IdentityURL) != "" {
+		return BitwardenSource{}, fmt.Errorf("%w: custom Bitwarden endpoints are not supported in v1", ErrInvalidReference)
+	}
+	return BitwardenSource{
+		Alias:      alias,
+		TokenAlias: tokenAlias,
+	}, nil
 }
 
 func validateOverriddenAliases(secrets []Secret, aliases []string, override bool) error {

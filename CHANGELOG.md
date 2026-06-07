@@ -24,17 +24,36 @@ version numbers for public releases.
 
 ### Added
 
+- Added Bitwarden Secrets Manager v1 support with `bws://` refs, project
+  `sources.bitwarden` config, Keychain-backed token aliases, and
+  `agent-secret bitwarden secrets-manager token install|status|remove`.
+- Added hidden interactive input for Bitwarden token install, while keeping
+  `--from-stdin` for scripts.
 - Added public website sitemap validation so deploy checks catch missing or
   non-canonical URLs before Google Search Console submission.
 
 ### Changed
 
+- Updated the README, public website, privacy policy, terms, and threat model
+  for 1Password plus Bitwarden provider support.
 - Updated the public website sitemap metadata for the current launch page.
 
 ### Fixed
 
 - Updated the checked-in Homebrew cask to the published `0.0.15` artifact so
   cask audit matches the latest release.
+
+### Security
+
+- Rejected custom Bitwarden `api_url` and `identity_url` settings in v1 so
+  project config cannot redirect token-bearing `bws` requests.
+- Hardened Bitwarden `bws` helper execution by removing daemon `PATH` and home
+  directory fallback resolution, requiring stable or Bitwarden-signed helper
+  paths, and passing only the access token and no-color flag to the helper
+  environment.
+- Hardened Bitwarden token storage for ad-hoc development builds by using one
+  signed CLI/daemon helper executable so macOS Keychain partition checks cover
+  both token install and daemon resolution.
 
 ## [0.0.15] - 2026-06-04
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,10 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/bwsm"
 	"github.com/kovyrin/agent-secret/internal/envfile"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretref"
 )
 
 type execFlags struct {
@@ -48,11 +51,16 @@ type execInputSources struct {
 	profile        profileconfig.Profile
 	loadedProfile  bool
 	configAccount  string
+	sources        profileconfig.Sources
 }
 
 type filteredExecSecretSources struct {
 	profileSecrets []request.SecretSpec
 	envFileSecrets []request.SecretSpec
+}
+
+func defaultBitwardenTokenAliasLister(ctx context.Context) ([]string, error) {
+	return bwsm.ListAliases(ctx, bwsm.NewKeychainStore(""))
 }
 
 func (p Parser) parseExec(args []string) (Command, error) {
@@ -109,7 +117,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		return Command{}, ErrShellStringCommand
 	}
 
-	inputs, err := resolveExecInputs(execOpts)
+	inputs, err := p.resolveExecInputs(execOpts)
 	if err != nil {
 		return Command{}, err
 	}
@@ -133,12 +141,12 @@ func (p Parser) parseExec(args []string) (Command, error) {
 	return Command{Kind: KindExec, OutputJSON: *jsonOutput, ExecRequest: req, ExecEnv: inputs.env, ExecDryRun: execOpts.dryRun}, nil
 }
 
-func resolveExecInputs(flags execFlags) (execInputs, error) {
+func (p Parser) resolveExecInputs(flags execFlags) (execInputs, error) {
 	sources, err := loadExecInputSources(flags)
 	if err != nil {
 		return execInputs{}, err
 	}
-	secrets, err := resolveExecSecrets(flags, sources)
+	secrets, err := p.resolveExecSecrets(flags, sources)
 	if err != nil {
 		return execInputs{}, err
 	}
@@ -167,6 +175,10 @@ func loadExecInputSources(flags execFlags) (execInputSources, error) {
 	if err != nil {
 		return execInputSources{}, err
 	}
+	configSources, err := loadExecConfigSources(flags.profileName, flags.configPath, hasExplicitSource, loadedProfile)
+	if err != nil {
+		return execInputSources{}, err
+	}
 
 	sources := execInputSources{
 		reason:         flags.reason,
@@ -176,6 +188,7 @@ func loadExecInputSources(flags execFlags) (execInputSources, error) {
 		profile:        profile,
 		loadedProfile:  loadedProfile,
 		configAccount:  configAccount,
+		sources:        configSources,
 	}
 	if sources.loadedProfile && sources.reason == "" {
 		sources.reason = sources.profile.Reason
@@ -183,15 +196,19 @@ func loadExecInputSources(flags execFlags) (execInputSources, error) {
 	if sources.loadedProfile && sources.ttl == 0 {
 		sources.ttl = sources.profile.TTL
 	}
+	if sources.loadedProfile {
+		sources.sources = sources.profile.Sources
+	}
 	return sources, nil
 }
 
-func resolveExecSecrets(flags execFlags, sources execInputSources) ([]request.SecretSpec, error) {
+func (p Parser) resolveExecSecrets(flags execFlags, sources execInputSources) ([]request.SecretSpec, error) {
 	filtered, err := filterExecSecretsByOnly(flags, sources)
 	if err != nil {
 		return nil, err
 	}
-	return assembleExecSecrets(flags, sources, filtered), nil
+	secrets := assembleExecSecrets(flags, sources, filtered)
+	return p.resolveBitwardenSecretSources(secrets, sources.sources)
 }
 
 func filterExecSecretsByOnly(flags execFlags, sources execInputSources) (filteredExecSecretSources, error) {
@@ -300,6 +317,157 @@ func loadExecConfigAccount(profileName string, configPath string, hasExplicitSou
 	return "", fmt.Errorf("load config metadata: %w", err)
 }
 
+func loadExecConfigSources(
+	profileName string,
+	configPath string,
+	hasExplicitSource bool,
+	loadedProfile bool,
+) (profileconfig.Sources, error) {
+	if profileName != "" || !hasExplicitSource || loadedProfile {
+		return profileconfig.Sources{}, nil
+	}
+	metadata, err := profileconfig.LoadMetadata(profileconfig.LoadOptions{
+		ConfigPath: configPath,
+	})
+	if err == nil {
+		return metadata.Sources, nil
+	}
+	if configPath == "" && errors.Is(err, profileconfig.ErrConfigNotFound) {
+		return profileconfig.Sources{}, nil
+	}
+	return profileconfig.Sources{}, fmt.Errorf("load config metadata: %w", err)
+}
+
+func (p Parser) resolveBitwardenSecretSources(
+	secrets []request.SecretSpec,
+	configSources profileconfig.Sources,
+) ([]request.SecretSpec, error) {
+	if len(secrets) == 0 {
+		return secrets, nil
+	}
+	updated := slices.Clone(secrets)
+	localAliasCache := bitwardenLocalAliasCache{list: p.bitwardenTokenAliasLister()}
+	for i, secret := range updated {
+		if !secretref.IsBitwardenSecretsManager(secret.Ref) {
+			continue
+		}
+		parsed, err := request.ParseSecretRef(secret.Ref)
+		if err != nil {
+			return nil, err
+		}
+		source := strings.TrimSpace(secret.Source)
+		if parsed.Source != "" {
+			if source != "" && source != parsed.Source {
+				return nil, fmt.Errorf(
+					"%w: bitwarden source %q does not match ref source %q",
+					request.ErrInvalidReference,
+					source,
+					parsed.Source,
+				)
+			}
+			source = parsed.Source
+		}
+		if source == "" {
+			resolved, err := resolveImplicitBitwardenSource(secret.Ref, configSources, &localAliasCache)
+			if err != nil {
+				return nil, err
+			}
+			source = resolved
+		}
+		configured, hasConfigured := configSources.Bitwarden[source]
+		if len(configSources.Bitwarden) > 0 && !hasConfigured {
+			return nil, fmt.Errorf(
+				"%w: bitwarden source %q is not configured in this project",
+				request.ErrInvalidReference,
+				source,
+			)
+		}
+		if hasConfigured {
+			secret.Source = configured.Alias
+			secret.Bitwarden = configured
+		} else {
+			secret.Source = source
+			secret.Bitwarden = request.BitwardenSource{Alias: source, TokenAlias: source}
+		}
+		updated[i] = secret
+	}
+	return updated, nil
+}
+
+type bitwardenLocalAliasCache struct {
+	list   func(context.Context) ([]string, error)
+	loaded bool
+	values []string
+}
+
+func (c *bitwardenLocalAliasCache) aliases(ctx context.Context) ([]string, error) {
+	if c.loaded {
+		return c.values, nil
+	}
+	values, err := c.list(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.values = values
+	c.loaded = true
+	return values, nil
+}
+
+func resolveImplicitBitwardenSource(
+	ref string,
+	configSources profileconfig.Sources,
+	localAliasCache *bitwardenLocalAliasCache,
+) (string, error) {
+	if configured, ok := singleConfiguredBitwardenSource(configSources); ok {
+		return configured.Alias, nil
+	}
+	if len(configSources.Bitwarden) > 1 {
+		return "", fmt.Errorf(
+			"%w: bitwarden ref %q is ambiguous; configure source or use bws://<source-alias>/<secret-uuid>",
+			request.ErrInvalidReference,
+			ref,
+		)
+	}
+	localAliases, err := localAliasCache.aliases(context.Background())
+	if err != nil {
+		return "", fmt.Errorf("list local bitwarden token aliases: %w", err)
+	}
+	switch len(localAliases) {
+	case 1:
+		return localAliases[0], nil
+	case 0:
+		return "", fmt.Errorf(
+			"%w: bitwarden ref %q requires a source; install one token alias or use bws://<source-alias>/<secret-uuid>",
+			request.ErrInvalidReference,
+			ref,
+		)
+	default:
+		return "", fmt.Errorf(
+			"%w: bitwarden ref %q is ambiguous across local token aliases %s; use bws://<source-alias>/<secret-uuid>",
+			request.ErrInvalidReference,
+			ref,
+			strings.Join(localAliases, ", "),
+		)
+	}
+}
+
+func (p Parser) bitwardenTokenAliasLister() func(context.Context) ([]string, error) {
+	if p.listBitwardenTokenAliases != nil {
+		return p.listBitwardenTokenAliases
+	}
+	return defaultBitwardenTokenAliasLister
+}
+
+func singleConfiguredBitwardenSource(sources profileconfig.Sources) (request.BitwardenSource, bool) {
+	if len(sources.Bitwarden) != 1 {
+		return request.BitwardenSource{}, false
+	}
+	for _, source := range sources.Bitwarden {
+		return source, true
+	}
+	return request.BitwardenSource{}, false
+}
+
 func applyDefaultAccount(secrets []request.SecretSpec, account string) []request.SecretSpec {
 	account = strings.TrimSpace(account)
 	if account == "" || len(secrets) == 0 {
@@ -307,6 +475,10 @@ func applyDefaultAccount(secrets []request.SecretSpec, account string) []request
 	}
 	updated := make([]request.SecretSpec, 0, len(secrets))
 	for _, secret := range secrets {
+		if secretref.IsBitwardenSecretsManager(secret.Ref) {
+			updated = append(updated, secret)
+			continue
+		}
 		if secret.Account == "" {
 			secret.Account = account
 		}
@@ -376,7 +548,7 @@ func loadEnvFiles(paths []string) (envFileValues, error) {
 			return envFileValues{}, err
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Value, "op://") {
+			if secretref.IsSupported(entry.Value) {
 				delete(values.Plain, entry.Key)
 				secretByAlias[entry.Key] = request.SecretSpec{Alias: entry.Key, Ref: entry.Value}
 				continue

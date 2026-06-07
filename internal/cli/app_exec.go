@@ -14,6 +14,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/execwrap"
 	"github.com/kovyrin/agent-secret/internal/request"
+	"github.com/kovyrin/agent-secret/internal/secretref"
 )
 
 type execDryRunOutput struct {
@@ -142,11 +143,7 @@ func (a App) runExecDryRun(command Command) int {
 	a.stdoutf("ttl: %s\n", req.TTL)
 	a.stdoutln("secrets:")
 	for _, secret := range req.Secrets {
-		account := secret.Account
-		if account == "" {
-			account = "(default desktop account)"
-		}
-		a.stdoutf("  %s=%s account=%s\n", secret.Alias, secret.Ref.Raw, account)
+		a.stdoutf("  %s=%s %s\n", secret.Alias, secret.Ref.Raw, dryRunSecretScope(secret))
 	}
 	return 0
 }
@@ -155,12 +152,31 @@ func dryRunSecrets(secrets []request.Secret) []request.SecretSpec {
 	out := make([]request.SecretSpec, 0, len(secrets))
 	for _, secret := range secrets {
 		out = append(out, request.SecretSpec{
-			Alias:   secret.Alias,
-			Ref:     secret.Ref.Raw,
-			Account: secret.Account,
+			Alias:     secret.Alias,
+			Ref:       secret.Ref.Raw,
+			Account:   secret.Account,
+			Source:    secret.Source,
+			Bitwarden: secret.Bitwarden,
 		})
 	}
 	return out
+}
+
+func dryRunSecretScope(secret request.Secret) string {
+	switch secret.Ref.Provider {
+	case secretref.ProviderBitwardenSecretsManager:
+		tokenAlias := secret.Bitwarden.TokenAlias
+		if tokenAlias == "" {
+			tokenAlias = secret.Source
+		}
+		return fmt.Sprintf("source=%s token_alias=%s", secret.Source, tokenAlias)
+	default:
+		account := secret.Account
+		if account == "" {
+			account = "(default desktop account)"
+		}
+		return "account=" + account
+	}
 }
 
 func (a App) requestExec(

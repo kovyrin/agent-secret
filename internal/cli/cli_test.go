@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
+	"github.com/kovyrin/agent-secret/internal/profileconfig"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
 
@@ -142,6 +144,380 @@ profiles:
 	}
 	if req.Secrets[0].Account != "Terraform Account" || req.Secrets[1].Account != "Extra Account" {
 		t.Fatalf("accounts not applied from profile config: %+v", req.Secrets)
+	}
+}
+
+func TestParseExecBuildsBitwardenRequestFromProfileSource(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+sources:
+  bitwarden:
+    work-secrets:
+      kind: secrets_manager
+      token_alias: work
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      API_TOKEN: bws://be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	command, err := NewParser().Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--profile", "deploy",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	secret := command.ExecRequest.Secrets[0]
+	if secret.Account != "" {
+		t.Fatalf("Bitwarden secret account = %q, want empty", secret.Account)
+	}
+	if secret.Source != "work-secrets" || secret.Bitwarden.TokenAlias != "work" {
+		t.Fatalf("Bitwarden source metadata = source %q token %q", secret.Source, secret.Bitwarden.TokenAlias)
+	}
+}
+
+func TestParseExecInfersSingleLocalBitwardenTokenAlias(t *testing.T) {
+	parser := NewParser()
+	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
+		return []string{"work"}, nil
+	}
+
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Deploy",
+		"--secret", "API_TOKEN=bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	secret := command.ExecRequest.Secrets[0]
+	if secret.Source != "work" || secret.Bitwarden.TokenAlias != "work" || secret.Account != "" {
+		t.Fatalf("Bitwarden secret metadata = %+v", secret)
+	}
+}
+
+func TestResolveImplicitBitwardenSourceFromLocalAliases(t *testing.T) {
+	t.Parallel()
+
+	cache := bitwardenLocalAliasCache{
+		list: func(context.Context) ([]string, error) {
+			return []string{"work"}, nil
+		},
+	}
+	source, err := resolveImplicitBitwardenSource(
+		"bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		profileconfig.Sources{},
+		&cache,
+	)
+	if err != nil {
+		t.Fatalf("resolveImplicitBitwardenSource returned error: %v", err)
+	}
+	if source != "work" {
+		t.Fatalf("source = %q, want work", source)
+	}
+}
+
+func TestResolveImplicitBitwardenSourceRejectsLocalAliasAmbiguity(t *testing.T) {
+	t.Parallel()
+
+	cache := bitwardenLocalAliasCache{
+		list: func(context.Context) ([]string, error) {
+			return []string{"personal", "work"}, nil
+		},
+	}
+	_, err := resolveImplicitBitwardenSource(
+		"bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		profileconfig.Sources{},
+		&cache,
+	)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("resolveImplicitBitwardenSource error = %v, want ambiguity", err)
+	}
+}
+
+func TestSingleConfiguredBitwardenSource(t *testing.T) {
+	t.Parallel()
+
+	if _, ok := singleConfiguredBitwardenSource(profileconfig.Sources{}); ok {
+		t.Fatal("empty sources returned ok=true")
+	}
+	source, ok := singleConfiguredBitwardenSource(profileconfig.Sources{
+		Bitwarden: map[string]request.BitwardenSource{
+			"work": {Alias: "work", TokenAlias: "work-token"},
+		},
+	})
+	if !ok || source.Alias != "work" || source.TokenAlias != "work-token" {
+		t.Fatalf("single source = %+v ok=%v", source, ok)
+	}
+	if _, ok := singleConfiguredBitwardenSource(profileconfig.Sources{
+		Bitwarden: map[string]request.BitwardenSource{
+			"personal": {Alias: "personal"},
+			"work":     {Alias: "work"},
+		},
+	}); ok {
+		t.Fatal("multiple sources returned ok=true")
+	}
+}
+
+func TestParseExecRejectsAmbiguousLocalBitwardenTokenAliases(t *testing.T) {
+	parser := NewParser()
+	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
+		return []string{"personal", "work"}, nil
+	}
+
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := parser.Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Deploy",
+		"--secret", "API_TOKEN=bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, request.ErrInvalidReference) {
+		t.Fatalf("Parse error = %v, want invalid reference", err)
+	}
+}
+
+func TestParseExecUsesExplicitBitwardenSourceWithoutLocalAliasLookup(t *testing.T) {
+	parser := NewParser()
+	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
+		t.Fatal("explicit Bitwarden source should not list local token aliases")
+		return nil, nil
+	}
+
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	command, err := parser.Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Deploy",
+		"--secret", "API_TOKEN=bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	secret := command.ExecRequest.Secrets[0]
+	if secret.Source != "work" || secret.Bitwarden.TokenAlias != "work" {
+		t.Fatalf("Bitwarden secret metadata = %+v", secret)
+	}
+}
+
+func TestParseExecRejectsMissingLocalBitwardenTokenAlias(t *testing.T) {
+	parser := NewParser()
+	parser.listBitwardenTokenAliases = func(context.Context) ([]string, error) {
+		return nil, nil
+	}
+
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := parser.Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Deploy",
+		"--secret", "API_TOKEN=bws://be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, request.ErrInvalidReference) {
+		t.Fatalf("Parse error = %v, want invalid reference", err)
+	}
+	if !strings.Contains(err.Error(), "install one token alias") {
+		t.Fatalf("Parse error = %v, want install guidance", err)
+	}
+}
+
+func TestParseExecRejectsConflictingBitwardenSourceMetadata(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: work
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      API_TOKEN:
+        ref: bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158
+        source: work
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := NewParser().Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--profile", "deploy",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, profileconfig.ErrInvalidConfig) {
+		t.Fatalf("Parse error = %v, want invalid config", err)
+	}
+	if !strings.Contains(err.Error(), "does not match ref source") {
+		t.Fatalf("Parse error = %v, want source mismatch", err)
+	}
+}
+
+func TestParseExecRejectsUnknownConfiguredBitwardenSource(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	writeProfileConfig(t, root, `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: work
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      API_TOKEN: bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := NewParser().Parse([]string{
+		"exec",
+		"--allow-mutable-executable",
+		"--profile", "deploy",
+		"--",
+		"tool",
+	})
+	if !errors.Is(err, profileconfig.ErrInvalidConfig) {
+		t.Fatalf("Parse error = %v, want invalid config", err)
+	}
+	if !strings.Contains(err.Error(), "references unknown Bitwarden source") {
+		t.Fatalf("Parse error = %v, want unknown source", err)
+	}
+}
+
+func TestParseBitwardenTokenCommands(t *testing.T) {
+	t.Parallel()
+
+	command, err := NewParser().Parse([]string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+		"--from-stdin",
+		"--json",
+	})
+	if err != nil {
+		t.Fatalf("Parse install returned error: %v", err)
+	}
+	if command.Kind != KindBitwarden ||
+		command.BitwardenOptions.Operation != BitwardenTokenInstall ||
+		command.BitwardenOptions.Alias != "work" ||
+		!command.BitwardenOptions.FromStdin ||
+		!command.OutputJSON {
+		t.Fatalf("install command = %+v", command)
+	}
+
+	interactive, err := NewParser().Parse([]string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+	})
+	if err != nil {
+		t.Fatalf("Parse interactive install returned error: %v", err)
+	}
+	if interactive.BitwardenOptions.Operation != BitwardenTokenInstall ||
+		interactive.BitwardenOptions.Alias != "work" ||
+		interactive.BitwardenOptions.FromStdin {
+		t.Fatalf("interactive install command = %+v", interactive)
+	}
+
+	status, err := NewParser().Parse([]string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"status",
+		"--alias", "work",
+	})
+	if err != nil {
+		t.Fatalf("Parse status returned error: %v", err)
+	}
+	if status.BitwardenOptions.Operation != BitwardenTokenStatus {
+		t.Fatalf("status operation = %q", status.BitwardenOptions.Operation)
+	}
+
+	remove, err := NewParser().Parse([]string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"remove",
+		"--alias", "work",
+	})
+	if err != nil {
+		t.Fatalf("Parse remove returned error: %v", err)
+	}
+	if remove.BitwardenOptions.Operation != BitwardenTokenRemove {
+		t.Fatalf("remove operation = %q", remove.BitwardenOptions.Operation)
+	}
+}
+
+func TestParseBitwardenRejectsInvalidTokenCommands(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{"bitwarden", "sm", "token", "install", "--alias", "work", "--from-stdin"},
+		{"bitwarden", "secrets-manager", "token", "status", "--alias", "work", "--from-stdin"},
+		{"bitwarden", "secrets-manager", "token", "remove"},
+		{"bitwarden", "secrets-manager", "token", "status", "--alias", "work", "extra"},
+	} {
+		if _, err := NewParser().Parse(args); !errors.Is(err, ErrInvalidArguments) {
+			t.Fatalf("Parse(%v) error = %v, want ErrInvalidArguments", args, err)
+		}
+	}
+}
+
+func TestParseBitwardenHelp(t *testing.T) {
+	t.Parallel()
+
+	command, err := NewParser().Parse([]string{"bitwarden", "--help"})
+	if !errors.Is(err, ErrHelpRequested) {
+		t.Fatalf("Parse help error = %v, want ErrHelpRequested", err)
+	}
+	if command.HelpText == "" || !strings.Contains(command.HelpText, "secrets-manager") {
+		t.Fatalf("help text = %q", command.HelpText)
 	}
 }
 

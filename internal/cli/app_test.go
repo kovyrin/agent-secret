@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/bwsm"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
@@ -219,6 +220,340 @@ func TestAppItemDescribePrintsMetadataWithoutSecretValues(t *testing.T) {
 	}
 	if strings.Contains(stdout.String()+stderr.String(), "synthetic-secret-value") {
 		t.Fatalf("output leaked secret-looking canary")
+	}
+}
+
+func TestAppBitwardenTokenInstallStatusAndRemove(t *testing.T) {
+	store := &fakeBitwardenStore{tokens: make(map[string]bwsm.Token)}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+	app.Stdin = strings.NewReader("synthetic-token-value\n")
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+		"--from-stdin",
+	})
+	if code != 0 {
+		t.Fatalf("install exit code = %d stderr=%q", code, stderr.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-token-value") {
+		t.Fatalf("token install leaked token value: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if got := store.tokens["work"].AccessToken; got != "synthetic-token-value" {
+		t.Fatalf("stored token = %q", got)
+	}
+	if store.interactivePuts != 0 {
+		t.Fatalf("stdin install used interactive store writes: %d", store.interactivePuts)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"status",
+		"--alias", "work",
+		"--json",
+	})
+	if code != 0 {
+		t.Fatalf("status json exit code = %d stderr=%q", code, stderr.String())
+	}
+	var statusPayload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &statusPayload); err != nil {
+		t.Fatalf("status json did not decode: %v stdout=%q", err, stdout.String())
+	}
+	if statusPayload["status"] != "installed" || statusPayload["ok"] != true {
+		t.Fatalf("status json payload = %+v", statusPayload)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"status",
+		"--alias", "work",
+	})
+	if code != 0 {
+		t.Fatalf("status exit code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `token alias "work": installed`) {
+		t.Fatalf("status stdout = %q", stdout.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-token-value") {
+		t.Fatalf("token status leaked token value")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"remove",
+		"--alias", "work",
+	})
+	if code != 0 {
+		t.Fatalf("remove exit code = %d stderr=%q", code, stderr.String())
+	}
+	if _, ok := store.tokens["work"]; ok {
+		t.Fatal("remove left token in store")
+	}
+}
+
+func TestAppBitwardenTokenStatusMissingJSON(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{tokens: make(map[string]bwsm.Token)}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"status",
+		"--alias", "work",
+		"--json",
+	})
+	if code != 1 {
+		t.Fatalf("status exit code = %d stderr=%q", code, stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status json: %v; stdout=%q", err, stdout.String())
+	}
+	if payload["status"] != "missing" || payload["ok"] != false {
+		t.Fatalf("status payload = %+v", payload)
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestAppBitwardenTokenInstallPromptsInteractively(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{tokens: make(map[string]bwsm.Token)}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+	app.SecretPrompt = func(prompt string) (string, error) {
+		if !strings.Contains(prompt, `alias "work"`) {
+			t.Fatalf("prompt = %q, want alias", prompt)
+		}
+		return "synthetic-token-value\n", nil
+	}
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+	})
+	if code != 0 {
+		t.Fatalf("interactive install exit code = %d stderr=%q", code, stderr.String())
+	}
+	if got := store.tokens["work"].AccessToken; got != "synthetic-token-value" {
+		t.Fatalf("stored token = %q", got)
+	}
+	if store.interactivePuts != 1 {
+		t.Fatalf("interactive install writes = %d, want 1", store.interactivePuts)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-token-value") {
+		t.Fatalf("interactive token install leaked token value: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `token alias "work": installed`) {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestAppBitwardenTokenInstallPromptFailureDoesNotStore(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{tokens: make(map[string]bwsm.Token)}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+	app.SecretPrompt = func(string) (string, error) {
+		return "", errors.New("no terminal")
+	}
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+	})
+	if code != 1 {
+		t.Fatalf("interactive install failure exit code = %d stderr=%q", code, stderr.String())
+	}
+	if _, ok := store.tokens["work"]; ok {
+		t.Fatal("failed interactive install stored token")
+	}
+	if !strings.Contains(stderr.String(), "read Bitwarden token interactively") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestAppBitwardenTokenInstallJSONAndFailures(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{tokens: make(map[string]bwsm.Token)}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+	app.Stdin = strings.NewReader("synthetic-token-value\n")
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "work",
+		"--from-stdin",
+		"--json",
+	})
+	if code != 0 {
+		t.Fatalf("install exit code = %d stderr=%q", code, stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal install json: %v; stdout=%q", err, stdout.String())
+	}
+	if payload["status"] != "installed" || payload["ok"] != true {
+		t.Fatalf("install payload = %+v", payload)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "synthetic-token-value") {
+		t.Fatalf("install json leaked token")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	app.Stdin = strings.NewReader(" \n ")
+	code = app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"install",
+		"--alias", "empty",
+		"--from-stdin",
+	})
+	if code != 1 {
+		t.Fatalf("empty install exit code = %d stderr=%q", code, stderr.String())
+	}
+	if _, ok := store.tokens["empty"]; ok {
+		t.Fatal("empty token was stored")
+	}
+}
+
+func TestAppBitwardenTokenRemoveMissingJSON(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{tokens: make(map[string]bwsm.Token)}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"remove",
+		"--alias", "missing",
+		"--json",
+	})
+	if code != 0 {
+		t.Fatalf("remove exit code = %d stderr=%q", code, stderr.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal remove json: %v; stdout=%q", err, stdout.String())
+	}
+	if payload["status"] != "missing" || payload["ok"] != false {
+		t.Fatalf("remove payload = %+v", payload)
+	}
+}
+
+func TestAppBitwardenTokenStoreErrors(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeBitwardenStore{
+		tokens: make(map[string]bwsm.Token),
+		getErr: errors.New("keychain denied"),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	app.BitwardenTokens = store
+
+	code := app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"status",
+		"--alias", "work",
+	})
+	if code != 1 {
+		t.Fatalf("status exit code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), `inspect Bitwarden token alias "work": keychain denied`) {
+		t.Fatalf("status stderr = %q", stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	store.getErr = nil
+	store.deleteErr = errors.New("delete denied")
+	code = app.Run(context.Background(), []string{
+		"bitwarden",
+		"secrets-manager",
+		"token",
+		"remove",
+		"--alias", "work",
+	})
+	if code != 1 {
+		t.Fatalf("remove exit code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), `remove Bitwarden token alias "work": delete denied`) {
+		t.Fatalf("remove stderr = %q", stderr.String())
+	}
+}
+
+func TestAppBitwardenRejectsUnsupportedOperation(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(nil, &stdout, &stderr)
+	code := app.runBitwarden(context.Background(), Command{
+		Kind: KindBitwarden,
+		BitwardenOptions: BitwardenCommandOptions{
+			Operation: BitwardenTokenOperation("unknown"),
+			Alias:     "work",
+		},
+	})
+	if code != 2 {
+		t.Fatalf("exit code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), "unsupported Bitwarden operation") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 
@@ -853,6 +1188,42 @@ func TestAppExecDryRunTextDescribesPromptAndCommand(t *testing.T) {
 		"command: '",
 		"'arg with space'",
 		"TOKEN=op://Example/Item/token account=Work",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("dry-run stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+	if manager.ensureCalls != 0 || manager.connectCalls != 0 || manager.statusCalls != 0 {
+		t.Fatalf("dry-run touched daemon manager: %+v", manager)
+	}
+}
+
+func TestAppExecDryRunTextDescribesBitwardenScope(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "tool")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+	manager := &appFakeDaemonManager{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--allow-mutable-executable",
+		"--dry-run",
+		"--reason", "Preflight deploy",
+		"--secret", "TOKEN=bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158",
+		"--",
+		"tool",
+	})
+	if code != 0 {
+		t.Fatalf("dry-run exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		"TOKEN=bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158 source=work token_alias=work",
+		"would prompt: true",
+		"would spawn: false",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("dry-run stdout = %q, want %q", stdout.String(), want)
@@ -1811,8 +2182,8 @@ type appResolver struct {
 	values map[string]string
 }
 
-func (r *appResolver) Resolve(_ context.Context, ref string, _ string) (string, error) {
-	return r.values[ref], nil
+func (r *appResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
+	return r.values[secret.Ref.Raw], nil
 }
 
 func (r *appResolver) DescribeItem(
@@ -1834,6 +2205,58 @@ func (r *appResolver) DescribeItem(
 			},
 		},
 	}, nil
+}
+
+type fakeBitwardenStore struct {
+	tokens          map[string]bwsm.Token
+	interactivePuts int
+	getErr          error
+	putErr          error
+	deleteErr       error
+}
+
+func (s *fakeBitwardenStore) Get(_ context.Context, alias string) (bwsm.Token, bool, error) {
+	if s.getErr != nil {
+		return bwsm.Token{}, false, s.getErr
+	}
+	token, ok := s.tokens[alias]
+	return token, ok, nil
+}
+
+func (s *fakeBitwardenStore) Put(_ context.Context, token bwsm.Token) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
+	s.tokens[token.Alias] = token
+	return nil
+}
+
+func (s *fakeBitwardenStore) PutAllowingUserInteraction(_ context.Context, token bwsm.Token) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
+	s.interactivePuts++
+	s.tokens[token.Alias] = token
+	return nil
+}
+
+func (s *fakeBitwardenStore) Delete(_ context.Context, alias string) (bool, error) {
+	if s.deleteErr != nil {
+		return false, s.deleteErr
+	}
+	if _, ok := s.tokens[alias]; !ok {
+		return false, nil
+	}
+	delete(s.tokens, alias)
+	return true, nil
+}
+
+func (s *fakeBitwardenStore) List(context.Context) ([]bwsm.Token, error) {
+	tokens := make([]bwsm.Token, 0, len(s.tokens))
+	for _, token := range s.tokens {
+		tokens = append(tokens, token)
+	}
+	return tokens, nil
 }
 
 type appAudit struct{}

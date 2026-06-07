@@ -1,8 +1,9 @@
 # Configuration
 
 Agent Secret can run from explicit CLI flags or from a project-local config
-file. The config file stores only 1Password references and policy metadata. It
-must never contain resolved secret values.
+file. The config file stores secret references, source metadata, and policy
+metadata. It must never contain resolved secret values or provider access
+tokens.
 
 ## Config File Discovery
 
@@ -73,6 +74,7 @@ Top-level fields:
 
 - `version`: required. Must be `1`.
 - `account`: optional default 1Password account for all profiles in the file.
+- `sources`: optional map of named non-1Password secret sources.
 - `default_profile`: optional profile name used when `exec` has no `--profile`,
   no explicit `--secret`, and no `--env-file`.
 - `profiles`: required map of profile names to profile definitions.
@@ -83,7 +85,7 @@ Profile fields:
 - `ttl`: optional approval TTL, such as `90s`, `2m`, or `10m`.
 - `account`: optional 1Password account override for all secrets in a profile.
 - `include`: optional list of profile names to merge before this profile.
-- `secrets`: map of environment aliases to 1Password references. Required
+- `secrets`: map of environment aliases to secret references. Required
   unless `include` contributes at least one secret.
 
 ## Profile Includes
@@ -134,8 +136,72 @@ secrets:
     account: Example Preview
 ```
 
+For Bitwarden Secrets Manager, object entries can set `source` instead:
+
+```yaml
+secrets:
+  TOKEN:
+    ref: bws://be8e0ad8-d545-4017-a55a-b02f014d4158
+    source: work-secrets
+```
+
 Aliases must look like environment variable names, for example
 `CLOUDFLARE_API_TOKEN`.
+
+## Bitwarden Secrets Manager Sources
+
+Bitwarden support uses the official `bws` CLI and a local macOS Keychain token
+alias. Agent Secret v1 uses official Bitwarden cloud endpoints only and invokes
+`bws` with a temporary state-disabled config pinned to
+`https://vault.bitwarden.com`. It looks for `bws` at fixed common paths such as
+`/opt/homebrew/bin/bws` and `/usr/local/bin/bws`. It does not resolve the helper
+from the daemon `PATH`; helper binaries must either live under a stable
+system-owned path or be signed by Bitwarden Inc. Install a token alias before
+using Bitwarden refs:
+
+```bash
+agent-secret bitwarden secrets-manager token install --alias work
+```
+
+The install command prompts for the token with hidden terminal input. For
+scripts, pipe the token with `--from-stdin`.
+
+Project configs can declare one or more Bitwarden Secrets Manager sources:
+
+```yaml
+version: 1
+sources:
+  bitwarden:
+    work-secrets:
+      kind: secrets_manager
+      token_alias: work
+
+profiles:
+  deploy:
+    reason: Deploy application
+    secrets:
+      API_TOKEN: bws://be8e0ad8-d545-4017-a55a-b02f014d4158
+```
+
+`source` is Agent Secret terminology. It means the local Agent Secret
+configuration used to resolve a secret reference. For Bitwarden Secrets
+Manager, a source points at one local token alias.
+
+Supported Bitwarden ref forms:
+
+- `bws://<secret-uuid>`
+- `bws://<source-alias>/<secret-uuid>`
+
+If a project config has exactly one Bitwarden source, bare
+`bws://<secret-uuid>` refs use it. If multiple project sources are configured,
+the secret must set `source` or use the source-qualified ref form. When no
+project source is configured, direct CLI and env-file refs can infer the single
+local token alias installed in Keychain; multiple local token aliases require a
+source-qualified ref.
+
+The source alias and token alias are part of the secret identity used for
+approval matching and in-memory caching. The access token itself is never sent
+to the child process.
 
 ## Account Precedence
 
@@ -170,11 +236,12 @@ Current flags:
 
 - `--reason TEXT`: human-readable reason shown in the approval UI. Required
   unless the selected profile provides `reason`.
-- `--secret ALIAS=op://vault/item[/section]/field-or-text-file`: explicit
-  secret mapping. Repeat for multiple secrets.
+- `--secret ALIAS=REF`: explicit secret mapping. `REF` can be an `op://` or
+  `bws://` reference. Repeat for multiple secrets.
 - `--env-file PATH`: load dotenv-style `KEY=VALUE` entries. Values starting
-  with `op://` become approved secret references; other values are passed to the
-  child process as plain environment entries. Repeat for multiple files.
+  with `op://` or `bws://` become approved secret references; other values are
+  passed to the child process as plain environment entries. Repeat for multiple
+  files.
 - `--profile NAME`: load a named profile from the project config.
 - `--only ALIAS[,ALIAS...]`: filter loaded profile secrets and env-file secret
   references to selected aliases. Repeat to add more aliases. Deliberate
@@ -220,7 +287,7 @@ agent-secret exec --reason "Deploy from env file" --env-file .env.deploy -- \
 ```
 
 Each env file is parsed before approval. Entries whose values start with
-`op://` become secret references. Other entries are plain child-process
+`op://` or `bws://` become secret references. Other entries are plain child-process
 environment variables and are never sent to the daemon. Later env files
 override earlier files. Env-file keys override the caller environment for the
 child process, and env-file secret aliases are removed from the base child
@@ -246,7 +313,7 @@ agent-secret agent-context --json
 
 The output includes command names, flags, output formats, safety conventions,
 config discovery filenames, and any profiles found in the current project. It
-does not resolve 1Password references or print secret values.
+does not resolve secret references or print secret values.
 
 Use `--config PATH` when the config is not discoverable from the current
 directory:

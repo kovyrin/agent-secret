@@ -92,6 +92,234 @@ profiles:
 	}
 }
 
+func TestLoadAppliesBitwardenSourcePrecedence(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+sources:
+  bitwarden:
+    work-secrets:
+      kind: secrets_manager
+      token_alias: work
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://be8e0ad8-d545-4017-a55a-b02f014d4158
+      EXPLICIT:
+        ref: bws://work-secrets/be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+
+	profile, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(profile.Secrets) != 2 {
+		t.Fatalf("secret count = %d: %+v", len(profile.Secrets), profile.Secrets)
+	}
+	for _, secret := range profile.Secrets {
+		if secret.Account != "" {
+			t.Fatalf("%s account = %q, want empty for Bitwarden", secret.Alias, secret.Account)
+		}
+		if secret.Source != "work-secrets" {
+			t.Fatalf("%s source = %q", secret.Alias, secret.Source)
+		}
+		if secret.Bitwarden.TokenAlias != "work" {
+			t.Fatalf("%s token alias = %q", secret.Alias, secret.Bitwarden.TokenAlias)
+		}
+	}
+}
+
+func TestLoadRequiresBitwardenSourceWhenConfigIsAmbiguous(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+    personal:
+      kind: secrets_manager
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+
+	_, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for ambiguous Bitwarden source, got %v", err)
+	}
+}
+
+func TestLoadUsesSourceQualifiedBitwardenRefWithoutTopLevelSources(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+
+	profile, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	secret := profile.Secrets[0]
+	if secret.Source != "work" || secret.Bitwarden.TokenAlias != "work" {
+		t.Fatalf("Bitwarden fallback source = %+v", secret)
+	}
+}
+
+func TestLoadRejectsBitwardenSourceMismatchesAndUnknownSources(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "source mismatch",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN:
+        ref: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+        source: personal
+`,
+		},
+		{
+			name: "unknown source",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://personal/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
+		{
+			name: "1Password source field",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN:
+        ref: op://Example/Item/token
+        source: work
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeConfig(t, filepath.Join(root, "agent-secret.yml"), tt.config)
+			_, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("Load error = %v, want ErrInvalidConfig", err)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidBitwardenSourceConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "bad kind",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: password_manager
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
+		{
+			name: "bad token alias",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: bad alias
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
+		{
+			name: "custom api endpoint",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      api_url: https://api.example.test
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
+		{
+			name: "custom identity endpoint",
+			config: `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      identity_url: https://identity.example.test
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeConfig(t, filepath.Join(root, "agent-secret.yml"), tt.config)
+			_, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("Load error = %v, want ErrInvalidConfig", err)
+			}
+		})
+	}
+}
+
 func TestLoadIncludesProfiles(t *testing.T) {
 	root := t.TempDir()
 	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
@@ -329,6 +557,41 @@ profiles:
 	}
 }
 
+func TestInspectReturnsBitwardenSourcesWithoutValues(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: work-token
+profiles:
+  deploy:
+    reason: Deploy
+    secrets:
+      TOKEN: bws://work/be8e0ad8-d545-4017-a55a-b02f014d4158
+`)
+
+	info, err := Inspect(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	source, ok := info.Sources.Bitwarden["work"]
+	if !ok {
+		t.Fatalf("Bitwarden source missing from inspect output: %+v", info.Sources)
+	}
+	if source.TokenAlias != "work-token" || source.APIURL != "" || source.IdentityURL != "" {
+		t.Fatalf("Bitwarden source metadata = %+v", source)
+	}
+	if info.Sources.IsZero() {
+		t.Fatal("Sources.IsZero returned true for configured source")
+	}
+	if len(info.Profiles) != 1 || info.Profiles[0].Secrets[0].Source != "work" {
+		t.Fatalf("profile secrets = %+v", info.Profiles)
+	}
+}
+
 func TestLoadUsesExplicitConfigPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom.yml")
 	writeConfig(t, path, `
@@ -370,6 +633,39 @@ profiles:
 	}
 	if metadata.SourcePath != filepath.Join(root, "agent-secret.yml") {
 		t.Fatalf("SourcePath = %q", metadata.SourcePath)
+	}
+	if !metadata.Sources.IsZero() {
+		t.Fatalf("Sources = %+v, want zero", metadata.Sources)
+	}
+}
+
+func TestLoadMetadataReadsBitwardenSources(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+account: Default Account
+sources:
+  bitwarden:
+    work:
+      kind: secrets_manager
+      token_alias: work-token
+profiles:
+  one:
+    reason: One
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+
+	metadata, err := LoadMetadata(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("LoadMetadata returned error: %v", err)
+	}
+	source, ok := metadata.Sources.Bitwarden["work"]
+	if !ok {
+		t.Fatalf("Bitwarden source missing: %+v", metadata.Sources)
+	}
+	if source.TokenAlias != "work-token" {
+		t.Fatalf("token alias = %q", source.TokenAlias)
 	}
 }
 

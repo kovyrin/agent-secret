@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
@@ -261,7 +262,7 @@ func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 	if err == nil {
 		return false, nil
 	}
-	if errors.Is(err, socket.ErrDaemonUnavailable) || errors.Is(err, io.EOF) {
+	if isUnavailableDaemonStatusError(err) {
 		return true, nil
 	}
 	if isRetiringDaemon(err) {
@@ -272,6 +273,13 @@ func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 
 func isRetiringDaemon(err error) bool {
 	return IsProtocolError(err, protocol.ErrorCodeDaemonStopped)
+}
+
+func isUnavailableDaemonStatusError(err error) bool {
+	return errors.Is(err, socket.ErrDaemonUnavailable) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET)
 }
 
 func (m Manager) daemonArgs() []string {

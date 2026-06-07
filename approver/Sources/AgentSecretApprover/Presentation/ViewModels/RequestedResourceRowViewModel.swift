@@ -5,39 +5,80 @@ struct RequestedResourceRowViewModel: Equatable {
     private static let emphasizedReferencePartCount: Int = 2
     private static let minimumEmphasizedReferencePartCount: Int = 3
     private static let opReferencePrefix: String = "op://"
+    private static let bwsReferencePrefix: String = "bws://"
 
     let alias: String
     let ref: String
     let refSegments: [RequestedResourceReferenceSegment]
     let account: String
     let accountLabel: String
+    let source: String
+    let bitwardenTokenAlias: String
     let vaultName: String
     let vaultScopeName: String
     let itemName: String?
     let fieldName: String?
     let symbolName: String
 
-    init(alias: String, ref: String, account: String) {
+    init(resource: RequestedResource) {
+        self.init(
+            alias: resource.alias,
+            ref: resource.ref,
+            account: resource.account,
+            source: resource.source,
+            bitwardenTokenAlias: resource.bitwardenTokenAlias
+        )
+    }
+
+    init(
+        alias: String,
+        ref: String,
+        account: String,
+        source: String = "",
+        bitwardenTokenAlias: String = ""
+    ) {
         let parts: [String] = Self.referenceParts(ref)
         let normalizedAccount: String = account.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedSource: String = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedTokenAlias: String = bitwardenTokenAlias.trimmingCharacters(in: .whitespacesAndNewlines)
         self.alias = Self.sanitizedDisplayText(alias)
         self.ref = Self.sanitizedDisplayText(ref)
         refSegments = Self.referenceSegments(ref)
         self.account = Self.sanitizedDisplayText(normalizedAccount)
-        vaultName = Self.sanitizedDisplayText(parts.first ?? "Unknown vault")
-        if self.account.isEmpty {
-            accountLabel = ""
-            vaultScopeName = vaultName
+        self.source = Self.sanitizedDisplayText(normalizedSource)
+        self.bitwardenTokenAlias = Self.sanitizedDisplayText(normalizedTokenAlias)
+        if ref.hasPrefix(Self.bwsReferencePrefix) {
+            vaultName = "Bitwarden Secrets Manager"
+            if self.source.isEmpty {
+                accountLabel = ""
+                vaultScopeName = vaultName
+            } else {
+                accountLabel = "Source: \(self.source)"
+                vaultScopeName = "\(self.source) / \(vaultName)"
+            }
+            itemName = parts.last.map(Self.sanitizedDisplayText)
+            fieldName = nil
         } else {
-            accountLabel = "Account: \(self.account)"
-            vaultScopeName = "\(self.account) / \(vaultName)"
+            vaultName = Self.sanitizedDisplayText(parts.first ?? "Unknown vault")
+            if self.account.isEmpty {
+                accountLabel = ""
+                vaultScopeName = vaultName
+            } else {
+                accountLabel = "Account: \(self.account)"
+                vaultScopeName = "\(self.account) / \(vaultName)"
+            }
+            itemName = parts.dropFirst().first.map(Self.sanitizedDisplayText)
+            fieldName = parts.dropFirst().dropFirst().first.map(Self.sanitizedDisplayText)
         }
-        itemName = parts.dropFirst().first.map(Self.sanitizedDisplayText)
-        fieldName = parts.dropFirst().dropFirst().first.map(Self.sanitizedDisplayText)
         symbolName = Self.symbolName(alias: alias, ref: ref)
     }
 
     private static func referenceParts(_ ref: String) -> [String] {
+        if ref.hasPrefix(bwsReferencePrefix) {
+            return ref.dropFirst(bwsReferencePrefix.count)
+                .split(separator: "/", omittingEmptySubsequences: false)
+                .map(String.init)
+        }
         guard ref.hasPrefix(opReferencePrefix) else {
             return []
         }

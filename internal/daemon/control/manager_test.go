@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/testsupport/testfs"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
 )
@@ -54,8 +57,8 @@ type managerResolver struct {
 	values map[string]string
 }
 
-func (r managerResolver) Resolve(_ context.Context, ref string, account string) (string, error) {
-	return r.values[resolverCallKey(ref, account)], nil
+func (r managerResolver) Resolve(_ context.Context, secret request.Secret) (string, error) {
+	return r.values[resolverCallKey(secret.Ref.Raw, secret.Account)], nil
 }
 
 func (r managerResolver) DescribeItem(
@@ -280,6 +283,24 @@ func TestManagerWaitUntilUnavailableReturnsForMissingSocket(t *testing.T) {
 
 	if err := manager.waitUntilUnavailable(context.Background(), 0); err != nil {
 		t.Fatalf("waitUntilUnavailable returned error: %v", err)
+	}
+}
+
+func TestUnavailableDaemonStatusErrorAcceptsClosedConnectionRace(t *testing.T) {
+	t.Parallel()
+
+	for _, err := range []error{
+		fmt.Errorf("send daemon message %s: %w", protocol.TypeDaemonStatus, syscall.EPIPE),
+		fmt.Errorf("read daemon response %s: %w", protocol.TypeDaemonStatus, syscall.ECONNRESET),
+		io.EOF,
+		socket.ErrDaemonUnavailable,
+	} {
+		if !isUnavailableDaemonStatusError(err) {
+			t.Fatalf("isUnavailableDaemonStatusError(%v) = false, want true", err)
+		}
+	}
+	if isUnavailableDaemonStatusError(errors.New("permission denied")) {
+		t.Fatal("permission error was classified as daemon unavailable")
 	}
 }
 
@@ -562,6 +583,7 @@ func TestDaemonAppPathAndStartCommand(t *testing.T) {
 		"-n",
 		appPath,
 		"--args",
+		daemonprocess.AppLaunchSubcommand,
 		"--socket",
 		"/tmp/d.sock",
 	} {

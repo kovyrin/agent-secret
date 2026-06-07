@@ -201,7 +201,15 @@ func (m *reusableGrantManager) cacheResolvedValues(
 		if err := m.ensureApprovalActive(approvalID, expiresAt); err != nil {
 			return err
 		}
-		key := secretcache.CacheKey{ScopeID: approvalID, Ref: identity.ref, Account: identity.account}
+		key := secretcache.CacheKey{
+			ScopeID:              approvalID,
+			Ref:                  identity.ref.Raw,
+			Account:              identity.account,
+			Source:               identity.source,
+			BitwardenTokenAlias:  identity.bitwarden.TokenAlias,
+			BitwardenAPIURL:      identity.bitwarden.APIURL,
+			BitwardenIdentityURL: identity.bitwarden.IdentityURL,
+		}
 		if err := m.cache.Put(key, value); err != nil {
 			return fmt.Errorf("cache approved secret in locked memory: %w", err)
 		}
@@ -218,7 +226,15 @@ func (m *reusableGrantManager) cachedValues(
 ) (map[string]string, error) {
 	env := make(map[string]string, len(secrets))
 	for _, secret := range secrets {
-		key := secretcache.CacheKey{ScopeID: approvalID, Ref: secret.Ref.Raw, Account: secret.Account}
+		key := secretcache.CacheKey{
+			ScopeID:              approvalID,
+			Ref:                  secret.Ref.Raw,
+			Account:              secret.Account,
+			Source:               secret.Source,
+			BitwardenTokenAlias:  secret.Bitwarden.TokenAlias,
+			BitwardenAPIURL:      secret.Bitwarden.APIURL,
+			BitwardenIdentityURL: secret.Bitwarden.IdentityURL,
+		}
 		value, ok := m.cache.Get(key)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrMissingCache, secret.Ref.Raw)

@@ -2,7 +2,7 @@
 
 Status: living review contract.
 
-Last reviewed: 2026-06-01.
+Last reviewed: 2026-06-07.
 
 ## Purpose
 
@@ -17,12 +17,12 @@ set of assumptions reviewers use so each pass starts from the same standard.
 ## Product Scope
 
 Agent Secret is a local macOS-first broker for short-lived access to
-1Password-backed secrets. The first supported delivery mode is CLI-supervised
+provider-backed secrets. The first supported delivery mode is CLI-supervised
 `exec` with environment injection:
 
 1. The CLI validates a request and connects to the per-user daemon.
 2. The daemon shows a native approval prompt before resolving secrets.
-3. The daemon resolves exactly the approved 1Password secret references.
+3. The daemon resolves exactly the approved secret references.
 4. The daemon returns an approved environment payload to the trusted CLI.
 5. The CLI starts the child process with those environment variables.
 6. The daemon records value-free audit metadata.
@@ -33,8 +33,8 @@ Other delivery modes are out of scope for the current implementation.
 
 The model protects these assets:
 
-- Raw 1Password secret values.
-- Secret references, aliases, and account scope.
+- Raw provider secret values.
+- Secret references, aliases, provider metadata, and account or token scope.
 - Approval decisions and reusable approval state.
 - Approval request metadata shown to the operator.
 - CLI-to-daemon protocol messages and environment payloads.
@@ -55,6 +55,7 @@ These components may enforce security policy:
 - The bundled `agent-secretd` daemon helper app.
 - The shipped native approver app executable.
 - The official 1Password SDK and 1Password Desktop integration.
+- The official Bitwarden-signed `bws` CLI helper.
 - Apple code-signing, Gatekeeper, and notarization checks.
 - The local operating system's Unix socket peer credential APIs.
 
@@ -73,6 +74,7 @@ These inputs must not be trusted without validation:
 - Symlinks and existing filesystem objects.
 - GitHub release assets until provenance is checked.
 - Daemon-supplied error text displayed by the approver.
+- Provider helper paths and helper process output.
 - Child processes after secrets are intentionally delivered.
 
 ## Attacker Capabilities
@@ -130,7 +132,7 @@ The model does not try to defend against:
   running processes.
 - A malicious child process after the operator intentionally approves delivery
   of secrets to that process.
-- 1Password Desktop or the official 1Password SDK returning the wrong value.
+- Configured providers or helper CLIs returning the wrong value.
 - Apple notarization or Developer ID infrastructure being compromised.
 - Secrets exposed by downstream tools once the approved child receives them.
 - Defense-in-depth hardening that materially increases product complexity
@@ -190,18 +192,19 @@ Required checks:
 - Approval requests expire in daemon policy and UI behavior.
 - Daemon-supplied error text is sanitized before display.
 
-### Daemon to 1Password
+### Daemon to Secret Providers
 
 The daemon resolves approved secret references through 1Password Desktop
-integration.
+integration or the official Bitwarden `bws` helper.
 
 Required checks:
 
-- Secret references and account scope are validated before resolution.
+- Secret references, account scope, and Bitwarden source or token alias are
+  validated before resolution.
 - Secret resolution starts only after approval.
 - Partial fetch failures cancel outstanding fetches and are audited.
 - Raw values stay in memory only for the approved delivery or reuse window.
-- Cached values are keyed by secret reference and account.
+- Cached values are keyed by secret reference and account or token alias.
 
 ### CLI to Child Process
 

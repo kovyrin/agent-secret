@@ -180,6 +180,7 @@ tool_rm="/bin/rm"
 tool_mkdir="/bin/mkdir"
 tool_install="/usr/bin/install"
 tool_cp="/bin/cp"
+tool_ln="/bin/ln"
 tool_sips="/usr/bin/sips"
 tool_iconutil="/usr/bin/iconutil"
 tool_codesign="/usr/bin/codesign"
@@ -190,6 +191,7 @@ require_tool rm "$tool_rm"
 require_tool mkdir "$tool_mkdir"
 require_tool install "$tool_install"
 require_tool cp "$tool_cp"
+require_tool ln "$tool_ln"
 require_tool sips "$tool_sips"
 require_tool iconutil "$tool_iconutil"
 require_tool codesign "$tool_codesign"
@@ -353,7 +355,7 @@ echo "Creating app icon..."
 make_icon "$icon_png" "$iconset" "$tmp_dir/AppIcon.icns"
 
 echo "Creating daemon helper app..."
-build_daemon_app "$tmp_dir/agent-secretd" "$daemon_bundle"
+build_daemon_app "$tmp_dir/agent-secret" "$daemon_bundle"
 
 echo "Creating Agent Secret.app..."
 "$tool_rm" -rf "$app_bundle"
@@ -363,7 +365,6 @@ echo "Creating Agent Secret.app..."
   "$app_bundle/Contents/Resources/skills" \
   "$app_bundle/Contents/Library/Helpers"
 "$tool_install" -m 0755 "$approver_binary" "$app_bundle/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE"
-"$tool_install" -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
 if [[ ! -f "$skill_source/SKILL.md" ]]; then
   echo "build-app-bundle: missing bundled skill at $skill_source" >&2
   exit 1
@@ -371,6 +372,7 @@ fi
 "$tool_cp" -R "$skill_source" "$app_bundle/Contents/Resources/skills/agent-secret"
 "$tool_cp" "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
 "$tool_cp" -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+"$tool_ln" -s "../../Library/Helpers/AgentSecretDaemon.app/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE" "$app_bundle/Contents/Resources/bin/agent-secret"
 
 cat >"$app_bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -419,7 +421,6 @@ if [[ "$codesign_identity" == "-" ]]; then
 else
   echo "Signing app bundle with $codesign_identity..."
 fi
-sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
 sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app" "$daemon_entitlements"
 sign_path "$app_bundle"
 "$project_root/scripts/build/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"

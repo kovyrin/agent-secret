@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 const CommandName = "agent-secret"
 const SkillName = "agent-secret"
+const appBundleName = "Agent Secret.app"
 
 var ErrRefuseOverwrite = errors.New("refusing to replace existing path")
 
@@ -154,16 +156,50 @@ func bundledSkillPath(executablePath string) (string, error) {
 		}
 		executablePath = executable
 	}
-	resolvedExecutablePath, err := canonicalInstallPath("executable", executablePath)
-	if err != nil {
-		return "", err
+	candidates := []string{executablePath}
+	if resolvedExecutablePath, err := canonicalInstallPath("executable", executablePath); err == nil {
+		candidates = append(candidates, resolvedExecutablePath)
 	}
-	executablePath = resolvedExecutablePath
-	path := filepath.Clean(filepath.Join(filepath.Dir(executablePath), "..", "skills", SkillName))
-	if err := validateSkillDir(path); err != nil {
-		return "", fmt.Errorf("find bundled skill relative to %s: %w", executablePath, err)
+	var errs []error
+	for _, candidate := range bundledSkillCandidates(candidates) {
+		if err := validateSkillDir(candidate); err == nil {
+			resolved, err := canonicalInstallPath("skill source", candidate)
+			if err != nil {
+				return "", err
+			}
+			return resolved, nil
+		} else {
+			errs = append(errs, err)
+		}
 	}
-	return path, nil
+	return "", fmt.Errorf("find bundled skill relative to %s: %w", executablePath, errors.Join(errs...))
+}
+
+func bundledSkillCandidates(executablePaths []string) []string {
+	var candidates []string
+	appendCandidate := func(path string) {
+		path = filepath.Clean(path)
+		if slices.Contains(candidates, path) {
+			return
+		}
+		candidates = append(candidates, path)
+	}
+	for _, executablePath := range executablePaths {
+		if appRoot, ok := hostAppRoot(executablePath); ok {
+			appendCandidate(filepath.Join(appRoot, "Contents", "Resources", "skills", SkillName))
+		}
+		appendCandidate(filepath.Join(filepath.Dir(executablePath), "..", "skills", SkillName))
+	}
+	return candidates
+}
+
+func hostAppRoot(path string) (string, bool) {
+	for current := filepath.Clean(path); current != "." && current != string(filepath.Separator); current = filepath.Dir(current) {
+		if filepath.Base(current) == appBundleName {
+			return current, true
+		}
+	}
+	return "", false
 }
 
 func validateSkillDir(path string) error {
