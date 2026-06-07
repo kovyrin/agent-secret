@@ -394,11 +394,16 @@ func currentExecutableClientPaths(t *testing.T) []string {
 
 func peerInfoForTest(t *testing.T, pid int, exe string) peercred.Info {
 	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd returned error: %v", err)
+	}
 	return peercred.Info{
 		UID:            os.Getuid(),
 		GID:            os.Getgid(),
 		PID:            pid,
 		ExecutablePath: exe,
+		CWD:            cwd,
 	}
 }
 

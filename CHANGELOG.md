@@ -20,6 +20,20 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.18] - Pending
+
+### Added
+
+- Added bounded session support with `agent-secret session create|list|destroy`
+  and `agent-secret with-session` for multi-command workflows that keep values
+  in daemon memory and inject them only into wrapped child processes.
+- Added metadata-only session audit events for create, resolve, and destroy.
+
+### Fixed
+
+- Avoided 1Password desktop account discovery when parsing Bitwarden-only
+  secret requests or invalid `exec` requests that can be rejected first.
+
 ## [0.0.17] - 2026-06-07
 
 ### Changed

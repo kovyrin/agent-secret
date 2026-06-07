@@ -1467,6 +1467,72 @@ func TestParseSkillInstallOptions(t *testing.T) {
 	}
 }
 
+func TestParseSessionListDestroyAndHelp(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	listCommand, err := parser.Parse([]string{"session", "list", "--json"})
+	if err != nil {
+		t.Fatalf("Parse session list returned error: %v", err)
+	}
+	if listCommand.Kind != KindSessionList || !listCommand.OutputJSON {
+		t.Fatalf("session list command = %+v", listCommand)
+	}
+
+	destroyCommand, err := parser.Parse([]string{"session", "destroy", "--json", "asess_abc123"})
+	if err != nil {
+		t.Fatalf("Parse session destroy returned error: %v", err)
+	}
+	if destroyCommand.Kind != KindSessionDestroy ||
+		!destroyCommand.OutputJSON ||
+		destroyCommand.SessionDestroyRequest.SessionID != "asess_abc123" {
+		t.Fatalf("session destroy command = %+v", destroyCommand)
+	}
+
+	for _, args := range [][]string{
+		{"session", "--help"},
+		{"with-session", "--help"},
+	} {
+		command, err := parser.Parse(args)
+		if !errors.Is(err, ErrHelpRequested) {
+			t.Fatalf("Parse %v error = %v, want ErrHelpRequested", args, err)
+		}
+		if command.Kind != KindHelp || !strings.Contains(command.HelpText, "session") {
+			t.Fatalf("help command for %v = %+v", args, command)
+		}
+	}
+}
+
+func TestParseSessionRejectsInvalidForms(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	tests := []struct {
+		name string
+		args []string
+		want error
+	}{
+		{name: "unknown session command", args: []string{"session", "open"}, want: ErrInvalidArguments},
+		{name: "create child command", args: []string{"session", "create", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token", "--", "tool"}, want: ErrInvalidArguments},
+		{name: "list args", args: []string{"session", "list", "asess_abc"}, want: ErrInvalidArguments},
+		{name: "destroy missing id", args: []string{"session", "destroy"}, want: ErrInvalidArguments},
+		{name: "destroy bad id", args: []string{"session", "destroy", "bad"}, want: request.ErrInvalidSessionID},
+		{name: "with-session missing boundary", args: []string{"with-session", "asess_abc", "tool"}, want: ErrShellStringCommand},
+		{name: "with-session missing command", args: []string{"with-session", "asess_abc", "--"}, want: ErrShellStringCommand},
+		{name: "with-session misplaced arg", args: []string{"with-session", "asess_abc", "extra", "--", "tool"}, want: ErrInvalidArguments},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parser.Parse(tt.args)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("Parse error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestHelpIsDetailedAndValueFree(t *testing.T) {
 	t.Parallel()
 
@@ -1479,7 +1545,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "agent-context", "exec", "item", "profile", "install-cli", "skill-install", "daemon", "doctor", "version", "desktop account"},
+			wants: []string{"agent-secret controls", "agent-context", "exec", "session", "with-session", "item", "profile", "install-cli", "skill-install", "daemon", "doctor", "version", "desktop account"},
 		},
 		{
 			name:  "agent-context",
@@ -1500,6 +1566,16 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 			name:  "exec",
 			args:  []string{"exec", "--help"},
 			wants: []string{"--reason", "--secret", "--profile", "--only", "--env-file", "--account", "include:", "account:", "default_profile", "agent-secret.yml", "--force-refresh", "--dry-run", "--reuse-only", "--allow-mutable-executable", "Default account", "audit.jsonl", "stdin", "stdout", "stderr"},
+		},
+		{
+			name:  "session",
+			args:  []string{"session", "--help"},
+			wants: []string{"session create", "List active", "session destroy", "--max-reads", "with-session"},
+		},
+		{
+			name:  "with-session",
+			args:  []string{"with-session", "--help"},
+			wants: []string{"with-session SESSION_ID", "--cwd", "--allow-mutable-executable", "never printed"},
 		},
 		{
 			name:  "profile",

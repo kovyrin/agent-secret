@@ -2,28 +2,6 @@ import Foundation
 
 /// Sanitized text prepared for the approval UI.
 struct ApprovalRequestViewModel: Equatable {
-    private struct ResourcePresentation {
-        let rows: [RequestedResourceRowViewModel]
-        let rowText: [String]
-        let count: Int
-        let vaultGroups: [ResourceVaultGroupViewModel]
-        let vaultCount: Int
-    }
-
-    private struct SelfRenderInput {
-        let title: String
-        let reason: String
-        let command: String
-        let commandArgumentRows: [String]
-        let cwd: String
-        let scopeSummary: String
-        let resolvedExecutable: String
-        let allowMutableExecutable: Bool
-        let resourceRows: [String]
-        let timeRemaining: String
-        let cautionMessages: [String]
-    }
-
     private static let highScopeResourceThreshold: Int = 6
     private static let commandInspectorThreshold: Int = 96
     private static let secondsPerMinute: Int = 60
@@ -67,7 +45,7 @@ struct ApprovalRequestViewModel: Equatable {
             operation: operation,
             allowsReusableApproval: allowsReusableApproval,
             reusableUses: reusableUses,
-            viewModel: SelfRenderInput(
+            viewModel: ApprovalRequestViewModelRenderInput(
                 title: title,
                 reason: reason,
                 command: command,
@@ -97,7 +75,9 @@ struct ApprovalRequestViewModel: Equatable {
         command = Self.commandDisplay(commandArguments)
         commandNeedsInspector = Self.commandNeedsInspector(command, arguments: commandArguments)
         commandInspectionText = Self.commandInspectionText(commandArguments)
-        let resourcePresentation: ResourcePresentation = Self.resourcePresentation(for: request.resources)
+        let resourcePresentation: ResourcePresentation = Self.resourcePresentation(
+            for: request.resources
+        )
         requestedResources = resourcePresentation.rows
         requestedResourcesHeading = Self.requestedResourcesHeading(
             operation: request.operation,
@@ -110,7 +90,8 @@ struct ApprovalRequestViewModel: Equatable {
         let copy: CopyPresentation = Self.copyPresentation(for: request, count: resourcePresentation.count, now: now)
         (isExpired, timeRemaining, compactTimeRemaining) = (copy.isExpired, copy.timeRemaining, copy.timeRemaining)
         (promptQuestion, accessSummary) = (copy.promptQuestion, copy.accessSummary)
-        highScopeWarning = request.operation == .exec && resourcePresentation.count >= Self.highScopeResourceThreshold
+        highScopeWarning = request.operation != .itemDescribe &&
+            resourcePresentation.count >= Self.highScopeResourceThreshold
         (reusableUses, allowsReusableApproval) = (request.reusableUses, request.allowsReusable)
         (scopeSummary, allowReusableTitle) = (copy.scopeSummary, copy.allowReusableTitle)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
@@ -134,7 +115,9 @@ struct ApprovalRequestViewModel: Equatable {
         )
     }
 
-    private static func resourcePresentation(for resources: [RequestedResource]) -> ResourcePresentation {
+    private static func resourcePresentation(
+        for resources: [RequestedResource]
+    ) -> ResourcePresentation {
         let rows: [RequestedResourceRowViewModel] = resources.map(RequestedResourceRowViewModel.init(resource:))
         let rowText: [String] = rows.map { resource -> String in
             Self.resourceRowText(resource)
@@ -176,7 +159,7 @@ struct ApprovalRequestViewModel: Equatable {
         operation: ApprovalOperation,
         allowsReusableApproval: Bool,
         reusableUses: Int,
-        viewModel: SelfRenderInput
+        viewModel: ApprovalRequestViewModelRenderInput
     ) -> String {
         var lines: [String] = [
             viewModel.title,
@@ -191,7 +174,13 @@ struct ApprovalRequestViewModel: Equatable {
         ])
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
         lines.append("Mutable executable allowed: \(viewModel.allowMutableExecutable ? "yes" : "no")")
-        lines.append(operation == .itemDescribe ? "Item metadata:" : "Secrets:")
+        if operation == .itemDescribe {
+            lines.append("Item metadata:")
+        } else if operation == .sessionCreate {
+            lines.append("Session secrets:")
+        } else {
+            lines.append("Secrets:")
+        }
         lines.append(contentsOf: viewModel.resourceRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
         if allowsReusableApproval {
@@ -199,8 +188,12 @@ struct ApprovalRequestViewModel: Equatable {
                 "Reusable approval keeps values in daemon memory for this window " +
                     "and is limited to \(reusableUses) uses."
             )
-        } else {
+        } else if operation == .itemDescribe {
             lines.append("Approval is limited to one metadata lookup.")
+        } else if operation == .sessionCreate {
+            lines.append("Approval creates one short session and keeps values in daemon memory.")
+        } else {
+            lines.append("Approval is limited to one operation.")
         }
         lines.append(contentsOf: viewModel.cautionMessages)
         return lines.joined(separator: "\n")

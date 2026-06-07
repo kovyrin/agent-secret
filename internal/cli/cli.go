@@ -21,38 +21,46 @@ var (
 type Kind string
 
 const (
-	KindHelp         Kind = "help"
-	KindVersion      Kind = "version"
-	KindAgentContext Kind = "agent_context"
-	KindExec         Kind = "exec"
-	KindItemDescribe Kind = "item_describe"
-	KindProfileList  Kind = "profile_list"
-	KindProfileShow  Kind = "profile_show"
-	KindDoctor       Kind = "doctor"
-	KindBitwarden    Kind = "bitwarden"
-	KindInstallCLI   Kind = "install_cli"
-	KindSkillInstall Kind = "skill_install"
-	KindDaemonStart  Kind = "daemon_start"
-	KindDaemonStop   Kind = "daemon_stop"
-	KindDaemonStatus Kind = "daemon_status"
+	KindHelp           Kind = "help"
+	KindVersion        Kind = "version"
+	KindAgentContext   Kind = "agent_context"
+	KindExec           Kind = "exec"
+	KindItemDescribe   Kind = "item_describe"
+	KindSessionCreate  Kind = "session_create"
+	KindSessionList    Kind = "session_list"
+	KindSessionDestroy Kind = "session_destroy"
+	KindWithSession    Kind = "with_session"
+	KindProfileList    Kind = "profile_list"
+	KindProfileShow    Kind = "profile_show"
+	KindDoctor         Kind = "doctor"
+	KindBitwarden      Kind = "bitwarden"
+	KindInstallCLI     Kind = "install_cli"
+	KindSkillInstall   Kind = "skill_install"
+	KindDaemonStart    Kind = "daemon_start"
+	KindDaemonStop     Kind = "daemon_stop"
+	KindDaemonStatus   Kind = "daemon_status"
 )
 
 type Command struct {
-	Kind                Kind
-	OutputJSON          bool
-	ExecRequest         request.ExecRequest
-	ExecEnv             []string
-	ExecDryRun          bool
-	ItemDescribeRequest request.ItemDescribeRequest
-	ItemDescribeFormat  itemmetadata.Format
-	ItemDescribePrefix  string
-	AgentContextOptions ConfigCommandOptions
-	ProfileOptions      ProfileCommandOptions
-	BitwardenOptions    BitwardenCommandOptions
-	InstallCLIOptions   install.CLIOptions
-	InstallSkillOptions install.SkillOptions
-	HelpText            string
-	VersionText         string
+	Kind                  Kind
+	OutputJSON            bool
+	ExecRequest           request.ExecRequest
+	ExecEnv               []string
+	ExecDryRun            bool
+	SessionCreateRequest  request.SessionCreateRequest
+	SessionResolveRequest request.SessionResolveRequest
+	SessionDestroyRequest request.SessionDestroyRequest
+	SessionEnv            []string
+	ItemDescribeRequest   request.ItemDescribeRequest
+	ItemDescribeFormat    itemmetadata.Format
+	ItemDescribePrefix    string
+	AgentContextOptions   ConfigCommandOptions
+	ProfileOptions        ProfileCommandOptions
+	BitwardenOptions      BitwardenCommandOptions
+	InstallCLIOptions     install.CLIOptions
+	InstallSkillOptions   install.SkillOptions
+	HelpText              string
+	VersionText           string
 }
 
 type Parser struct {
@@ -77,6 +85,10 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseAgentContext(args[1:])
 	case "exec":
 		return p.parseExec(args[1:])
+	case "session":
+		return p.parseSession(args[1:])
+	case "with-session":
+		return p.parseWithSession(args[1:])
 	case "item":
 		return p.parseItem(args[1:], args)
 	case "profile":
@@ -93,7 +105,7 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseSkillInstall(args[1:])
 	default:
 		return Command{}, fmt.Errorf(
-			"%w: unknown command %q; expected one of: agent-context, bitwarden, daemon, doctor, exec, help, install-cli, item, profile, skill-install, version",
+			"%w: unknown command %q; expected one of: agent-context, bitwarden, daemon, doctor, exec, help, install-cli, item, profile, session, skill-install, version, with-session",
 			ErrInvalidArguments,
 			args[0],
 		)

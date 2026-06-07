@@ -106,11 +106,13 @@ func (a App) runAgentContext(command Command) int {
 				"secret values are never printed by agent-secret",
 				"exec passes child stdin/stdout/stderr through unchanged",
 				"item describe returns metadata only",
+				"session create returns opaque handles only and with-session never prints values",
 			},
 			MutationBoundary: []string{
 				"exec --dry-run validates without prompting or spawning",
 				"exec --reuse-only fails instead of opening a new approval prompt",
 				"daemon stop clears daemon-owned reusable approvals and cached values",
+				"session destroy or daemon stop clears daemon-held session values",
 			},
 		},
 	}
@@ -192,6 +194,49 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--force", Type: "bool", Description: "Replace an existing regular file or different symlink."},
 			}, jsonFlag()...),
 			Outputs: []string{"text", "json"},
+		},
+		"session": {
+			Summary: "Create, list, and destroy bounded daemon-held secret sessions.",
+			Subcommands: map[string]commandContext{
+				"create": {
+					Summary: "Ask for approval, resolve refs, and return an opaque session id.",
+					Flags: []flagContext{
+						{Name: "--reason", Type: "string", Description: "Human-readable reason shown to the approver."},
+						{Name: "--secret", Type: "mapping", Repeatable: true, Description: "Secret alias mapping: ALIAS=op://vault/item/field or ALIAS=bws://source/secret-uuid."},
+						{Name: "--profile", Type: "string", Description: "Load a named project profile."},
+						{Name: "--only", Type: "string", Repeatable: true, Description: "Filter profile/env-file aliases; comma-separated values are accepted."},
+						{Name: "--env-file", Type: "path", Repeatable: true, Description: "Load dotenv entries; op:// and bws:// values become approved refs."},
+						{Name: "--account", Type: "string", Description: "Default 1Password account for refs without a config account."},
+						{Name: "--config", Type: "path", Description: "Profile config path."},
+						{Name: "--cwd", Type: "path", Description: "Session working directory."},
+						{Name: "--ttl", Type: "duration", Default: request.DefaultSessionTTL.String(), Description: "Session TTL.", Values: []string{request.MinRequestTTL.String() + ".." + request.MaxRequestTTL.String()}},
+						{Name: "--max-reads", Type: "int", Default: "1", Values: []string{"1..20"}, Description: "Maximum with-session resolves before the session is exhausted."},
+						{Name: "--override-env", Type: "bool", Description: "Allow with-session to replace existing child env vars with approved aliases."},
+						{Name: "--json", Type: "bool", Description: "Print session metadata as JSON."},
+					},
+					Outputs: []string{"text", "json"},
+					Notes:   []string{"returns a session id only", "secret values stay in daemon memory until TTL, max reads, destroy, or daemon stop"},
+				},
+				"list": {
+					Summary: "List active session ids and non-secret metadata.",
+					Flags:   jsonFlag(),
+					Outputs: []string{"text", "json"},
+				},
+				"destroy": {
+					Summary: "Destroy one session and clear its cached values.",
+					Flags:   jsonFlag(),
+					Outputs: []string{"text", "json"},
+				},
+			},
+		},
+		"with-session": {
+			Summary: "Run one command with secrets from an approved session.",
+			Flags: []flagContext{
+				{Name: "--cwd", Type: "path", Description: "Child working directory; must match the session cwd."},
+				{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
+			},
+			Outputs: []string{"child passthrough"},
+			Notes:   []string{"usage: agent-secret with-session SESSION_ID -- COMMAND [ARG...]", "session values are injected into the child environment and never printed"},
 		},
 		"bitwarden": {
 			Summary: "Manage local Bitwarden Secrets Manager token aliases.",

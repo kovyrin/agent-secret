@@ -148,6 +148,51 @@ func (c *Client) DescribeItem(
 	return payload, nil
 }
 
+func (c *Client) CreateSession(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.SessionCreateRequest,
+) (protocol.SessionCreateResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.SessionCreateResponsePayload](ctx, c, protocol.TypeSessionCreate, correlation, req)
+	if err != nil {
+		return protocol.SessionCreateResponsePayload{}, err
+	}
+	if err := validateSessionCreateResponsePayload(payload, req); err != nil {
+		return protocol.SessionCreateResponsePayload{}, err
+	}
+	return payload, nil
+}
+
+func (c *Client) ResolveSession(
+	ctx context.Context,
+	correlation protocol.Correlation,
+	req request.SessionResolveRequest,
+) (protocol.SessionResolveResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.SessionResolveResponsePayload](ctx, c, protocol.TypeSessionResolve, correlation, req)
+	if err != nil {
+		return protocol.SessionResolveResponsePayload{}, err
+	}
+	if err := validateSessionResolveResponsePayload(payload); err != nil {
+		return protocol.SessionResolveResponsePayload{}, err
+	}
+	return payload, nil
+}
+
+func (c *Client) DestroySession(ctx context.Context, req request.SessionDestroyRequest) (protocol.SessionDestroyResponsePayload, error) {
+	payload, err := roundTripPayload[protocol.SessionDestroyResponsePayload](ctx, c, protocol.TypeSessionDestroy, protocol.Correlation{}, req)
+	if err != nil {
+		return protocol.SessionDestroyResponsePayload{}, err
+	}
+	if payload.SessionID != req.SessionID || !payload.Destroyed {
+		return protocol.SessionDestroyResponsePayload{}, fmt.Errorf("%w: session.destroy response does not match request", protocol.ErrMalformedEnvelope)
+	}
+	return payload, nil
+}
+
+func (c *Client) ListSessions(ctx context.Context) (protocol.SessionListResponsePayload, error) {
+	return roundTripPayload[protocol.SessionListResponsePayload](ctx, c, protocol.TypeSessionList, protocol.Correlation{}, nil)
+}
+
 func (c *Client) ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error {
 	return roundTripAck(ctx, c, protocol.TypeCommandStarted, correlation, protocol.CommandStartedPayload{ChildPID: childPID})
 }
@@ -280,6 +325,33 @@ func validateExecResponsePayload(payload protocol.ExecResponsePayload, req reque
 	return nil
 }
 
+func validateSessionCreateResponsePayload(payload protocol.SessionCreateResponsePayload, req request.SessionCreateRequest) error {
+	if err := request.ValidateSessionID(payload.SessionID); err != nil {
+		return fmt.Errorf("%w: invalid session id in session.create response: %w", protocol.ErrMalformedEnvelope, err)
+	}
+	expectedAliases := request.SecretAliases(req.Secrets)
+	if !slices.Equal(payload.SecretAliases, expectedAliases) {
+		return fmt.Errorf("%w: session.create response secret aliases do not match request", protocol.ErrMalformedEnvelope)
+	}
+	if payload.MaxReads != req.MaxReads {
+		return fmt.Errorf("%w: session.create response max reads does not match request", protocol.ErrMalformedEnvelope)
+	}
+	if payload.RemainingReads != req.MaxReads {
+		return fmt.Errorf("%w: session.create response remaining reads does not match request", protocol.ErrMalformedEnvelope)
+	}
+	return nil
+}
+
+func validateSessionResolveResponsePayload(payload protocol.SessionResolveResponsePayload) error {
+	if payload.Env == nil {
+		return fmt.Errorf("%w: session.resolve response missing env", protocol.ErrMalformedEnvelope)
+	}
+	if gotAliases := envAliases(payload.Env); !slices.Equal(gotAliases, payload.SecretAliases) {
+		return fmt.Errorf("%w: session.resolve response env aliases do not match secret aliases", protocol.ErrMalformedEnvelope)
+	}
+	return nil
+}
+
 func envAliases(env map[string]string) []string {
 	aliases := make([]string, 0, len(env))
 	for alias := range env {
@@ -314,6 +386,9 @@ func protocolRequestTiming(messageType protocol.MessageType, payload any) (time.
 		return req.ExpiresAt, req.TTL, ok
 	case protocol.TypeItemDescribe:
 		req, ok := payload.(request.ItemDescribeRequest)
+		return req.ExpiresAt, req.TTL, ok
+	case protocol.TypeSessionCreate:
+		req, ok := payload.(request.SessionCreateRequest)
 		return req.ExpiresAt, req.TTL, ok
 	default:
 		return time.Time{}, 0, false

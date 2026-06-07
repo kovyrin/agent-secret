@@ -167,7 +167,7 @@ func (r ExecRequest) ValidateForDaemon() error {
 	}); err != nil {
 		return err
 	}
-	if _, err := validateDaemonSecrets(r.Secrets); err != nil {
+	if err := validateDaemonSecrets(r.Secrets); err != nil {
 		return err
 	}
 	if err := validateOverriddenAliases(r.Secrets, r.OverriddenAliases, r.OverrideEnv); err != nil {
@@ -449,21 +449,21 @@ func ParseSecrets(specs []SecretSpec) ([]Secret, error) {
 	return secrets, nil
 }
 
-func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
+func validateDaemonSecrets(secrets []Secret) error {
 	specs := make([]SecretSpec, 0, len(secrets))
 	for _, secret := range secrets {
 		if strings.TrimSpace(secret.Account) != secret.Account {
-			return nil, fmt.Errorf("%w: secret %q account must be trimmed", ErrInvalidReference, secret.Alias)
+			return fmt.Errorf("%w: secret %q account must be trimmed", ErrInvalidReference, secret.Alias)
 		}
 		if strings.TrimSpace(secret.Source) != secret.Source {
-			return nil, fmt.Errorf("%w: secret %q source must be trimmed", ErrInvalidReference, secret.Alias)
+			return fmt.Errorf("%w: secret %q source must be trimmed", ErrInvalidReference, secret.Alias)
 		}
 		parsed, err := ParseSecretRef(secret.Ref.Raw)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if parsed != secret.Ref {
-			return nil, fmt.Errorf("%w: parsed reference metadata does not match raw ref", ErrInvalidReference)
+			return fmt.Errorf("%w: parsed reference metadata does not match raw ref", ErrInvalidReference)
 		}
 		specs = append(specs, SecretSpec{
 			Alias:     secret.Alias,
@@ -475,17 +475,17 @@ func validateDaemonSecrets(secrets []Secret) ([]Secret, error) {
 	}
 	parsed, err := ParseSecrets(specs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if len(parsed) != len(secrets) {
-		return nil, fmt.Errorf("%w: secret count mismatch", ErrInvalidReference)
+		return fmt.Errorf("%w: secret count mismatch", ErrInvalidReference)
 	}
 	for i := range parsed {
 		if parsed[i] != secrets[i] {
-			return nil, fmt.Errorf("%w: secret metadata must be pre-normalized", ErrInvalidReference)
+			return fmt.Errorf("%w: secret metadata must be pre-normalized", ErrInvalidReference)
 		}
 	}
-	return parsed, nil
+	return nil
 }
 
 func normalizeBitwardenSecretSource(ref SecretRef, source string, metadata BitwardenSource) (BitwardenSource, error) {

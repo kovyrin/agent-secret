@@ -163,6 +163,467 @@ func TestAppExecUsesManagerClientWithoutSocket(t *testing.T) {
 	}
 }
 
+func TestAppSessionCreateUsesProfileAndPrintsJSON(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	writeProfileConfig(t, root, `
+version: 1
+default_profile: deploy
+profiles:
+  deploy:
+    reason: Run deploy workflow
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+	expiresAt := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
+	client := &appFakeDaemonClient{
+		sessionCreatePayload: protocol.SessionCreateResponsePayload{
+			SessionID:      "asess_test",
+			SecretAliases:  []string{"TOKEN"},
+			ExpiresAt:      expiresAt,
+			MaxReads:       2,
+			RemainingReads: 2,
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"session",
+		"create",
+		"--account", "Work",
+		"--max-reads", "2",
+		"--json",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if client.sessionCreateCalls != 1 || client.closeCalls != 1 {
+		t.Fatalf("client calls: create=%d close=%d", client.sessionCreateCalls, client.closeCalls)
+	}
+	if len(client.sessionCreateRequests) != 1 {
+		t.Fatalf("session create requests = %d", len(client.sessionCreateRequests))
+	}
+	req := client.sessionCreateRequests[0]
+	if req.MaxReads != 2 || req.Secrets[0].Account != "Work" {
+		t.Fatalf("session request = %+v", req)
+	}
+	var got sessionCreateOutput
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode stdout JSON: %v; stdout=%q", err, stdout.String())
+	}
+	if got.SessionID != "asess_test" || got.RemainingReads != 2 || got.MaxReads != 2 {
+		t.Fatalf("session create json = %+v", got)
+	}
+	if strings.Contains(stdout.String(), "synthetic-secret-value") || strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("session create leaked secret: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestAppSessionCreatePrintsText(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	expiresAt := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
+	client := &appFakeDaemonClient{
+		sessionCreatePayload: protocol.SessionCreateResponsePayload{
+			SessionID:      "asess_text",
+			SecretAliases:  []string{"TOKEN"},
+			ExpiresAt:      expiresAt,
+			MaxReads:       1,
+			RemainingReads: 1,
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"session",
+		"create",
+		"--reason", "Deploy",
+		"--account", "Work",
+		"--secret", "TOKEN=op://Example/Item/token",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{"session: asess_text", "reads: 1/1 remaining", "secrets: TOKEN"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("session create stdout = %q, want %q", stdout.String(), want)
+		}
+	}
+}
+
+func TestAppSessionListAndDestroy(t *testing.T) {
+	t.Parallel()
+
+	expiresAt := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
+	t.Run("list", func(t *testing.T) {
+		t.Parallel()
+
+		client := &appFakeDaemonClient{
+			sessionListPayload: protocol.SessionListResponsePayload{
+				Sessions: []protocol.SessionInfoPayload{{
+					SessionID:      "asess_test",
+					Reason:         "Deploy workflow",
+					CWD:            "/tmp/project",
+					SecretAliases:  []string{"TOKEN"},
+					ExpiresAt:      expiresAt,
+					MaxReads:       2,
+					RemainingReads: 1,
+				}},
+			},
+		}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "list"})
+		if code != 0 {
+			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		}
+		if client.sessionListCalls != 1 || client.closeCalls != 1 {
+			t.Fatalf("client calls: list=%d close=%d", client.sessionListCalls, client.closeCalls)
+		}
+		for _, want := range []string{"asess_test", "reads=1/2", "secrets=TOKEN"} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("session list stdout = %q, want %q", stdout.String(), want)
+			}
+		}
+	})
+
+	t.Run("list json", func(t *testing.T) {
+		t.Parallel()
+
+		client := &appFakeDaemonClient{
+			sessionListPayload: protocol.SessionListResponsePayload{
+				Sessions: []protocol.SessionInfoPayload{{
+					SessionID:      "asess_test",
+					Reason:         "Deploy workflow",
+					CWD:            "/tmp/project",
+					SecretAliases:  []string{"TOKEN"},
+					ExpiresAt:      expiresAt,
+					MaxReads:       2,
+					RemainingReads: 1,
+				}},
+			},
+		}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "list", "--json"})
+		if code != 0 {
+			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		}
+		var got sessionListOutput
+		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+			t.Fatalf("decode session list json: %v; stdout=%q", err, stdout.String())
+		}
+		if len(got.Sessions) != 1 || got.Sessions[0].SessionID != "asess_test" {
+			t.Fatalf("session list json = %+v", got)
+		}
+	})
+
+	t.Run("list empty", func(t *testing.T) {
+		t.Parallel()
+
+		client := &appFakeDaemonClient{}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "list"})
+		if code != 0 {
+			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		}
+		if strings.TrimSpace(stdout.String()) != "no active sessions" {
+			t.Fatalf("session list empty stdout = %q", stdout.String())
+		}
+	})
+
+	t.Run("destroy", func(t *testing.T) {
+		t.Parallel()
+
+		client := &appFakeDaemonClient{
+			sessionDestroyPayload: protocol.SessionDestroyResponsePayload{
+				SessionID: "asess_test",
+				Destroyed: true,
+			},
+		}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "destroy", "asess_test"})
+		if code != 0 {
+			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		}
+		if client.sessionDestroyCalls != 1 || client.closeCalls != 1 {
+			t.Fatalf("client calls: destroy=%d close=%d", client.sessionDestroyCalls, client.closeCalls)
+		}
+		if len(client.sessionDestroyRequests) != 1 || client.sessionDestroyRequests[0].SessionID != "asess_test" {
+			t.Fatalf("destroy requests = %+v", client.sessionDestroyRequests)
+		}
+		if !strings.Contains(stdout.String(), "destroyed session: asess_test") {
+			t.Fatalf("session destroy stdout = %q", stdout.String())
+		}
+	})
+
+	t.Run("destroy json", func(t *testing.T) {
+		t.Parallel()
+
+		client := &appFakeDaemonClient{
+			sessionDestroyPayload: protocol.SessionDestroyResponsePayload{
+				SessionID: "asess_test",
+				Destroyed: true,
+			},
+		}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "destroy", "--json", "asess_test"})
+		if code != 0 {
+			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		}
+		var got protocol.SessionDestroyResponsePayload
+		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+			t.Fatalf("decode session destroy json: %v; stdout=%q", err, stdout.String())
+		}
+		if got.SessionID != "asess_test" || !got.Destroyed {
+			t.Fatalf("session destroy json = %+v", got)
+		}
+	})
+}
+
+func TestAppSessionCommandFailures(t *testing.T) {
+	t.Run("create random id", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		client := &appFakeDaemonClient{}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+		app.RandomReader = failingRandomReader{err: errors.New("entropy unavailable")}
+
+		code := app.Run(context.Background(), []string{
+			"session", "create",
+			"--reason", "Deploy",
+			"--account", "Work",
+			"--secret", "TOKEN=op://Example/Item/token",
+		})
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(stderr.String(), "generate random id") {
+			t.Fatalf("stderr = %q, want random id failure", stderr.String())
+		}
+		if client.sessionCreateCalls != 0 {
+			t.Fatalf("session create calls = %d, want 0", client.sessionCreateCalls)
+		}
+	})
+
+	t.Run("create daemon error", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		client := &appFakeDaemonClient{sessionCreateErr: errors.New("approval denied")}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{
+			"session", "create",
+			"--reason", "Deploy",
+			"--account", "Work",
+			"--secret", "TOKEN=op://Example/Item/token",
+		})
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(stderr.String(), "approval denied") {
+			t.Fatalf("stderr = %q", stderr.String())
+		}
+		if client.sessionCreateCalls != 1 {
+			t.Fatalf("session create calls = %d, want 1", client.sessionCreateCalls)
+		}
+	})
+
+	t.Run("list daemon error", func(t *testing.T) {
+		client := &appFakeDaemonClient{sessionListErr: errors.New("daemon unavailable")}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "list"})
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(stderr.String(), "daemon unavailable") {
+			t.Fatalf("stderr = %q", stderr.String())
+		}
+	})
+
+	t.Run("destroy daemon error", func(t *testing.T) {
+		client := &appFakeDaemonClient{sessionDestroyErr: errors.New("session not found")}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "destroy", "asess_missing"})
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(stderr.String(), "session not found") {
+			t.Fatalf("stderr = %q", stderr.String())
+		}
+	})
+
+	t.Run("with-session resolve error", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		client := &appFakeDaemonClient{sessionResolveErr: errors.New("session expired")}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{
+			"with-session",
+			"asess_test",
+			"--cwd", root,
+			"--allow-mutable-executable",
+			"--",
+			os.Args[0], "-test.run=TestAppSessionCommandFailures", "--", "child",
+		})
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+		if !strings.Contains(stderr.String(), "session expired") {
+			t.Fatalf("stderr = %q", stderr.String())
+		}
+		if len(client.startedPIDs) != 0 {
+			t.Fatalf("started pids = %v, want none", client.startedPIDs)
+		}
+	})
+}
+
+func TestAppWithSessionRunsChildWithResolvedEnv(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	root := t.TempDir()
+	t.Chdir(root)
+	client := &appFakeDaemonClient{
+		sessionResolvePayload: protocol.SessionResolveResponsePayload{
+			Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+			SecretAliases: []string{"TOKEN"},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	code := app.Run(context.Background(), []string{
+		"with-session",
+		"asess_test",
+		"--cwd", root,
+		"--allow-mutable-executable",
+		"--",
+		os.Args[0], "-test.run=TestAppWithSessionRunsChildWithResolvedEnv", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "env-ok" {
+		t.Fatalf("stdout = %q, want env-ok", stdout.String())
+	}
+	if client.sessionResolveCalls != 1 || client.closeCalls != 1 {
+		t.Fatalf("client calls: resolve=%d close=%d", client.sessionResolveCalls, client.closeCalls)
+	}
+	if len(client.sessionResolveRequests) != 1 {
+		t.Fatalf("session resolve requests = %d", len(client.sessionResolveRequests))
+	}
+	req := client.sessionResolveRequests[0]
+	if req.SessionID != "asess_test" || req.ExpectedPeer.PID <= 0 || req.CWD == "" {
+		t.Fatalf("session resolve request = %+v", req)
+	}
+	if len(client.startedPIDs) != 1 || len(client.completedExitCodes) != 1 {
+		t.Fatalf("audit calls: started=%v completed=%v", client.startedPIDs, client.completedExitCodes)
+	}
+	if strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("stderr leaked secret: %q", stderr.String())
+	}
+}
+
 func TestAppItemDescribePrintsMetadataWithoutSecretValues(t *testing.T) {
 	t.Parallel()
 
@@ -2086,22 +2547,37 @@ func (m *appFakeDaemonManager) SocketPath() string {
 }
 
 type appFakeDaemonClient struct {
-	execPayload         protocol.ExecResponsePayload
-	itemDescribePayload protocol.ItemDescribeResponsePayload
+	execPayload           protocol.ExecResponsePayload
+	itemDescribePayload   protocol.ItemDescribeResponsePayload
+	sessionCreatePayload  protocol.SessionCreateResponsePayload
+	sessionResolvePayload protocol.SessionResolveResponsePayload
+	sessionDestroyPayload protocol.SessionDestroyResponsePayload
+	sessionListPayload    protocol.SessionListResponsePayload
 
 	requestErr         error
 	itemDescribeErr    error
+	sessionCreateErr   error
+	sessionResolveErr  error
+	sessionDestroyErr  error
+	sessionListErr     error
 	reportStartedErr   error
 	reportCompletedErr error
 	closeErr           error
 
-	requestExecCalls     int
-	itemDescribeCalls    int
-	requests             []request.ExecRequest
-	itemDescribeRequests []request.ItemDescribeRequest
-	closeCalls           int
-	startedPIDs          []int
-	completedExitCodes   []int
+	requestExecCalls       int
+	itemDescribeCalls      int
+	sessionCreateCalls     int
+	sessionResolveCalls    int
+	sessionDestroyCalls    int
+	sessionListCalls       int
+	requests               []request.ExecRequest
+	itemDescribeRequests   []request.ItemDescribeRequest
+	sessionCreateRequests  []request.SessionCreateRequest
+	sessionResolveRequests []request.SessionResolveRequest
+	sessionDestroyRequests []request.SessionDestroyRequest
+	closeCalls             int
+	startedPIDs            []int
+	completedExitCodes     []int
 }
 
 func (c *appFakeDaemonClient) Close() error {
@@ -2127,6 +2603,40 @@ func (c *appFakeDaemonClient) DescribeItem(
 	c.itemDescribeCalls++
 	c.itemDescribeRequests = append(c.itemDescribeRequests, req)
 	return c.itemDescribePayload, c.itemDescribeErr
+}
+
+func (c *appFakeDaemonClient) CreateSession(
+	_ context.Context,
+	_ protocol.Correlation,
+	req request.SessionCreateRequest,
+) (protocol.SessionCreateResponsePayload, error) {
+	c.sessionCreateCalls++
+	c.sessionCreateRequests = append(c.sessionCreateRequests, req)
+	return c.sessionCreatePayload, c.sessionCreateErr
+}
+
+func (c *appFakeDaemonClient) ResolveSession(
+	_ context.Context,
+	_ protocol.Correlation,
+	req request.SessionResolveRequest,
+) (protocol.SessionResolveResponsePayload, error) {
+	c.sessionResolveCalls++
+	c.sessionResolveRequests = append(c.sessionResolveRequests, req)
+	return c.sessionResolvePayload, c.sessionResolveErr
+}
+
+func (c *appFakeDaemonClient) DestroySession(
+	_ context.Context,
+	req request.SessionDestroyRequest,
+) (protocol.SessionDestroyResponsePayload, error) {
+	c.sessionDestroyCalls++
+	c.sessionDestroyRequests = append(c.sessionDestroyRequests, req)
+	return c.sessionDestroyPayload, c.sessionDestroyErr
+}
+
+func (c *appFakeDaemonClient) ListSessions(_ context.Context) (protocol.SessionListResponsePayload, error) {
+	c.sessionListCalls++
+	return c.sessionListPayload, c.sessionListErr
 }
 
 func (c *appFakeDaemonClient) ReportStarted(_ context.Context, _ protocol.Correlation, childPID int) error {
@@ -2447,7 +2957,13 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, payload); err != nil {
 				return err
 			}
-		case protocol.TypeItemDescribe, protocol.TypeCommandStarted, protocol.TypeCommandCompleted:
+		case protocol.TypeItemDescribe,
+			protocol.TypeSessionCreate,
+			protocol.TypeSessionResolve,
+			protocol.TypeSessionDestroy,
+			protocol.TypeSessionList,
+			protocol.TypeCommandStarted,
+			protocol.TypeCommandCompleted:
 			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemonbroker.ErrDaemonStopped); err != nil {
 				return err
 			}

@@ -8,8 +8,9 @@ Agent Secret Broker is a local, macOS-first system for letting coding agents use
 1Password-backed secrets without making the agent a trusted secret holder. The
 agent requests exact secret references with a reason and a bounded policy. A
 local broker presents a native approval prompt, fetches approved secrets through
-the official 1Password SDK, and delivers them through CLI-supervised execution.
-Short-lived capability modes remain future work.
+the official 1Password SDK, and delivers them through CLI-supervised execution
+or bounded session wrappers. Session values stay in daemon memory and are
+injected only into approved child processes.
 
 The first user is a local developer running coding agents such as Codex, Claude
 Code, Cursor agent, or similar tools. The first practical workflow is running
@@ -19,9 +20,10 @@ local infrastructure commands, such as Terraform, that need credentials from
 ## Initial Product Stance
 
 The initial public release is a narrow macOS Apple Silicon tool for real local
-agent workflows. Success means the shipped `agent-secret exec` path is useful,
-auditable, and honest about its limits before the project expands into more
-platforms, secret backends, or delivery modes.
+agent workflows. Success means the shipped `agent-secret exec` and bounded
+`session create`/`with-session` paths are useful, auditable, and honest about
+their limits before the project expands into more platforms, secret backends, or
+delivery modes.
 
 Open-source readiness is a release constraint. The project keeps clean
 boundaries, avoids external runtime dependencies, maintains honest docs, and
@@ -42,9 +44,9 @@ agent-initiated access.
 user's 1Password account right now?
 
 Agent Secret Broker answers: is this specific agent request allowed to use these
-exact secret references for this stated reason, command, TTL, and delivery
-surface? In MVP, the delivery surface is implicit env-mode `exec`; it is kept in
-policy and reuse keys but not shown in the approval prompt.
+exact secret references for this stated reason, command or workflow, TTL, and
+delivery surface? In v1, delivery surfaces are implicit env-mode `exec` and
+bounded `with-session` wrappers; the surface is kept in policy and audit data.
 
 ## Goals
 
@@ -57,11 +59,14 @@ policy and reuse keys but not shown in the approval prompt.
 - Never print secret values to the console or return them to the agent.
 - Support command execution through `agent-secret exec` as the default delivery
   mode.
-- Leave room for future short-lived sessions, opaque per-secret handles, and
-  credential-helper integrations without shipping them in the initial release.
+- Support bounded multi-command sessions through `agent-secret session create`
+  and `agent-secret with-session`.
+- Leave room for future opaque per-secret handles, credential-helper
+  integrations, and raw socket reads without making them part of the first
+  session slice.
 - Keep secret values in memory only by default.
-- Enforce TTL, requested secret references, command, cwd, UID, strict macOS peer/process
-  checks for session/socket reads, and max reads only for session/socket reads.
+- Enforce TTL, requested secret references, command, cwd, UID, strict macOS
+  peer/process checks for session reads, and max reads for sessions.
 - Write metadata-only audit logs that never include secret values.
 - Keep the trusted core small enough to audit.
 - Keep this project independent from external project code and runtime
@@ -115,7 +120,7 @@ The same initial path should support Ansible commands that need environment-prov
 credentials, inventory access tokens, SSH-related variables, or cloud provider
 credentials. Terraform and Ansible are representative validation workflows.
 
-### Future Use Case: Multi-Step Deployment Session
+### Use Case 2: Bounded Multi-Step Deployment Session
 
 An agent requests a short session for a bounded workflow such as:
 
@@ -125,11 +130,11 @@ terraform apply
 ansible-playbook site.yml --check
 ```
 
-The user approves once for a TTL. The broker returns a session ID or opaque
-handles, and subsequent commands must run through broker wrappers such as
-`agent-secret with-session`.
-
-This is not shipped in the initial public release.
+The user approves once for a TTL and max-read count. The broker returns an
+opaque session ID, keeps values in daemon memory, and subsequent commands must
+run through `agent-secret with-session`. The wrapper resolves values over the
+daemon command channel and injects them only into the approved child process.
+V1 sessions do not add generic socket reads or credential-helper protocols.
 
 ### Use Case 3: Config-Driven Secret Sync
 
@@ -225,14 +230,16 @@ agent / Codex
 
 - Collect structured requests from agents and users.
 - Talk to `agent-secretd` over a local Unix domain socket.
-- Provide `exec`, daemon management, and `doctor` commands in MVP; add
-  `session` and `with-session` commands after the `exec` path is proven.
+- Provide `exec`, `session`, `with-session`, daemon management, and `doctor`
+  commands.
 - Never print raw secret values.
 - In `exec` mode, resolve the executable path and cwd, request an approved
   environment payload from the daemon, spawn the child process, wait for it, and
   report child lifecycle metadata back to the daemon.
+- In session mode, create/list/destroy daemon-held sessions and run each command
+  through `with-session`.
 - Preserve the target command's exit code or signal-based exit status in `exec`
-  mode.
+  and `with-session` modes.
 - Hold approved secret values only transiently in memory while preparing the
   child environment.
 
@@ -240,7 +247,7 @@ agent / Codex
 
 - Own all security policy and enforcement.
 - Own all communication with the 1Password SDK.
-- Store reusable approval secret values in memory only.
+- Store reusable approval and session secret values in memory only.
 - Return approved secret payloads to trusted CLI wrappers over the single
   per-user daemon socket.
 - Never spawn, supervise, signal, or wait for `exec` child processes.
@@ -349,10 +356,10 @@ Each approved request should bind these fields:
   max-use count
 
 The broker rejects access if the request is expired, the requested
-reference/alias is not approved, the reusable use count is exhausted, the
-command or cwd policy mismatches, the nonce is invalid, or the request was
-denied or canceled. Future session/socket modes must add session IDs,
-per-secret read counts, and strict peer-policy checks.
+reference/alias is not approved, the reusable or session read count is
+exhausted, the command or cwd policy mismatches, the nonce is invalid, the
+session ID is unknown, peer metadata mismatches, or the request was denied or
+canceled.
 
 For `agent-secret exec`, `--cwd` is operational. It sets the child process
 working directory, defaults to the caller's current cwd when omitted, and is part
@@ -512,18 +519,18 @@ Duplicate aliases are invalid. Duplicate references are allowed when different a
 need the same value. Duplicate references are deduplicated for fetch and cache
 purposes, then expanded back to the approved alias set for delivery.
 
-Future session/socket reads require peer PID and executable checks on supported
-macOS versions. A local probe on macOS 26.3 with the macOS 26.2 SDK confirmed
-that a Unix socket server can obtain peer UID/GID, peer PID, executable path, and
-cwd using public Darwin APIs (`getpeereid`, `LOCAL_PEERPID`, `LOCAL_PEERCRED`,
+Session resolution requires peer PID and executable checks on supported macOS
+versions. A local probe on macOS 26.3 with the macOS 26.2 SDK confirmed that a
+Unix socket server can obtain peer UID/GID, peer PID, executable path, and cwd
+using public Darwin APIs (`getpeereid`, `LOCAL_PEERPID`, `LOCAL_PEERCRED`,
 `proc_pidpath`, and `PROC_PIDVNODEPATHINFO`). If those fields cannot be obtained
 or do not match the approved session policy, the daemon must fail closed rather
 than silently falling back to weaker checks.
 
-`agent-secret exec` remains the strongest initial mode because the trusted CLI
-wrapper controls environment injection and child lifecycle while the daemon owns
-approval, fetch, cache, and audit policy. Future session/socket reads should
-also be strict on macOS now that the required peer metadata is available.
+`agent-secret exec` remains the strongest single-command mode because the
+trusted CLI wrapper controls environment injection and child lifecycle while the
+daemon owns approval, fetch, cache, and audit policy. Future raw socket reads
+should meet the same macOS peer-validation bar.
 
 ## Secret Storage Rules
 
@@ -558,8 +565,7 @@ Audit logs should include:
   to `agent-secret exec` but it disconnects before reporting a child PID
 - `command_started` after successful child spawn, including child PID
 - command completion, including exit code or signal
-- session IDs, read counts, and session/socket max reads for deferred session
-  modes
+- session IDs, read counts, and max reads for session modes
 - expiration and cleanup events
 - errors
 
@@ -620,10 +626,9 @@ process-supervision role.
 The validation sequence is:
 
 1. env-only `agent-secret exec`;
-2. ephemeral Unix socket reads for tools or wrappers that cannot consume
-   environment variables cleanly;
-3. sessions, credential helpers, file descriptors, and config-driven mapping
-   after the first two delivery paths are solid.
+2. bounded daemon-held sessions resolved only by `agent-secret with-session`;
+3. future credential helpers, raw socket reads, file descriptors, and
+   config-driven mapping after the wrapper paths are solid.
 
 Config-driven secret sync remains important, but it should not block the first
 delivery path unless it can be expressed through explicit env mappings.
@@ -665,23 +670,20 @@ Limitations:
 - Environment variables can still be exposed by child process behavior, crash
   reporters, debuggers, or subprocesses.
 
-### Mode 2: Session Handles
+### Mode 2: Daemon-Held Session IDs
 
-The broker creates a short-lived session and returns handles instead of values.
-Handles are only useful with the session socket, matching peer credentials,
-remaining read count, and unexpired policy.
+The broker creates a short-lived session and returns an opaque session ID
+instead of values. Values stay in daemon memory and are useful only through
+`agent-secret with-session`, matching peer credentials, cwd, remaining read
+count, and unexpired policy.
 
-Future session value reads should happen through ephemeral Unix sockets or
-equivalent local IPC and must never print values to stdout/stderr.
-Unlike same-command reuse, sessions should approve a bounded set of references
-for a session lifetime and allow those approved references to be read in
-whatever order the approved workflow needs, subject to TTL, max-read, peer, and
-destroy policy.
-On macOS, session/socket reads must fail closed unless the daemon can validate
-same UID, peer PID, executable path, cwd, session/capability nonce, TTL, and
-read count against the approved session.
-Session values must clear when TTL expires, read counts are exhausted, the daemon
-stops, or the session is destroyed.
+Unlike same-command reuse, sessions approve a bounded set of references for a
+workflow lifetime and allow those approved references to be injected into
+multiple wrapped commands, subject to TTL, max-read, peer, and destroy policy.
+On macOS, session resolution must fail closed unless the daemon can validate the
+same UID, peer PID, executable path, cwd, TTL, and read count against the
+approved session. Session values must clear when TTL expires, read counts are
+exhausted, the daemon stops, or the session is destroyed.
 
 ### Mode 3: `with-session`
 
@@ -692,7 +694,8 @@ agent-secret with-session asess_123 -- terraform apply
 ```
 
 The wrapper asks the daemon to resolve approved secrets and injects them only
-into the child process.
+into the child process. It must keep the daemon connection open while the child
+runs so command lifecycle audit events stay daemon-owned.
 
 ### Mode 4: Credential Helpers
 
@@ -829,29 +832,24 @@ Global options:
 --force-refresh              Refetch values for a matching reusable approval.
 ```
 
-Deferred session and socket-read option:
+Session option:
 
 ```text
---max-reads integer          Session/socket only. Default: 1.
+--max-reads integer          Session create only. Default: 1. Max: 20.
 ```
 
-MVP commands:
+V1 commands:
 
 ```bash
 agent-secret exec [options] -- command [args...]
-agent-secret daemon status
-agent-secret daemon start
-agent-secret daemon stop
-agent-secret doctor
-```
-
-Deferred session commands:
-
-```bash
 agent-secret session create [options]
 agent-secret with-session asess_123 -- command [args...]
 agent-secret session list
 agent-secret session destroy asess_123
+agent-secret daemon status
+agent-secret daemon start
+agent-secret daemon stop
+agent-secret doctor
 ```
 
 There is no audit viewer command in MVP. Operators can inspect the JSONL audit
@@ -906,7 +904,6 @@ Recommended macOS paths:
 
 ```text
 $TMPDIR/agent-secret/daemon.sock
-$TMPDIR/agent-secret/sessions/asess_123.sock
 ```
 
 MVP requirements:
@@ -927,24 +924,25 @@ MVP requirements:
   activated for that request, verified by socket peer PID and executable identity
 - stale socket cleanup on startup
 - request envelopes with protocol version and message type
+- session create/resolve/list/destroy over the daemon command socket, with
+  `session.resolve` restricted to `with-session` wrappers that provide complete
+  expected peer metadata
 
-Deferred session socket requirements:
+Future raw session socket requirements:
 
 - randomized private session paths
 - strict peer UID, PID, executable path, cwd, session/capability nonce, TTL, and
   read-count validation
 
-MVP endpoint types:
+V1 endpoint types:
 
 - `request.exec`
-- `approval.pending`
-- `approval.decision`
-
-Deferred session endpoint types:
-
 - `session.create`
 - `session.resolve`
 - `session.destroy`
+- `session.list`
+- `approval.pending`
+- `approval.decision`
 
 `session.resolve` should be internal to wrappers by default and must never be
 logged with values.
@@ -990,6 +988,8 @@ MVP must include:
 - Swift macOS approval app with foreground prompt
 - official 1Password Go SDK integration
 - `exec` mode with environment injection
+- bounded daemon-held sessions with `session create`, `session list`,
+  `session destroy`, and `with-session`
 - required `--reason`
 - secret references displayed before fetch
 - TTL policy for `exec`
@@ -1010,10 +1010,7 @@ MVP should include:
 
 MVP can defer:
 
-- session creation with opaque handles
-- `with-session` wrapper
-- strict session/socket peer validation, which is required when session/socket
-  reads are implemented but does not block env-only `exec`
+- raw session sockets and credential-helper protocols
 - menu bar presence for the approver
 - Git credential helper
 - AWS `credential_process`
@@ -1067,22 +1064,22 @@ Exit criteria:
 - Approval UI shows reason, secret references, command, cwd, optional command
   binary, and approval duration without audit/debug noise.
 
-### Milestone 2: Sessions And Unix Socket Reads
+### Milestone 2: Bounded Sessions And `with-session`
 
 Deliverables:
 
 - session create, list, and destroy
-- opaque handles
+- opaque session IDs
 - `with-session` wrapper
-- ephemeral Unix socket reads for approved session references
+- daemon-memory value storage and wrapper-only resolution
 - TTL and max-read enforcement
 - strict macOS peer validation for UID, PID, executable path, and cwd
 
 Exit criteria:
 
 - A multi-command workflow can be approved once and executed through wrappers.
-- Approved session references can be read in whatever order the workflow needs without
-  console output or disk writes.
+- Approved session references can be injected into wrapped child processes
+  without console output or disk writes.
 - Expired sessions cannot be used.
 - Peer metadata failures or mismatches fail closed.
 - Max-read policy works.
@@ -1170,23 +1167,24 @@ Exit criteria:
   denial, approval, and error events without secret values or environment
   payloads.
 
-### Future Session Mode Criteria
+### Session Mode Criteria
 
-- Session create returns handles only.
-- Handles cannot be resolved after TTL.
-- Handles cannot be resolved more than the allowed read count.
-- On macOS, handle resolution fails closed if peer UID, PID, executable path, or
+- Session create returns opaque session IDs only.
+- Session IDs cannot be resolved after TTL.
+- Session IDs cannot be resolved more than the allowed read count.
+- On macOS, session resolution fails closed if peer UID, PID, executable path, or
   cwd cannot be obtained or does not match the approved session policy.
-- Destroying a session invalidates all handles.
+- Destroying a session invalidates the session ID.
 
 ### Audit Criteria
 
-- V1 `exec` logs approval request, approval grant, approval denial, approval
-  timeout, reusable approval reuse/refresh, secret fetch attempt, secret fetch
-  failure, command start/start-complete/completion, post-payload disconnect,
-  post-start lifecycle disconnect, and daemon stop events.
-- Future handle/session delivery APIs must add expiry and destroy audit events
-  before those APIs are considered complete.
+- V1 `exec` and session paths log approval request, approval grant, approval
+  denial, approval timeout, reusable approval reuse/refresh, secret fetch
+  attempt, secret fetch failure, session create/resolve/destroy, command
+  start/start-complete/completion, post-payload disconnect, post-start lifecycle
+  disconnect, and daemon stop events.
+- Future raw socket or credential-helper delivery APIs must add expiry and
+  destroy audit events before those APIs are considered complete.
 - Logs contain secret references and aliases but no values.
 - Logs are readable only by the current user by default.
 

@@ -146,6 +146,9 @@ func (p Parser) resolveExecInputs(flags execFlags) (execInputs, error) {
 	if err != nil {
 		return execInputs{}, err
 	}
+	if err := request.ValidateReason(sources.reason); err != nil {
+		return execInputs{}, err
+	}
 	secrets, err := p.resolveExecSecrets(flags, sources)
 	if err != nil {
 		return execInputs{}, err
@@ -233,19 +236,66 @@ func assembleExecSecrets(
 	sources execInputSources,
 	filtered filteredExecSecretSources,
 ) []request.SecretSpec {
-	accountFallback := execSecretAccountFallback(flags, sources)
 	if sources.loadedProfile {
+		profileSecrets := append(slices.Clone(filtered.profileSecrets), flags.secrets.specs...)
+		profileSecrets = append(profileSecrets, filtered.envFileSecrets...)
+		accountFallback := profileAccountFallback(flags, sources, profileSecrets)
 		return assembleProfileExecSecrets(flags, sources, filtered, accountFallback)
 	}
+	directSecrets := append(slices.Clone(flags.secrets.specs), filtered.envFileSecrets...)
+	accountFallback := execSecretAccountFallbackForSecrets(flags, sources, directSecrets)
 	return assembleDirectExecSecrets(flags, filtered, accountFallback)
 }
 
-func execSecretAccountFallback(flags execFlags, sources execInputSources) string {
-	accountFallback := execAccountFallback(flags.account)
-	if strings.TrimSpace(flags.account) == "" && !sources.loadedProfile && strings.TrimSpace(sources.configAccount) != "" {
-		return sources.configAccount
+func profileAccountFallback(flags execFlags, sources execInputSources, secrets []request.SecretSpec) string {
+	if account := strings.TrimSpace(flags.account); account != "" {
+		return account
 	}
-	return accountFallback
+	if account := strings.TrimSpace(sources.profile.Account); account != "" {
+		return account
+	}
+	if !needsOnePasswordAccountFallback(secrets) {
+		return ""
+	}
+	return execSecretAccountFallback(flags, sources)
+}
+
+func execSecretAccountFallbackForSecrets(
+	flags execFlags,
+	sources execInputSources,
+	secrets []request.SecretSpec,
+) string {
+	if !needsOnePasswordAccountFallback(secrets) {
+		return ""
+	}
+	return execSecretAccountFallback(flags, sources)
+}
+
+func needsOnePasswordAccountFallback(secrets []request.SecretSpec) bool {
+	for _, secret := range secrets {
+		if strings.TrimSpace(secret.Account) != "" {
+			continue
+		}
+		if secretref.IsBitwardenSecretsManager(secret.Ref) {
+			continue
+		}
+		if strings.HasPrefix(secret.Ref, secretref.OnePasswordScheme) {
+			return true
+		}
+	}
+	return false
+}
+
+func execSecretAccountFallback(flags execFlags, sources execInputSources) string {
+	if account := strings.TrimSpace(flags.account); account != "" {
+		return account
+	}
+	if !sources.loadedProfile {
+		if account := strings.TrimSpace(sources.configAccount); account != "" {
+			return account
+		}
+	}
+	return execAccountFallback("")
 }
 
 func assembleProfileExecSecrets(

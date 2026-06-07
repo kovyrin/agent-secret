@@ -17,8 +17,10 @@ Secrets are never printed by agent-secret and are never written to disk. The nor
 Commands:
 
   agent-context Print a machine-readable command and config discovery schema.
-  exec       Run a command with approved secrets injected as environment variables.
-  item       Inspect 1Password item metadata without revealing secret values.
+	  exec       Run a command with approved secrets injected as environment variables.
+	  session    Create, list, and destroy bounded daemon-held secret sessions.
+	  with-session Run a command with secrets from an approved session.
+	  item       Inspect 1Password item metadata without revealing secret values.
   profile    Inspect project profiles without resolving secret values.
   bitwarden  Manage local Bitwarden Secrets Manager token aliases.
   install-cli Install or repair the agent-secret command symlink for this user.
@@ -72,15 +74,16 @@ Safety rules:
   - normal exec has no --json mode and never prints secret values.
   - exec --dry-run --json validates locally without starting the daemon, prompting, resolving values, or spawning the child.
   - exec --reuse-only uses a matching reusable approval or fails without opening a new approval prompt.
-  - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
+	  - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
+	  - session create returns an opaque handle only; values stay in daemon memory and are injected only by with-session.
   - item describe requires approval and prints item metadata only: field labels, types, concealment flags, and refs.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
   - Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
   - Non-zero child exits are returned as child exits, not as broker failures.
 
-	Run agent-secret exec --help for flags and more examples.
-`)
+		Run agent-secret exec --help or agent-secret session --help for flags and more examples.
+	`)
 }
 
 func AgentContextHelp() string {
@@ -338,7 +341,49 @@ Exit behavior:
   If --reuse-only has no matching reusable approval, the child is not spawned and no new approval prompt opens.
   After the child starts, stdin, stdout, and stderr are passed through. The wrapper returns the child exit status.
   Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
-`)
+	`)
+}
+
+func SessionHelp() string {
+	return strings.TrimSpace(`
+	agent-secret session creates short daemon-held sessions for bounded multi-command workflows.
+
+	Commands:
+
+	  create   Ask for approval, resolve requested refs, and return an opaque session id.
+	  list     List active session ids and non-secret metadata.
+	  destroy  Destroy one session and clear its cached values.
+
+	Examples:
+
+	  agent-secret session create --profile terraform-cloudflare --max-reads 2
+	  agent-secret with-session asess_123 -- terraform plan
+	  agent-secret with-session asess_123 -- terraform apply
+	  agent-secret session destroy asess_123
+
+	Values are never printed. Session values live in daemon memory only until TTL,
+	read count exhaustion, destroy, or daemon stop.
+	`)
+}
+
+func WithSessionHelp() string {
+	return strings.TrimSpace(`
+	agent-secret with-session runs one command with secrets from an approved session.
+
+	Usage:
+
+	  agent-secret with-session SESSION_ID [--cwd DIR] -- COMMAND [ARG...]
+
+	Flags:
+
+	  --cwd DIR       Child working directory. Defaults to caller cwd and must match the session cwd.
+	  --allow-mutable-executable
+	                  Allow a user-owned or writable executable path after showing the approval warning.
+	  -h, --help      Show this help.
+
+	The session id must come from agent-secret session create. Secret values are
+	injected into the child environment only and are never printed by agent-secret.
+	`)
 }
 
 func DaemonHelp() string {

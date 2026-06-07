@@ -29,8 +29,9 @@ type ApprovalRequestPayload struct {
 type ApprovalOperation string
 
 const (
-	ApprovalOperationExec         ApprovalOperation = "exec"
-	ApprovalOperationItemDescribe ApprovalOperation = "item_describe"
+	ApprovalOperationExec          ApprovalOperation = "exec"
+	ApprovalOperationItemDescribe  ApprovalOperation = "item_describe"
+	ApprovalOperationSessionCreate ApprovalOperation = "session_create"
 )
 
 type ApprovalRequestedResource struct {
@@ -116,6 +117,35 @@ func NewItemDescribePayload(
 		OverrideEnv:       false,
 		OverriddenAliases: []string{},
 		ReusableUses:      1,
+	}
+}
+
+func NewSessionCreatePayload(correlation protocol.Correlation, req request.SessionCreateRequest) ApprovalRequestPayload {
+	resources := make([]ApprovalRequestedResource, 0, len(req.Secrets))
+	for _, secret := range req.Secrets {
+		resources = append(resources, ApprovalRequestedResource{
+			Alias:               secret.Alias,
+			Ref:                 secret.Ref.Raw,
+			Account:             secret.Account,
+			Source:              secret.Source,
+			BitwardenTokenAlias: secret.Bitwarden.TokenAlias,
+		})
+	}
+	return ApprovalRequestPayload{
+		Operation:              ApprovalOperationSessionCreate,
+		AllowsReusable:         false,
+		RequestID:              correlation.RequestID,
+		Nonce:                  correlation.Nonce,
+		Reason:                 req.Reason,
+		Command:                slices.Clone(req.Command),
+		CWD:                    req.CWD,
+		ResolvedExecutable:     req.ResolvedExecutable,
+		AllowMutableExecutable: false,
+		ExpiresAt:              req.ExpiresAt,
+		Resources:              resources,
+		OverrideEnv:            req.OverrideEnv,
+		OverriddenAliases:      []string{},
+		ReusableUses:           1,
 	}
 }
 
