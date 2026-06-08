@@ -23,12 +23,11 @@ present.
    - `native approver: ok`
    - `1password desktop integration: ok`
 
-3. Set two test-only refs:
+3. Confirm the integration test refs are available to the local 1Password
+   account:
 
-   ```bash
-   export AGENT_SECRET_E2E_PROFILE_REF='op://Example/Test Secret/password'
-   export AGENT_SECRET_E2E_CLI_REF='op://Example/Another Test Secret/password'
-   ```
+   - `op://Agent Secret Integration/Test Secret/password`
+   - `op://Agent Secret Integration/Another Test Secret/password`
 
 ## Run
 
@@ -41,8 +40,8 @@ when they appear.
 ```bash
 set -euo pipefail
 
-: "${AGENT_SECRET_E2E_PROFILE_REF:?set a test-only profile ref}"
-: "${AGENT_SECRET_E2E_CLI_REF:?set a test-only CLI ref}"
+profile_ref="${AGENT_SECRET_E2E_PROFILE_REF:-op://Agent Secret Integration/Test Secret/password}"
+cli_ref="${AGENT_SECRET_E2E_CLI_REF:-op://Agent Secret Integration/Another Test Secret/password}"
 
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-session-e2e.XXXXXX")"
 SESSION_ID=""
@@ -73,7 +72,7 @@ profiles:
     reason: Agent Secret session E2E multi-secret validation
     ttl: 2m
     secrets:
-      SESSION_E2E_PROFILE_TOKEN: "$AGENT_SECRET_E2E_PROFILE_REF"
+      SESSION_E2E_PROFILE_TOKEN: "$profile_ref"
 YAML
 
 check_py='import os, sys
@@ -101,7 +100,7 @@ SESSION_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
     --json \
     --profile session-e2e \
-    --secret "SESSION_E2E_CLI_TOKEN=$AGENT_SECRET_E2E_CLI_REF" \
+    --secret "SESSION_E2E_CLI_TOKEN=$cli_ref" \
     --max-reads 5)"
 SESSION_ID="$(printf '%s' "$SESSION_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
@@ -185,7 +184,7 @@ EXHAUST_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
     --json \
     --profile session-e2e \
-    --secret "SESSION_E2E_CLI_TOKEN=$AGENT_SECRET_E2E_CLI_REF" \
+    --secret "SESSION_E2E_CLI_TOKEN=$cli_ref" \
     --max-reads 1)"
 EXHAUST_ID="$(printf '%s' "$EXHAUST_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
