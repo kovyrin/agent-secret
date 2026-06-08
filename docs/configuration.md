@@ -302,6 +302,73 @@ The resolved file contents are injected into the alias environment variable
 with multiline text preserved. Agent Secret does not create a temp file for the
 value and env-var delivery does not support binary attachments with NUL bytes.
 
+## Session Commands
+
+Sessions approve one bag of secret references, keep the resolved values in
+daemon memory, and let later child commands consume that bag only through
+`agent-secret with-session`. Use them for bounded workflows where a user
+approves several secrets once and subsequent commands need those secrets in
+different combinations.
+
+```bash
+agent-secret session create [flags]
+agent-secret with-session SESSION_ID [--cwd DIR] \
+  [--only ALIAS[,ALIAS...]] [--allow-mutable-executable] -- COMMAND [ARG...]
+agent-secret session list [--json]
+agent-secret session destroy [--json] SESSION_ID
+```
+
+`session create` accepts the same secret-source flags as `exec`:
+
+- `--reason TEXT`
+- `--secret ALIAS=REF`
+- `--env-file PATH`
+- `--profile NAME`
+- `--only ALIAS[,ALIAS...]`
+- `--account ACCOUNT`
+- `--config PATH`
+- `--cwd DIR`
+- `--ttl DURATION`
+- `--override-env`
+- `--json`
+
+It also accepts `--max-reads COUNT`, which limits the number of successful
+`with-session` reads. The default is `1`; the allowed range is `1` through
+`20`.
+
+For example, approve a project profile plus a one-off CLI reference, then use
+different aliases for different commands:
+
+```bash
+agent-secret session create \
+  --profile terraform-cloudflare \
+  --secret STATE_TOKEN=op://Example/Terraform\ State/token \
+  --max-reads 3 \
+  --json
+
+agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- \
+  terraform plan
+
+agent-secret with-session asess_123 \
+  --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
+  -- terraform apply
+```
+
+`session create` returns only an opaque session ID and non-secret metadata. It
+does not print secret values. Without `--only`, `with-session` injects every
+approved session alias into that child process. With `--only`, it injects only
+the requested approved aliases. If any requested alias was not in the approved
+session, Agent Secret fails before spawning the child command.
+
+`with-session` accepts `--cwd DIR`, `--only ALIAS[,ALIAS...]`, and
+`--allow-mutable-executable`. The `--cwd` value defaults to the caller's current
+directory and must match the session working directory.
+
+Sessions are daemon-memory only. They expire when TTL passes, the read count is
+exhausted, `agent-secret session destroy SESSION_ID` succeeds, or the daemon
+stops. V1 sessions intentionally do not expose raw socket value reads,
+credential-helper protocols, or long-lived interactive shells.
+
 ## Agent-Friendly Introspection
 
 Agents can ask Agent Secret for a machine-readable summary of the current CLI

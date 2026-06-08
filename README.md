@@ -313,6 +313,7 @@ scripts/release/build-release.sh v0.0.0-dev
 ## Documentation
 
 - [Configuration Reference](docs/configuration.md)
+- [Session E2E Validation](docs/session-e2e-validation.md)
 - [Threat Model](docs/threat-model.md)
 - [Release Process](docs/release-process.md)
 - [Security Policy](SECURITY.md)

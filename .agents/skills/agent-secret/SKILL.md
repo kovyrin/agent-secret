@@ -15,6 +15,8 @@ needs to understand how to run `agent-secret`, or when migrating direct
 - Keep secret refs in command flags, env files, or `agent-secret.yml`; never
   store resolved values.
 - Use project-local profiles for repeated multi-secret workflows.
+- Use bounded sessions when a short workflow needs approved secrets in
+  different per-command combinations.
 - Migrate direct provider CLI usage to `agent-secret exec` while preserving
   command behavior.
 - Inspect 1Password item metadata when field names are unknown, without
@@ -32,6 +34,10 @@ needs to understand how to run `agent-secret`, or when migrating direct
   secret-backed runs.
 - Do not add long-lived plaintext `.env` files as a shortcut.
 - Do not commit rendered files that contain secrets.
+- Do not treat sessions as a raw secret-read API. Run each command through
+  `agent-secret with-session`.
+- Do not run long-lived interactive shells under a session. Use bounded
+  `with-session` invocations for specific commands.
 - Keep secret aliases stable and descriptive, such as
   `CLOUDFLARE_API_TOKEN`, `DATABASE_URL`, or `ANSIBLE_BECOME_PASSWORD`.
 - Keep reasons human-readable. They are shown in the approval UI and audit log.
@@ -96,6 +102,26 @@ Use an existing reusable approval without opening a new prompt:
 ```bash
 agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
 ```
+
+Approve a bounded multi-command session:
+
+```bash
+agent-secret session create --profile terraform-cloudflare --max-reads 3
+agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- \
+  terraform plan
+agent-secret with-session asess_123 \
+  --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
+  -- terraform apply
+agent-secret session destroy asess_123
+```
+
+Use sessions when the user approves a bag of secrets once and later commands
+need different subsets. `session create` accepts the same config, profile,
+env-file, and `--secret` inputs as `exec`, then returns only an opaque session
+ID. The daemon keeps resolved values in memory until TTL, read count, explicit
+destroy, or daemon stop clears them. `with-session` injects every approved alias
+by default; add `--only ALIAS[,ALIAS...]` to deliver only the aliases needed by
+that child command. Unknown aliases fail before the child process starts.
 
 Use a shell only when the shell is the command you actually want approved:
 
@@ -188,6 +214,10 @@ wrapper needs a subset of a larger profile:
 agent-secret exec --profile ansible --only CADDY_TOKEN,POSTGRES_PASSWORD -- \
   ansible-playbook site.yml --tags caddy
 ```
+
+Sessions can also start from a profile and project config. Prefer a profile
+when the same approved bag is reused by several short commands, then project a
+smaller child environment with `with-session --only` for each command.
 
 Account precedence is per-secret `account`, profile `account`, top-level
 `account`, CLI `--account`, `OP_ACCOUNT` / `AGENT_SECRET_1PASSWORD_ACCOUNT`,
@@ -406,6 +436,9 @@ Before reporting success, prove the migrated path works:
   metadata over `env`.
 - For profile changes, test at least one full-profile invocation and any
   `--only` wrapper that filters aliases.
+- For session workflows, test `session create`, `session list`, at least one
+  full `with-session` invocation, any `with-session --only` subsets, and
+  session exhaustion or `session destroy`.
 - For `--env-file` migrations, test that the real command receives both a
   secret-backed variable and at least one plain env-file variable without
   printing either secret value.

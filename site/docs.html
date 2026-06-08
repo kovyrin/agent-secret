@@ -6,12 +6,12 @@
     <title>Docs · Agent Secret</title>
     <meta
       name="description"
-      content="Practical setup docs for Agent Secret with 1Password, Bitwarden Secrets Manager, project profiles, validation, troubleshooting, and FAQ."
+      content="Practical setup docs for Agent Secret with 1Password, Bitwarden Secrets Manager, project profiles, bounded sessions, validation, troubleshooting, and FAQ."
     >
     <meta property="og:title" content="Docs · Agent Secret">
     <meta
       property="og:description"
-      content="Install Agent Secret, connect 1Password or Bitwarden Secrets Manager, configure project profiles, and run safe secret-injection checks."
+      content="Install Agent Secret, connect 1Password or Bitwarden Secrets Manager, configure project profiles and sessions, and run safe secret-injection checks."
     >
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://agent-secret.sh/docs">
@@ -21,7 +21,7 @@
     <link rel="canonical" href="https://agent-secret.sh/docs">
     <link rel="icon" href="assets/app-icon-180.png">
     <link rel="apple-touch-icon" href="assets/app-icon-180.png">
-    <link rel="stylesheet" href="styles.css?v=20260607-1">
+    <link rel="stylesheet" href="styles.css?v=20260608-1">
   </head>
   <body class="legal-page docs-page">
     <header class="site-header" aria-label="Primary">
@@ -48,7 +48,7 @@
           Secrets Manager, keep references in project profiles, and validate
           requests without printing secret values.
         </p>
-        <p class="legal-date">Last updated: June 7, 2026</p>
+        <p class="legal-date">Last updated: June 8, 2026</p>
       </section>
 
       <div class="docs-layout">
@@ -58,6 +58,7 @@
             <a href="#onepassword">1Password</a>
             <a href="#bitwarden">Bitwarden</a>
             <a href="#profiles">Profiles</a>
+            <a href="#sessions">Sessions</a>
             <a href="#validate">Validate</a>
             <a href="#troubleshooting">Troubleshooting</a>
             <a href="#faq">FAQ</a>
@@ -200,6 +201,37 @@ profiles:
               <code>agent-secret exec -- terraform plan</code> from the project
               directory uses that profile. Use <code>--profile NAME</code> when
               a repo has multiple workflows.
+            </p>
+          </section>
+
+          <section id="sessions" class="docs-section">
+            <div class="section-kicker">Sessions</div>
+            <h2>Approve a bag once, then run bounded commands.</h2>
+            <p>
+              Sessions are for short workflows where an agent needs the same
+              approved set of references in different combinations. The daemon
+              stores values in memory and returns only an opaque session ID.
+            </p>
+            <div class="code-panel">
+              <pre><code>agent-secret session create --profile terraform-cloudflare --max-reads 3
+agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
+agent-secret with-session asess_123 \
+  --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
+  -- terraform apply
+agent-secret session destroy asess_123</code></pre>
+            </div>
+            <p>
+              <code>session create</code> can combine a project profile, env
+              files, and one-off <code>--secret ALIAS=REF</code> flags.
+              <code>with-session</code> injects every approved alias by default,
+              or a per-command subset with <code>--only</code>. Unknown aliases
+              fail before the child command starts.
+            </p>
+            <p>
+              Sessions end when TTL passes, the read count is exhausted,
+              <code>session destroy</code> succeeds, or the daemon stops. V1
+              sessions do not expose raw socket reads or long-lived interactive
+              shells.
             </p>
           </section>
 

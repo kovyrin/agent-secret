@@ -31,6 +31,11 @@ version numbers for public releases.
   approved session's aliases.
 - Added metadata-only session audit events for create, resolve, and destroy.
 
+### Changed
+
+- Updated the configuration reference, bundled coding-agent skill, public
+  website, and session E2E runbook links for bounded session workflows.
+
 ### Fixed
 
 - Avoided 1Password desktop account discovery when parsing Bitwarden-only
