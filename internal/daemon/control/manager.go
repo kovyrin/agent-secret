@@ -16,6 +16,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/helperidentity"
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
+	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
 var ErrDaemonStillRunning = errors.New("daemon still running")
@@ -44,6 +45,7 @@ type Manager struct {
 	ProtocolTimeout time.Duration
 	daemonStdout    io.Writer
 	daemonStderr    io.Writer
+	signalProcess   func(int, os.Signal) error
 }
 
 func NewManager(socketPath string) (Manager, error) {
@@ -85,6 +87,24 @@ func (m Manager) Start(ctx context.Context) error {
 }
 
 func (m Manager) Repair(ctx context.Context) (RepairResult, error) {
+	result, err := m.repairOnce(ctx)
+	if err == nil {
+		return result, nil
+	}
+	if !helperUnavailableError(err) && !peerProcessGoneError(err) {
+		return result, err
+	}
+	if waitErr := m.waitUntilUnavailableWith(ctx, 25*time.Millisecond, "trusted helper", m.rawSocketUnavailable); waitErr != nil {
+		return result, err
+	}
+	retryResult, retryErr := m.repairOnce(ctx)
+	if retryErr == nil && retryResult.Status == RepairStatusOK && peerProcessGoneError(err) {
+		retryResult.Status = RepairStatusRefreshed
+	}
+	return retryResult, retryErr
+}
+
+func (m Manager) repairOnce(ctx context.Context) (RepairResult, error) {
 	inspection, err := m.inspectTrustedHelper(ctx)
 	if err == nil {
 		if inspection.matches {
@@ -92,19 +112,12 @@ func (m Manager) Repair(ctx context.Context) (RepairResult, error) {
 		}
 		return m.refreshTrustedHelper(ctx)
 	}
-	if errors.Is(err, socket.ErrDaemonUnavailable) {
-		if err := m.startCurrent(ctx); err != nil {
-			return RepairResult{Status: RepairStatusRepairRequired}, err
+	if helperUnavailableError(err) {
+		status := RepairStatusOK
+		if peerProcessGoneError(err) {
+			status = RepairStatusRefreshed
 		}
-		inspection, err := m.inspectTrustedHelper(ctx)
-		if err != nil {
-			return RepairResult{Status: RepairStatusRepairRequired}, err
-		}
-		if !inspection.matches {
-			return RepairResult{Status: RepairStatusRepairRequired, PID: inspection.hello.PID, Hello: inspection.hello},
-				fmt.Errorf("%w: started helper does not match current build", ErrHelperMismatch)
-		}
-		return RepairResult{Status: RepairStatusOK, PID: inspection.hello.PID, Hello: inspection.hello}, nil
+		return m.startCurrentWithStatusRetry(ctx, status)
 	}
 	if isRetiringDaemon(err) {
 		if err := m.waitUntilTrustedHelperUnavailable(ctx, 25*time.Millisecond); err != nil {
@@ -126,17 +139,54 @@ func (m Manager) Repair(ctx context.Context) (RepairResult, error) {
 	if errors.Is(err, ErrHelperMismatch) {
 		return m.refreshTrustedHelper(ctx)
 	}
+	if m.trustedHelperVanishedAfterTrustError(ctx, err) {
+		return m.startCurrentWithStatusRetry(ctx, RepairStatusRefreshed)
+	}
 	return RepairResult{Status: RepairStatusRepairRequired}, err
 }
 
+func (m Manager) startCurrentWithStatus(ctx context.Context, status RepairStatus) (RepairResult, error) {
+	if err := m.startCurrent(ctx); err != nil {
+		return RepairResult{Status: RepairStatusRepairRequired}, err
+	}
+	inspection, err := m.inspectTrustedHelper(ctx)
+	if err != nil {
+		return RepairResult{Status: RepairStatusRepairRequired}, err
+	}
+	if !inspection.matches {
+		return RepairResult{Status: RepairStatusRepairRequired, PID: inspection.hello.PID, Hello: inspection.hello},
+			fmt.Errorf("%w: started helper does not match current build", ErrHelperMismatch)
+	}
+	return RepairResult{Status: status, PID: inspection.hello.PID, Hello: inspection.hello}, nil
+}
+
+func (m Manager) startCurrentWithStatusRetry(ctx context.Context, status RepairStatus) (RepairResult, error) {
+	result, err := m.startCurrentWithStatus(ctx, status)
+	if err == nil {
+		return result, nil
+	}
+	if !helperUnavailableError(err) && !peerProcessGoneError(err) {
+		return result, err
+	}
+	if waitErr := m.waitUntilUnavailableWith(ctx, 25*time.Millisecond, "trusted helper", m.rawSocketUnavailable); waitErr != nil {
+		return result, err
+	}
+	return m.startCurrentWithStatus(ctx, status)
+}
+
 func (m Manager) startCurrent(ctx context.Context) error {
-	if err := m.statusBeforeStart(ctx); err == nil {
+	removePeerGoneSocket := false
+	err := m.statusBeforeStart(ctx)
+	switch {
+	case err == nil:
 		return nil
-	} else if isRetiringDaemon(err) {
+	case isRetiringDaemon(err):
 		if err := m.waitUntilUnavailable(ctx, 25*time.Millisecond); err != nil {
 			return err
 		}
-	} else if !errors.Is(err, socket.ErrDaemonUnavailable) {
+	case peerProcessGoneError(err):
+		removePeerGoneSocket = true
+	case !helperUnavailableError(err):
 		return err
 	}
 	if m.DaemonPath == "" {
@@ -145,8 +195,14 @@ func (m Manager) startCurrent(ctx context.Context) error {
 	if err := socket.PrepareDirectory(m.socketPath); err != nil {
 		return err
 	}
-	if err := socket.CleanupStale(m.socketPath); err != nil {
-		return err
+	if removePeerGoneSocket {
+		if err := os.Remove(m.socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale daemon socket for exited peer: %w", err)
+		}
+	} else {
+		if err := socket.CleanupStale(m.socketPath); err != nil {
+			return err
+		}
 	}
 
 	cmd := daemonprocess.StartCommand(ctx, m.DaemonPath, m.daemonArgs())
@@ -390,6 +446,9 @@ func (m Manager) connectTrustedHelper(ctx context.Context) (*Client, error) {
 }
 
 func classifyHelperConnectError(err error) error {
+	if peerProcessGoneError(err) {
+		return fmt.Errorf("%w: %w", socket.ErrDaemonUnavailable, err)
+	}
 	if errors.Is(err, peertrust.ErrUntrustedDaemon) {
 		return fmt.Errorf("%w: %w", ErrUnexpectedHelper, err)
 	}
@@ -399,7 +458,8 @@ func classifyHelperConnectError(err error) error {
 func helperHelloMismatchError(err error) bool {
 	return errors.Is(err, protocol.ErrProtocolType) ||
 		errors.Is(err, protocol.ErrProtocolVersion) ||
-		IsProtocolError(err, protocol.ErrorCodeBadType)
+		IsProtocolError(err, protocol.ErrorCodeBadType) ||
+		IsProtocolError(err, protocol.ErrorCodeUntrustedClient)
 }
 
 func (m Manager) helperMatchesExpected(hello protocol.HelperHelloPayload) (bool, error) {
@@ -467,10 +527,106 @@ func (m Manager) stopTrustedHelper(ctx context.Context) error {
 	}
 	if _, err := client.RequestStop(ctx); err != nil {
 		_ = client.Close()
+		if IsProtocolError(err, protocol.ErrorCodeUntrustedClient) {
+			return m.signalTrustedHelper(ctx)
+		}
 		return err
 	}
 	_ = client.Close()
 	return m.waitUntilTrustedHelperUnavailable(ctx, 25*time.Millisecond)
+}
+
+func (m Manager) signalTrustedHelper(ctx context.Context) error {
+	info, err := m.inspectTrustedHelperPeer(ctx)
+	if errors.Is(err, socket.ErrDaemonUnavailable) {
+		return nil
+	}
+	if peerProcessGoneError(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.PID <= 0 {
+		return fmt.Errorf("%w: trusted helper pid is unavailable", ErrUnexpectedHelper)
+	}
+	signalFn := m.signalProcess
+	if signalFn == nil {
+		signalFn = signalProcess
+	}
+	if err := signalFn(info.PID, syscall.SIGTERM); err != nil {
+		return fmt.Errorf("signal trusted helper pid %d: %w", info.PID, err)
+	}
+	return m.waitUntilTrustedHelperUnavailable(ctx, 25*time.Millisecond)
+}
+
+func (m Manager) inspectTrustedHelperPeer(ctx context.Context) (peercred.Info, error) {
+	trustedPaths, err := m.trustedDaemonPaths()
+	if err != nil {
+		return peercred.Info{}, err
+	}
+	conn, err := socket.Dial(ctx, m.socketPath)
+	if err != nil {
+		return peercred.Info{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	info, err := peercred.Inspect(conn)
+	if err != nil {
+		return peercred.Info{}, fmt.Errorf("%w: inspect daemon peer: %w", peertrust.ErrUntrustedDaemon, err)
+	}
+	if err := peertrust.NewDaemonProductValidator(trustedPaths).ValidateDaemonPeer(info); err != nil {
+		return peercred.Info{}, err
+	}
+	return info, nil
+}
+
+func peerProcessGoneError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.ESRCH) || strings.Contains(err.Error(), "no such process")
+}
+
+func signalProcess(pid int, sig os.Signal) error {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	if err := process.Signal(sig); err != nil {
+		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (m Manager) trustedHelperVanishedAfterTrustError(ctx context.Context, err error) bool {
+	if !errors.Is(err, ErrUnexpectedHelper) && !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		return false
+	}
+	unavailable, unavailableErr := m.rawSocketUnavailable(ctx)
+	if unavailableErr == nil && unavailable {
+		return true
+	}
+	if peerProcessGoneError(err) {
+		return m.waitUntilUnavailableWith(ctx, 25*time.Millisecond, "trusted helper", m.rawSocketUnavailable) == nil
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancel()
+	return m.waitUntilUnavailableWith(waitCtx, 25*time.Millisecond, "trusted helper", m.rawSocketUnavailable) == nil
+}
+
+func (m Manager) rawSocketUnavailable(ctx context.Context) (bool, error) {
+	conn, err := socket.Dial(ctx, m.socketPath)
+	if err != nil {
+		if isUnavailableDaemonStatusError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	_ = conn.Close()
+	return false, nil
 }
 
 func (m Manager) protocolTimeout() time.Duration {
@@ -525,6 +681,11 @@ func isUnavailableDaemonStatusError(err error) bool {
 		errors.Is(err, io.EOF) ||
 		errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, syscall.ECONNRESET)
+}
+
+func helperUnavailableError(err error) bool {
+	return isUnavailableDaemonStatusError(err) ||
+		(peerProcessGoneError(err) && strings.Contains(err.Error(), socket.ErrDaemonUnavailable.Error()))
 }
 
 func (m Manager) daemonArgs() []string {

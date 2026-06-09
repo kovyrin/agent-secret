@@ -422,6 +422,187 @@ func TestManagerRepairRefreshesMismatchedTrustedHelper(t *testing.T) {
 	}
 }
 
+func TestManagerRepairSignalsTrustedHelperWhenStopRejectsClient(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_REPAIR_SIGNAL_HELPER") == "1" {
+		runDaemonManagerHelper(t)
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	staleHello := helperidentity.ForExecutable(executable, os.Getpid())
+	staleHello.BuildID += "-stale"
+	path, stopStale := startFakeHelperDaemonWithOptions(t, fakeHelperOptions{
+		hello:         staleHello,
+		stopErrorCode: protocol.ErrorCodeUntrustedClient,
+	})
+	defer stopStale()
+
+	output, err := os.Create(filepath.Join(t.TempDir(), "repair-helper.log"))
+	if err != nil {
+		t.Fatalf("create helper output log: %v", err)
+	}
+	defer func() { _ = output.Close() }()
+	signalCalls := 0
+	manager := Manager{
+		socketPath:     path,
+		DaemonPath:     executable,
+		DaemonArgs:     []string{"-test.run=TestManagerRepairSignalsTrustedHelperWhenStopRejectsClient", "--", "--socket", "{socket}"},
+		StartupTimeout: 2 * time.Second,
+		daemonStdout:   output,
+		daemonStderr:   output,
+		signalProcess: func(pid int, sig os.Signal) error {
+			signalCalls++
+			if pid != os.Getpid() {
+				t.Fatalf("signal pid = %d, want current fake helper process pid %d", pid, os.Getpid())
+			}
+			if sig != syscall.SIGTERM {
+				t.Fatalf("signal = %v, want SIGTERM", sig)
+			}
+			stopStale()
+			return nil
+		},
+	}
+	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_REPAIR_SIGNAL_HELPER", "1")
+
+	result, err := manager.Repair(context.Background())
+	if err != nil {
+		helperOutput := readManagerHelperOutput(t, output.Name())
+		if strings.Contains(helperOutput, managerHelperBindUnavailablePrefix) {
+			t.Skipf("Unix socket bind unavailable in daemon repair helper: %s", helperOutput)
+		}
+		t.Fatalf("Repair returned error: %v\nhelper output:\n%s", err, helperOutput)
+	}
+	defer func() { _ = manager.Stop(context.Background()) }()
+	if result.Status != RepairStatusRefreshed {
+		t.Fatalf("Repair status = %q, want refreshed", result.Status)
+	}
+	if signalCalls != 1 {
+		t.Fatalf("signal calls = %d, want 1", signalCalls)
+	}
+	if result.Hello.BuildID != helperidentity.ForExecutable(executable, os.Getpid()).BuildID {
+		t.Fatalf("Repair hello build id = %q, want current build id", result.Hello.BuildID)
+	}
+}
+
+func TestManagerRepairErrorClassifiers(t *testing.T) {
+	t.Parallel()
+
+	if peerProcessGoneError(nil) {
+		t.Fatal("peerProcessGoneError(nil) = true, want false")
+	}
+	if !peerProcessGoneError(fmt.Errorf("inspect peer: %w", syscall.ESRCH)) {
+		t.Fatal("peerProcessGoneError did not detect wrapped ESRCH")
+	}
+	if !peerProcessGoneError(errors.New("inspect daemon peer: proc_pidpath: no such process")) {
+		t.Fatal("peerProcessGoneError did not detect proc_pidpath text")
+	}
+	if !helperUnavailableError(fmt.Errorf("%w: dial failed", socket.ErrDaemonUnavailable)) {
+		t.Fatal("helperUnavailableError did not detect socket unavailable")
+	}
+	peerGoneUnavailable := fmt.Errorf(
+		"%w: untrusted daemon peer: inspect daemon peer: proc_pidpath: no such process",
+		socket.ErrDaemonUnavailable,
+	)
+	if !helperUnavailableError(peerGoneUnavailable) {
+		t.Fatal("helperUnavailableError did not detect peer-gone unavailable error")
+	}
+	peerGoneUnexpected := errors.New("unexpected helper: proc_pidpath: no such process")
+	if helperUnavailableError(peerGoneUnexpected) {
+		t.Fatal("helperUnavailableError accepted peer-gone error without daemon unavailable")
+	}
+	classified := classifyHelperConnectError(errors.New("inspect daemon peer: proc_pidpath: no such process"))
+	if !helperUnavailableError(classified) {
+		t.Fatalf("classifyHelperConnectError = %v, want helper unavailable", classified)
+	}
+	unexpected := classifyHelperConnectError(peertrust.ErrUntrustedDaemon)
+	if !errors.Is(unexpected, ErrUnexpectedHelper) {
+		t.Fatalf("classifyHelperConnectError = %v, want ErrUnexpectedHelper", unexpected)
+	}
+}
+
+func TestManagerTrustedHelperVanishedAfterTrustErrorRequiresUnavailableSocket(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	err := fmt.Errorf("%w: %w", ErrUnexpectedHelper, socket.ErrDaemonUnavailable)
+	if !manager.trustedHelperVanishedAfterTrustError(context.Background(), err) {
+		t.Fatal("trustedHelperVanishedAfterTrustError = false, want true for missing socket")
+	}
+	if manager.trustedHelperVanishedAfterTrustError(context.Background(), errors.New("plain error")) {
+		t.Fatal("trustedHelperVanishedAfterTrustError = true for plain error")
+	}
+}
+
+func TestManagerRawSocketUnavailableReportsListeningSocket(t *testing.T) {
+	t.Parallel()
+
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-raw-socket-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	path := filepath.Join(dir, "daemon.sock")
+	addr := net.UnixAddr{Name: path, Net: "unix"}
+	listener, err := net.ListenUnix("unix", &addr)
+	unixsocket.SkipIfBindUnavailable(t, err)
+	if err != nil {
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	manager := Manager{socketPath: path}
+	unavailable, err := manager.rawSocketUnavailable(context.Background())
+	if err != nil {
+		t.Fatalf("rawSocketUnavailable returned error: %v", err)
+	}
+	if unavailable {
+		t.Fatal("rawSocketUnavailable = true for listening socket")
+	}
+}
+
+func TestSignalProcessReportsCurrentProcessSignalZero(t *testing.T) {
+	t.Parallel()
+
+	if err := signalProcess(os.Getpid(), syscall.Signal(0)); err != nil {
+		t.Fatalf("signalProcess current process signal 0 returned error: %v", err)
+	}
+}
+
+func TestManagerSignalTrustedHelperMissingSocketIsNoop(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	if err := manager.signalTrustedHelper(context.Background()); err != nil {
+		t.Fatalf("signalTrustedHelper returned error: %v", err)
+	}
+}
+
+func TestManagerStartCurrentWithStatusRetryReturnsNonRetryableError(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{socketPath: filepath.Join(t.TempDir(), "missing.sock")}
+	_, err := manager.startCurrentWithStatusRetry(context.Background(), RepairStatusOK)
+	if err == nil || !strings.Contains(err.Error(), "daemon path is required") {
+		t.Fatalf("startCurrentWithStatusRetry error = %v, want daemon path required", err)
+	}
+}
+
+func TestManagerWriterUsesConfiguredWriterWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	fallback := io.Discard
+	configured := strings.Builder{}
+	if got := managerWriter(fallback, &configured); got != &configured {
+		t.Fatal("managerWriter did not return configured writer")
+	}
+	if got := managerWriter(fallback, nil); got != fallback {
+		t.Fatal("managerWriter did not return fallback writer")
+	}
+}
+
 func TestManagerRepairRejectsUnexpectedHelper(t *testing.T) {
 	t.Parallel()
 
@@ -948,6 +1129,16 @@ func startFakeStatusErrorDaemon(t *testing.T, code protocol.ErrorCode) (string, 
 
 func startFakeHelperDaemon(t *testing.T, hello protocol.HelperHelloPayload) (string, func()) {
 	t.Helper()
+	return startFakeHelperDaemonWithOptions(t, fakeHelperOptions{hello: hello})
+}
+
+type fakeHelperOptions struct {
+	hello         protocol.HelperHelloPayload
+	stopErrorCode protocol.ErrorCode
+}
+
+func startFakeHelperDaemonWithOptions(t *testing.T, opts fakeHelperOptions) (string, func()) {
+	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "agent-secret-fake-helper-")
 	if err != nil {
 		t.Fatalf("MkdirTemp returned error: %v", err)
@@ -973,7 +1164,7 @@ func startFakeHelperDaemon(t *testing.T, hello protocol.HelperHelloPayload) (str
 			if err != nil {
 				return
 			}
-			go serveFakeHelperDaemonConn(conn, hello, shutdown)
+			go serveFakeHelperDaemonConn(conn, opts, shutdown)
 		}
 	}()
 	return path, func() {
@@ -985,7 +1176,7 @@ func startFakeHelperDaemon(t *testing.T, hello protocol.HelperHelloPayload) (str
 
 func serveFakeHelperDaemonConn(
 	conn *net.UnixConn,
-	hello protocol.HelperHelloPayload,
+	opts fakeHelperOptions,
 	shutdown func(),
 ) {
 	defer func() { _ = conn.Close() }()
@@ -998,15 +1189,21 @@ func serveFakeHelperDaemonConn(
 		}
 		switch env.Type { //nolint:exhaustive // Fake helper handles only manager repair requests.
 		case protocol.TypeHelperHello:
-			if !writeFakeHelperResponse(encoder, env.Correlation(), hello) {
+			if !writeFakeHelperResponse(encoder, env.Correlation(), opts.hello) {
 				return
 			}
 		case protocol.TypeDaemonStatus:
-			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: hello.PID}) {
+			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: opts.hello.PID}) {
 				return
 			}
 		case protocol.TypeDaemonStop:
-			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: hello.PID}) {
+			if opts.stopErrorCode != "" {
+				if !writeFakeHelperError(encoder, env.Correlation(), opts.stopErrorCode) {
+					return
+				}
+				return
+			}
+			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: opts.hello.PID}) {
 				return
 			}
 			shutdown()
@@ -1024,6 +1221,17 @@ func serveFakeHelperDaemonConn(
 			}
 		}
 	}
+}
+
+func writeFakeHelperError(encoder *json.Encoder, correlation protocol.Correlation, code protocol.ErrorCode) bool {
+	resp, err := protocol.NewEnvelope(protocol.TypeError, correlation, protocol.ErrorPayload{
+		Code:    code,
+		Message: "fake helper rejected request",
+	})
+	if err != nil {
+		return false
+	}
+	return encoder.Encode(resp) == nil
 }
 
 func writeFakeHelperResponse(encoder *json.Encoder, correlation protocol.Correlation, payload any) bool {
