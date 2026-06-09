@@ -20,13 +20,36 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.19] - Pending
+
+### Added
+
+- Added `agent-secret repair` as the user-facing recovery command for Agent
+  Secret background helper and socket state.
+- Added a non-secret background helper hello handshake so the CLI can identify
+  the helper protocol, version, build, process, executable, team, and bundle
+  before sending secret-bearing requests.
+
+### Changed
+
+- Normal commands now refresh trusted old or mismatched background helpers and
+  retry the request path once instead of asking users to stop an old helper.
+- `agent-secret doctor`, help output, docs, the website, and the bundled
+  coding-agent skill now describe normal helper state as Agent Secret's
+  background helper.
+
+### Security
+
+- Unexpected or untrusted background helper socket owners fail closed before any
+  secret-bearing request is sent.
+
 ## [0.0.18] - 2026-06-09
 
 ### Added
 
 - Added bounded session support with `agent-secret session create|list|destroy`
   and `agent-secret with-session` for multi-command workflows that keep values
-  in daemon memory and inject them only into wrapped child processes.
+  in background helper memory and inject them only into wrapped child processes.
 - Added `agent-secret with-session --only` to inject a per-command subset of an
   approved session's aliases.
 - Added metadata-only session audit events for create, resolve, and destroy.

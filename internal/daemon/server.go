@@ -18,6 +18,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/helperidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
@@ -372,6 +373,9 @@ func (s *Server) dispatchClientEnvelope(
 ) connectionDispatchAction {
 	//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 	switch env.Type {
+	case protocol.TypeHelperHello:
+		s.handleHelperHello(encoder, env)
+		return connectionDispatchAction{accepted: true}
 	case protocol.TypeDaemonStatus:
 		s.handleDaemonStatus(encoder, env)
 		return connectionDispatchAction{accepted: true}
@@ -627,6 +631,10 @@ func (s *Server) handleSessionList(
 
 func (s *Server) handleDaemonStatus(encoder *json.Encoder, env protocol.Envelope) {
 	_ = writeOK(encoder, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
+}
+
+func (s *Server) handleHelperHello(encoder *json.Encoder, env protocol.Envelope) {
+	_ = writeOK(encoder, env.Correlation(), helperidentity.Current())
 }
 
 func (s *Server) handleOnePasswordStatus(

@@ -1,8 +1,8 @@
 # Session E2E Validation
 
 Use this runbook to manually re-test bounded sessions against the real
-CLI, daemon, native approver, provider resolver, audit log, and child-process
-environment injection path.
+CLI, background helper, native approver, provider resolver, audit log, and
+child-process environment injection path.
 
 The test uses two test-only secret references. It never prints resolved values.
 The child commands only assert whether expected environment variables are
@@ -19,7 +19,7 @@ present.
 
 2. Make sure `agent-secret doctor` reports:
 
-   - `daemon startup: ok`
+   - `Background helper: ok`
    - `native approver: ok`
    - `1password desktop integration: ok`
 

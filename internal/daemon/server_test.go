@@ -80,6 +80,28 @@ func TestNewServerRequiresClientValidator(t *testing.T) {
 	}
 }
 
+func TestServerHelperHello(t *testing.T) {
+	t.Parallel()
+
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{},
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	hello, err := client.Hello(context.Background())
+	if err != nil {
+		t.Fatalf("Hello returned error: %v", err)
+	}
+	if hello.Protocol != protocol.ProtocolVersion ||
+		hello.AppVersion == "" ||
+		hello.PID <= 0 ||
+		hello.Executable == "" {
+		t.Fatalf("hello payload = %+v", hello)
+	}
+}
+
 func TestServerExecProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 

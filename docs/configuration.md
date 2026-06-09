@@ -257,7 +257,8 @@ Current flags:
 - `--force-refresh`: when a reusable approval matches, refetch approved secrets
   before delivering them to the child.
 - `--dry-run`: validate the request and print preflight output without starting
-  the daemon, prompting for approval, resolving values, or spawning the child.
+  the background helper, prompting for approval, resolving values, or spawning
+  the child.
 - `--reuse-only`: use an existing matching reusable approval or fail without
   opening a new approval prompt.
 - `--allow-mutable-executable`: allow a user-owned or writable executable path
@@ -305,8 +306,9 @@ value and env-var delivery does not support binary attachments with NUL bytes.
 ## Session Commands
 
 Sessions approve one bag of secret references, keep the resolved values in
-daemon memory, and let later child commands consume that bag only through
-`agent-secret with-session`. Use them for bounded workflows where a user
+Agent Secret's background helper memory, and let later child commands consume
+that bag only through `agent-secret with-session`. Use them for bounded
+workflows where a user
 approves several secrets once and subsequent commands need those secrets in
 different combinations.
 
@@ -364,10 +366,10 @@ session, Agent Secret fails before spawning the child command.
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current
 directory and must match the session working directory.
 
-Sessions are daemon-memory only. They expire when TTL passes, the read count is
-exhausted, `agent-secret session destroy SESSION_ID` succeeds, or the daemon
-stops. V1 sessions intentionally do not expose raw socket value reads,
-credential-helper protocols, or long-lived interactive shells.
+Sessions are background-helper-memory only. They expire when TTL passes, the
+read count is exhausted, `agent-secret session destroy SESSION_ID` succeeds, or
+the helper stops. V1 sessions intentionally do not expose raw socket value
+reads, credential-helper protocols, or long-lived interactive shells.
 
 ## Agent-Friendly Introspection
 
@@ -438,7 +440,13 @@ environment account overrides, then default desktop account detection.
 
 ## Other Commands
 
-Daemon management:
+Background helper repair:
+
+```bash
+agent-secret repair [--json]
+```
+
+Low-level daemon diagnostics:
 
 ```bash
 agent-secret daemon status [--json]
@@ -465,6 +473,9 @@ agent-secret install-cli --force
 ```
 
 `install-cli` creates or repairs the user-level `agent-secret` command symlink.
+After a successful install, it also tries to refresh the local background
+helper. Helper repair failures are warnings; rerun `agent-secret repair` if the
+helper needs manual attention.
 It leaves an existing target symlink in place, refuses directories, and replaces
 an existing regular file or different symlink only when `--force` is passed.
 

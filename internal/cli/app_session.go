@@ -31,11 +31,11 @@ type sessionListOutput struct {
 func (a App) runSessionCreate(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
-		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		a.stderrf("agent-secret: initialize background helper manager: %v\n", err)
 		return 1
 	}
-	if err := manager.EnsureRunning(ctx); err != nil {
-		a.stderrf("agent-secret: start daemon: %v\n", err)
+	if err := a.ensureBackgroundHelper(ctx, manager); err != nil {
+		a.stderrf("agent-secret: %s\n", backgroundHelperError(err))
 		return 1
 	}
 	correlation, err := a.newCorrelation()
@@ -74,11 +74,11 @@ func (a App) runSessionCreate(ctx context.Context, command Command) int {
 func (a App) runSessionList(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
-		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		a.stderrf("agent-secret: initialize background helper manager: %v\n", err)
 		return 1
 	}
-	if err := manager.EnsureRunning(ctx); err != nil {
-		a.stderrf("agent-secret: start daemon: %v\n", err)
+	if err := a.ensureBackgroundHelper(ctx, manager); err != nil {
+		a.stderrf("agent-secret: %s\n", backgroundHelperError(err))
 		return 1
 	}
 	client, payload, err := requestDaemonPayload(ctx, manager, func(client daemonClient) (protocol.SessionListResponsePayload, error) {
@@ -117,11 +117,11 @@ func (a App) runSessionList(ctx context.Context, command Command) int {
 func (a App) runSessionDestroy(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
-		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		a.stderrf("agent-secret: initialize background helper manager: %v\n", err)
 		return 1
 	}
-	if err := manager.EnsureRunning(ctx); err != nil {
-		a.stderrf("agent-secret: start daemon: %v\n", err)
+	if err := a.ensureBackgroundHelper(ctx, manager); err != nil {
+		a.stderrf("agent-secret: %s\n", backgroundHelperError(err))
 		return 1
 	}
 	client, payload, err := requestDaemonPayload(ctx, manager, func(client daemonClient) (protocol.SessionDestroyResponsePayload, error) {
@@ -156,11 +156,11 @@ func (a App) runWithSession(ctx context.Context, command Command) int {
 	req := command.SessionResolveRequest.WithExpectedPeer(expectedPeer)
 	manager, err := a.daemonManager()
 	if err != nil {
-		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		a.stderrf("agent-secret: initialize background helper manager: %v\n", err)
 		return 1
 	}
-	if err := manager.EnsureRunning(ctx); err != nil {
-		a.stderrf("agent-secret: start daemon: %v\n", err)
+	if err := a.ensureBackgroundHelper(ctx, manager); err != nil {
+		a.stderrf("agent-secret: %s\n", backgroundHelperError(err))
 		return 1
 	}
 	correlation, err := a.newCorrelation()

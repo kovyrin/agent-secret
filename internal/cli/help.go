@@ -9,23 +9,24 @@ agent-secret controls short-lived local access to approved secret refs for codin
 Secrets are never printed by agent-secret and are never written to disk. The normal path is:
 
   1. agent-secret validates the command, reason, cwd, TTL, and exact secret refs.
-  2. agent-secret starts or connects to the per-user daemon.
-  3. The daemon asks the native macOS approver before any secret-provider access.
-  4. If approved, the daemon fetches exactly the approved refs and sends an env payload to agent-secret exec.
+  2. agent-secret starts or connects to the per-user background helper.
+  3. The background helper asks the native macOS approver before any secret-provider access.
+  4. If approved, the background helper fetches exactly the approved refs and sends an env payload to agent-secret exec.
   5. agent-secret exec spawns the child process and passes stdin/stdout/stderr through unchanged.
 
 Commands:
 
   agent-context Print a machine-readable command and config discovery schema.
 	  exec       Run a command with approved secrets injected as environment variables.
-	  session    Create, list, and destroy bounded daemon-held secret sessions.
+	  session    Create, list, and destroy bounded background-helper secret sessions.
 	  with-session Run a command with secrets from an approved session.
 	  item       Inspect 1Password item metadata without revealing secret values.
   profile    Inspect project profiles without resolving secret values.
   bitwarden  Manage local Bitwarden Secrets Manager token aliases.
   install-cli Install or repair the agent-secret command symlink for this user.
   skill-install Install or repair the Agent Secret agent skill for this user.
-  daemon    Troubleshoot the hidden per-user daemon: status, start, stop.
+  repair    Inspect and repair Agent Secret background helper state.
+  daemon    Low-level daemon diagnostics: status, start, stop.
   doctor    Print non-secret local diagnostics for setup troubleshooting.
   version   Print the installed agent-secret version.
   help      Show this help.
@@ -72,10 +73,10 @@ Safety rules:
   - With no account override, agent-secret auto-selects the local personal 1Password desktop account.
   - The wrapped command must appear after -- as argv. agent-secret does not parse shell strings.
   - normal exec has no --json mode and never prints secret values.
-  - exec --dry-run --json validates locally without starting the daemon, prompting, resolving values, or spawning the child.
+  - exec --dry-run --json validates locally without starting the background helper, prompting, resolving values, or spawning the child.
   - exec --reuse-only uses a matching reusable approval or fails without opening a new approval prompt.
 	  - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
-	  - session create returns an opaque handle only; values stay in daemon memory and are injected only by with-session.
+	  - session create returns an opaque handle only; values stay in background helper memory and are injected only by with-session.
   - item describe requires approval and prints item metadata only: field labels, types, concealment flags, and refs.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
@@ -214,7 +215,7 @@ Examples:
 
 func ExecHelp() string {
 	return strings.TrimSpace(`
-agent-secret exec validates a command request, asks the local daemon for approved secrets, and then runs the wrapped command.
+agent-secret exec validates a command request, asks the local background helper for approved secrets, and then runs the wrapped command.
 
 Usage:
 
@@ -337,7 +338,7 @@ Examples:
 
 Exit behavior:
 
-  If approval, audit, daemon connection, or secret fetch fails before payload delivery, the child is not spawned.
+  If approval, audit, background helper connection, or secret fetch fails before payload delivery, the child is not spawned.
   If --reuse-only has no matching reusable approval, the child is not spawned and no new approval prompt opens.
   After the child starts, stdin, stdout, and stderr are passed through. The wrapper returns the child exit status.
   Audit metadata is written to ~/Library/Logs/agent-secret/audit.jsonl.
@@ -346,7 +347,7 @@ Exit behavior:
 
 func SessionHelp() string {
 	return strings.TrimSpace(`
-	agent-secret session creates short daemon-held sessions for bounded multi-command workflows.
+	agent-secret session creates short background-helper sessions for bounded multi-command workflows.
 
 	Commands:
 
@@ -361,8 +362,8 @@ func SessionHelp() string {
 	  agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN,STATE_TOKEN -- terraform apply
 	  agent-secret session destroy asess_123
 
-	Values are never printed. Session values live in daemon memory only until TTL,
-	read count exhaustion, destroy, or daemon stop.
+	Values are never printed. Session values live in Agent Secret's background helper memory
+	until TTL, read count exhaustion, destroy, or helper stop.
 	`)
 }
 
@@ -390,7 +391,7 @@ func WithSessionHelp() string {
 
 func DaemonHelp() string {
 	return strings.TrimSpace(`
-agent-secret daemon is for troubleshooting the hidden per-user daemon.
+agent-secret daemon is for low-level developer diagnostics of the per-user daemon.
 
 Usage:
 
@@ -398,19 +399,32 @@ Usage:
   agent-secret daemon start [--json]
   agent-secret daemon stop [--json]
 
-Normal agent-secret exec use starts the daemon automatically and does not print daemon lifecycle details unless something fails.
-Daemon stop clears daemon-owned in-memory reusable approvals, use counters, nonces, and cached values. It does not signal or manage already-running child processes.
+Normal agent-secret exec use prepares the background helper automatically. Use agent-secret repair for product-level helper recovery.
+Daemon stop clears helper-owned in-memory reusable approvals, use counters, nonces, and cached values. It does not signal or manage already-running child processes.
 `)
 }
 
 func DoctorHelp() string {
 	return strings.TrimSpace(`
-agent-secret doctor starts the daemon if needed and prints non-secret local diagnostics: platform, socket directory privacy, audit log writability, daemon status, native approver health, and 1Password desktop integration readiness.
+agent-secret doctor prepares the background helper if needed and prints non-secret local diagnostics: platform, socket directory privacy, audit log writability, background helper status, native approver health, and 1Password desktop integration readiness.
 It never prints secret values or resolves 1Password item references.
 
 Usage:
 
   agent-secret doctor [--json]
+`)
+}
+
+func RepairHelp() string {
+	return strings.TrimSpace(`
+agent-secret repair inspects and repairs Agent Secret background helper state.
+
+Usage:
+
+  agent-secret repair [--json]
+
+The command safely refreshes trusted old helpers, starts the current helper when
+none is running, and refuses unexpected socket owners without sending secrets.
 `)
 }
 

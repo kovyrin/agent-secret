@@ -33,6 +33,7 @@ const (
 	KindProfileList    Kind = "profile_list"
 	KindProfileShow    Kind = "profile_show"
 	KindDoctor         Kind = "doctor"
+	KindRepair         Kind = "repair"
 	KindBitwarden      Kind = "bitwarden"
 	KindInstallCLI     Kind = "install_cli"
 	KindSkillInstall   Kind = "skill_install"
@@ -99,13 +100,15 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseDaemon(args[1:])
 	case "doctor":
 		return parseDoctor(args[1:])
+	case "repair":
+		return parseRepair(args[1:])
 	case "install-cli":
 		return parseInstallCLI(args[1:])
 	case "skill-install":
 		return parseSkillInstall(args[1:])
 	default:
 		return Command{}, fmt.Errorf(
-			"%w: unknown command %q; expected one of: agent-context, bitwarden, daemon, doctor, exec, help, install-cli, item, profile, session, skill-install, version, with-session",
+			"%w: unknown command %q; expected one of: agent-context, bitwarden, daemon, doctor, exec, help, install-cli, item, profile, repair, session, skill-install, version, with-session",
 			ErrInvalidArguments,
 			args[0],
 		)

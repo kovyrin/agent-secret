@@ -175,6 +175,22 @@ func parseDoctor(args []string) (Command, error) {
 	return Command{Kind: KindDoctor, OutputJSON: *jsonOutput}, nil
 }
 
+func parseRepair(args []string) (Command, error) {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		return Command{Kind: KindHelp, HelpText: RepairHelp()}, ErrHelpRequested
+	}
+	fs := flag.NewFlagSet("repair", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "print JSON output")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 0 {
+		return Command{}, fmt.Errorf("%w: repair accepts no positional arguments", ErrInvalidArguments)
+	}
+	return Command{Kind: KindRepair, OutputJSON: *jsonOutput}, nil
+}
+
 func parseInstallCLI(args []string) (Command, error) {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
 		return Command{Kind: KindHelp, HelpText: InstallCLIHelp()}, ErrHelpRequested

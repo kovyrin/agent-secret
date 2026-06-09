@@ -9,8 +9,8 @@ Agent Secret Broker is a local, macOS-first system for letting coding agents use
 agent requests exact secret references with a reason and a bounded policy. A
 local broker presents a native approval prompt, fetches approved secrets through
 the official 1Password SDK, and delivers them through CLI-supervised execution
-or bounded session wrappers. Session values stay in daemon memory and are
-injected only into approved child processes.
+or bounded session wrappers. Session values stay in Agent Secret's background
+helper memory and are injected only into approved child processes.
 
 The first user is a local developer running coding agents such as Codex, Claude
 Code, Cursor agent, or similar tools. The first practical workflow is running
@@ -131,9 +131,10 @@ ansible-playbook site.yml --check
 ```
 
 The user approves once for a TTL and max-read count. The broker returns an
-opaque session ID, keeps values in daemon memory, and subsequent commands must
-run through `agent-secret with-session`. The wrapper resolves values over the
-daemon command channel and injects them only into the approved child process.
+opaque session ID, keeps values in Agent Secret's background helper memory, and
+subsequent commands must run through `agent-secret with-session`. The wrapper
+resolves values over the daemon command channel and injects them only into the
+approved child process.
 V1 sessions do not add generic socket reads or credential-helper protocols.
 
 ### Use Case 3: Config-Driven Secret Sync
@@ -230,14 +231,14 @@ agent / Codex
 
 - Collect structured requests from agents and users.
 - Talk to `agent-secretd` over a local Unix domain socket.
-- Provide `exec`, `session`, `with-session`, daemon management, and `doctor`
-  commands.
+- Provide `exec`, `session`, `with-session`, `repair`, low-level daemon
+  diagnostics, and `doctor` commands.
 - Never print raw secret values.
 - In `exec` mode, resolve the executable path and cwd, request an approved
   environment payload from the daemon, spawn the child process, wait for it, and
   report child lifecycle metadata back to the daemon.
-- In session mode, create/list/destroy daemon-held sessions and run each command
-  through `with-session`.
+- In session mode, create/list/destroy background-helper sessions and run each
+  command through `with-session`.
 - Preserve the target command's exit code or signal-based exit status in `exec`
   and `with-session` modes.
 - Hold approved secret values only transiently in memory while preparing the
@@ -258,10 +259,11 @@ agent / Codex
 - Request decisions from the macOS approver app.
 
 The daemon should run as a per-user local daemon, not a privileged system daemon.
-V1 should use it from day one so reusable approvals have shared state. The user
-should not have to think about daemon lifecycle: `agent-secret` starts the daemon
-on demand, connects to it, and reports clear errors if startup fails. A later
-version can install it as a `launchd` LaunchAgent.
+V1 should use it from day one so reusable approvals have shared state. The
+user-facing abstraction is the Agent Secret background helper: `agent-secret`
+starts, refreshes, or repairs the helper on demand and reports clear
+background-helper errors if recovery fails. A later version can install it as a
+`launchd` LaunchAgent.
 
 For v1, `agent-secret` should start a separate `agent-secretd` process when no
 healthy daemon is available. The daemon must detach from the invoking CLI,
@@ -277,12 +279,14 @@ request and approval path.
 
 The v1 daemon should stay alive until manually stopped or until the user logs
 out. Approvals and secret values still expire internally. Users do not need to
-manage the daemon for normal use, but the CLI should provide explicit daemon
-management commands for troubleshooting: `agent-secret daemon status`,
-`agent-secret daemon start`, and `agent-secret daemon stop`.
+manage the daemon for normal use. The CLI should provide `agent-secret repair`
+as the documented recovery path for helper/socket state, plus explicit
+low-level daemon management commands for developer diagnostics:
+`agent-secret daemon status`, `agent-secret daemon start`, and
+`agent-secret daemon stop`.
 
 `agent-secret daemon stop` is immediate in v1. It stops the daemon, cancels
-active approvals, clears daemon memory, stops accepting new work, and exits. It
+active approvals, clears helper memory, stops accepting new work, and exits. It
 does not track, signal, or manage already-spawned child processes;
 those processes continue under normal OS process semantics. Before stopping, the
 daemon should attempt one best-effort `daemon_stop` audit event. Failure to
@@ -534,7 +538,8 @@ should meet the same macOS peer-validation bar.
 
 ## Secret Storage Rules
 
-- Store reusable approval secret values only in daemon memory by default.
+- Store reusable approval secret values only in background helper memory by
+  default.
 - Let `agent-secret exec` hold approved values transiently in memory only while
   preparing and supervising the child process.
 - Keep policy objects value-free; only `SecretCache` and transient
@@ -612,7 +617,7 @@ stderr, then returns the child exit code.
 
 If the daemon sends an approved environment payload and the CLI disconnects
 before reporting `command_started`, the daemon records
-`exec_client_disconnected_after_payload`, clears one-shot daemon-held values, and
+`exec_client_disconnected_after_payload`, clears one-shot helper-held values, and
 does not try to kill or infer any child process. The reusable use was already
 consumed at payload delivery. Reusable cached values remain available until TTL,
 3-use exhaustion, or daemon stop; the disconnect does not clear that reusable
@@ -626,7 +631,7 @@ process-supervision role.
 The validation sequence is:
 
 1. env-only `agent-secret exec`;
-2. bounded daemon-held sessions resolved only by `agent-secret with-session`;
+2. bounded background-helper sessions resolved only by `agent-secret with-session`;
 3. future credential helpers, raw socket reads, file descriptors, and
    config-driven mapping after the wrapper paths are solid.
 
@@ -639,9 +644,10 @@ The daemon approves and fetches secrets. `agent-secret exec` receives the
 approved environment payload over the single per-user daemon socket, spawns the
 target command, injects values into that child process, and waits for exit. The
 daemon never spawns the child. For one-shot exec, TTL bounds the pre-spawn
-approval/fetch/delivery window and values clear from daemon and CLI wrapper
-memory after the command exits. Reusable approvals keep values in daemon memory
-until their TTL or use limit is exhausted. This is the default v1 mode.
+approval/fetch/delivery window and values clear from helper and CLI wrapper
+memory after the command exits. Reusable approvals keep values in background
+helper memory until their TTL or use limit is exhausted. This is the default v1
+mode.
 
 For env-mode `exec`, TTL is not a process lifetime limit. If a child process is
 already running when a one-shot or reusable approval expires, neither the daemon
@@ -670,12 +676,12 @@ Limitations:
 - Environment variables can still be exposed by child process behavior, crash
   reporters, debuggers, or subprocesses.
 
-### Mode 2: Daemon-Held Session IDs
+### Mode 2: Background-Helper Session IDs
 
 The broker creates a short-lived session and returns an opaque session ID
-instead of values. Values stay in daemon memory and are useful only through
-`agent-secret with-session`, matching peer credentials, cwd, remaining read
-count, and unexpired policy.
+instead of values. Values stay in Agent Secret's background helper memory and
+are useful only through `agent-secret with-session`, matching peer credentials,
+cwd, remaining read count, and unexpired policy.
 
 Unlike same-command reuse, sessions approve a bounded set of references for a
 workflow lifetime and allow those approved references to be injected into
@@ -790,7 +796,8 @@ Secret rows should show both alias and full reference, for example
 `CLOUDFLARE_API_TOKEN -> op://Example/Cloudflare API Token/password`.
 The `Approve once` action should be the default highlighted approval action.
 The reusable action should show its 3-use limit and clearly state that approved
-values stay in daemon memory for up to the requested TTL or 3 matching uses.
+values stay in background helper memory for up to the requested TTL or 3
+matching uses.
 In operator-facing UI, say "uses" rather than "runs." A use means approved
 values were delivered to `agent-secret exec`; a failed spawn after delivery still
 spends one use.
@@ -851,6 +858,7 @@ agent-secret session create [options]
 agent-secret with-session asess_123 [--only ALIAS[,ALIAS...]] -- command [args...]
 agent-secret session list
 agent-secret session destroy asess_123
+agent-secret repair
 agent-secret daemon status
 agent-secret daemon start
 agent-secret daemon stop
@@ -862,8 +870,10 @@ file directly at `~/Library/Logs/agent-secret/audit.jsonl`.
 
 There are no reusable approval management commands in v1. In particular,
 `agent-secret approvals list` and `agent-secret approvals destroy <id>` are out
-of scope. If the operator wants to clear reusable approvals before TTL or 3-use
-exhaustion, they use `agent-secret daemon stop`, which clears daemon memory.
+of scope. If the operator needs helper/socket recovery, they use
+`agent-secret repair`. If they need to clear reusable approvals before TTL or
+3-use exhaustion, the low-level `agent-secret daemon stop` diagnostic command
+clears helper memory.
 
 `agent-secret --help` must be detailed enough for an agent to run it and know
 what to do without reading the PRD. Model it after dense agent-oriented CLIs such
@@ -889,14 +899,15 @@ and project-local `--profile NAME` or `default_profile` mappings from
 per-secret account overrides. A broader `--secret-config` mapping mode remains
 deferred.
 
-`doctor` should use the same on-demand daemon startup path as normal commands,
-then report the resulting daemon status. It should launch/probe the native
-approver using a non-secret health check, not a real approval request. It should
-also verify 1Password SDK/client availability, desktop-app auth state,
-desktop-app integration availability, socket directory permissions, and audit log
-writability. It may trigger the 1Password desktop authentication flow so it can
-verify readiness, but it must stop before item/reference access. It must not
-resolve any `op://` reference, fetch arbitrary secrets, or print secret values.
+`doctor` should use the same on-demand background-helper repair path as normal
+commands, then report helper status as `ok`, `refreshed`, or `repair required`.
+It should launch/probe the native approver using a non-secret health check, not
+a real approval request. It should also verify 1Password SDK/client
+availability, desktop-app auth state, desktop-app integration availability,
+socket directory permissions, and audit log writability. It may trigger the
+1Password desktop authentication flow so it can verify readiness, but it must
+stop before item/reference access. It must not resolve any `op://` reference,
+fetch arbitrary secrets, or print secret values.
 
 ## Socket API V1
 
@@ -993,7 +1004,7 @@ MVP must include:
 - Swift macOS approval app with foreground prompt
 - official 1Password Go SDK integration
 - `exec` mode with environment injection
-- bounded daemon-held sessions with `session create`, `session list`,
+- bounded background-helper sessions with `session create`, `session list`,
   `session destroy`, and `with-session`
 - required `--reason`
 - secret references displayed before fetch
@@ -1050,7 +1061,7 @@ Exit criteria:
 Deliverables:
 
 - `agent-secret exec`
-- hidden daemon startup
+- hidden background helper startup
 - native approval UI
 - 1Password fetch after approval
 - child process env injection
@@ -1076,7 +1087,7 @@ Deliverables:
 - session create, list, and destroy
 - opaque session IDs
 - `with-session` wrapper
-- daemon-memory value storage and wrapper-only resolution
+- background-helper-memory value storage and wrapper-only resolution
 - TTL and max-read enforcement
 - strict macOS peer validation for UID, PID, executable path, and cwd
 
@@ -1209,7 +1220,7 @@ Exit criteria:
   returns the child exit code.
 - If `agent-secret exec` disconnects after payload delivery but before
   `command_started`, the daemon records `exec_client_disconnected_after_payload`,
-  clears one-shot daemon-held values, and does not try to kill or infer a child
+  clears one-shot helper-held values, and does not try to kill or infer a child
   process. Reusable cached values are not cleared by this event alone.
 - If `agent-secret exec` disconnects after `command_started` but before
   `command_completed`, the daemon records
