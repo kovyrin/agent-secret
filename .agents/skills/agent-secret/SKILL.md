@@ -118,10 +118,11 @@ agent-secret session destroy asess_123
 Use sessions when the user approves a bag of secrets once and later commands
 need different subsets. `session create` accepts the same config, profile,
 env-file, and `--secret` inputs as `exec`, then returns only an opaque session
-ID. The daemon keeps resolved values in memory until TTL, read count, explicit
-destroy, or daemon stop clears them. `with-session` injects every approved alias
-by default; add `--only ALIAS[,ALIAS...]` to deliver only the aliases needed by
-that child command. Unknown aliases fail before the child process starts.
+ID. Agent Secret keeps resolved values in background helper memory until TTL,
+read count, explicit destroy, or helper stop clears them. `with-session`
+injects every approved alias by default; add `--only ALIAS[,ALIAS...]` to
+deliver only the aliases needed by that child command. Unknown aliases fail
+before the child process starts.
 
 Use a shell only when the shell is the command you actually want approved:
 
@@ -472,9 +473,11 @@ print(f"len={len(v)} sha256={digest}")
 ## Troubleshooting
 
 - `agent-secret doctor` shows non-secret local diagnostics.
-- `agent-secret daemon status` confirms whether the daemon is running.
-- `agent-secret daemon stop` clears daemon-owned in-memory approvals and cached
-  values.
+- `agent-secret repair` inspects and repairs Agent Secret background helper
+  state.
+- `agent-secret install-cli` repairs the command symlink and then tries to
+  refresh the local background helper.
+- `agent-secret daemon status|start|stop` is for low-level daemon diagnostics.
 - `agent-secret bitwarden secrets-manager token status --alias ALIAS` checks
   whether a Bitwarden token alias exists without printing the token.
 - `agent-secret bitwarden secrets-manager token install --alias ALIAS`

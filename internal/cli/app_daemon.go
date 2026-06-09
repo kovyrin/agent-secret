@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
@@ -24,6 +25,13 @@ type daemonStatusOutput struct {
 type daemonStopOutput struct {
 	SchemaVersion string `json:"schema_version"`
 	Stopped       bool   `json:"stopped"`
+	Error         string `json:"error,omitempty"`
+}
+
+type repairOutput struct {
+	SchemaVersion string `json:"schema_version"`
+	Status        string `json:"status"`
+	PID           int    `json:"pid,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -122,13 +130,59 @@ func (a App) runDaemonStop(ctx context.Context, command Command) int {
 	return 0
 }
 
+func (a App) runRepair(ctx context.Context, command Command) int {
+	manager, err := a.daemonManager()
+	if err != nil {
+		if command.OutputJSON {
+			return a.writeRepairJSON(repairOutput{
+				SchemaVersion: "1",
+				Status:        string(control.RepairStatusRepairRequired),
+				Error:         err.Error(),
+			}, 1)
+		}
+		a.stderrf("agent-secret: initialize background helper manager: %v\n", err)
+		return 1
+	}
+	result, err := manager.Repair(ctx)
+	if err != nil {
+		if command.OutputJSON {
+			return a.writeRepairJSON(repairOutput{
+				SchemaVersion: "1",
+				Status:        string(control.RepairStatusRepairRequired),
+				Error:         err.Error(),
+			}, 1)
+		}
+		a.stdoutln("Background helper: repair required")
+		a.stdoutln("Run `agent-secret repair` after closing any unexpected Agent Secret helper processes.")
+		return 1
+	}
+	if command.OutputJSON {
+		return a.writeRepairJSON(repairOutput{
+			SchemaVersion: "1",
+			Status:        string(result.Status),
+			PID:           result.PID,
+		}, 0)
+	}
+	switch result.Status {
+	case control.RepairStatusRefreshed:
+		a.stdoutln("Background helper: refreshed")
+	case control.RepairStatusOK:
+		a.stdoutln("Background helper: ok")
+	case control.RepairStatusRepairRequired:
+		a.stdoutln("Background helper: repair required")
+	default:
+		a.stdoutf("Background helper: %s\n", result.Status)
+	}
+	return 0
+}
+
 func (a App) runDoctor(ctx context.Context, command Command) int {
 	manager, err := a.daemonManager()
 	if err != nil {
 		if command.OutputJSON {
-			return a.writeJSONError("initialize daemon manager", err)
+			return a.writeJSONError("initialize background helper manager", err)
 		}
-		a.stderrf("agent-secret: initialize daemon manager: %v\n", err)
+		a.stderrf("agent-secret: initialize background helper manager: %v\n", err)
 		return 1
 	}
 	healthy := true
@@ -138,16 +192,14 @@ func (a App) runDoctor(ctx context.Context, command Command) int {
 	if !jsonOutput {
 		a.stdoutln("agent-secret doctor")
 		a.stdoutf("platform: %s\n", platform)
-		a.stdoutf("daemon socket: %s\n", manager.SocketPath())
+		a.stdoutf("background helper socket: %s\n", manager.SocketPath())
 	}
 
 	var check doctorCheck
 	var checkOK bool
 	check, checkOK = a.auditLogDoctorCheck(ctx, jsonOutput)
 	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
-	check, checkOK = a.daemonStartupDoctorCheck(ctx, manager, jsonOutput)
-	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
-	check, checkOK = a.daemonStatusDoctorCheck(ctx, manager, jsonOutput)
+	check, checkOK = a.backgroundHelperDoctorCheck(ctx, manager, jsonOutput)
 	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
 	check, checkOK = a.socketDirectoryDoctorCheck(manager, jsonOutput)
 	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
@@ -219,31 +271,28 @@ func (a App) auditLogDoctorCheck(ctx context.Context, jsonOutput bool) (doctorCh
 	return doctorCheck{Name: "audit_log", Status: "ok", Path: auditPath}, true
 }
 
-func (a App) daemonStartupDoctorCheck(ctx context.Context, manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
-	if err := manager.EnsureRunning(ctx); err != nil {
-		if !jsonOutput {
-			a.stdoutf("daemon startup: failed (%v)\n", err)
-		}
-		return doctorCheck{Name: "daemon_startup", Status: "failed", Error: err.Error()}, false
-	}
-	if !jsonOutput {
-		a.stdoutln("daemon startup: ok")
-	}
-	return doctorCheck{Name: "daemon_startup", Status: "ok"}, true
-}
-
-func (a App) daemonStatusDoctorCheck(ctx context.Context, manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
-	status, err := manager.Status(ctx)
+func (a App) backgroundHelperDoctorCheck(ctx context.Context, manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
+	result, err := manager.Repair(ctx)
 	if err != nil {
 		if !jsonOutput {
-			a.stdoutf("daemon: failed (%v)\n", err)
+			a.stdoutf("Background helper: repair required (%v)\n", err)
+			a.stdoutln("Run `agent-secret repair` to inspect and repair the local helper state.")
 		}
-		return doctorCheck{Name: "daemon_status", Status: "failed", Error: err.Error()}, false
+		return doctorCheck{Name: "background_helper", Status: string(control.RepairStatusRepairRequired), Error: err.Error()}, false
 	}
 	if !jsonOutput {
-		a.stdoutf("daemon: running pid=%d\n", status.PID)
+		switch result.Status {
+		case control.RepairStatusRefreshed:
+			a.stdoutf("Background helper: refreshed pid=%d\n", result.PID)
+		case control.RepairStatusOK:
+			a.stdoutf("Background helper: ok pid=%d\n", result.PID)
+		case control.RepairStatusRepairRequired:
+			a.stdoutln("Background helper: repair required")
+		default:
+			a.stdoutf("Background helper: %s pid=%d\n", result.Status, result.PID)
+		}
 	}
-	return doctorCheck{Name: "daemon_status", Status: "ok", PID: status.PID}, true
+	return doctorCheck{Name: "background_helper", Status: string(result.Status), PID: result.PID}, true
 }
 
 func (a App) socketDirectoryDoctorCheck(manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
@@ -311,6 +360,14 @@ func (a App) writeDaemonStatusJSON(output daemonStatusOutput, code int) int {
 func (a App) writeDaemonStopJSON(output daemonStopOutput, code int) int {
 	if err := a.writeJSON(output); err != nil {
 		a.stderrf("agent-secret: write daemon stop json: %v\n", err)
+		return 1
+	}
+	return code
+}
+
+func (a App) writeRepairJSON(output repairOutput, code int) int {
+	if err := a.writeJSON(output); err != nil {
+		a.stderrf("agent-secret: write repair json: %v\n", err)
 		return 1
 	}
 	return code

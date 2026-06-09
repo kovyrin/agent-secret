@@ -18,6 +18,7 @@ const DefaultMaxProtocolFrameBytes int64 = 1 << 20
 type MessageType string
 
 const (
+	TypeHelperHello       MessageType = "helper.hello"
 	TypeDaemonStatus      MessageType = "daemon.status"
 	TypeDaemonStop        MessageType = "daemon.stop"
 	TypeOnePasswordStatus MessageType = "onepassword.status"
@@ -152,6 +153,16 @@ type CommandCompletedPayload struct {
 
 type StatusPayload struct {
 	PID int `json:"pid"`
+}
+
+type HelperHelloPayload struct {
+	Protocol   int    `json:"protocol"`
+	AppVersion string `json:"app_version"`
+	BuildID    string `json:"build_id,omitempty"`
+	PID        int    `json:"pid"`
+	Executable string `json:"executable"`
+	TeamID     string `json:"team_id,omitempty"`
+	BundleID   string `json:"bundle_id,omitempty"`
 }
 
 type OnePasswordStatusPayload struct {

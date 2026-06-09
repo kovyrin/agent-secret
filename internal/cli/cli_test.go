@@ -1308,6 +1308,7 @@ func TestParseDaemonAndDoctorCommands(t *testing.T) {
 		{args: []string{"daemon", "start"}, want: KindDaemonStart},
 		{args: []string{"daemon", "stop"}, want: KindDaemonStop},
 		{args: []string{"doctor"}, want: KindDoctor},
+		{args: []string{"repair"}, want: KindRepair},
 		{args: []string{"agent-context", "--json"}, want: KindAgentContext},
 		{args: []string{"profile", "list", "--json"}, want: KindProfileList},
 		{args: []string{"profile", "show", "--json"}, want: KindProfileShow},
@@ -1357,6 +1358,14 @@ func TestParseMachineReadableFlags(t *testing.T) {
 	}
 	if command.Kind != KindDaemonStatus || !command.OutputJSON {
 		t.Fatalf("daemon status json command = %+v", command)
+	}
+
+	command, err = parser.Parse([]string{"repair", "--json"})
+	if err != nil {
+		t.Fatalf("Parse repair json returned error: %v", err)
+	}
+	if command.Kind != KindRepair || !command.OutputJSON {
+		t.Fatalf("repair json command = %+v", command)
 	}
 
 	command, err = parser.Parse([]string{"version", "--json"})
@@ -1617,7 +1626,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "top",
 			args:  []string{"--help"},
-			wants: []string{"agent-secret controls", "agent-context", "exec", "session", "with-session", "item", "profile", "install-cli", "skill-install", "daemon", "doctor", "version", "desktop account"},
+			wants: []string{"agent-secret controls", "agent-context", "exec", "session", "with-session", "item", "profile", "install-cli", "skill-install", "repair", "daemon", "doctor", "version", "desktop account"},
 		},
 		{
 			name:  "agent-context",
@@ -1667,12 +1676,17 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "daemon",
 			args:  []string{"daemon", "--help"},
-			wants: []string{"daemon status", "daemon start", "daemon stop", "in-memory"},
+			wants: []string{"daemon status", "daemon start", "daemon stop", "agent-secret repair", "in-memory"},
 		},
 		{
 			name:  "doctor",
 			args:  []string{"doctor", "--help"},
-			wants: []string{"non-secret local diagnostics", "1Password", "--json"},
+			wants: []string{"non-secret local diagnostics", "background helper", "1Password", "--json"},
+		},
+		{
+			name:  "repair",
+			args:  []string{"repair", "--help"},
+			wants: []string{"background helper", "trusted old helpers", "--json"},
 		},
 		{
 			name:  "version",

@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/trust"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 )
 
 var ErrUntrustedDaemon = errors.New("untrusted daemon peer")
+
+const DefaultDaemonBundleID = "com.kovyrin.agent-secret.daemon"
 
 type DaemonPeerValidator interface {
 	ValidateDaemonPeer(info peercred.Info) error
@@ -21,6 +25,13 @@ type DaemonValidator struct {
 	set executableSet
 }
 
+type DaemonProductValidator struct {
+	current         DaemonValidator
+	expectedTeamID  string
+	verifier        trust.CodeSignatureVerifier
+	verifySignature bool
+}
+
 func NewDaemonValidator(paths []string) DaemonValidator {
 	return newDaemonValidator(paths, trust.DefaultExpectedTeamID())
 }
@@ -28,6 +39,29 @@ func NewDaemonValidator(paths []string) DaemonValidator {
 func newDaemonValidator(paths []string, expectedTeamID string) DaemonValidator {
 	return DaemonValidator{
 		set: newExecutableSet(paths, expectedTeamID, ErrUntrustedDaemon),
+	}
+}
+
+func NewDaemonProductValidator(paths []string) DaemonProductValidator {
+	return newDaemonProductValidatorWithVerifier(
+		paths,
+		trust.DefaultExpectedTeamID(),
+		trust.CodesignSignatureVerifier{},
+		runtime.GOOS == "darwin",
+	)
+}
+
+func newDaemonProductValidatorWithVerifier(
+	paths []string,
+	expectedTeamID string,
+	verifier trust.CodeSignatureVerifier,
+	verifySignature bool,
+) DaemonProductValidator {
+	return DaemonProductValidator{
+		current:         newDaemonValidator(paths, expectedTeamID),
+		expectedTeamID:  strings.TrimSpace(expectedTeamID),
+		verifier:        verifier,
+		verifySignature: verifySignature,
 	}
 }
 
@@ -63,4 +97,45 @@ func (v DaemonValidator) ValidateDaemonPeer(info peercred.Info) error {
 		return fmt.Errorf("%w: daemon gid %d != %d", ErrUntrustedDaemon, info.GID, os.Getgid())
 	}
 	return v.set.validatePeer(info)
+}
+
+func (v DaemonProductValidator) ValidateDaemonPeer(info peercred.Info) error {
+	if err := v.current.ValidateDaemonPeer(info); err == nil {
+		return nil
+	}
+	if info.UID != os.Getuid() {
+		return fmt.Errorf("%w: daemon uid %d != %d", ErrUntrustedDaemon, info.UID, os.Getuid())
+	}
+	if info.GID != os.Getgid() {
+		return fmt.Errorf("%w: daemon gid %d != %d", ErrUntrustedDaemon, info.GID, os.Getgid())
+	}
+	if !v.verifySignature {
+		return fmt.Errorf("%w: executable %q is not a current trusted helper", ErrUntrustedDaemon, info.ExecutablePath)
+	}
+	requiredTeamID, enforceTeamID, err := trust.ExpectedTeamIDForSignatureValidation(v.expectedTeamID, ErrUntrustedDaemon)
+	if err != nil {
+		return err
+	}
+	if !enforceTeamID {
+		return fmt.Errorf("%w: broad helper repair trust requires a release Team ID", ErrUntrustedDaemon)
+	}
+	executable, err := pathresolve.Strict(info.ExecutablePath)
+	if err != nil {
+		return fmt.Errorf("%w: normalize daemon executable %q: %w", ErrUntrustedDaemon, info.ExecutablePath, err)
+	}
+	bundlePath, ok := containingAppBundlePath(executable)
+	if !ok || filepath.Base(bundlePath) != "AgentSecretDaemon.app" {
+		return fmt.Errorf("%w: executable %q is not an Agent Secret daemon helper app", ErrUntrustedDaemon, executable)
+	}
+	bundleID, err := trust.PlistString(filepath.Join(bundlePath, "Contents", "Info.plist"), "CFBundleIdentifier", ErrUntrustedDaemon)
+	if err != nil {
+		return err
+	}
+	if bundleID != DefaultDaemonBundleID {
+		return fmt.Errorf("%w: daemon bundle id %q != %q", ErrUntrustedDaemon, bundleID, DefaultDaemonBundleID)
+	}
+	if err := trust.ValidatePeerSignature(info, bundlePath, requiredTeamID, v.verifier, ErrUntrustedDaemon); err != nil {
+		return err
+	}
+	return nil
 }

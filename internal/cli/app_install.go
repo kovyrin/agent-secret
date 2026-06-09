@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ type pathWarning struct {
 	ShadowedBy string `json:"shadowed_by,omitempty"`
 }
 
-func (a App) runInstallCLI(command Command) int {
+func (a App) runInstallCLI(ctx context.Context, command Command) int {
 	installCLI := a.InstallCLI
 	if installCLI == nil {
 		installCLI = install.InstallCLI
@@ -36,6 +37,7 @@ func (a App) runInstallCLI(command Command) int {
 		a.stderrf("agent-secret: install-cli: %v\n", err)
 		return 1
 	}
+	a.tryRepairBackgroundHelperAfterInstall(ctx)
 	if command.OutputJSON {
 		output := installOutput{
 			SchemaVersion: "1",
@@ -55,6 +57,17 @@ func (a App) runInstallCLI(command Command) int {
 	a.stdoutf("agent-secret command installed: %s -> %s\n", result.LinkPath, result.TargetPath)
 	a.warnIfCommandDirMissingFromPath(filepath.Dir(result.LinkPath))
 	return 0
+}
+
+func (a App) tryRepairBackgroundHelperAfterInstall(ctx context.Context) {
+	manager, err := a.daemonManager()
+	if err != nil {
+		a.stderrf("agent-secret: background helper repair skipped: %v\n", err)
+		return
+	}
+	if err := a.ensureBackgroundHelper(ctx, manager); err != nil {
+		a.stderrf("agent-secret: %s\n", backgroundHelperError(err))
+	}
 }
 
 func (a App) runSkillInstall(command Command) int {

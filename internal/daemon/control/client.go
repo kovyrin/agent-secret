@@ -102,6 +102,17 @@ func (c *Client) Status(ctx context.Context) (protocol.StatusPayload, error) {
 	return payload, nil
 }
 
+func (c *Client) Hello(ctx context.Context) (protocol.HelperHelloPayload, error) {
+	payload, err := roundTripPayload[protocol.HelperHelloPayload](ctx, c, protocol.TypeHelperHello, protocol.Correlation{}, nil)
+	if err != nil {
+		return protocol.HelperHelloPayload{}, err
+	}
+	if err := validateHelperHelloPayload(payload); err != nil {
+		return protocol.HelperHelloPayload{}, err
+	}
+	return payload, nil
+}
+
 func (c *Client) RequestStop(ctx context.Context) (protocol.StatusPayload, error) {
 	payload, err := roundTripPayload[protocol.StatusPayload](ctx, c, protocol.TypeDaemonStop, protocol.Correlation{}, nil)
 	if err != nil {
@@ -307,6 +318,22 @@ func roundTripResponse[T any](
 func validateStatusPayload(messageType protocol.MessageType, payload protocol.StatusPayload) error {
 	if payload.PID <= 0 {
 		return fmt.Errorf("%w: %s response has invalid pid", protocol.ErrMalformedEnvelope, messageType)
+	}
+	return nil
+}
+
+func validateHelperHelloPayload(payload protocol.HelperHelloPayload) error {
+	if payload.Protocol != protocol.ProtocolVersion {
+		return fmt.Errorf("%w: helper protocol %d", protocol.ErrProtocolVersion, payload.Protocol)
+	}
+	if payload.AppVersion == "" {
+		return fmt.Errorf("%w: helper.hello response missing app_version", protocol.ErrMalformedEnvelope)
+	}
+	if payload.PID <= 0 {
+		return fmt.Errorf("%w: helper.hello response has invalid pid", protocol.ErrMalformedEnvelope)
+	}
+	if payload.Executable == "" {
+		return fmt.Errorf("%w: helper.hello response missing executable", protocol.ErrMalformedEnvelope)
 	}
 	return nil
 }

@@ -2,11 +2,31 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 )
+
+func (a App) ensureBackgroundHelper(ctx context.Context, manager daemonManager) error {
+	result, err := manager.Repair(ctx)
+	if err != nil {
+		return err
+	}
+	if result.Status == control.RepairStatusRefreshed {
+		a.stderrf("agent-secret: Refreshing Agent Secret background helper...\n")
+	}
+	return nil
+}
+
+func backgroundHelperError(err error) string {
+	if errors.Is(err, control.ErrUnexpectedHelper) {
+		return "Agent Secret found an unexpected background helper and refused to send secrets to it.\n" +
+			"Run `agent-secret repair` to inspect and repair the local helper state."
+	}
+	return fmt.Sprintf("prepare background helper: %v", err)
+}
 
 func requestDaemonPayload[T any](
 	ctx context.Context,
@@ -16,7 +36,7 @@ func requestDaemonPayload[T any](
 	var zero T
 	client, err := manager.Connect(ctx)
 	if err != nil {
-		return nil, zero, fmt.Errorf("connect daemon: %w", err)
+		return nil, zero, fmt.Errorf("connect background helper: %w", err)
 	}
 	payload, err := send(client)
 	if err == nil {
@@ -29,11 +49,11 @@ func requestDaemonPayload[T any](
 	_ = client.Close()
 
 	if err := manager.EnsureRunning(ctx); err != nil {
-		return nil, zero, fmt.Errorf("start daemon after upgrade: %w", err)
+		return nil, zero, fmt.Errorf("refresh background helper after upgrade: %w", err)
 	}
 	client, err = manager.Connect(ctx)
 	if err != nil {
-		return nil, zero, fmt.Errorf("connect daemon after upgrade: %w", err)
+		return nil, zero, fmt.Errorf("connect background helper after upgrade: %w", err)
 	}
 	payload, err = send(client)
 	if err != nil {

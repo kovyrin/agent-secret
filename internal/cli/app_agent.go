@@ -111,8 +111,8 @@ func (a App) runAgentContext(command Command) int {
 			MutationBoundary: []string{
 				"exec --dry-run validates without prompting or spawning",
 				"exec --reuse-only fails instead of opening a new approval prompt",
-				"daemon stop clears daemon-owned reusable approvals and cached values",
-				"session destroy or daemon stop clears daemon-held session values",
+				"agent-secret repair safely refreshes trusted background helper mismatches",
+				"session destroy or helper stop clears background-helper session values",
 			},
 		},
 	}
@@ -153,15 +153,20 @@ func agentContextCommands() map[string]commandContext {
 			Outputs: []string{"json"},
 		},
 		"daemon": {
-			Summary: "Troubleshoot the hidden per-user daemon.",
+			Summary: "Run low-level diagnostics for the per-user daemon.",
 			Subcommands: map[string]commandContext{
 				"status": {Summary: "Report whether the daemon is running.", Flags: jsonFlag(), Outputs: []string{"text", "json"}},
 				"start":  {Summary: "Start the daemon and report its status.", Flags: jsonFlag(), Outputs: []string{"text", "json"}},
-				"stop":   {Summary: "Stop the daemon and clear daemon-owned reusable approvals.", Flags: jsonFlag(), Outputs: []string{"text", "json"}},
+				"stop":   {Summary: "Stop the daemon and clear helper-owned reusable approvals.", Flags: jsonFlag(), Outputs: []string{"text", "json"}},
 			},
 		},
 		"doctor": {
-			Summary: "Print non-secret local setup diagnostics.",
+			Summary: "Print non-secret local setup diagnostics, including background helper health.",
+			Flags:   jsonFlag(),
+			Outputs: []string{"text", "json"},
+		},
+		"repair": {
+			Summary: "Inspect and repair Agent Secret background helper state.",
 			Flags:   jsonFlag(),
 			Outputs: []string{"text", "json"},
 		},
@@ -196,7 +201,7 @@ func agentContextCommands() map[string]commandContext {
 			Outputs: []string{"text", "json"},
 		},
 		"session": {
-			Summary: "Create, list, and destroy bounded daemon-held secret sessions.",
+			Summary: "Create, list, and destroy bounded background-helper secret sessions.",
 			Subcommands: map[string]commandContext{
 				"create": {
 					Summary: "Ask for approval, resolve refs, and return an opaque session id.",
@@ -215,7 +220,7 @@ func agentContextCommands() map[string]commandContext {
 						{Name: "--json", Type: "bool", Description: "Print session metadata as JSON."},
 					},
 					Outputs: []string{"text", "json"},
-					Notes:   []string{"returns a session id only", "secret values stay in daemon memory until TTL, max reads, destroy, or daemon stop"},
+					Notes:   []string{"returns a session id only", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
 				},
 				"list": {
 					Summary: "List active session ids and non-secret metadata.",

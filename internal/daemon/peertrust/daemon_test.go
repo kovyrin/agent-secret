@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
 )
@@ -102,6 +103,53 @@ func TestDaemonValidatorAllowsTrustedExecutable(t *testing.T) {
 	}
 }
 
+func TestDaemonProductValidatorAllowsSignedAgentSecretHelperBundle(t *testing.T) {
+	t.Parallel()
+
+	current := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	helper := writeDaemonProductBundle(t, DefaultDaemonBundleID)
+	bundlePath := filepath.Clean(filepath.Join(filepath.Dir(helper), "..", ".."))
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newDaemonProductValidatorWithVerifier([]string{current}, "TEAMID", verifier, true)
+	info := trustedDaemonPeerInfo(helper)
+	info.PID = 4321
+
+	if err := validator.ValidateDaemonPeer(info); err != nil {
+		t.Fatalf("ValidateDaemonPeer returned error: %v", err)
+	}
+	if len(verifier.paths) != 1 || verifier.paths[0] != pathresolve.BestEffort(bundlePath) {
+		t.Fatalf("verified paths = %v, want [%s]", verifier.paths, bundlePath)
+	}
+	if len(verifier.pids) != 1 || verifier.pids[0] != 4321 {
+		t.Fatalf("verified pids = %v, want [4321]", verifier.pids)
+	}
+}
+
+func TestDaemonProductValidatorRejectsWrongHelperBundleID(t *testing.T) {
+	t.Parallel()
+
+	current := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	helper := writeDaemonProductBundle(t, "com.example.not-agent-secret")
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newDaemonProductValidatorWithVerifier([]string{current}, "TEAMID", verifier, true)
+	err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(helper))
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+	if !strings.Contains(err.Error(), "bundle id") {
+		t.Fatalf("ValidateDaemonPeer error = %q, want bundle id context", err.Error())
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called for wrong bundle id: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
 func TestDaemonValidatorRejectsDifferentUID(t *testing.T) {
 	t.Parallel()
 
@@ -143,4 +191,26 @@ func trustedDaemonPeerInfo(executable string) peercred.Info {
 		PID:            os.Getpid(),
 		ExecutablePath: executable,
 	}
+}
+
+func writeDaemonProductBundle(t *testing.T, bundleID string) string {
+	t.Helper()
+
+	bundlePath := filepath.Join(t.TempDir(), "AgentSecretDaemon.app")
+	macOSPath := filepath.Join(bundlePath, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSPath, 0o750); err != nil {
+		t.Fatalf("mkdir daemon bundle: %v", err)
+	}
+	executable := filepath.Join(macOSPath, "Agent Secret")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: peer trust tests need executable fixtures.
+		t.Fatalf("write daemon executable: %v", err)
+	}
+	plist := `<plist><dict>
+<key>CFBundleExecutable</key><string>Agent Secret</string>
+<key>CFBundleIdentifier</key><string>` + bundleID + `</string>
+</dict></plist>`
+	if err := os.WriteFile(filepath.Join(bundlePath, "Contents", "Info.plist"), []byte(plist), 0o600); err != nil {
+		t.Fatalf("write daemon Info.plist: %v", err)
+	}
+	return executable
 }

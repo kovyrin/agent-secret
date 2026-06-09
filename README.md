@@ -195,7 +195,7 @@ precedence, env-file migration, and the full schema.
 ## Commands
 
 - `agent-secret exec -- COMMAND [ARG...]`: run a command with approved secrets.
-- `agent-secret session create|list|destroy`: manage bounded daemon-held
+- `agent-secret session create|list|destroy`: manage bounded background-helper
   sessions.
 - `agent-secret with-session SESSION_ID -- COMMAND [ARG...]`: run one command
   with secrets from an approved session. Add `--only ALIAS[,ALIAS...]` to inject
@@ -207,9 +207,11 @@ precedence, env-file migration, and the full schema.
 - `agent-secret profile list|show`: inspect project profiles without resolving
   values.
 - `agent-secret doctor`: print non-secret setup diagnostics.
-- `agent-secret daemon status|start|stop`: inspect or control the per-user
-  daemon.
-- `agent-secret install-cli`: repair the command symlink for the current user.
+- `agent-secret repair`: inspect and repair Agent Secret background helper
+  state.
+- `agent-secret daemon status|start|stop`: run low-level daemon diagnostics.
+- `agent-secret install-cli`: repair the command symlink for the current user
+  and try to refresh the local background helper.
 - `agent-secret skill-install`: repair the bundled coding-agent skill symlink.
 
 Run `agent-secret --help` or `agent-secret exec --help` for the full command
@@ -225,12 +227,13 @@ What Agent Secret does protect:
 
 - Project configs and command flags carry `op://` or `bws://` references, not
   resolved values.
-- The daemon fetches only secrets approved for the current request.
+- The background helper fetches only secrets approved for the current request.
 - Audit logs contain metadata only, not raw secret values.
 - Reusable approvals are bounded by command, cwd, secret references, account or
   token alias, TTL, and use count.
-- Reusable cached values are kept in daemon memory and cleared when their scope
-  is replaced, refreshed, expired, or when the daemon stops.
+- Reusable cached values are kept in Agent Secret's background helper memory and
+  cleared when their scope is replaced, refreshed, expired, or when the helper
+  stops.
 
 Out of scope:
 
@@ -252,7 +255,7 @@ The launch build is intentionally narrow:
 
 - macOS on Apple Silicon only.
 - 1Password Desktop and Bitwarden Secrets Manager only; no other providers yet.
-- Sessions are bounded, daemon-memory only, and usable only through
+- Sessions are bounded, background-helper-memory only, and usable only through
   `agent-secret with-session`; no long-lived interactive shells.
 - No writing, updating, or rotating secrets yet.
 - No GCP Secret Manager or GCP token minting support yet.

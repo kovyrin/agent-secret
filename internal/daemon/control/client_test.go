@@ -380,6 +380,23 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			wantErrMsg: "invalid pid",
 		},
 		{
+			name: "helper hello executable",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.HelperHelloPayload{
+					Protocol:   protocol.ProtocolVersion,
+					AppVersion: "dev",
+					PID:        1234,
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.Hello(ctx)
+				return err
+			},
+			wantErrMsg: "missing executable",
+		},
+		{
 			name: "exec aliases",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()

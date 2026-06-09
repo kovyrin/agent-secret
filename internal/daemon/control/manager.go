@@ -14,9 +14,27 @@ import (
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/helperidentity"
+	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
 
 var ErrDaemonStillRunning = errors.New("daemon still running")
+var ErrUnexpectedHelper = errors.New("unexpected background helper")
+var ErrHelperMismatch = errors.New("background helper mismatch")
+
+type RepairStatus string
+
+const (
+	RepairStatusOK             RepairStatus = "ok"
+	RepairStatusRefreshed      RepairStatus = "refreshed"
+	RepairStatusRepairRequired RepairStatus = "repair_required"
+)
+
+type RepairResult struct {
+	Status RepairStatus
+	PID    int
+	Hello  protocol.HelperHelloPayload
+}
 
 type Manager struct {
 	socketPath      string
@@ -57,10 +75,61 @@ func (m Manager) SocketPath() string {
 }
 
 func (m Manager) EnsureRunning(ctx context.Context) error {
-	return m.Start(ctx)
+	_, err := m.Repair(ctx)
+	return err
 }
 
 func (m Manager) Start(ctx context.Context) error {
+	_, err := m.Repair(ctx)
+	return err
+}
+
+func (m Manager) Repair(ctx context.Context) (RepairResult, error) {
+	inspection, err := m.inspectTrustedHelper(ctx)
+	if err == nil {
+		if inspection.matches {
+			return RepairResult{Status: RepairStatusOK, PID: inspection.hello.PID, Hello: inspection.hello}, nil
+		}
+		return m.refreshTrustedHelper(ctx)
+	}
+	if errors.Is(err, socket.ErrDaemonUnavailable) {
+		if err := m.startCurrent(ctx); err != nil {
+			return RepairResult{Status: RepairStatusRepairRequired}, err
+		}
+		inspection, err := m.inspectTrustedHelper(ctx)
+		if err != nil {
+			return RepairResult{Status: RepairStatusRepairRequired}, err
+		}
+		if !inspection.matches {
+			return RepairResult{Status: RepairStatusRepairRequired, PID: inspection.hello.PID, Hello: inspection.hello},
+				fmt.Errorf("%w: started helper does not match current build", ErrHelperMismatch)
+		}
+		return RepairResult{Status: RepairStatusOK, PID: inspection.hello.PID, Hello: inspection.hello}, nil
+	}
+	if isRetiringDaemon(err) {
+		if err := m.waitUntilTrustedHelperUnavailable(ctx, 25*time.Millisecond); err != nil {
+			return RepairResult{Status: RepairStatusRepairRequired}, err
+		}
+		if err := m.startCurrent(ctx); err != nil {
+			return RepairResult{Status: RepairStatusRepairRequired}, err
+		}
+		inspection, err := m.inspectTrustedHelper(ctx)
+		if err != nil {
+			return RepairResult{Status: RepairStatusRepairRequired}, err
+		}
+		if !inspection.matches {
+			return RepairResult{Status: RepairStatusRepairRequired, PID: inspection.hello.PID, Hello: inspection.hello},
+				fmt.Errorf("%w: refreshed helper still does not match current build", ErrHelperMismatch)
+		}
+		return RepairResult{Status: RepairStatusRefreshed, PID: inspection.hello.PID, Hello: inspection.hello}, nil
+	}
+	if errors.Is(err, ErrHelperMismatch) {
+		return m.refreshTrustedHelper(ctx)
+	}
+	return RepairResult{Status: RepairStatusRepairRequired}, err
+}
+
+func (m Manager) startCurrent(ctx context.Context) error {
 	if err := m.statusBeforeStart(ctx); err == nil {
 		return nil
 	} else if isRetiringDaemon(err) {
@@ -173,8 +242,14 @@ func (m Manager) Connect(ctx context.Context) (*Client, error) {
 }
 
 func (m Manager) statusBeforeStart(ctx context.Context) error {
-	_, err := m.Status(ctx)
-	return err
+	inspection, err := m.inspectCurrentHelper(ctx)
+	if err != nil {
+		return err
+	}
+	if !inspection.matches {
+		return fmt.Errorf("%w: running helper does not match current build", ErrHelperMismatch)
+	}
+	return nil
 }
 
 func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) error {
@@ -205,6 +280,19 @@ func (m Manager) waitUntilReady(ctx context.Context, interval time.Duration) err
 }
 
 func (m Manager) waitUntilUnavailable(ctx context.Context, interval time.Duration) error {
+	return m.waitUntilUnavailableWith(ctx, interval, "retiring daemon", m.statusUnavailable)
+}
+
+func (m Manager) waitUntilTrustedHelperUnavailable(ctx context.Context, interval time.Duration) error {
+	return m.waitUntilUnavailableWith(ctx, interval, "trusted helper", m.trustedHelperUnavailable)
+}
+
+func (m Manager) waitUntilUnavailableWith(
+	ctx context.Context,
+	interval time.Duration,
+	label string,
+	check func(context.Context) (bool, error),
+) error {
 	if interval <= 0 {
 		interval = 25 * time.Millisecond
 	}
@@ -219,7 +307,7 @@ func (m Manager) waitUntilUnavailable(ctx context.Context, interval time.Duratio
 	defer ticker.Stop()
 
 	for {
-		unavailable, err := m.statusUnavailable(waitCtx)
+		unavailable, err := check(waitCtx)
 		if err != nil {
 			return err
 		}
@@ -232,7 +320,7 @@ func (m Manager) waitUntilUnavailable(ctx context.Context, interval time.Duratio
 			if cause := context.Cause(waitCtx); cause != nil && !errors.Is(cause, ctxErr) {
 				ctxErr = errors.Join(ctxErr, cause)
 			}
-			return fmt.Errorf("%w: retiring daemon still responds: %w", ErrDaemonStillRunning, ctxErr)
+			return fmt.Errorf("%w: %s still responds: %w", ErrDaemonStillRunning, label, ctxErr)
 		case <-ticker.C:
 		}
 	}
@@ -250,6 +338,141 @@ func (m Manager) trustedDaemonPaths() ([]string, error) {
 	return peertrust.DaemonPathsForPath(daemonPath)
 }
 
+type helperInspection struct {
+	hello   protocol.HelperHelloPayload
+	matches bool
+}
+
+func (m Manager) inspectCurrentHelper(ctx context.Context) (helperInspection, error) {
+	client, err := m.Connect(ctx)
+	if err != nil {
+		return helperInspection{}, classifyHelperConnectError(err)
+	}
+	defer func() { _ = client.Close() }()
+	return m.inspectConnectedHelper(ctx, client)
+}
+
+func (m Manager) inspectTrustedHelper(ctx context.Context) (helperInspection, error) {
+	client, err := m.connectTrustedHelper(ctx)
+	if err != nil {
+		return helperInspection{}, classifyHelperConnectError(err)
+	}
+	defer func() { _ = client.Close() }()
+	return m.inspectConnectedHelper(ctx, client)
+}
+
+func (m Manager) inspectConnectedHelper(ctx context.Context, client *Client) (helperInspection, error) {
+	hello, err := client.Hello(ctx)
+	if err != nil {
+		if helperHelloMismatchError(err) {
+			return helperInspection{}, fmt.Errorf("%w: %w", ErrHelperMismatch, err)
+		}
+		return helperInspection{}, err
+	}
+	matches, err := m.helperMatchesExpected(hello)
+	if err != nil {
+		return helperInspection{}, err
+	}
+	return helperInspection{hello: hello, matches: matches}, nil
+}
+
+func (m Manager) connectTrustedHelper(ctx context.Context) (*Client, error) {
+	trustedPaths, err := m.trustedDaemonPaths()
+	if err != nil {
+		return nil, err
+	}
+	client, err := ConnectWithPeerValidator(ctx, m.socketPath, peertrust.NewDaemonProductValidator(trustedPaths))
+	if err != nil {
+		return nil, err
+	}
+	client.DefaultTimeout = m.protocolTimeout()
+	return client, nil
+}
+
+func classifyHelperConnectError(err error) error {
+	if errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		return fmt.Errorf("%w: %w", ErrUnexpectedHelper, err)
+	}
+	return err
+}
+
+func helperHelloMismatchError(err error) bool {
+	return errors.Is(err, protocol.ErrProtocolType) ||
+		errors.Is(err, protocol.ErrProtocolVersion) ||
+		IsProtocolError(err, protocol.ErrorCodeBadType)
+}
+
+func (m Manager) helperMatchesExpected(hello protocol.HelperHelloPayload) (bool, error) {
+	expected, err := m.expectedHelperHello()
+	if err != nil {
+		return false, err
+	}
+	if hello.Protocol != expected.Protocol ||
+		hello.AppVersion != expected.AppVersion ||
+		hello.BuildID != expected.BuildID {
+		return false, nil
+	}
+	if !samePath(hello.Executable, expected.Executable) {
+		return false, nil
+	}
+	if expected.TeamID != "" && hello.TeamID != expected.TeamID {
+		return false, nil
+	}
+	if expected.BundleID != "" && hello.BundleID != expected.BundleID {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (m Manager) expectedHelperHello() (protocol.HelperHelloPayload, error) {
+	trustedPaths, err := m.trustedDaemonPaths()
+	if err != nil {
+		return protocol.HelperHelloPayload{}, err
+	}
+	if len(trustedPaths) == 0 {
+		return protocol.HelperHelloPayload{}, errors.New("daemon path is required")
+	}
+	return helperidentity.ForExecutable(trustedPaths[0], os.Getpid()), nil
+}
+
+func samePath(a string, b string) bool {
+	return pathresolve.BestEffort(a) == pathresolve.BestEffort(b)
+}
+
+func (m Manager) refreshTrustedHelper(ctx context.Context) (RepairResult, error) {
+	if err := m.stopTrustedHelper(ctx); err != nil {
+		return RepairResult{Status: RepairStatusRepairRequired}, err
+	}
+	if err := m.startCurrent(ctx); err != nil {
+		return RepairResult{Status: RepairStatusRepairRequired}, err
+	}
+	inspection, err := m.inspectTrustedHelper(ctx)
+	if err != nil {
+		return RepairResult{Status: RepairStatusRepairRequired}, err
+	}
+	if !inspection.matches {
+		return RepairResult{Status: RepairStatusRepairRequired, PID: inspection.hello.PID, Hello: inspection.hello},
+			fmt.Errorf("%w: refreshed helper still does not match current build", ErrHelperMismatch)
+	}
+	return RepairResult{Status: RepairStatusRefreshed, PID: inspection.hello.PID, Hello: inspection.hello}, nil
+}
+
+func (m Manager) stopTrustedHelper(ctx context.Context) error {
+	client, err := m.connectTrustedHelper(ctx)
+	if errors.Is(err, socket.ErrDaemonUnavailable) {
+		return nil
+	}
+	if err != nil {
+		return classifyHelperConnectError(err)
+	}
+	if _, err := client.RequestStop(ctx); err != nil {
+		_ = client.Close()
+		return err
+	}
+	_ = client.Close()
+	return m.waitUntilTrustedHelperUnavailable(ctx, 25*time.Millisecond)
+}
+
 func (m Manager) protocolTimeout() time.Duration {
 	if m.ProtocolTimeout > 0 {
 		return m.ProtocolTimeout
@@ -259,6 +482,28 @@ func (m Manager) protocolTimeout() time.Duration {
 
 func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 	_, err := m.Status(ctx)
+	if err == nil {
+		return false, nil
+	}
+	if isUnavailableDaemonStatusError(err) {
+		return true, nil
+	}
+	if isRetiringDaemon(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (m Manager) trustedHelperUnavailable(ctx context.Context) (bool, error) {
+	client, err := m.connectTrustedHelper(ctx)
+	if err != nil {
+		if isUnavailableDaemonStatusError(err) {
+			return true, nil
+		}
+		return false, classifyHelperConnectError(err)
+	}
+	defer func() { _ = client.Close() }()
+	_, err = client.Status(ctx)
 	if err == nil {
 		return false, nil
 	}

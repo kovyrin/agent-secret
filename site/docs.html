@@ -48,7 +48,7 @@
           Secrets Manager, keep references in project profiles, and validate
           requests without printing secret values.
         </p>
-        <p class="legal-date">Last updated: June 8, 2026</p>
+        <p class="legal-date">Last updated: June 9, 2026</p>
       </section>
 
       <div class="docs-layout">
@@ -82,9 +82,11 @@ agent-secret doctor</code></pre>
             </div>
             <p>
               Run <code>agent-secret doctor</code> after install or upgrade. It
-              starts the daemon if needed and checks the socket directory, audit
-              log, native approver, and 1Password desktop integration without
-              resolving any item references.
+              prepares the background helper if needed and checks the socket
+              directory, audit log, native approver, and 1Password desktop
+              integration without resolving any item references.
+              <code>agent-secret install-cli</code> also tries to refresh the
+              local background helper after repairing the command symlink.
             </p>
           </section>
 
@@ -209,8 +211,9 @@ profiles:
             <h2>Approve a bag once, then run bounded commands.</h2>
             <p>
               Sessions are for short workflows where an agent needs the same
-              approved set of references in different combinations. The daemon
-              stores values in memory and returns only an opaque session ID.
+              approved set of references in different combinations. Agent
+              Secret stores values in background helper memory and returns only
+              an opaque session ID.
             </p>
             <div class="code-panel">
               <pre><code>agent-secret session create --profile terraform-cloudflare --max-reads 3
@@ -229,7 +232,7 @@ agent-secret session destroy asess_123</code></pre>
             </p>
             <p>
               Sessions end when TTL passes, the read count is exhausted,
-              <code>session destroy</code> succeeds, or the daemon stops. V1
+              <code>session destroy</code> succeeds, or the helper stops. V1
               sessions do not expose raw socket reads or long-lived interactive
               shells.
             </p>
@@ -240,8 +243,9 @@ agent-secret session destroy asess_123</code></pre>
             <h2>Check requests without leaking values.</h2>
             <p>
               Use <code>--dry-run --json</code> to inspect exactly what an agent
-              is about to ask for. Dry runs do not start the daemon, prompt for
-              approval, resolve secret values, or spawn the child process.
+              is about to ask for. Dry runs do not start the background helper,
+              prompt for approval, resolve secret values, or spawn the child
+              process.
             </p>
             <div class="code-panel">
               <pre><code>agent-secret exec --dry-run --json --profile deploy -- terraform plan</code></pre>
@@ -282,11 +286,11 @@ agent-secret session destroy asess_123</code></pre>
                 </p>
               </details>
               <details>
-                <summary>Doctor reports an untrusted daemon peer.</summary>
+                <summary>Doctor reports an unexpected background helper.</summary>
                 <p>
-                  An old development daemon may still be listening on the socket.
-                  Stop it with the matching old CLI or restart the Mac, then run
-                  <code>/opt/homebrew/bin/agent-secret doctor</code> again.
+                  Run <code>agent-secret repair</code>. Agent Secret refreshes
+                  trusted old helpers automatically and refuses unexpected
+                  socket owners without sending secrets.
                 </p>
               </details>
               <details>
@@ -307,9 +311,9 @@ agent-secret session destroy asess_123</code></pre>
                 <summary>Does Agent Secret store raw secret values?</summary>
                 <p>
                   It does not write raw secret values to project files or audit
-                  logs. Reusable approvals may keep approved values in daemon
-                  memory until the TTL or use count expires, then they are
-                  cleared.
+                  logs. Reusable approvals may keep approved values in
+                  background helper memory until the TTL or use count expires,
+                  then they are cleared.
                 </p>
               </details>
               <details>

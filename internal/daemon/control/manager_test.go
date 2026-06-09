@@ -25,6 +25,7 @@ import (
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/helperidentity"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -344,6 +345,294 @@ func TestManagerStatusUnavailableReturnsOtherStatusErrors(t *testing.T) {
 	}
 }
 
+func TestManagerRepairReportsRunningCurrentHelper(t *testing.T) {
+	t.Parallel()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	hello := helperidentity.ForExecutable(executable, os.Getpid())
+	path, stop := startFakeHelperDaemon(t, hello)
+	defer stop()
+	manager := Manager{
+		socketPath: path,
+		DaemonPath: executable,
+	}
+
+	result, err := manager.Repair(context.Background())
+	if err != nil {
+		t.Fatalf("Repair returned error: %v", err)
+	}
+	if result.Status != RepairStatusOK || result.PID != os.Getpid() {
+		t.Fatalf("Repair result = %+v, want ok for current pid", result)
+	}
+	if !samePath(result.Hello.Executable, executable) {
+		t.Fatalf("Repair hello executable = %q, want %q", result.Hello.Executable, executable)
+	}
+}
+
+func TestManagerRepairRefreshesMismatchedTrustedHelper(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_REPAIR_HELPER") == "1" {
+		runDaemonManagerHelper(t)
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	staleHello := helperidentity.ForExecutable(executable, os.Getpid())
+	staleHello.BuildID += "-stale"
+	path, stopStale := startFakeHelperDaemon(t, staleHello)
+	defer stopStale()
+
+	output, err := os.Create(filepath.Join(t.TempDir(), "repair-helper.log"))
+	if err != nil {
+		t.Fatalf("create helper output log: %v", err)
+	}
+	defer func() { _ = output.Close() }()
+	manager := Manager{
+		socketPath:     path,
+		DaemonPath:     executable,
+		DaemonArgs:     []string{"-test.run=TestManagerRepairRefreshesMismatchedTrustedHelper", "--", "--socket", "{socket}"},
+		StartupTimeout: 2 * time.Second,
+		daemonStdout:   output,
+		daemonStderr:   output,
+	}
+	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_REPAIR_HELPER", "1")
+
+	result, err := manager.Repair(context.Background())
+	if err != nil {
+		helperOutput := readManagerHelperOutput(t, output.Name())
+		if strings.Contains(helperOutput, managerHelperBindUnavailablePrefix) {
+			t.Skipf("Unix socket bind unavailable in daemon repair helper: %s", helperOutput)
+		}
+		t.Fatalf("Repair returned error: %v\nhelper output:\n%s", err, helperOutput)
+	}
+	defer func() { _ = manager.Stop(context.Background()) }()
+	if result.Status != RepairStatusRefreshed {
+		t.Fatalf("Repair status = %q, want refreshed", result.Status)
+	}
+	if result.PID <= 0 || result.PID == os.Getpid() {
+		t.Fatalf("Repair pid = %d, want fresh helper process", result.PID)
+	}
+	if result.Hello.BuildID != helperidentity.ForExecutable(executable, os.Getpid()).BuildID {
+		t.Fatalf("Repair hello build id = %q, want current build id", result.Hello.BuildID)
+	}
+}
+
+func TestManagerRepairRejectsUnexpectedHelper(t *testing.T) {
+	t.Parallel()
+
+	path, stop := startFakeExecDaemon(t)
+	defer stop()
+	manager := Manager{
+		socketPath: path,
+		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
+	}
+
+	_, err := manager.Repair(context.Background())
+	if !errors.Is(err, ErrUnexpectedHelper) {
+		t.Fatalf("Repair error = %v, want %v", err, ErrUnexpectedHelper)
+	}
+}
+
+func TestManagerInspectConnectedHelperClassifiesLegacyHello(t *testing.T) {
+	t.Parallel()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	path, stop := startFakeStatusErrorDaemon(t, protocol.ErrorCodeBadType)
+	defer stop()
+	manager := Manager{
+		socketPath: path,
+		DaemonPath: executable,
+	}
+	client, err := manager.connectTrustedHelper(context.Background())
+	if err != nil {
+		t.Fatalf("connectTrustedHelper returned error: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	_, err = manager.inspectConnectedHelper(context.Background(), client)
+	if !errors.Is(err, ErrHelperMismatch) {
+		t.Fatalf("inspectConnectedHelper error = %v, want helper mismatch", err)
+	}
+}
+
+func TestManagerStopTrustedHelperStopsMatchingSocket(t *testing.T) {
+	t.Parallel()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	path, stop := startFakeHelperDaemon(t, helperidentity.ForExecutable(executable, os.Getpid()))
+	defer stop()
+	manager := Manager{
+		socketPath:     path,
+		DaemonPath:     executable,
+		StartupTimeout: time.Second,
+	}
+
+	if err := manager.stopTrustedHelper(context.Background()); err != nil {
+		t.Fatalf("stopTrustedHelper returned error: %v", err)
+	}
+	if _, err := manager.Status(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
+		t.Fatalf("Status after stop error = %v, want daemon unavailable", err)
+	}
+}
+
+func TestManagerStopTrustedHelperIgnoresMissingSocket(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{
+		socketPath: filepath.Join(t.TempDir(), "missing.sock"),
+		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
+	}
+
+	if err := manager.stopTrustedHelper(context.Background()); err != nil {
+		t.Fatalf("stopTrustedHelper returned error: %v", err)
+	}
+}
+
+func TestManagerTrustedHelperUnavailableStates(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{
+		socketPath: filepath.Join(t.TempDir(), "missing.sock"),
+		DaemonPath: writeDaemonExecutableAt(t, t.TempDir()),
+	}
+	unavailable, err := manager.trustedHelperUnavailable(context.Background())
+	if err != nil {
+		t.Fatalf("trustedHelperUnavailable missing socket returned error: %v", err)
+	}
+	if !unavailable {
+		t.Fatal("trustedHelperUnavailable missing socket = false, want true")
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	path, stop := startFakeStatusErrorDaemon(t, protocol.ErrorCodeDaemonStopped)
+	defer stop()
+	manager = Manager{
+		socketPath: path,
+		DaemonPath: executable,
+	}
+	unavailable, err = manager.trustedHelperUnavailable(context.Background())
+	if err != nil {
+		t.Fatalf("trustedHelperUnavailable retiring helper returned error: %v", err)
+	}
+	if unavailable {
+		t.Fatal("trustedHelperUnavailable retiring helper = true, want false")
+	}
+}
+
+func TestManagerHelperMatchesExpectedBuild(t *testing.T) {
+	t.Parallel()
+
+	manager := Manager{DaemonPath: writeDaemonExecutableAt(t, t.TempDir())}
+	expected, err := manager.expectedHelperHello()
+	if err != nil {
+		t.Fatalf("expectedHelperHello returned error: %v", err)
+	}
+
+	matches, err := manager.helperMatchesExpected(expected)
+	if err != nil {
+		t.Fatalf("helperMatchesExpected returned error: %v", err)
+	}
+	if !matches {
+		t.Fatal("helperMatchesExpected returned false for expected helper hello")
+	}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*protocol.HelperHelloPayload)
+	}{
+		{
+			name: "protocol",
+			mutate: func(hello *protocol.HelperHelloPayload) {
+				hello.Protocol++
+			},
+		},
+		{
+			name: "app version",
+			mutate: func(hello *protocol.HelperHelloPayload) {
+				hello.AppVersion = "0.0.0-test"
+			},
+		},
+		{
+			name: "build id",
+			mutate: func(hello *protocol.HelperHelloPayload) {
+				hello.BuildID += "-old"
+			},
+		},
+		{
+			name: "executable",
+			mutate: func(hello *protocol.HelperHelloPayload) {
+				hello.Executable = writeDaemonExecutableAt(t, t.TempDir())
+			},
+		},
+	} {
+		hello := expected
+		tc.mutate(&hello)
+		matches, err := manager.helperMatchesExpected(hello)
+		if err != nil {
+			t.Fatalf("%s: helperMatchesExpected returned error: %v", tc.name, err)
+		}
+		if matches {
+			t.Fatalf("%s: helperMatchesExpected returned true for mismatched hello %+v", tc.name, hello)
+		}
+	}
+}
+
+func TestManagerExpectedHelperHelloRequiresDaemonPath(t *testing.T) {
+	t.Parallel()
+
+	_, err := (Manager{DaemonPath: " \t "}).expectedHelperHello()
+	if err == nil || !strings.Contains(err.Error(), "daemon path is required") {
+		t.Fatalf("expectedHelperHello error = %v, want daemon path required", err)
+	}
+}
+
+func TestClassifyHelperConnectErrorHidesPeerTrustBehindUnexpectedHelper(t *testing.T) {
+	t.Parallel()
+
+	err := classifyHelperConnectError(fmt.Errorf("dial helper: %w", peertrust.ErrUntrustedDaemon))
+	if !errors.Is(err, ErrUnexpectedHelper) {
+		t.Fatalf("classifyHelperConnectError = %v, want unexpected helper", err)
+	}
+	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
+		t.Fatalf("classifyHelperConnectError = %v, want original peer trust cause", err)
+	}
+	plainErr := errors.New("plain failure")
+	if !errors.Is(classifyHelperConnectError(plainErr), plainErr) {
+		t.Fatal("classifyHelperConnectError wrapped a non-peer-trust error")
+	}
+}
+
+func TestHelperHelloMismatchError(t *testing.T) {
+	t.Parallel()
+
+	for _, err := range []error{
+		protocol.ErrProtocolType,
+		protocol.ErrProtocolVersion,
+		&ProtocolError{Code: protocol.ErrorCodeBadType, Message: "bad type"},
+	} {
+		if !helperHelloMismatchError(err) {
+			t.Fatalf("helperHelloMismatchError(%v) = false, want true", err)
+		}
+	}
+	if helperHelloMismatchError(errors.New("plain failure")) {
+		t.Fatal("plain error was classified as helper hello mismatch")
+	}
+}
+
 func TestManagerStatusUnavailableTreatsRetiringDaemonAsStillRunning(t *testing.T) {
 	t.Parallel()
 
@@ -655,6 +944,94 @@ func startFakeStatusErrorDaemon(t *testing.T, code protocol.ErrorCode) (string, 
 		<-done
 		_ = os.RemoveAll(dir)
 	}
+}
+
+func startFakeHelperDaemon(t *testing.T, hello protocol.HelperHelloPayload) (string, func()) {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "agent-secret-fake-helper-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	path := filepath.Join(dir, "d.sock")
+	listener, err := socket.ListenUnix(path)
+	unixsocket.SkipIfBindUnavailable(t, err)
+	if err != nil {
+		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+	done := make(chan struct{})
+	var closeOnce sync.Once
+	shutdown := func() {
+		closeOnce.Do(func() {
+			_ = listener.Close()
+			_ = os.Remove(path)
+		})
+	}
+	go func() {
+		defer close(done)
+		for {
+			conn, err := listener.AcceptUnix()
+			if err != nil {
+				return
+			}
+			go serveFakeHelperDaemonConn(conn, hello, shutdown)
+		}
+	}()
+	return path, func() {
+		shutdown()
+		<-done
+		_ = os.RemoveAll(dir)
+	}
+}
+
+func serveFakeHelperDaemonConn(
+	conn *net.UnixConn,
+	hello protocol.HelperHelloPayload,
+	shutdown func(),
+) {
+	defer func() { _ = conn.Close() }()
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+	for {
+		var env protocol.Envelope
+		if err := decoder.Decode(&env); err != nil {
+			return
+		}
+		switch env.Type { //nolint:exhaustive // Fake helper handles only manager repair requests.
+		case protocol.TypeHelperHello:
+			if !writeFakeHelperResponse(encoder, env.Correlation(), hello) {
+				return
+			}
+		case protocol.TypeDaemonStatus:
+			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: hello.PID}) {
+				return
+			}
+		case protocol.TypeDaemonStop:
+			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: hello.PID}) {
+				return
+			}
+			shutdown()
+			return
+		default:
+			resp, err := protocol.NewEnvelope(protocol.TypeError, env.Correlation(), protocol.ErrorPayload{
+				Code:    protocol.ErrorCodeBadType,
+				Message: "unsupported fake helper request",
+			})
+			if err != nil {
+				return
+			}
+			if err := encoder.Encode(resp); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func writeFakeHelperResponse(encoder *json.Encoder, correlation protocol.Correlation, payload any) bool {
+	resp, err := protocol.NewEnvelope(protocol.TypeOK, correlation, payload)
+	if err != nil {
+		return false
+	}
+	return encoder.Encode(resp) == nil
 }
 
 func serveFakeStatusError(conn *net.UnixConn, code protocol.ErrorCode) {

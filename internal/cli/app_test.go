@@ -24,6 +24,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/helperidentity"
 	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 	"github.com/kovyrin/agent-secret/internal/peercred"
@@ -1194,6 +1195,92 @@ func TestAppExecRetriesOnceWhenDaemonRetiresBeforeSpawn(t *testing.T) {
 	}
 }
 
+func TestAppExecReportsBackgroundHelperRefreshBeforeRequest(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
+		runAppExecHelper()
+		return
+	}
+
+	client := &appFakeDaemonClient{
+		execPayload: protocol.ExecResponsePayload{
+			Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+			SecretAliases: []string{"TOKEN"},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		status:     protocol.StatusPayload{PID: 1234},
+		repairResult: control.RepairResult{
+			Status: control.RepairStatusRefreshed,
+			PID:    1234,
+		},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	t.Setenv("AGENT_SECRET_APP_EXEC_HELPER", "1")
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Run helper",
+		"--account", "Work",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		os.Args[0], "-test.run=TestAppExecReportsBackgroundHelperRefreshBeforeRequest", "--", "child",
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Refreshing Agent Secret background helper") {
+		t.Fatalf("stderr = %q, want refresh status", stderr.String())
+	}
+	if manager.repairCalls != 1 || manager.connectCalls != 1 || client.requestExecCalls != 1 {
+		t.Fatalf("calls: repair=%d connect=%d request=%d", manager.repairCalls, manager.connectCalls, client.requestExecCalls)
+	}
+}
+
+func TestAppExecRefusesUnexpectedBackgroundHelperBeforeSecretRequest(t *testing.T) {
+	client := &appFakeDaemonClient{
+		execPayload: protocol.ExecResponsePayload{
+			Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+			SecretAliases: []string{"TOKEN"},
+		},
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(t.TempDir(), "d.sock"),
+		client:     client,
+		repairErr:  fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{
+		"exec",
+		"--allow-mutable-executable",
+		"--reason", "Run helper",
+		"--account", "Work",
+		"--secret", "TOKEN=op://Example/Item/token",
+		"--",
+		os.Args[0], "-test.run=TestAppExecRefusesUnexpectedBackgroundHelperBeforeSecretRequest", "--", "child",
+	})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "unexpected background helper") ||
+		!strings.Contains(stderr.String(), "Run `agent-secret repair`") {
+		t.Fatalf("stderr = %q, want unexpected helper guidance", stderr.String())
+	}
+	if manager.connectCalls != 0 || client.requestExecCalls != 0 {
+		t.Fatalf("secret request reached helper: connect=%d request=%d", manager.connectCalls, client.requestExecCalls)
+	}
+	if strings.Contains(stdout.String(), "synthetic-secret-value") || strings.Contains(stderr.String(), "synthetic-secret-value") {
+		t.Fatalf("secret leaked: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestAppExecReReadsConfigAccountForRunningDaemon(t *testing.T) {
 	if os.Getenv("AGENT_SECRET_APP_EXEC_HELPER") == "1" {
 		runAppExecHelper()
@@ -1393,7 +1480,7 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 		t.Fatalf("doctor exit=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "audit log: writable") ||
-		!strings.Contains(stdout.String(), "daemon startup: ok") ||
+		!strings.Contains(stdout.String(), "Background helper: ok") ||
 		!strings.Contains(stdout.String(), "socket directory: private") ||
 		!strings.Contains(stdout.String(), "native approver: ok") ||
 		!strings.Contains(stdout.String(), "1password desktop integration: ok") {
@@ -1510,8 +1597,7 @@ func TestAppDoctorReportsJSONDependencyFailures(t *testing.T) {
 	}
 	manager := &appFakeDaemonManager{
 		socketPath: filepath.Join(socketDir, "d.sock"),
-		ensureErr:  errors.New("startup unavailable"),
-		statusErr:  errors.New("status unavailable"),
+		repairErr:  errors.New("startup unavailable"),
 		checkErr:   errors.New("desktop unavailable"),
 	}
 	var stdout bytes.Buffer
@@ -1528,15 +1614,23 @@ func TestAppDoctorReportsJSONDependencyFailures(t *testing.T) {
 	}
 	for _, name := range []string{
 		"audit_log",
-		"daemon_startup",
-		"daemon_status",
+		"background_helper",
 		"socket_directory",
 		"native_approver",
 		"1password_desktop_integration",
 	} {
 		check, found := findDoctorCheck(output.Checks, name)
-		if !found || check.Status != "failed" || check.Error == "" {
+		if !found || check.Error == "" {
 			t.Fatalf("doctor check %s = %+v found=%t output=%+v", name, check, found, output)
+		}
+		if name == "background_helper" {
+			if check.Status != string(control.RepairStatusRepairRequired) {
+				t.Fatalf("doctor check %s = %+v, want repair required", name, check)
+			}
+			continue
+		}
+		if check.Status != "failed" {
+			t.Fatalf("doctor check %s = %+v, want failed", name, check)
 		}
 	}
 }
@@ -2177,7 +2271,6 @@ func TestAppSkipsDaemonManagerForNonDaemonCommands(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"help"},
-		{"install-cli", "--bin-dir", filepath.Join(t.TempDir(), "bin"), "--force"},
 		{"skill-install", "--skills-dir", filepath.Join(t.TempDir(), "skills"), "--force"},
 	} {
 		stdout.Reset()
@@ -2188,6 +2281,95 @@ func TestAppSkipsDaemonManagerForNonDaemonCommands(t *testing.T) {
 	}
 	if managerCalls != 0 {
 		t.Fatalf("daemon manager factory called %d times for non-daemon commands", managerCalls)
+	}
+}
+
+func TestAppInstallCLIAttemptsBackgroundHelperRepair(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	manager := &appFakeDaemonManager{
+		repairResult: control.RepairResult{
+			Status: control.RepairStatusRefreshed,
+			PID:    5678,
+		},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if manager.repairCalls != 1 {
+		t.Fatalf("repair calls = %d, want 1", manager.repairCalls)
+	}
+	if !strings.Contains(stderr.String(), "Refreshing Agent Secret background helper") {
+		t.Fatalf("install-cli stderr = %q, want helper refresh status", stderr.String())
+	}
+}
+
+func TestAppInstallCLIWarnsWhenBackgroundHelperRepairFails(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	manager := &appFakeDaemonManager{
+		repairErr: fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if manager.repairCalls != 1 {
+		t.Fatalf("repair calls = %d, want 1", manager.repairCalls)
+	}
+	if !strings.Contains(stderr.String(), "unexpected background helper") ||
+		!strings.Contains(stderr.String(), "agent-secret repair") {
+		t.Fatalf("install-cli stderr = %q, want repair warning", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), filepath.Join(binDir, "agent-secret")) {
+		t.Fatalf("install-cli stdout = %q, want install success output", stdout.String())
+	}
+}
+
+func TestAppInstallCLIWarnsWhenBackgroundHelperManagerCannotInitialize(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	managerErr := errors.New("manager unavailable")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := NewApp(func() (control.Manager, error) {
+		return control.Manager{}, managerErr
+	}, &stdout, &stderr)
+	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
+		return install.CLIResult{
+			LinkPath:   filepath.Join(options.BinDir, "agent-secret"),
+			TargetPath: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		}, nil
+	}
+
+	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
+	if code != 0 {
+		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "background helper repair skipped") ||
+		!strings.Contains(stderr.String(), managerErr.Error()) {
+		t.Fatalf("install-cli stderr = %q, want manager warning", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), filepath.Join(binDir, "agent-secret")) {
+		t.Fatalf("install-cli stdout = %q, want install success output", stdout.String())
 	}
 }
 
@@ -2277,16 +2459,241 @@ func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
 		t.Fatalf("doctor exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
 	for _, want := range []string{
-		"daemon startup: ok",
-		"daemon: running pid=5678",
+		"Background helper: ok pid=5678",
 		"socket directory: private",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("doctor output = %q, want %q", stdout.String(), want)
 		}
 	}
-	if manager.ensureCalls != 1 || manager.statusCalls != 1 {
-		t.Fatalf("manager calls: ensure=%d status=%d", manager.ensureCalls, manager.statusCalls)
+	if manager.repairCalls != 1 || manager.statusCalls != 0 {
+		t.Fatalf("manager calls: repair=%d status=%d", manager.repairCalls, manager.statusCalls)
+	}
+}
+
+func TestAppDoctorReportsRefreshedBackgroundHelper(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		repairResult: control.RepairResult{
+			Status: control.RepairStatusRefreshed,
+			PID:    5678,
+		},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.DoctorApproverCheck = nil
+
+	code := app.Run(context.Background(), []string{"doctor"})
+	if code != 0 {
+		t.Fatalf("doctor exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Background helper: refreshed pid=5678") {
+		t.Fatalf("doctor output = %q, want refreshed background helper", stdout.String())
+	}
+	if manager.repairCalls != 1 {
+		t.Fatalf("manager repair calls = %d, want 1", manager.repairCalls)
+	}
+}
+
+func TestAppDoctorReportsRepairRequiredBackgroundHelper(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		repairErr:  fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.DoctorApproverCheck = nil
+
+	code := app.Run(context.Background(), []string{"doctor", "--json"})
+	if code != 1 {
+		t.Fatalf("doctor exit=%d, want 1", code)
+	}
+	var got doctorOutput
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode doctor json: %v; stdout=%q", err, stdout.String())
+	}
+	if got.OK {
+		t.Fatalf("doctor json ok = true, want false: %+v", got)
+	}
+	found := false
+	for _, check := range got.Checks {
+		if check.Name == "background_helper" {
+			found = true
+			if check.Status != string(control.RepairStatusRepairRequired) ||
+				!strings.Contains(check.Error, "untrusted peer") {
+				t.Fatalf("background helper check = %+v", check)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("doctor checks missing background helper: %+v", got.Checks)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("doctor stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestAppDoctorReportsRepairRequiredBackgroundHelperText(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		repairErr:  fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.DoctorApproverCheck = nil
+
+	code := app.Run(context.Background(), []string{"doctor"})
+	if code != 1 {
+		t.Fatalf("doctor exit=%d, want 1", code)
+	}
+	for _, want := range []string{
+		"Background helper: repair required",
+		"Run `agent-secret repair`",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("doctor output = %q, want %q", stdout.String(), want)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("doctor stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestAppRepairReportsRefreshedBackgroundHelper(t *testing.T) {
+	manager := &appFakeDaemonManager{
+		repairResult: control.RepairResult{
+			Status: control.RepairStatusRefreshed,
+			PID:    5678,
+		},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{"repair"})
+	if code != 0 {
+		t.Fatalf("repair exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "Background helper: refreshed" {
+		t.Fatalf("repair stdout = %q", stdout.String())
+	}
+	if manager.repairCalls != 1 || manager.connectCalls != 0 {
+		t.Fatalf("manager calls: repair=%d connect=%d", manager.repairCalls, manager.connectCalls)
+	}
+}
+
+func TestAppRepairJSONReportsBackgroundHelperStatus(t *testing.T) {
+	manager := &appFakeDaemonManager{
+		repairResult: control.RepairResult{
+			Status: control.RepairStatusOK,
+			PID:    5678,
+		},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{"repair", "--json"})
+	if code != 0 {
+		t.Fatalf("repair exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var got repairOutput
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode repair json: %v; stdout=%q", err, stdout.String())
+	}
+	if got.SchemaVersion != "1" || got.Status != string(control.RepairStatusOK) || got.PID != 5678 {
+		t.Fatalf("repair json = %+v", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("repair stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestAppRepairJSONReportsWriteFailure(t *testing.T) {
+	manager := &appFakeDaemonManager{
+		repairResult: control.RepairResult{
+			Status: control.RepairStatusOK,
+			PID:    5678,
+		},
+	}
+	writeErr := errors.New("stdout closed")
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, failingWriter{err: writeErr}, &stderr)
+
+	code := app.Run(context.Background(), []string{"repair", "--json"})
+	if code != 1 {
+		t.Fatalf("repair exit=%d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "write repair json") ||
+		!strings.Contains(stderr.String(), writeErr.Error()) {
+		t.Fatalf("repair stderr = %q, want write failure", stderr.String())
+	}
+}
+
+func TestAppRepairReportsRepairRequired(t *testing.T) {
+	manager := &appFakeDaemonManager{
+		repairErr: fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{"repair"})
+	if code != 1 {
+		t.Fatalf("repair exit=%d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "Background helper: repair required") {
+		t.Fatalf("repair stdout = %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("repair stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestAppRepairJSONReportsRepairRequired(t *testing.T) {
+	manager := &appFakeDaemonManager{
+		repairErr: fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+	code := app.Run(context.Background(), []string{"repair", "--json"})
+	if code != 1 {
+		t.Fatalf("repair exit=%d, want 1", code)
+	}
+	var got repairOutput
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode repair json: %v; stdout=%q", err, stdout.String())
+	}
+	if got.SchemaVersion != "1" ||
+		got.Status != string(control.RepairStatusRepairRequired) ||
+		!strings.Contains(got.Error, "untrusted peer") {
+		t.Fatalf("repair json = %+v", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("repair stderr = %q, want empty", stderr.String())
 	}
 }
 
@@ -2325,7 +2732,7 @@ account: fixture.1password.com
 	}
 }
 
-func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
+func TestAppExecReportsBackgroundHelperFailureBeforeSpawn(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	app := newTestApp(
@@ -2341,13 +2748,13 @@ func TestAppExecReportsDaemonStartFailureBeforeSpawn(t *testing.T) {
 		"--account", "Work",
 		"--secret", "TOKEN=op://Example/Item/token",
 		"--",
-		os.Args[0], "-test.run=TestAppExecReportsDaemonStartFailureBeforeSpawn", "--", "child",
+		os.Args[0], "-test.run=TestAppExecReportsBackgroundHelperFailureBeforeSpawn", "--", "child",
 	})
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "start daemon") {
-		t.Fatalf("stderr = %q, want start daemon failure", stderr.String())
+	if !strings.Contains(stderr.String(), "prepare background helper") {
+		t.Fatalf("stderr = %q, want background helper failure", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want no child output", stdout.String())
@@ -2487,14 +2894,17 @@ type appFakeDaemonManager struct {
 	clients    []daemonClient
 	status     protocol.StatusPayload
 
-	ensureErr  error
-	connectErr error
-	statusErr  error
-	startErr   error
-	stopErr    error
-	checkErr   error
+	repairResult control.RepairResult
+	ensureErr    error
+	repairErr    error
+	connectErr   error
+	statusErr    error
+	startErr     error
+	stopErr      error
+	checkErr     error
 
 	ensureCalls  int
+	repairCalls  int
 	connectCalls int
 	statusCalls  int
 	startCalls   int
@@ -2507,6 +2917,18 @@ type appFakeDaemonManager struct {
 func (m *appFakeDaemonManager) EnsureRunning(context.Context) error {
 	m.ensureCalls++
 	return m.ensureErr
+}
+
+func (m *appFakeDaemonManager) Repair(context.Context) (control.RepairResult, error) {
+	m.repairCalls++
+	m.ensureCalls++
+	if m.repairErr != nil {
+		return control.RepairResult{Status: control.RepairStatusRepairRequired}, m.repairErr
+	}
+	if m.repairResult.Status != "" {
+		return m.repairResult, nil
+	}
+	return control.RepairResult{Status: control.RepairStatusOK, PID: m.status.PID}, nil
 }
 
 func (m *appFakeDaemonManager) Connect(context.Context) (daemonClient, error) {
@@ -2791,6 +3213,14 @@ func (r failingRandomReader) Read(_ []byte) (int, error) {
 	return 0, r.err
 }
 
+type failingWriter struct {
+	err error
+}
+
+func (f failingWriter) Write(_ []byte) (int, error) {
+	return 0, f.err
+}
+
 type appAllowPeer struct{}
 
 func (appAllowPeer) Info(conn *net.UnixConn) (peercred.Info, error) {
@@ -2945,6 +3375,10 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 		default:
 		}
 		switch env.Type {
+		case protocol.TypeHelperHello:
+			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, helperidentity.Current()); err != nil {
+				return err
+			}
 		case protocol.TypeDaemonStatus:
 			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce, protocol.StatusPayload{PID: os.Getpid()}); err != nil {
 				return err

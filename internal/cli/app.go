@@ -35,6 +35,7 @@ type daemonManagerFactory func() (daemonManager, error)
 
 type daemonManager interface {
 	EnsureRunning(ctx context.Context) error
+	Repair(ctx context.Context) (control.RepairResult, error)
 	Connect(ctx context.Context) (daemonClient, error)
 	Status(ctx context.Context) (protocol.StatusPayload, error)
 	Start(ctx context.Context) error
@@ -169,8 +170,10 @@ func (a App) Run(ctx context.Context, args []string) int {
 		return a.runDaemonStop(ctx, command)
 	case KindDoctor:
 		return a.runDoctor(ctx, command)
+	case KindRepair:
+		return a.runRepair(ctx, command)
 	case KindInstallCLI:
-		return a.runInstallCLI(command)
+		return a.runInstallCLI(ctx, command)
 	case KindSkillInstall:
 		return a.runSkillInstall(command)
 	default:
