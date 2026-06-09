@@ -712,12 +712,27 @@ func TestManagerTrustedHelperUnavailableStates(t *testing.T) {
 	if unavailable {
 		t.Fatal("trustedHelperUnavailable retiring helper = true, want false")
 	}
+
+	hello := helperidentity.ForExecutable(executable, os.Getpid())
+	path, stop = startFakeHelperDaemon(t, hello)
+	defer stop()
+	manager = Manager{
+		socketPath: path,
+		DaemonPath: executable,
+	}
+	unavailable, err = manager.trustedHelperUnavailable(context.Background())
+	if err != nil {
+		t.Fatalf("trustedHelperUnavailable running helper returned error: %v", err)
+	}
+	if unavailable {
+		t.Fatal("trustedHelperUnavailable running helper = true, want false")
+	}
 }
 
 func TestManagerHelperMatchesExpectedBuild(t *testing.T) {
 	t.Parallel()
 
-	manager := Manager{DaemonPath: writeDaemonExecutableAt(t, t.TempDir())}
+	manager := Manager{DaemonPath: writeDaemonBundleExecutableAt(t, t.TempDir(), peertrust.DefaultDaemonBundleID)}
 	expected, err := manager.expectedHelperHello()
 	if err != nil {
 		t.Fatalf("expectedHelperHello returned error: %v", err)
@@ -757,6 +772,12 @@ func TestManagerHelperMatchesExpectedBuild(t *testing.T) {
 			name: "executable",
 			mutate: func(hello *protocol.HelperHelloPayload) {
 				hello.Executable = writeDaemonExecutableAt(t, t.TempDir())
+			},
+		},
+		{
+			name: "bundle id",
+			mutate: func(hello *protocol.HelperHelloPayload) {
+				hello.BundleID = "com.example.agent-secret.daemon"
 			},
 		},
 	} {
@@ -1287,4 +1308,23 @@ func writeDaemonExecutableAt(t *testing.T, dir string) string {
 		t.Fatalf("write executable: %v", err)
 	}
 	return path
+}
+
+func writeDaemonBundleExecutableAt(t *testing.T, dir string, bundleID string) string {
+	t.Helper()
+	bundlePath := filepath.Join(dir, "AgentSecretDaemon.app")
+	macOSPath := filepath.Join(bundlePath, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSPath, 0o750); err != nil {
+		t.Fatalf("mkdir daemon bundle: %v", err)
+	}
+	executable := filepath.Join(macOSPath, "agent-secretd")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: daemon control tests need runnable fixture executables.
+		t.Fatalf("write bundled executable: %v", err)
+	}
+	plist := `<plist><dict><key>CFBundleExecutable</key><string>agent-secretd</string>` +
+		`<key>CFBundleIdentifier</key><string>` + bundleID + `</string></dict></plist>`
+	if err := os.WriteFile(filepath.Join(bundlePath, "Contents", "Info.plist"), []byte(plist), 0o600); err != nil {
+		t.Fatalf("write Info.plist: %v", err)
+	}
+	return executable
 }
