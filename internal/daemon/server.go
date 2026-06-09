@@ -260,7 +260,7 @@ func (s *Server) retireIfExecutableChanged(ctx context.Context, encoder *json.En
 func checksExecutableIdentity(messageType protocol.MessageType) bool {
 	//nolint:exhaustive // Only new foreground work should trigger daemon executable self-checks.
 	switch messageType {
-	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe:
+	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe, protocol.TypeSessionCreate, protocol.TypeSessionResolve, protocol.TypeSessionDestroy, protocol.TypeSessionList:
 		return true
 	default:
 		return false
@@ -402,6 +402,22 @@ func (s *Server) dispatchClientEnvelope(
 	case protocol.TypeItemDescribe:
 		s.handleItemDescribe(ctx, conn, encoder, env)
 		return connectionDispatchAction{accepted: true}
+	case protocol.TypeSessionCreate:
+		s.handleSessionCreate(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeSessionResolve:
+		if state.hasActiveRequest() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+			return connectionDispatchAction{}
+		}
+		requestID := s.handleSessionResolve(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
+	case protocol.TypeSessionDestroy:
+		s.handleSessionDestroy(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeSessionList:
+		s.handleSessionList(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
 	case protocol.TypeCommandStarted:
 		if !s.lifecycleRequestMatchesConnection(encoder, env, state) {
 			return connectionDispatchAction{}
@@ -451,13 +467,8 @@ func (s *Server) handleItemDescribe(
 	encoder *json.Encoder,
 	env protocol.Envelope,
 ) {
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	req, err := protocol.DecodeRequiredPayload[request.ItemDescribeRequest](env)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+	req, ok := decodeTrustedClientPayload[request.ItemDescribeRequest](s, conn, encoder, env)
+	if !ok {
 		return
 	}
 	req = req.WithReceiptTime(s.broker.Now())
@@ -466,6 +477,147 @@ func (s *Server) handleItemDescribe(
 		return
 	}
 	payload, err := s.broker.HandleItemDescribe(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), payload)
+}
+
+func (s *Server) handleSessionCreate(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	req, ok := decodeTrustedClientPayload[request.SessionCreateRequest](s, conn, encoder, env)
+	if !ok {
+		return
+	}
+	req = req.WithReceiptTime(s.broker.Now())
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	payload, err := s.broker.HandleSessionCreate(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), payload)
+}
+
+func decodeTrustedClientPayload[T any](
+	s *Server,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) (T, bool) {
+	var zero T
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return zero, false
+	}
+	req, err := protocol.DecodeRequiredPayload[T](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return zero, false
+	}
+	return req, true
+}
+
+func (s *Server) handleSessionResolve(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) string {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	req, err := protocol.DecodeRequiredPayload[request.SessionResolveRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
+		return ""
+	}
+	delivery, err := s.broker.PrepareSessionResolve(ctx, env.Correlation(), req, peer)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	defer clearWriteDeadline()
+	if err := delivery.BeforeWrite(ctx); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	delivery.CommitDelivered()
+	committed = true
+	return env.RequestID
+}
+
+func (s *Server) handleSessionDestroy(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	req, err := protocol.DecodeRequiredPayload[request.SessionDestroyRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	payload, err := s.broker.HandleSessionDestroy(ctx, req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), payload)
+}
+
+func (s *Server) handleSessionList(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	payload, err := s.broker.HandleSessionList(ctx)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return
@@ -766,6 +918,14 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeNoPendingApproval
 	case errors.Is(err, daemonbroker.ErrNoReusableApproval):
 		return protocol.ErrorCodeNoReusableApproval
+	case errors.Is(err, daemonbroker.ErrSessionNotFound):
+		return protocol.ErrorCodeSessionNotFound
+	case errors.Is(err, daemonbroker.ErrSessionPeerMismatch):
+		return protocol.ErrorCodeSessionPeerMismatch
+	case errors.Is(err, daemonbroker.ErrSessionReadExhausted):
+		return protocol.ErrorCodeSessionReadExhausted
+	case errors.Is(err, request.ErrInvalidAlias):
+		return protocol.ErrorCodeBadRequest
 	case errors.Is(err, ErrRequestAlreadyActive):
 		return protocol.ErrorCodeRequestActive
 	case errors.Is(err, daemonbroker.ErrDaemonStopped):

@@ -76,6 +76,44 @@ func testItemDescribeRequestAt(now time.Time) request.ItemDescribeRequest {
 	}
 }
 
+func testSessionCreateRequestAt(t *testing.T, now time.Time) request.SessionCreateRequest {
+	t.Helper()
+
+	req, err := request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             "Deploy workflow",
+		Command:            []string{"agent-secret", "session", "create"},
+		ResolvedExecutable: "/opt/homebrew/bin/agent-secret",
+		ExecutableIdentity: fileidentity.Identity{Device: 1, Inode: 1, Mode: 0o755},
+		CWD:                "/tmp/project",
+		ReceivedAt:         now,
+		MaxReads:           2,
+		Secrets: []request.SecretSpec{
+			{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	return req
+}
+
+func testSessionResolveRequest(t *testing.T) request.SessionResolveRequest {
+	t.Helper()
+
+	req, err := request.NewSessionResolve(
+		"asess_abc123",
+		[]string{"/opt/homebrew/bin/terraform", "plan"},
+		"/opt/homebrew/bin/terraform",
+		fileidentity.Identity{Device: 2, Inode: 2, Mode: 0o755},
+		"/tmp/project",
+		request.EnvironmentFingerprint([]string{"PATH=/opt/homebrew/bin"}),
+	)
+	if err != nil {
+		t.Fatalf("NewSessionResolve returned error: %v", err)
+	}
+	return req
+}
+
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	t.Parallel()
 
@@ -320,6 +358,8 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 	execReq := testExecRequest(t, []request.SecretSpec{
 		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
 	})
+	sessionCreateReq := testSessionCreateRequestAt(t, time.Now())
+	sessionResolveReq := testSessionResolveRequest(t)
 	tests := []struct {
 		name       string
 		frame      func(t *testing.T, env protocol.Envelope) []byte
@@ -386,6 +426,91 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing env",
 		},
+		{
+			name: "session create id",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
+					SessionID:      "bad",
+					SecretAliases:  []string{"TOKEN"},
+					MaxReads:       sessionCreateReq.MaxReads,
+					RemainingReads: sessionCreateReq.MaxReads,
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateSession(ctx, testCorrelation("req_1", "nonce_1"), sessionCreateReq)
+				return err
+			},
+			wantErrMsg: "invalid session id",
+		},
+		{
+			name: "session create aliases",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
+					SessionID:      "asess_abc123",
+					SecretAliases:  []string{"OTHER"},
+					MaxReads:       sessionCreateReq.MaxReads,
+					RemainingReads: sessionCreateReq.MaxReads,
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateSession(ctx, testCorrelation("req_1", "nonce_1"), sessionCreateReq)
+				return err
+			},
+			wantErrMsg: "secret aliases do not match",
+		},
+		{
+			name: "session create reads",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
+					SessionID:      "asess_abc123",
+					SecretAliases:  []string{"TOKEN"},
+					MaxReads:       sessionCreateReq.MaxReads,
+					RemainingReads: 1,
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateSession(ctx, testCorrelation("req_1", "nonce_1"), sessionCreateReq)
+				return err
+			},
+			wantErrMsg: "remaining reads",
+		},
+		{
+			name: "session resolve env",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.SessionResolveResponsePayload{
+					Env:           map[string]string{"TOKEN": "value", "OTHER": "value"},
+					SecretAliases: []string{"TOKEN"},
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.ResolveSession(ctx, testCorrelation("req_1", "nonce_1"), sessionResolveReq)
+				return err
+			},
+			wantErrMsg: "env aliases",
+		},
+		{
+			name: "session resolve missing env",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.SessionResolveResponsePayload{
+					SecretAliases: []string{"TOKEN"},
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.ResolveSession(ctx, testCorrelation("req_1", "nonce_1"), sessionResolveReq)
+				return err
+			},
+			wantErrMsg: "missing env",
+		},
 	}
 
 	for _, tc := range tests {
@@ -446,6 +571,170 @@ func TestClientDescribeItemRoundTripsPayload(t *testing.T) {
 	if got.Ref.Raw != req.Ref.Raw || got.Account != req.Account {
 		t.Fatalf("unexpected item describe request: %+v", got)
 	}
+}
+
+func TestClientSessionRoundTripsPayloads(t *testing.T) {
+	t.Parallel()
+
+	t.Run("create", func(t *testing.T) {
+		t.Parallel()
+
+		req := testSessionCreateRequestAt(t, time.Now())
+		requests := make(chan protocol.Envelope, 1)
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			requests <- env
+			return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
+				SessionID:      "asess_abc123",
+				SecretAliases:  []string{"TOKEN"},
+				ExpiresAt:      req.ExpiresAt,
+				MaxReads:       2,
+				RemainingReads: 2,
+			})
+		})
+		defer cleanup()
+
+		payload, err := client.CreateSession(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		if err != nil {
+			t.Fatalf("CreateSession returned error: %v", err)
+		}
+		if payload.SessionID != "asess_abc123" || payload.RemainingReads != 2 {
+			t.Fatalf("unexpected create payload: %+v", payload)
+		}
+		env := receiveStalledRequest(t, requests)
+		if env.Type != protocol.TypeSessionCreate {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeSessionCreate)
+		}
+		got, err := protocol.DecodeRequiredPayload[request.SessionCreateRequest](env)
+		if err != nil {
+			t.Fatalf("decode session create request: %v", err)
+		}
+		if got.Reason != req.Reason || got.MaxReads != req.MaxReads {
+			t.Fatalf("unexpected session create request: %+v", got)
+		}
+	})
+
+	t.Run("resolve", func(t *testing.T) {
+		t.Parallel()
+
+		req := testSessionResolveRequest(t)
+		req, err := req.WithRequestedAliases([]string{"TOKEN"})
+		if err != nil {
+			t.Fatalf("WithRequestedAliases returned error: %v", err)
+		}
+		requests := make(chan protocol.Envelope, 1)
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			requests <- env
+			return okResponseFrame(t, env, protocol.SessionResolveResponsePayload{
+				Env:           map[string]string{"TOKEN": "synthetic-secret-value"},
+				SecretAliases: []string{"TOKEN"},
+				OverrideEnv:   true,
+			})
+		})
+		defer cleanup()
+
+		payload, err := client.ResolveSession(context.Background(), testCorrelation("req_1", "nonce_1"), req)
+		if err != nil {
+			t.Fatalf("ResolveSession returned error: %v", err)
+		}
+		if payload.Env["TOKEN"] == "" || !payload.OverrideEnv {
+			t.Fatalf("unexpected resolve payload: %+v", payload)
+		}
+		env := receiveStalledRequest(t, requests)
+		if env.Type != protocol.TypeSessionResolve {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeSessionResolve)
+		}
+		got, err := protocol.DecodeRequiredPayload[request.SessionResolveRequest](env)
+		if err != nil {
+			t.Fatalf("decode session resolve request: %v", err)
+		}
+		if got.SessionID != req.SessionID || got.CWD != req.CWD {
+			t.Fatalf("unexpected session resolve request: %+v", got)
+		}
+		if len(got.RequestedAliases) != 1 || got.RequestedAliases[0] != "TOKEN" {
+			t.Fatalf("requested aliases = %v, want TOKEN", got.RequestedAliases)
+		}
+	})
+
+	t.Run("resolve rejects wrong projected aliases", func(t *testing.T) {
+		t.Parallel()
+
+		req := testSessionResolveRequest(t)
+		req, err := req.WithRequestedAliases([]string{"TOKEN"})
+		if err != nil {
+			t.Fatalf("WithRequestedAliases returned error: %v", err)
+		}
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			return okResponseFrame(t, env, protocol.SessionResolveResponsePayload{
+				Env:           map[string]string{"OTHER_TOKEN": "synthetic-secret-value"},
+				SecretAliases: []string{"OTHER_TOKEN"},
+			})
+		})
+		defer cleanup()
+
+		if _, err := client.ResolveSession(context.Background(), testCorrelation("req_1", "nonce_1"), req); !errors.Is(err, protocol.ErrMalformedEnvelope) {
+			t.Fatalf("ResolveSession error = %v, want ErrMalformedEnvelope", err)
+		}
+	})
+
+	t.Run("destroy", func(t *testing.T) {
+		t.Parallel()
+
+		req := request.SessionDestroyRequest{SessionID: "asess_abc123"}
+		requests := make(chan protocol.Envelope, 1)
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			requests <- env
+			return okResponseFrame(t, env, protocol.SessionDestroyResponsePayload{
+				SessionID: "asess_abc123",
+				Destroyed: true,
+			})
+		})
+		defer cleanup()
+
+		payload, err := client.DestroySession(context.Background(), req)
+		if err != nil {
+			t.Fatalf("DestroySession returned error: %v", err)
+		}
+		if !payload.Destroyed {
+			t.Fatalf("unexpected destroy payload: %+v", payload)
+		}
+		env := receiveStalledRequest(t, requests)
+		if env.Type != protocol.TypeSessionDestroy {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeSessionDestroy)
+		}
+	})
+
+	t.Run("list", func(t *testing.T) {
+		t.Parallel()
+
+		requests := make(chan protocol.Envelope, 1)
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			requests <- env
+			return okResponseFrame(t, env, protocol.SessionListResponsePayload{
+				Sessions: []protocol.SessionInfoPayload{{
+					SessionID:      "asess_abc123",
+					Reason:         "Deploy workflow",
+					CWD:            "/tmp/project",
+					SecretAliases:  []string{"TOKEN"},
+					ExpiresAt:      time.Now().Add(time.Minute),
+					MaxReads:       2,
+					RemainingReads: 1,
+				}},
+			})
+		})
+		defer cleanup()
+
+		payload, err := client.ListSessions(context.Background())
+		if err != nil {
+			t.Fatalf("ListSessions returned error: %v", err)
+		}
+		if len(payload.Sessions) != 1 || payload.Sessions[0].SessionID != "asess_abc123" {
+			t.Fatalf("unexpected list payload: %+v", payload)
+		}
+		env := receiveStalledRequest(t, requests)
+		if env.Type != protocol.TypeSessionList {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeSessionList)
+		}
+	})
 }
 
 func TestClientRejectsOversizedDaemonResponseFrame(t *testing.T) {

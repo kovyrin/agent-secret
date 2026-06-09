@@ -20,6 +20,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -153,6 +154,292 @@ func TestServerItemDescribeProtocolLifecycle(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerSessionProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	aud := &memoryAudit{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    aud,
+	})
+	defer cleanup()
+
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("absolute cwd: %v", err)
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatalf("resolve cwd: %v", err)
+	}
+	peerExe := currentExecutable(t)
+	exe, err := filepath.EvalSymlinks(peerExe)
+	if err != nil {
+		t.Fatalf("resolve executable: %v", err)
+	}
+	identity, err := fileidentity.Capture(exe)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
+	createReq, err := request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             "Run deploy workflow",
+		Command:            []string{"agent-secret", "session", "create"},
+		ResolvedExecutable: exe,
+		ExecutableIdentity: identity,
+		CWD:                cwd,
+		Secrets:            []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		TTL:                time.Minute,
+		MaxReads:           1,
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	created, err := client.CreateSession(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+	peer := peerInfoForTest(t, os.Getpid(), peerExe)
+	peer.CWD = cwd
+	resolveReq, err := request.NewSessionResolve(
+		created.SessionID,
+		[]string{exe, "-test.run=TestServerSessionProtocolLifecycle", "--", "child"},
+		exe,
+		identity,
+		cwd,
+		request.EnvironmentFingerprint([]string{"PATH=/usr/bin"}),
+	)
+	if err != nil {
+		t.Fatalf("NewSessionResolve returned error: %v", err)
+	}
+	resolveReq = resolveReq.WithExpectedPeer(peercred.Expected(peer))
+	resolved, err := client.ResolveSession(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq)
+	if err != nil {
+		t.Fatalf("ResolveSession returned error: %v", err)
+	}
+	if resolved.Env["TOKEN"] != "value" {
+		t.Fatalf("resolved env = %+v", resolved.Env)
+	}
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), 0, ""); err != nil {
+		t.Fatalf("ReportCompleted returned error: %v", err)
+	}
+
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSessionCreated,
+		audit.EventSessionResolved,
+		audit.EventCommandStarting,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerSessionResolveRejectsUnapprovedAliasProjection(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	defer cleanup()
+
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("absolute cwd: %v", err)
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatalf("resolve cwd: %v", err)
+	}
+	peerExe := currentExecutable(t)
+	exe, err := filepath.EvalSymlinks(peerExe)
+	if err != nil {
+		t.Fatalf("resolve executable: %v", err)
+	}
+	identity, err := fileidentity.Capture(exe)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
+	createReq, err := request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             "Run deploy workflow",
+		Command:            []string{"agent-secret", "session", "create"},
+		ResolvedExecutable: exe,
+		ExecutableIdentity: identity,
+		CWD:                cwd,
+		Secrets:            []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		TTL:                time.Minute,
+		MaxReads:           1,
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	created, err := client.CreateSession(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+	resolveReq, err := request.NewSessionResolve(
+		created.SessionID,
+		[]string{exe, "-test.run=TestServerSessionResolveRejectsUnapprovedAliasProjection", "--", "child"},
+		exe,
+		identity,
+		cwd,
+		request.EnvironmentFingerprint([]string{"PATH=/usr/bin"}),
+	)
+	if err != nil {
+		t.Fatalf("NewSessionResolve returned error: %v", err)
+	}
+	resolveReq, err = resolveReq.WithRequestedAliases([]string{"MISSING_TOKEN"})
+	if err != nil {
+		t.Fatalf("WithRequestedAliases returned error: %v", err)
+	}
+	peer := peerInfoForTest(t, os.Getpid(), peerExe)
+	peer.CWD = cwd
+	resolveReq = resolveReq.WithExpectedPeer(peercred.Expected(peer))
+
+	_, err = client.ResolveSession(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq)
+	if !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("ResolveSession error = %v, want bad_request", err)
+	}
+}
+
+func TestServerSessionListAndDestroyProtocol(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	aud := &memoryAudit{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    aud,
+	})
+	defer cleanup()
+
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("absolute cwd: %v", err)
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatalf("resolve cwd: %v", err)
+	}
+	exe, err := filepath.EvalSymlinks(currentExecutable(t))
+	if err != nil {
+		t.Fatalf("resolve executable: %v", err)
+	}
+	identity, err := fileidentity.Capture(exe)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
+	createReq, err := request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             "Run deploy workflow",
+		Command:            []string{"agent-secret", "session", "create"},
+		ResolvedExecutable: exe,
+		ExecutableIdentity: identity,
+		CWD:                cwd,
+		Secrets:            []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		TTL:                time.Minute,
+		MaxReads:           2,
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	created, err := client.CreateSession(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+
+	listed, err := client.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if len(listed.Sessions) != 1 || listed.Sessions[0].SessionID != created.SessionID {
+		t.Fatalf("listed sessions = %+v, want %s", listed.Sessions, created.SessionID)
+	}
+	if listed.Sessions[0].RemainingReads != 2 || listed.Sessions[0].CWD != cwd {
+		t.Fatalf("listed session metadata = %+v", listed.Sessions[0])
+	}
+
+	destroyed, err := client.DestroySession(context.Background(), request.SessionDestroyRequest{SessionID: created.SessionID})
+	if err != nil {
+		t.Fatalf("DestroySession returned error: %v", err)
+	}
+	if destroyed.SessionID != created.SessionID || !destroyed.Destroyed {
+		t.Fatalf("destroyed payload = %+v", destroyed)
+	}
+	listed, err = client.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ListSessions after destroy returned error: %v", err)
+	}
+	if len(listed.Sessions) != 0 {
+		t.Fatalf("listed sessions after destroy = %+v, want empty", listed.Sessions)
+	}
+	_, err = client.DestroySession(context.Background(), request.SessionDestroyRequest{SessionID: created.SessionID})
+	if !control.IsProtocolError(err, protocol.ErrorCodeSessionNotFound) {
+		t.Fatalf("second DestroySession error = %v, want session_not_found protocol error", err)
+	}
+
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSessionCreated,
+		audit.EventSessionDestroyed,
+		audit.EventSessionDestroyed,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestSessionProtocolErrorsMapToCodes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err  error
+		want protocol.ErrorCode
+	}{
+		{err: daemonbroker.ErrSessionNotFound, want: protocol.ErrorCodeSessionNotFound},
+		{err: daemonbroker.ErrSessionPeerMismatch, want: protocol.ErrorCodeSessionPeerMismatch},
+		{err: daemonbroker.ErrSessionReadExhausted, want: protocol.ErrorCodeSessionReadExhausted},
+	}
+	for _, tt := range tests {
+		if got := codeForError(tt.err); got != tt.want {
+			t.Fatalf("codeForError(%v) = %s, want %s", tt.err, got, tt.want)
+		}
+	}
+}
+
+func TestSessionMessagesTriggerExecutableIdentityCheck(t *testing.T) {
+	t.Parallel()
+
+	for _, messageType := range []protocol.MessageType{
+		protocol.TypeSessionCreate,
+		protocol.TypeSessionResolve,
+		protocol.TypeSessionDestroy,
+		protocol.TypeSessionList,
+	} {
+		if !checksExecutableIdentity(messageType) {
+			t.Fatalf("checksExecutableIdentity(%s) = false, want true", messageType)
+		}
+	}
+	if checksExecutableIdentity(protocol.TypeApprovalPending) {
+		t.Fatal("approval.pending should not trigger executable identity check")
 	}
 }
 

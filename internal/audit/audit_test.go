@@ -327,6 +327,79 @@ func TestFromItemDescribeRequestUsesMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestFromSessionRequestsUseMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeExecutable(t, dir, "agent-secret")
+	executable := filepath.Join(dir, "agent-secret")
+	identity, err := fileidentity.Capture(executable)
+	if err != nil {
+		t.Fatalf("capture executable identity: %v", err)
+	}
+	createReq, err := request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             "  Deploy workflow  ",
+		Command:            []string{"agent-secret", "session", "create"},
+		CWD:                dir,
+		ResolvedExecutable: executable,
+		ExecutableIdentity: identity,
+		Secrets: []request.SecretSpec{
+			{Alias: "TOKEN", Ref: "op://Example Vault/Deploy Token/token", Account: "Work"},
+		},
+		MaxReads:    2,
+		OverrideEnv: true,
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	createEvent := FromSessionCreateRequest(EventSessionCreated, "req_1", createReq)
+	if createEvent.Type != EventSessionCreated ||
+		createEvent.Reason != "Deploy workflow" ||
+		createEvent.MaxReads == nil ||
+		*createEvent.MaxReads != 2 ||
+		!createEvent.OverrideEnv {
+		t.Fatalf("create event missing expected metadata: %+v", createEvent)
+	}
+	createJSON, err := json.Marshal(createEvent)
+	if err != nil {
+		t.Fatalf("marshal create event: %v", err)
+	}
+	if bytes.Contains(createJSON, []byte(canaryValue)) {
+		t.Fatalf("create event leaked synthetic value: %s", createJSON)
+	}
+
+	resolveReq, err := request.NewSessionResolve(
+		"asess_abc123",
+		[]string{"/usr/bin/env", "terraform", "plan"},
+		"/usr/bin/env",
+		fileidentity.Identity{Device: 1, Inode: 2, Mode: 0o755, Size: 64},
+		dir,
+		request.EnvironmentFingerprint([]string{"PATH=/usr/bin"}),
+	)
+	if err != nil {
+		t.Fatalf("NewSessionResolve returned error: %v", err)
+	}
+	resolveEvent := FromSessionResolveRequest(
+		EventSessionResolved,
+		"req_2",
+		resolveReq,
+		[]SecretRef{{Alias: "TOKEN", Ref: "op://Example Vault/Deploy Token/token", Account: "Work"}},
+	)
+	if resolveEvent.Type != EventSessionResolved ||
+		resolveEvent.SessionID != "asess_abc123" ||
+		resolveEvent.CWD != dir ||
+		len(resolveEvent.SecretRefs) != 1 {
+		t.Fatalf("resolve event missing expected metadata: %+v", resolveEvent)
+	}
+	resolveJSON, err := json.Marshal(resolveEvent)
+	if err != nil {
+		t.Fatalf("marshal resolve event: %v", err)
+	}
+	if bytes.Contains(resolveJSON, []byte(canaryValue)) {
+		t.Fatalf("resolve event leaked synthetic value: %s", resolveJSON)
+	}
+}
+
 func TestWriterRejectsInvalidEventsAndClosedUse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
 )
@@ -24,6 +25,10 @@ const (
 	TypeApprovalDecision  MessageType = "approval.decision"
 	TypeRequestExec       MessageType = "request.exec"
 	TypeItemDescribe      MessageType = "item.describe"
+	TypeSessionCreate     MessageType = "session.create"
+	TypeSessionResolve    MessageType = "session.resolve"
+	TypeSessionDestroy    MessageType = "session.destroy"
+	TypeSessionList       MessageType = "session.list"
 	TypeCommandStarted    MessageType = "command.started"
 	TypeCommandCompleted  MessageType = "command.completed"
 	TypeOK                MessageType = "ok"
@@ -56,6 +61,9 @@ const (
 	ErrorCodeRequestExpired           ErrorCode = "request_expired"
 	ErrorCodeRequestFailed            ErrorCode = "request_failed"
 	ErrorCodeResolveFailed            ErrorCode = "resolve_failed"
+	ErrorCodeSessionNotFound          ErrorCode = "session_not_found"
+	ErrorCodeSessionPeerMismatch      ErrorCode = "session_peer_mismatch"
+	ErrorCodeSessionReadExhausted     ErrorCode = "session_read_exhausted"
 	ErrorCodeStaleApproval            ErrorCode = "stale_approval"
 	ErrorCodeUntrustedClient          ErrorCode = "untrusted_client"
 )
@@ -93,6 +101,40 @@ type ErrorPayload struct {
 type ExecResponsePayload struct {
 	Env           map[string]string `json:"env"`
 	SecretAliases []string          `json:"secret_aliases"`
+}
+
+type SessionCreateResponsePayload struct {
+	SessionID      string    `json:"session_id"`
+	SecretAliases  []string  `json:"secret_aliases"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	MaxReads       int       `json:"max_reads"`
+	RemainingReads int       `json:"remaining_reads"`
+}
+
+type SessionResolveResponsePayload struct {
+	Env           map[string]string `json:"env"`
+	SecretAliases []string          `json:"secret_aliases"`
+	OverrideEnv   bool              `json:"override_env"`
+}
+
+type SessionDestroyResponsePayload struct {
+	SessionID string `json:"session_id"`
+	Destroyed bool   `json:"destroyed"`
+}
+
+type SessionListResponsePayload struct {
+	Sessions []SessionInfoPayload `json:"sessions"`
+}
+
+type SessionInfoPayload struct {
+	SessionID      string    `json:"session_id"`
+	Reason         string    `json:"reason"`
+	CWD            string    `json:"cwd"`
+	SecretAliases  []string  `json:"secret_aliases"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	MaxReads       int       `json:"max_reads"`
+	RemainingReads int       `json:"remaining_reads"`
+	OverrideEnv    bool      `json:"override_env"`
 }
 
 type ItemDescribeResponsePayload struct {

@@ -43,6 +43,9 @@ extension ApprovalRequestViewModel {
 
         case .itemDescribe:
             "Item metadata:"
+
+        case .sessionCreate:
+            "Session secrets:"
         }
     }
 

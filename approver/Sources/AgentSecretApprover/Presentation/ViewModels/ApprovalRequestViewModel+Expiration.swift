@@ -39,10 +39,18 @@ extension ApprovalRequestViewModel {
 
             case .itemDescribe:
                 return "This item metadata request has expired."
+
+            case .sessionCreate:
+                return "This session access request has expired."
             }
         }
         if operation == .itemDescribe {
             return "Allow this command to inspect this 1Password item?"
+        }
+        if operation == .sessionCreate {
+            return resourceCount == 1 ?
+                "Allow this session to use the following secret?" :
+                "Allow this session to use the following \(resourceCount) secrets?"
         }
         if resourceCount == 1 {
             return "Allow this command to use the following secret?"
@@ -57,6 +65,9 @@ extension ApprovalRequestViewModel {
         if operation == .itemDescribe {
             return "wants item metadata access."
         }
+        if operation == .sessionCreate {
+            return "wants short session access."
+        }
         return "wants temporary access."
     }
 
@@ -70,6 +81,12 @@ extension ApprovalRequestViewModel {
             Secret values are never shown to the agent or stored on disk.
             """
         }
+        if operation == .sessionCreate {
+            return """
+            The session keeps approved values in daemon memory only.
+            Values are injected only by with-session and are never printed.
+            """
+        }
         let noun: String = resourceCount == 1 ? "secret is" : "secrets are"
         let pronoun: String = resourceCount == 1 ? "It is" : "They are"
         return """
@@ -81,9 +98,9 @@ extension ApprovalRequestViewModel {
     static func scopeSummary(uses: Int, remaining: String, expired: Bool, allowsReusable: Bool) -> String {
         if !allowsReusable {
             if expired {
-                return "One metadata lookup only\nrequest expired"
+                return "One approved operation only\nrequest expired"
             }
-            return "One metadata lookup only\nexpires in \(remaining)"
+            return "One approved operation only\nexpires in \(remaining)"
         }
         if expired {
             return "Same command only • max \(uses) uses\nrequest expired"

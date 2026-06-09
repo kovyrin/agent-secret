@@ -89,6 +89,95 @@ type itemDescribeRequestBuildOptions struct {
 	ttl                time.Duration
 }
 
+type sessionCreateRequestBuildOptions struct {
+	reason             string
+	command            []string
+	cwd                string
+	resolvedExecutable string
+	secrets            []request.SecretSpec
+	ttl                time.Duration
+	maxReads           int
+	overrideEnv        bool
+}
+
+func buildSessionCreateRequest(opts sessionCreateRequestBuildOptions) (request.SessionCreateRequest, error) {
+	cwd, err := normalizeCWD(opts.cwd)
+	if err != nil {
+		return request.SessionCreateRequest{}, err
+	}
+	resolvedExecutable := opts.resolvedExecutable
+	if resolvedExecutable == "" {
+		resolvedExecutable, err = os.Executable()
+		if err != nil {
+			return request.SessionCreateRequest{}, fmt.Errorf("resolve current executable: %w", err)
+		}
+	}
+	resolvedExecutable, err = validateExecutable(resolvedExecutable)
+	if err != nil {
+		return request.SessionCreateRequest{}, err
+	}
+	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
+	if err != nil {
+		return request.SessionCreateRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
+	}
+	return request.NewSessionCreate(request.SessionCreateOptions{
+		Reason:             opts.reason,
+		Command:            opts.command,
+		ResolvedExecutable: resolvedExecutable,
+		ExecutableIdentity: executableIdentity,
+		CWD:                cwd,
+		Secrets:            opts.secrets,
+		TTL:                opts.ttl,
+		MaxReads:           opts.maxReads,
+		OverrideEnv:        opts.overrideEnv,
+	})
+}
+
+type sessionResolveRequestBuildOptions struct {
+	sessionID              string
+	command                []string
+	cwd                    string
+	env                    []string
+	allowMutableExecutable bool
+	requestedAliases       []string
+}
+
+func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request.SessionResolveRequest, error) {
+	cwd, err := normalizeCWD(opts.cwd)
+	if err != nil {
+		return request.SessionResolveRequest{}, err
+	}
+	env := slices.Clone(opts.env)
+	command, resolvedExecutable, err := resolveCommand(cwd, env, opts.command)
+	if err != nil {
+		return request.SessionResolveRequest{}, err
+	}
+	if !opts.allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return request.SessionResolveRequest{}, fmt.Errorf(
+				"%w: rerun with --allow-mutable-executable only if you trust the executable path",
+				err,
+			)
+		}
+	}
+	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
+	if err != nil {
+		return request.SessionResolveRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
+	}
+	req, err := request.NewSessionResolve(
+		opts.sessionID,
+		command,
+		resolvedExecutable,
+		executableIdentity,
+		cwd,
+		request.EnvironmentFingerprint(env),
+	)
+	if err != nil {
+		return request.SessionResolveRequest{}, err
+	}
+	return req.WithRequestedAliases(opts.requestedAliases)
+}
+
 func buildItemDescribeRequest(opts itemDescribeRequestBuildOptions) (request.ItemDescribeRequest, error) {
 	cwd, err := normalizeCWD(opts.cwd)
 	if err != nil {

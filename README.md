@@ -124,6 +124,17 @@ Use an existing reusable approval without opening a new prompt:
 agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
 ```
 
+Approve a bounded multi-command session and run commands through the wrapper:
+
+```bash
+agent-secret session create --profile terraform-cloudflare --max-reads 2
+agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
+agent-secret with-session asess_123 \
+  --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
+  -- terraform apply
+agent-secret session destroy asess_123
+```
+
 Inspect item metadata without revealing values:
 
 ```bash
@@ -169,6 +180,7 @@ profiles:
     ttl: 10m
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
+      STATE_TOKEN: op://Example/Terraform State/token
 ```
 
 With `default_profile`, this works from the project directory:
@@ -183,6 +195,11 @@ precedence, env-file migration, and the full schema.
 ## Commands
 
 - `agent-secret exec -- COMMAND [ARG...]`: run a command with approved secrets.
+- `agent-secret session create|list|destroy`: manage bounded daemon-held
+  sessions.
+- `agent-secret with-session SESSION_ID -- COMMAND [ARG...]`: run one command
+  with secrets from an approved session. Add `--only ALIAS[,ALIAS...]` to inject
+  a per-command subset of the approved session bag.
 - `agent-secret item describe REF`: inspect 1Password item fields without
   values.
 - `agent-secret agent-context --json`: print a machine-readable command and
@@ -221,8 +238,9 @@ Out of scope:
   app or helper, or a malicious approved child process.
 - Hiding env vars from the operating-system APIs needed to launch the approved
   child process.
-- Cross-platform secret management, background updates, session handles,
-  credential helpers, file-descriptor delivery, or socket value reads.
+- Cross-platform secret management, background updates, credential helpers,
+  file-descriptor delivery, arbitrary long-lived shells, or raw socket value
+  reads.
 
 Read [Threat Model](docs/threat-model.md) for the detailed model and review
 ledger. Use the [Security Policy](SECURITY.md) for private vulnerability
@@ -234,7 +252,8 @@ The launch build is intentionally narrow:
 
 - macOS on Apple Silicon only.
 - 1Password Desktop and Bitwarden Secrets Manager only; no other providers yet.
-- `agent-secret exec` only; no long-lived shell sessions.
+- Sessions are bounded, daemon-memory only, and usable only through
+  `agent-secret with-session`; no long-lived interactive shells.
 - No writing, updating, or rotating secrets yet.
 - No GCP Secret Manager or GCP token minting support yet.
 - No sandbox guarantee after you approve a child process.
@@ -294,6 +313,7 @@ scripts/release/build-release.sh v0.0.0-dev
 ## Documentation
 
 - [Configuration Reference](docs/configuration.md)
+- [Session E2E Validation](docs/session-e2e-validation.md)
 - [Threat Model](docs/threat-model.md)
 - [Release Process](docs/release-process.md)
 - [Security Policy](SECURITY.md)

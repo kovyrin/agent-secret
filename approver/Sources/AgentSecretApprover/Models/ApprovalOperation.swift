@@ -4,4 +4,5 @@ import Foundation
 public enum ApprovalOperation: String, Codable, Equatable, Sendable {
     case exec
     case itemDescribe = "item_describe"
+    case sessionCreate = "session_create"
 }

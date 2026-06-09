@@ -55,6 +55,18 @@ type daemonClient interface {
 		correlation protocol.Correlation,
 		req request.ItemDescribeRequest,
 	) (protocol.ItemDescribeResponsePayload, error)
+	CreateSession(
+		ctx context.Context,
+		correlation protocol.Correlation,
+		req request.SessionCreateRequest,
+	) (protocol.SessionCreateResponsePayload, error)
+	ResolveSession(
+		ctx context.Context,
+		correlation protocol.Correlation,
+		req request.SessionResolveRequest,
+	) (protocol.SessionResolveResponsePayload, error)
+	DestroySession(ctx context.Context, req request.SessionDestroyRequest) (protocol.SessionDestroyResponsePayload, error)
+	ListSessions(ctx context.Context) (protocol.SessionListResponsePayload, error)
 	ReportStarted(ctx context.Context, correlation protocol.Correlation, childPID int) error
 	ReportCompleted(ctx context.Context, correlation protocol.Correlation, exitCode int, signal string) error
 }
@@ -133,6 +145,14 @@ func (a App) Run(ctx context.Context, args []string) int {
 		return a.runAgentContext(command)
 	case KindExec:
 		return a.runExec(ctx, command)
+	case KindSessionCreate:
+		return a.runSessionCreate(ctx, command)
+	case KindSessionList:
+		return a.runSessionList(ctx, command)
+	case KindSessionDestroy:
+		return a.runSessionDestroy(ctx, command)
+	case KindWithSession:
+		return a.runWithSession(ctx, command)
 	case KindItemDescribe:
 		return a.runItemDescribe(ctx, command)
 	case KindProfileList:

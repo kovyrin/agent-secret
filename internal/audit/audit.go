@@ -40,6 +40,9 @@ const (
 	EventItemMetadataFetchStarted           EventType = "item_metadata_fetch_started"
 	EventItemMetadataFetchCompleted         EventType = "item_metadata_fetch_completed"
 	EventItemMetadataFetchFailed            EventType = "item_metadata_fetch_failed"
+	EventSessionCreated                     EventType = "session_created"
+	EventSessionResolved                    EventType = "session_resolved"
+	EventSessionDestroyed                   EventType = "session_destroyed"
 	EventCommandStarting                    EventType = "command_starting"
 	EventCommandStarted                     EventType = "command_started"
 	EventCommandCompleted                   EventType = "command_completed"
@@ -61,6 +64,7 @@ type Event struct {
 	Type               EventType   `json:"type"`
 	RequestID          string      `json:"request_id,omitempty"`
 	ApprovalID         string      `json:"approval_id,omitempty"`
+	SessionID          string      `json:"session_id,omitempty"`
 	Reason             string      `json:"reason,omitempty"`
 	Command            []string    `json:"command,omitempty"`
 	ResolvedExecutable string      `json:"resolved_executable,omitempty"`
@@ -77,10 +81,39 @@ type Event struct {
 	RequesterPath      string      `json:"requester_path,omitempty"`
 	RemainingTTLMillis *int64      `json:"remaining_ttl_ms,omitempty"`
 	RemainingUses      *int        `json:"remaining_uses,omitempty"`
+	MaxReads           *int        `json:"max_reads,omitempty"`
+	RemainingReads     *int        `json:"remaining_reads,omitempty"`
 	ForceRefresh       bool        `json:"force_refresh,omitempty"`
 	ReuseOnly          bool        `json:"reuse_only,omitempty"`
 	OverrideEnv        bool        `json:"override_env,omitempty"`
 	OverriddenAliases  []string    `json:"overridden_aliases,omitempty"`
+}
+
+func FromSessionCreateRequest(eventType EventType, requestID string, req request.SessionCreateRequest) Event {
+	maxReads := req.MaxReads
+	return Event{
+		Type:               eventType,
+		RequestID:          requestID,
+		Reason:             req.Reason,
+		Command:            slices.Clone(req.Command),
+		ResolvedExecutable: req.ResolvedExecutable,
+		CWD:                req.CWD,
+		SecretRefs:         secretRefs(req.Secrets),
+		MaxReads:           &maxReads,
+		OverrideEnv:        req.OverrideEnv,
+	}
+}
+
+func FromSessionResolveRequest(eventType EventType, requestID string, req request.SessionResolveRequest, secretRefs []SecretRef) Event {
+	return Event{
+		Type:               eventType,
+		RequestID:          requestID,
+		SessionID:          req.SessionID,
+		Command:            slices.Clone(req.Command),
+		ResolvedExecutable: req.ResolvedExecutable,
+		CWD:                req.CWD,
+		SecretRefs:         slices.Clone(secretRefs),
+	}
 }
 
 type Writer struct {
