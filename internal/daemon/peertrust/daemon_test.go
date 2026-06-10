@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
+	"github.com/kovyrin/agent-secret/internal/daemon/trust"
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/testsupport/appbundle"
@@ -128,6 +129,95 @@ func TestDaemonProductValidatorAllowsSignedAgentSecretHelperBundle(t *testing.T)
 	}
 }
 
+func TestDaemonProductValidatorRejectsBroadHelperTrustWhenSignatureChecksAreDisabled(t *testing.T) {
+	t.Parallel()
+
+	current := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	helper := writeHostedDaemonProductBundle(t, DefaultDaemonBundleID)
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newDaemonProductValidatorWithVerifier([]string{current}, "TEAMID", verifier, false)
+
+	err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(helper))
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+	if !strings.Contains(err.Error(), "not a current trusted helper") {
+		t.Fatalf("ValidateDaemonPeer error = %q, want current trusted helper context", err.Error())
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called when signature checks are disabled: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
+func TestDaemonProductValidatorReportsDevelopmentCLIForReleaseHelper(t *testing.T) {
+	t.Parallel()
+
+	current := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	helper := writeHostedDaemonProductBundle(t, DefaultDaemonBundleID)
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newDaemonProductValidatorWithVerifier([]string{current}, trust.DevelopmentExpectedTeamID, verifier, true)
+
+	err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(helper))
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+	if !errors.Is(err, ErrReleaseTeamIDRequired) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrReleaseTeamIDRequired)
+	}
+	for _, want := range []string{
+		"current CLI is a development/ad-hoc build",
+		"cannot trust the Agent Secret background helper",
+		"after verifying that app is the trusted release install",
+		"Contents/Resources/bin/agent-secret",
+		"install-cli --force",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ValidateDaemonPeer error = %q, want %q", err.Error(), want)
+		}
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called without a release Team ID: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
+func TestDaemonProductValidatorReportsMissingTeamIDForReleaseHelper(t *testing.T) {
+	t.Parallel()
+
+	current := writeExecutableAt(t, t.TempDir(), "agent-secretd")
+	helper := writeHostedDaemonProductBundle(t, DefaultDaemonBundleID)
+	verifier := &recordingSignatureVerifier{
+		pathTeamID:    "TEAMID",
+		processTeamID: "TEAMID",
+	}
+	validator := newDaemonProductValidatorWithVerifier([]string{current}, "", verifier, true)
+
+	err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(helper))
+	if !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+	if !errors.Is(err, ErrReleaseTeamIDRequired) {
+		t.Fatalf("ValidateDaemonPeer error = %v, want %v", err, ErrReleaseTeamIDRequired)
+	}
+	for _, want := range []string{
+		"current CLI was built without a release Developer ID Team ID",
+		"Contents/Resources/bin/agent-secret",
+		"install-cli --force",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ValidateDaemonPeer error = %q, want %q", err.Error(), want)
+		}
+	}
+	if len(verifier.paths) != 0 || len(verifier.pids) != 0 {
+		t.Fatalf("signature verifier called without a release Team ID: paths=%v pids=%v", verifier.paths, verifier.pids)
+	}
+}
+
 func TestDaemonProductValidatorRejectsWrongHelperBundleID(t *testing.T) {
 	t.Parallel()
 
@@ -226,6 +316,19 @@ func writeDaemonProductBundle(t *testing.T, bundleID string) string {
 	t.Helper()
 
 	bundlePath := filepath.Join(t.TempDir(), "AgentSecretDaemon.app")
+	return writeDaemonProductBundleAt(t, bundlePath, bundleID)
+}
+
+func writeHostedDaemonProductBundle(t *testing.T, bundleID string) string {
+	t.Helper()
+
+	bundlePath := filepath.Join(t.TempDir(), "Agent Secret.app", "Contents", "Library", "Helpers", "AgentSecretDaemon.app")
+	return writeDaemonProductBundleAt(t, bundlePath, bundleID)
+}
+
+func writeDaemonProductBundleAt(t *testing.T, bundlePath string, bundleID string) string {
+	t.Helper()
+
 	macOSPath := filepath.Join(bundlePath, "Contents", "MacOS")
 	if err := os.MkdirAll(macOSPath, 0o750); err != nil {
 		t.Fatalf("mkdir daemon bundle: %v", err)

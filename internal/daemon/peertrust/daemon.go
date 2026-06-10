@@ -14,6 +14,7 @@ import (
 )
 
 var ErrUntrustedDaemon = errors.New("untrusted daemon peer")
+var ErrReleaseTeamIDRequired = errors.New("release Developer ID Team ID required")
 
 const DefaultDaemonBundleID = "com.kovyrin.agent-secret.daemon"
 
@@ -113,10 +114,13 @@ func (v DaemonProductValidator) ValidateDaemonPeer(info peercred.Info) error {
 	}
 	requiredTeamID, enforceTeamID, err := trust.ExpectedTeamIDForSignatureValidation(v.expectedTeamID, ErrUntrustedDaemon)
 	if err != nil {
+		if strings.TrimSpace(v.expectedTeamID) == "" {
+			return releaseTeamIDRequiredError(info, "current CLI was built without a release Developer ID Team ID")
+		}
 		return err
 	}
 	if !enforceTeamID {
-		return fmt.Errorf("%w: broad helper repair trust requires a release Team ID", ErrUntrustedDaemon)
+		return releaseTeamIDRequiredError(info, "current CLI is a development/ad-hoc build")
 	}
 	bundlePath, err := daemonProductBundlePath(info.ExecutablePath)
 	if err != nil {
@@ -126,6 +130,36 @@ func (v DaemonProductValidator) ValidateDaemonPeer(info peercred.Info) error {
 		return err
 	}
 	return nil
+}
+
+func releaseTeamIDRequiredError(info peercred.Info, reason string) error {
+	bundlePath, err := daemonProductBundlePath(info.ExecutablePath)
+	if err != nil {
+		return fmt.Errorf(
+			"%w: %w: %s; broad helper repair trust requires a release Team ID",
+			ErrUntrustedDaemon,
+			ErrReleaseTeamIDRequired,
+			reason,
+		)
+	}
+	if cliPath, ok := bundledCLIPathForDaemonExecutable(info.ExecutablePath); ok {
+		return fmt.Errorf(
+			"%w: %w: %s and cannot trust the Agent Secret background helper at %q; after verifying that app is the trusted release install, update the command symlink with %q install-cli --force",
+			ErrUntrustedDaemon,
+			ErrReleaseTeamIDRequired,
+			reason,
+			info.ExecutablePath,
+			cliPath,
+		)
+	}
+	return fmt.Errorf(
+		"%w: %w: %s and cannot trust the Agent Secret background helper at %q in %q; update the command symlink with the trusted release app's agent-secret install-cli --force",
+		ErrUntrustedDaemon,
+		ErrReleaseTeamIDRequired,
+		reason,
+		info.ExecutablePath,
+		bundlePath,
+	)
 }
 
 func NewDaemonRepairValidator() DaemonRepairValidator {

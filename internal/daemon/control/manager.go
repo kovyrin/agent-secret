@@ -46,6 +46,7 @@ type Manager struct {
 	daemonStdout    io.Writer
 	daemonStderr    io.Writer
 	signalProcess   func(int, os.Signal) error
+	daemonValidator func([]string) peertrust.DaemonPeerValidator
 }
 
 func NewManager(socketPath string) (Manager, error) {
@@ -140,6 +141,9 @@ func (m Manager) repairOnce(ctx context.Context) (RepairResult, error) {
 		return m.refreshTrustedHelper(ctx)
 	}
 	if errors.Is(err, ErrUnexpectedHelper) {
+		if errors.Is(err, peertrust.ErrReleaseTeamIDRequired) {
+			return RepairResult{Status: RepairStatusRepairRequired}, err
+		}
 		if signalErr := m.signalRepairableHelper(ctx); signalErr != nil {
 			if errors.Is(signalErr, peertrust.ErrUntrustedDaemon) {
 				return RepairResult{Status: RepairStatusRepairRequired}, err
@@ -446,12 +450,19 @@ func (m Manager) connectTrustedHelper(ctx context.Context) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, err := ConnectWithPeerValidator(ctx, m.socketPath, peertrust.NewDaemonProductValidator(trustedPaths))
+	client, err := ConnectWithPeerValidator(ctx, m.socketPath, m.trustedDaemonValidator(trustedPaths))
 	if err != nil {
 		return nil, err
 	}
 	client.DefaultTimeout = m.protocolTimeout()
 	return client, nil
+}
+
+func (m Manager) trustedDaemonValidator(paths []string) peertrust.DaemonPeerValidator {
+	if m.daemonValidator != nil {
+		return m.daemonValidator(paths)
+	}
+	return peertrust.NewDaemonProductValidator(paths)
 }
 
 func classifyHelperConnectError(err error) error {
@@ -599,7 +610,7 @@ func (m Manager) inspectTrustedHelperPeer(ctx context.Context) (peercred.Info, e
 	if err != nil {
 		return peercred.Info{}, fmt.Errorf("%w: inspect daemon peer: %w", peertrust.ErrUntrustedDaemon, err)
 	}
-	if err := peertrust.NewDaemonProductValidator(trustedPaths).ValidateDaemonPeer(info); err != nil {
+	if err := m.trustedDaemonValidator(trustedPaths).ValidateDaemonPeer(info); err != nil {
 		return peercred.Info{}, err
 	}
 	return info, nil
@@ -625,7 +636,10 @@ func peerProcessGoneError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, syscall.ESRCH) || strings.Contains(err.Error(), "no such process")
+	errText := err.Error()
+	return errors.Is(err, syscall.ESRCH) ||
+		strings.Contains(errText, "no such process") ||
+		strings.Contains(errText, "proc_pidpath: no such file or directory")
 }
 
 func signalProcess(pid int, sig os.Signal) error {

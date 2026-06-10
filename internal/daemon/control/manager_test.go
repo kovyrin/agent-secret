@@ -45,6 +45,19 @@ func (allowPeerValidator) Validate(_ *net.UnixConn) error {
 	return nil
 }
 
+type pathOnlyDaemonValidator struct {
+	paths []string
+}
+
+func (v pathOnlyDaemonValidator) ValidateDaemonPeer(info peercred.Info) error {
+	for _, path := range v.paths {
+		if samePath(info.ExecutablePath, path) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: executable %q is not a current trusted helper", peertrust.ErrUntrustedDaemon, info.ExecutablePath)
+}
+
 type managerApprover struct{}
 
 func (managerApprover) Approve(
@@ -584,6 +597,9 @@ func TestManagerRepairRefreshesRepairableUnexpectedHelper(t *testing.T) {
 		StartupTimeout: 2 * time.Second,
 		daemonStdout:   output,
 		daemonStderr:   output,
+		daemonValidator: func(paths []string) peertrust.DaemonPeerValidator {
+			return pathOnlyDaemonValidator{paths: paths}
+		},
 	}
 	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER", "1")
 
@@ -609,6 +625,75 @@ func TestManagerRepairRefreshesRepairableUnexpectedHelper(t *testing.T) {
 	}
 	if samePath(result.Hello.Executable, alternateHelper) {
 		t.Fatalf("Repair hello executable = %q, want current helper, not alternate helper", result.Hello.Executable)
+	}
+}
+
+func TestManagerRepairRefusesRepairableUnexpectedHelperWithoutReleaseTeamID(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER") == "1" {
+		runDaemonManagerHelper(t)
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	socketDir, err := os.MkdirTemp("/tmp", "agent-secret-repairable-helper-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(socketDir) }()
+	socketPath := filepath.Join(socketDir, "d.sock")
+	alternateHelper := copyCurrentTestBinaryToDaemonBundleAt(t, t.TempDir(), peertrust.DefaultDaemonBundleID)
+	staleOutput, err := os.Create(filepath.Join(t.TempDir(), "repairable-stale-helper.log"))
+	if err != nil {
+		t.Fatalf("create stale helper output log: %v", err)
+	}
+	defer func() { _ = staleOutput.Close() }()
+	staleCmd := daemonprocess.StartCommand(
+		context.Background(),
+		alternateHelper,
+		[]string{"-test.run=TestManagerRepairRefusesRepairableUnexpectedHelperWithoutReleaseTeamID", "--", "--socket", socketPath},
+	)
+	staleCmd.Env = append(os.Environ(), "AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER=1")
+	staleCmd.Stdout = staleOutput
+	staleCmd.Stderr = staleOutput
+	if err := staleCmd.Start(); err != nil {
+		t.Fatalf("start alternate helper: %v", err)
+	}
+	staleDone := make(chan error, 1)
+	go func() { staleDone <- staleCmd.Wait() }()
+	defer func() {
+		if processIsRunning(staleCmd.Process.Pid) {
+			_ = staleCmd.Process.Kill()
+		}
+		select {
+		case <-staleDone:
+		case <-time.After(2 * time.Second):
+		}
+	}()
+	waitForRawSocket(t, socketPath)
+
+	manager := Manager{
+		socketPath:     socketPath,
+		DaemonPath:     executable,
+		DaemonArgs:     []string{"-test.run=TestManagerRepairRefusesRepairableUnexpectedHelperWithoutReleaseTeamID", "--", "--socket", "{socket}"},
+		StartupTimeout: 2 * time.Second,
+	}
+	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER", "1")
+
+	_, err = manager.Repair(context.Background())
+	if !errors.Is(err, ErrUnexpectedHelper) {
+		t.Fatalf("Repair error = %v, want %v", err, ErrUnexpectedHelper)
+	}
+	if !errors.Is(err, peertrust.ErrReleaseTeamIDRequired) {
+		t.Fatalf("Repair error = %v, want %v", err, peertrust.ErrReleaseTeamIDRequired)
+	}
+	if !strings.Contains(err.Error(), "install-cli --force") {
+		t.Fatalf("Repair error = %q, want install-cli guidance", err.Error())
+	}
+	if !processIsRunning(staleCmd.Process.Pid) {
+		t.Fatal("repair without a release Team ID terminated alternate helper")
 	}
 }
 
@@ -716,6 +801,9 @@ func TestManagerRepairErrorClassifiers(t *testing.T) {
 	}
 	if !peerProcessGoneError(errors.New("inspect daemon peer: proc_pidpath: no such process")) {
 		t.Fatal("peerProcessGoneError did not detect proc_pidpath text")
+	}
+	if !peerProcessGoneError(errors.New("inspect daemon peer: proc_pidpath: no such file or directory")) {
+		t.Fatal("peerProcessGoneError did not detect deleted proc_pidpath text")
 	}
 	if !helperUnavailableError(fmt.Errorf("%w: dial failed", socket.ErrDaemonUnavailable)) {
 		t.Fatal("helperUnavailableError did not detect socket unavailable")

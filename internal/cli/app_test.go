@@ -1270,6 +1270,7 @@ func TestAppExecRefusesUnexpectedBackgroundHelperBeforeSecretRequest(t *testing.
 		t.Fatalf("exit code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "unexpected background helper") ||
+		!strings.Contains(stderr.String(), "Details: unexpected background helper: untrusted peer") ||
 		!strings.Contains(stderr.String(), "Run `agent-secret repair`") {
 		t.Fatalf("stderr = %q, want unexpected helper guidance", stderr.String())
 	}
@@ -2337,6 +2338,7 @@ func TestAppInstallCLIWarnsWhenBackgroundHelperRepairFails(t *testing.T) {
 		t.Fatalf("repair calls = %d, want 1", manager.repairCalls)
 	}
 	if !strings.Contains(stderr.String(), "unexpected background helper") ||
+		!strings.Contains(stderr.String(), "Details: unexpected background helper: untrusted peer") ||
 		!strings.Contains(stderr.String(), "agent-secret repair") {
 		t.Fatalf("install-cli stderr = %q, want repair warning", stderr.String())
 	}

@@ -23,6 +23,7 @@ func (a App) ensureBackgroundHelper(ctx context.Context, manager daemonManager) 
 func backgroundHelperError(err error) string {
 	if errors.Is(err, control.ErrUnexpectedHelper) {
 		return "Agent Secret found an unexpected background helper and refused to send secrets to it.\n" +
+			"Details: " + err.Error() + "\n" +
 			"Run `agent-secret repair` to inspect and repair the local helper state."
 	}
 	return fmt.Sprintf("prepare background helper: %v", err)
