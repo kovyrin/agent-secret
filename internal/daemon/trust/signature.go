@@ -101,18 +101,26 @@ func verifyCodeSignatureTargetWithRunner(
 	description string,
 	run codesignCommandRunner,
 ) (string, error) {
-	if _, err := run(ctx, "--verify", "--strict", "--deep", target); err != nil {
-		return "", fmt.Errorf("verify %s: %w", description, err)
+	if output, err := run(ctx, "--verify", "--strict", "--deep", target); err != nil {
+		return "", codesignCommandError("verify "+description, output, err)
 	}
 	output, err := run(ctx, "-dv", "--verbose=4", target)
 	if err != nil {
-		return "", fmt.Errorf("inspect %s: %w", description, err)
+		return "", codesignCommandError("inspect "+description, output, err)
 	}
 	teamID, err := teamIDFromCodesignOutput(output)
 	if err != nil {
 		return "", fmt.Errorf("inspect %s: %w", description, err)
 	}
 	return teamID, nil
+}
+
+func codesignCommandError(description string, output []byte, err error) error {
+	detail := strings.TrimSpace(string(output))
+	if detail == "" {
+		return fmt.Errorf("%s: %w", description, err)
+	}
+	return fmt.Errorf("%s: %w: %s", description, err, detail)
 }
 
 func runCodesign(ctx context.Context, args ...string) ([]byte, error) {

@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.22] - Pending
+
+### Fixed
+
+- Made helper repair preserve `codesign` process-check output so a stale helper
+  PID that disappears during signature verification is treated as a recoverable
+  exited helper instead of an unrecoverable trust failure.
+
 ## [0.0.21] - 2026-06-10
 
 ### Fixed

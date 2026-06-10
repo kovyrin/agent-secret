@@ -805,6 +805,9 @@ func TestManagerRepairErrorClassifiers(t *testing.T) {
 	if !peerProcessGoneError(errors.New("inspect daemon peer: proc_pidpath: no such file or directory")) {
 		t.Fatal("peerProcessGoneError did not detect deleted proc_pidpath text")
 	}
+	if !peerProcessGoneError(errors.New("verify peer process signature: verify code signature for process 64264: exit status 1: +64264: No such process")) {
+		t.Fatal("peerProcessGoneError did not detect codesign process disappearance text")
+	}
 	if !helperUnavailableError(fmt.Errorf("%w: dial failed", socket.ErrDaemonUnavailable)) {
 		t.Fatal("helperUnavailableError did not detect socket unavailable")
 	}

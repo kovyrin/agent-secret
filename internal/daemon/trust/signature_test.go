@@ -90,6 +90,7 @@ func TestVerifyCodeSignatureTargetWithRunner(t *testing.T) {
 
 	tests := []struct {
 		name          string
+		verifyOutput  []byte
 		verifyErr     error
 		inspectOutput []byte
 		inspectErr    error
@@ -110,6 +111,15 @@ func TestVerifyCodeSignatureTargetWithRunner(t *testing.T) {
 			name:      "verify failure",
 			verifyErr: errors.New("signature rejected"),
 			wantErr:   "verify code signature for fixture",
+			wantCalls: [][]string{
+				{"--verify", "--strict", "--deep", "/Applications/Agent Secret.app"},
+			},
+		},
+		{
+			name:         "verify failure includes codesign output",
+			verifyOutput: []byte("+64264: No such process\n"),
+			verifyErr:    errors.New("exit status 1"),
+			wantErr:      "+64264: No such process",
 			wantCalls: [][]string{
 				{"--verify", "--strict", "--deep", "/Applications/Agent Secret.app"},
 			},
@@ -139,6 +149,7 @@ func TestVerifyCodeSignatureTargetWithRunner(t *testing.T) {
 			t.Parallel()
 
 			runner := &recordingCodesignRunner{
+				verifyOutput:  tt.verifyOutput,
 				verifyErr:     tt.verifyErr,
 				inspectOutput: tt.inspectOutput,
 				inspectErr:    tt.inspectErr,
@@ -167,6 +178,7 @@ func TestVerifyCodeSignatureTargetWithRunner(t *testing.T) {
 }
 
 type recordingCodesignRunner struct {
+	verifyOutput  []byte
 	verifyErr     error
 	inspectOutput []byte
 	inspectErr    error
@@ -176,7 +188,7 @@ type recordingCodesignRunner struct {
 func (r *recordingCodesignRunner) run(_ context.Context, args ...string) ([]byte, error) {
 	r.calls = append(r.calls, slices.Clone(args))
 	if len(args) > 0 && args[0] == "--verify" {
-		return nil, r.verifyErr
+		return r.verifyOutput, r.verifyErr
 	}
 	return r.inspectOutput, r.inspectErr
 }

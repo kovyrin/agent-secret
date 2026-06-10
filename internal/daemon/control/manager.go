@@ -636,7 +636,7 @@ func peerProcessGoneError(err error) bool {
 	if err == nil {
 		return false
 	}
-	errText := err.Error()
+	errText := strings.ToLower(err.Error())
 	return errors.Is(err, syscall.ESRCH) ||
 		strings.Contains(errText, "no such process") ||
 		strings.Contains(errText, "proc_pidpath: no such file or directory")
