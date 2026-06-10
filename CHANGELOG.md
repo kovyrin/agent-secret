@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.21] - Pending
+
+### Fixed
+
+- Improved diagnostics when a stale development CLI on `PATH` cannot trust an
+  installed release background helper, pointing operators to refresh the command
+  symlink with the release app's `install-cli --force`.
+
 ## [0.0.20] - 2026-06-10
 
 ### Fixed

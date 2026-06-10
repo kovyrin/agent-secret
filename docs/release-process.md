@@ -61,6 +61,16 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    mise run build
    ```
 
+1. Run the mixed-install helper recovery smoke before tagging. This catches the
+   common local-operator state where the installed release background helper is
+   valid but an ad-hoc development CLI is earlier on `PATH`:
+
+   ```bash
+   AGENT_SECRET_RELEASE_SMOKE_REQUIRE_INSTALLED_CLI=1 \
+     AGENT_SECRET_IN_MISE=1 \
+     scripts/release/smoke-stale-dev-cli-diagnostics.sh
+   ```
+
 1. Commit and push the changelog date update.
 
 1. Create and push the release tag:
@@ -219,6 +229,7 @@ AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-publish.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-version.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-release-docs.sh
+AGENT_SECRET_IN_MISE=1 scripts/release/smoke-stale-dev-cli-diagnostics.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-public-docs.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-cloudflare-curl-token-handling.sh
