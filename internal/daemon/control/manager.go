@@ -139,6 +139,15 @@ func (m Manager) repairOnce(ctx context.Context) (RepairResult, error) {
 	if errors.Is(err, ErrHelperMismatch) {
 		return m.refreshTrustedHelper(ctx)
 	}
+	if errors.Is(err, ErrUnexpectedHelper) {
+		if signalErr := m.signalRepairableHelper(ctx); signalErr != nil {
+			if errors.Is(signalErr, peertrust.ErrUntrustedDaemon) {
+				return RepairResult{Status: RepairStatusRepairRequired}, err
+			}
+			return RepairResult{Status: RepairStatusRepairRequired}, signalErr
+		}
+		return m.startCurrentWithStatusRetry(ctx, RepairStatusRefreshed)
+	}
 	if m.trustedHelperVanishedAfterTrustError(ctx, err) {
 		return m.startCurrentWithStatusRetry(ctx, RepairStatusRefreshed)
 	}
@@ -537,7 +546,23 @@ func (m Manager) stopTrustedHelper(ctx context.Context) error {
 }
 
 func (m Manager) signalTrustedHelper(ctx context.Context) error {
-	info, err := m.inspectTrustedHelperPeer(ctx)
+	return m.signalHelper(ctx, "trusted helper", m.inspectTrustedHelperPeer, m.waitUntilTrustedHelperUnavailable)
+}
+
+func (m Manager) signalRepairableHelper(ctx context.Context) error {
+	wait := func(ctx context.Context, interval time.Duration) error {
+		return m.waitUntilUnavailableWith(ctx, interval, "repairable helper", m.rawSocketUnavailable)
+	}
+	return m.signalHelper(ctx, "repairable helper", m.inspectRepairableHelperPeer, wait)
+}
+
+func (m Manager) signalHelper(
+	ctx context.Context,
+	label string,
+	inspect func(context.Context) (peercred.Info, error),
+	waitUntilUnavailable func(context.Context, time.Duration) error,
+) error {
+	info, err := inspect(ctx)
 	if errors.Is(err, socket.ErrDaemonUnavailable) {
 		return nil
 	}
@@ -548,16 +573,16 @@ func (m Manager) signalTrustedHelper(ctx context.Context) error {
 		return err
 	}
 	if info.PID <= 0 {
-		return fmt.Errorf("%w: trusted helper pid is unavailable", ErrUnexpectedHelper)
+		return fmt.Errorf("%w: %s pid is unavailable", ErrUnexpectedHelper, label)
 	}
 	signalFn := m.signalProcess
 	if signalFn == nil {
 		signalFn = signalProcess
 	}
 	if err := signalFn(info.PID, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal trusted helper pid %d: %w", info.PID, err)
+		return fmt.Errorf("signal %s pid %d: %w", label, info.PID, err)
 	}
-	return m.waitUntilTrustedHelperUnavailable(ctx, 25*time.Millisecond)
+	return waitUntilUnavailable(ctx, 25*time.Millisecond)
 }
 
 func (m Manager) inspectTrustedHelperPeer(ctx context.Context) (peercred.Info, error) {
@@ -575,6 +600,22 @@ func (m Manager) inspectTrustedHelperPeer(ctx context.Context) (peercred.Info, e
 		return peercred.Info{}, fmt.Errorf("%w: inspect daemon peer: %w", peertrust.ErrUntrustedDaemon, err)
 	}
 	if err := peertrust.NewDaemonProductValidator(trustedPaths).ValidateDaemonPeer(info); err != nil {
+		return peercred.Info{}, err
+	}
+	return info, nil
+}
+
+func (m Manager) inspectRepairableHelperPeer(ctx context.Context) (peercred.Info, error) {
+	conn, err := socket.Dial(ctx, m.socketPath)
+	if err != nil {
+		return peercred.Info{}, err
+	}
+	defer func() { _ = conn.Close() }()
+	info, err := peercred.Inspect(conn)
+	if err != nil {
+		return peercred.Info{}, fmt.Errorf("%w: inspect daemon peer: %w", peertrust.ErrUntrustedDaemon, err)
+	}
+	if err := peertrust.NewDaemonRepairValidator().ValidateDaemonPeer(info); err != nil {
 		return peercred.Info{}, err
 	}
 	return info, nil

@@ -261,6 +261,45 @@ func TestManagerControlMethodsReportMissingDaemon(t *testing.T) {
 	}
 }
 
+func TestManagerCheckOnePasswordUsesRunningHelper(t *testing.T) {
+	t.Parallel()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	path, stop := startFakeHelperDaemon(t, helperidentity.ForExecutable(executable, os.Getpid()))
+	defer stop()
+	manager := Manager{
+		socketPath: path,
+		DaemonPath: executable,
+	}
+
+	if err := manager.CheckOnePassword(context.Background(), "my.1password.ca"); err != nil {
+		t.Fatalf("CheckOnePassword returned error: %v", err)
+	}
+}
+
+func TestManagerStopReturnsDaemonStopError(t *testing.T) {
+	t.Parallel()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	path, stop := startFakeStatusErrorDaemon(t, protocol.ErrorCodeDaemonStopped)
+	defer stop()
+	manager := Manager{
+		socketPath: path,
+		DaemonPath: executable,
+	}
+
+	err = manager.Stop(context.Background())
+	if !IsProtocolError(err, protocol.ErrorCodeDaemonStopped) {
+		t.Fatalf("Stop error = %v, want daemon stopped protocol error", err)
+	}
+}
+
 func TestManagerWaitUntilReadyPreservesStartupDeadline(t *testing.T) {
 	t.Parallel()
 
@@ -484,6 +523,185 @@ func TestManagerRepairSignalsTrustedHelperWhenStopRejectsClient(t *testing.T) {
 	}
 	if result.Hello.BuildID != helperidentity.ForExecutable(executable, os.Getpid()).BuildID {
 		t.Fatalf("Repair hello build id = %q, want current build id", result.Hello.BuildID)
+	}
+}
+
+func TestManagerRepairRefreshesRepairableUnexpectedHelper(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER") == "1" {
+		runDaemonManagerHelper(t)
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	socketDir, err := os.MkdirTemp("/tmp", "agent-secret-repairable-helper-")
+	if err != nil {
+		t.Fatalf("MkdirTemp returned error: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(socketDir) }()
+	socketPath := filepath.Join(socketDir, "d.sock")
+	alternateHelper := copyCurrentTestBinaryToDaemonBundleAt(t, t.TempDir(), peertrust.DefaultDaemonBundleID)
+	staleOutput, err := os.Create(filepath.Join(t.TempDir(), "repairable-stale-helper.log"))
+	if err != nil {
+		t.Fatalf("create stale helper output log: %v", err)
+	}
+	defer func() { _ = staleOutput.Close() }()
+	staleCmd := daemonprocess.StartCommand(
+		context.Background(),
+		alternateHelper,
+		[]string{"-test.run=TestManagerRepairRefreshesRepairableUnexpectedHelper", "--", "--socket", socketPath},
+	)
+	staleCmd.Env = append(os.Environ(), "AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER=1")
+	staleCmd.Stdout = staleOutput
+	staleCmd.Stderr = staleOutput
+	if err := staleCmd.Start(); err != nil {
+		t.Fatalf("start alternate helper: %v", err)
+	}
+	staleDone := make(chan error, 1)
+	go func() { staleDone <- staleCmd.Wait() }()
+	defer func() {
+		if processIsRunning(staleCmd.Process.Pid) {
+			_ = staleCmd.Process.Kill()
+		}
+		select {
+		case <-staleDone:
+		case <-time.After(2 * time.Second):
+		}
+	}()
+	waitForRawSocket(t, socketPath)
+
+	output, err := os.Create(filepath.Join(t.TempDir(), "repair-helper.log"))
+	if err != nil {
+		t.Fatalf("create helper output log: %v", err)
+	}
+	defer func() { _ = output.Close() }()
+	manager := Manager{
+		socketPath:     socketPath,
+		DaemonPath:     executable,
+		DaemonArgs:     []string{"-test.run=TestManagerRepairRefreshesRepairableUnexpectedHelper", "--", "--socket", "{socket}"},
+		StartupTimeout: 2 * time.Second,
+		daemonStdout:   output,
+		daemonStderr:   output,
+	}
+	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_REPAIRABLE_UNEXPECTED_HELPER", "1")
+
+	result, err := manager.Repair(context.Background())
+	if err != nil {
+		helperOutput := readManagerHelperOutput(t, output.Name()) + "\n" + readManagerHelperOutput(t, staleOutput.Name())
+		if strings.Contains(helperOutput, managerHelperBindUnavailablePrefix) {
+			t.Skipf("Unix socket bind unavailable in daemon repair helper: %s", helperOutput)
+		}
+		t.Fatalf("Repair returned error: %v\nhelper output:\n%s", err, helperOutput)
+	}
+	defer func() { _ = manager.Stop(context.Background()) }()
+	select {
+	case <-staleDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("repair did not terminate alternate helper process")
+	}
+	if result.Status != RepairStatusRefreshed {
+		t.Fatalf("Repair status = %q, want refreshed", result.Status)
+	}
+	if result.PID <= 0 || result.PID == staleCmd.Process.Pid {
+		t.Fatalf("Repair pid = %d, want fresh helper process", result.PID)
+	}
+	if samePath(result.Hello.Executable, alternateHelper) {
+		t.Fatalf("Repair hello executable = %q, want current helper, not alternate helper", result.Hello.Executable)
+	}
+}
+
+func TestManagerSignalHelperEdges(t *testing.T) {
+	t.Parallel()
+
+	err := (Manager{}).signalHelper(
+		context.Background(),
+		"repairable helper",
+		func(context.Context) (peercred.Info, error) {
+			return peercred.Info{}, socket.ErrDaemonUnavailable
+		},
+		func(context.Context, time.Duration) error {
+			t.Fatal("wait should not run for missing socket")
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("missing socket signalHelper returned error: %v", err)
+	}
+
+	err = (Manager{}).signalHelper(
+		context.Background(),
+		"repairable helper",
+		func(context.Context) (peercred.Info, error) {
+			return peercred.Info{}, errors.New("proc_pidpath: no such process")
+		},
+		func(context.Context, time.Duration) error {
+			t.Fatal("wait should not run for vanished peer")
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("vanished peer signalHelper returned error: %v", err)
+	}
+
+	inspectErr := errors.New("inspect failed")
+	err = (Manager{}).signalHelper(
+		context.Background(),
+		"repairable helper",
+		func(context.Context) (peercred.Info, error) {
+			return peercred.Info{}, inspectErr
+		},
+		nil,
+	)
+	if !errors.Is(err, inspectErr) {
+		t.Fatalf("inspect failure signalHelper error = %v, want %v", err, inspectErr)
+	}
+
+	err = (Manager{}).signalHelper(
+		context.Background(),
+		"repairable helper",
+		func(context.Context) (peercred.Info, error) {
+			return peercred.Info{}, nil
+		},
+		nil,
+	)
+	if !errors.Is(err, ErrUnexpectedHelper) || !strings.Contains(err.Error(), "pid is unavailable") {
+		t.Fatalf("missing pid signalHelper error = %v, want unexpected helper pid error", err)
+	}
+
+	signalErr := errors.New("signal failed")
+	manager := Manager{
+		signalProcess: func(int, os.Signal) error {
+			return signalErr
+		},
+	}
+	err = manager.signalHelper(
+		context.Background(),
+		"repairable helper",
+		func(context.Context) (peercred.Info, error) {
+			return peercred.Info{PID: 1234}, nil
+		},
+		nil,
+	)
+	if !errors.Is(err, signalErr) {
+		t.Fatalf("signal failure signalHelper error = %v, want %v", err, signalErr)
+	}
+
+	waitErr := errors.New("still running")
+	manager.signalProcess = func(int, os.Signal) error { return nil }
+	err = manager.signalHelper(
+		context.Background(),
+		"repairable helper",
+		func(context.Context) (peercred.Info, error) {
+			return peercred.Info{PID: 1234}, nil
+		},
+		func(context.Context, time.Duration) error {
+			return waitErr
+		},
+	)
+	if !errors.Is(err, waitErr) {
+		t.Fatalf("wait failure signalHelper error = %v, want %v", err, waitErr)
 	}
 }
 
@@ -1217,6 +1435,10 @@ func serveFakeHelperDaemonConn(
 			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.StatusPayload{PID: opts.hello.PID}) {
 				return
 			}
+		case protocol.TypeOnePasswordStatus:
+			if !writeFakeHelperEmptyResponse(encoder, env.Correlation()) {
+				return
+			}
 		case protocol.TypeDaemonStop:
 			if opts.stopErrorCode != "" {
 				if !writeFakeHelperError(encoder, env.Correlation(), opts.stopErrorCode) {
@@ -1259,6 +1481,16 @@ func writeFakeHelperResponse(encoder *json.Encoder, correlation protocol.Correla
 	resp, err := protocol.NewEnvelope(protocol.TypeOK, correlation, payload)
 	if err != nil {
 		return false
+	}
+	return encoder.Encode(resp) == nil
+}
+
+func writeFakeHelperEmptyResponse(encoder *json.Encoder, correlation protocol.Correlation) bool {
+	resp := protocol.Envelope{
+		Version:   protocol.ProtocolVersion,
+		Type:      protocol.TypeOK,
+		RequestID: correlation.RequestID,
+		Nonce:     correlation.Nonce,
 	}
 	return encoder.Encode(resp) == nil
 }
@@ -1327,4 +1559,49 @@ func writeDaemonBundleExecutableAt(t *testing.T, dir string, bundleID string) st
 		t.Fatalf("write Info.plist: %v", err)
 	}
 	return executable
+}
+
+func copyCurrentTestBinaryToDaemonBundleAt(t *testing.T, dir string, bundleID string) string {
+	t.Helper()
+	bundlePath := filepath.Join(dir, "AgentSecretDaemon.app")
+	macOSPath := filepath.Join(bundlePath, "Contents", "MacOS")
+	if err := os.MkdirAll(macOSPath, 0o750); err != nil {
+		t.Fatalf("mkdir daemon bundle: %v", err)
+	}
+	source, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	data, err := os.ReadFile(source) //nolint:gosec // G304: test binary path comes from os.Executable.
+	if err != nil {
+		t.Fatalf("read current test binary: %v", err)
+	}
+	executable := filepath.Join(macOSPath, "Agent Secret")
+	if err := os.WriteFile(executable, data, 0o755); err != nil { //nolint:gosec // G306: daemon control tests need runnable fixture executables.
+		t.Fatalf("write bundled test binary: %v", err)
+	}
+	plist := `<plist><dict><key>CFBundleExecutable</key><string>Agent Secret</string>` +
+		`<key>CFBundleIdentifier</key><string>` + bundleID + `</string></dict></plist>`
+	if err := os.WriteFile(filepath.Join(bundlePath, "Contents", "Info.plist"), []byte(plist), 0o600); err != nil {
+		t.Fatalf("write Info.plist: %v", err)
+	}
+	return executable
+}
+
+func waitForRawSocket(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := socket.Dial(context.Background(), path)
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for raw socket %s", path)
+}
+
+func processIsRunning(pid int) bool {
+	return pid > 0 && syscall.Kill(pid, 0) == nil
 }
