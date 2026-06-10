@@ -150,6 +150,35 @@ func TestDaemonProductValidatorRejectsWrongHelperBundleID(t *testing.T) {
 	}
 }
 
+func TestDaemonRepairValidatorAllowsSameUserAgentSecretHelperBundle(t *testing.T) {
+	t.Parallel()
+
+	helper := writeDaemonProductBundle(t, DefaultDaemonBundleID)
+	info := trustedDaemonPeerInfo(helper)
+	info.PID = 4321
+
+	if err := NewDaemonRepairValidator().ValidateDaemonPeer(info); err != nil {
+		t.Fatalf("ValidateDaemonPeer returned error: %v", err)
+	}
+}
+
+func TestDaemonRepairValidatorRejectsNonProductPeers(t *testing.T) {
+	t.Parallel()
+
+	validator := NewDaemonRepairValidator()
+	if err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(writeExecutableAt(t, t.TempDir(), "agent-secretd"))); !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("direct executable error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+	if err := validator.ValidateDaemonPeer(trustedDaemonPeerInfo(writeDaemonProductBundle(t, "com.example.not-agent-secret"))); !errors.Is(err, ErrUntrustedDaemon) {
+		t.Fatalf("wrong bundle id error = %v, want %v", err, ErrUntrustedDaemon)
+	}
+	info := trustedDaemonPeerInfo(writeDaemonProductBundle(t, DefaultDaemonBundleID))
+	info.UID = os.Getuid() + 1
+	if err := validator.ValidateDaemonPeer(info); !errors.Is(err, ErrUntrustedDaemon) || !strings.Contains(err.Error(), "uid") {
+		t.Fatalf("wrong uid error = %v, want uid trust error", err)
+	}
+}
+
 func TestDaemonValidatorRejectsDifferentUID(t *testing.T) {
 	t.Parallel()
 

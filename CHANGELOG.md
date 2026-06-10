@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.20] - Pending
+
+### Fixed
+
+- Made `agent-secret repair` self-heal a stale Agent Secret background helper
+  from another install path instead of requiring manual process cleanup.
+
 ## [0.0.19] - 2026-06-09
 
 ### Added

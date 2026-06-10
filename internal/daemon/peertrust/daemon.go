@@ -32,6 +32,8 @@ type DaemonProductValidator struct {
 	verifySignature bool
 }
 
+type DaemonRepairValidator struct{}
+
 func NewDaemonValidator(paths []string) DaemonValidator {
 	return newDaemonValidator(paths, trust.DefaultExpectedTeamID())
 }
@@ -103,11 +105,8 @@ func (v DaemonProductValidator) ValidateDaemonPeer(info peercred.Info) error {
 	if err := v.current.ValidateDaemonPeer(info); err == nil {
 		return nil
 	}
-	if info.UID != os.Getuid() {
-		return fmt.Errorf("%w: daemon uid %d != %d", ErrUntrustedDaemon, info.UID, os.Getuid())
-	}
-	if info.GID != os.Getgid() {
-		return fmt.Errorf("%w: daemon gid %d != %d", ErrUntrustedDaemon, info.GID, os.Getgid())
+	if err := validateDaemonPeerOwner(info); err != nil {
+		return err
 	}
 	if !v.verifySignature {
 		return fmt.Errorf("%w: executable %q is not a current trusted helper", ErrUntrustedDaemon, info.ExecutablePath)
@@ -119,23 +118,53 @@ func (v DaemonProductValidator) ValidateDaemonPeer(info peercred.Info) error {
 	if !enforceTeamID {
 		return fmt.Errorf("%w: broad helper repair trust requires a release Team ID", ErrUntrustedDaemon)
 	}
-	executable, err := pathresolve.Strict(info.ExecutablePath)
-	if err != nil {
-		return fmt.Errorf("%w: normalize daemon executable %q: %w", ErrUntrustedDaemon, info.ExecutablePath, err)
-	}
-	bundlePath, ok := containingAppBundlePath(executable)
-	if !ok || filepath.Base(bundlePath) != "AgentSecretDaemon.app" {
-		return fmt.Errorf("%w: executable %q is not an Agent Secret daemon helper app", ErrUntrustedDaemon, executable)
-	}
-	bundleID, err := trust.PlistString(filepath.Join(bundlePath, "Contents", "Info.plist"), "CFBundleIdentifier", ErrUntrustedDaemon)
+	bundlePath, err := daemonProductBundlePath(info.ExecutablePath)
 	if err != nil {
 		return err
-	}
-	if bundleID != DefaultDaemonBundleID {
-		return fmt.Errorf("%w: daemon bundle id %q != %q", ErrUntrustedDaemon, bundleID, DefaultDaemonBundleID)
 	}
 	if err := trust.ValidatePeerSignature(info, bundlePath, requiredTeamID, v.verifier, ErrUntrustedDaemon); err != nil {
 		return err
 	}
 	return nil
+}
+
+func NewDaemonRepairValidator() DaemonRepairValidator {
+	return DaemonRepairValidator{}
+}
+
+func (DaemonRepairValidator) ValidateDaemonPeer(info peercred.Info) error {
+	if err := validateDaemonPeerOwner(info); err != nil {
+		return err
+	}
+	_, err := daemonProductBundlePath(info.ExecutablePath)
+	return err
+}
+
+func validateDaemonPeerOwner(info peercred.Info) error {
+	if info.UID != os.Getuid() {
+		return fmt.Errorf("%w: daemon uid %d != %d", ErrUntrustedDaemon, info.UID, os.Getuid())
+	}
+	if info.GID != os.Getgid() {
+		return fmt.Errorf("%w: daemon gid %d != %d", ErrUntrustedDaemon, info.GID, os.Getgid())
+	}
+	return nil
+}
+
+func daemonProductBundlePath(executablePath string) (string, error) {
+	executable, err := pathresolve.Strict(executablePath)
+	if err != nil {
+		return "", fmt.Errorf("%w: normalize daemon executable %q: %w", ErrUntrustedDaemon, executablePath, err)
+	}
+	bundlePath, ok := containingAppBundlePath(executable)
+	if !ok || filepath.Base(bundlePath) != "AgentSecretDaemon.app" {
+		return "", fmt.Errorf("%w: executable %q is not an Agent Secret daemon helper app", ErrUntrustedDaemon, executable)
+	}
+	bundleID, err := trust.PlistString(filepath.Join(bundlePath, "Contents", "Info.plist"), "CFBundleIdentifier", ErrUntrustedDaemon)
+	if err != nil {
+		return "", err
+	}
+	if bundleID != DefaultDaemonBundleID {
+		return "", fmt.Errorf("%w: daemon bundle id %q != %q", ErrUntrustedDaemon, bundleID, DefaultDaemonBundleID)
+	}
+	return bundlePath, nil
 }
