@@ -106,7 +106,7 @@ func (a App) runAgentContext(command Command) int {
 				"secret values are never printed by agent-secret",
 				"exec passes child stdin/stdout/stderr through unchanged",
 				"item describe returns metadata only",
-				"session create returns opaque handles only and with-session never prints values",
+				"session create returns a public session id and secret session token; with-session never prints values",
 			},
 			MutationBoundary: []string{
 				"exec --dry-run validates without prompting or spawning",
@@ -204,7 +204,7 @@ func agentContextCommands() map[string]commandContext {
 			Summary: "Create, list, and destroy bounded background-helper secret sessions.",
 			Subcommands: map[string]commandContext{
 				"create": {
-					Summary: "Ask for approval, resolve refs, and return an opaque session id.",
+					Summary: "Ask for approval, resolve refs, and return a session id plus token.",
 					Flags: []flagContext{
 						{Name: "--reason", Type: "string", Description: "Human-readable reason shown to the approver."},
 						{Name: "--secret", Type: "mapping", Repeatable: true, Description: "Secret alias mapping: ALIAS=op://vault/item/field or ALIAS=bws://source/secret-uuid."},
@@ -220,16 +220,18 @@ func agentContextCommands() map[string]commandContext {
 						{Name: "--json", Type: "bool", Description: "Print session metadata as JSON."},
 					},
 					Outputs: []string{"text", "json"},
-					Notes:   []string{"returns a session id only", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
+					Notes:   []string{"returns a public session id for management and a secret session token for with-session", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
 				},
 				"list": {
-					Summary: "List active sessions without session ids or working directories.",
+					Summary: "List active session ids and non-secret metadata.",
 					Flags:   jsonFlag(),
 					Outputs: []string{"text", "json"},
 				},
 				"destroy": {
 					Summary: "Destroy one session and clear its cached values.",
-					Flags:   jsonFlag(),
+					Flags: append([]flagContext{
+						{Name: "--all", Type: "bool", Description: "Destroy all active sessions."},
+					}, jsonFlag()...),
 					Outputs: []string{"text", "json"},
 				},
 			},
@@ -241,7 +243,7 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
 			},
 			Outputs: []string{"child passthrough"},
-			Notes:   []string{"usage: agent-secret with-session SESSION_ID -- COMMAND [ARG...]", "session values are injected into the child environment and never printed"},
+			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "session values are injected into the child environment and never printed"},
 		},
 		"bitwarden": {
 			Summary: "Manage local Bitwarden Secrets Manager token aliases.",

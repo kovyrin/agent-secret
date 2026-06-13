@@ -76,7 +76,7 @@ Safety rules:
   - exec --dry-run --json validates locally without starting the background helper, prompting, resolving values, or spawning the child.
   - exec --reuse-only uses a matching reusable approval or fails without opening a new approval prompt.
 	  - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
-	  - session create returns an opaque handle only; values stay in background helper memory and are injected only by with-session.
+	  - session create returns a public session id plus a secret session token; values stay in background helper memory and are injected only by with-session.
   - item describe requires approval and prints item metadata only: field labels, types, concealment flags, and refs.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
@@ -351,19 +351,21 @@ func SessionHelp() string {
 
 	Commands:
 
-	  create   Ask for approval, resolve requested refs, and return an opaque session id.
-	  list     List active sessions without session ids or working directories.
+	  create   Ask for approval, resolve requested refs, and return a session id plus token.
+	  list     List active session ids and non-secret metadata.
 	  destroy  Destroy one session and clear its cached values.
 
 	Examples:
 
 	  agent-secret session create --profile terraform-cloudflare --max-reads 2
-	  agent-secret with-session asess_123 -- terraform plan
-	  agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN,STATE_TOKEN -- terraform apply
-	  agent-secret session destroy asess_123
+	  agent-secret with-session astok_123 -- terraform plan
+	  agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN,STATE_TOKEN -- terraform apply
+	  agent-secret session destroy asid_123
+	  agent-secret session destroy --all
 
 	Values are never printed. Session values live in Agent Secret's background helper memory
-	until TTL, read count exhaustion, destroy, or helper stop.
+	until TTL, read count exhaustion, destroy, or helper stop. Session list shows
+	session ids for management, but never session tokens.
 	`)
 }
 
@@ -373,7 +375,7 @@ func WithSessionHelp() string {
 
 	Usage:
 
-	  agent-secret with-session SESSION_ID [--cwd DIR] [--only ALIAS[,ALIAS...]] -- COMMAND [ARG...]
+	  agent-secret with-session SESSION_TOKEN [--cwd DIR] [--only ALIAS[,ALIAS...]] -- COMMAND [ARG...]
 
 	Flags:
 
@@ -383,7 +385,7 @@ func WithSessionHelp() string {
 	                  Allow a user-owned or writable executable path after showing the approval warning.
 	  -h, --help      Show this help.
 
-	The session id must come from agent-secret session create. Secret values are
+	The session token must come from agent-secret session create. Secret values are
 	injected into the child environment only and are never printed by agent-secret.
 	Without --only, every approved session alias is injected for that command.
 	`)

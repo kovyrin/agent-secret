@@ -120,7 +120,7 @@ func TestSessionResolveValidation(t *testing.T) {
 	env := []string{"PATH=" + filepath.Dir(bin), "TOKEN=existing"}
 
 	req, err := NewSessionResolve(
-		"asess_abc123",
+		"astok_abc123",
 		[]string{bin, "plan"},
 		bin,
 		identity,
@@ -159,7 +159,7 @@ func TestSessionResolveRejectsInvalidRequestedAliases(t *testing.T) {
 	dir := testResolvedDir(t)
 	bin, identity := testExecutable(t, dir, "terraform")
 	req, err := NewSessionResolve(
-		"asess_abc123",
+		"astok_abc123",
 		[]string{bin, "plan"},
 		bin,
 		identity,
@@ -195,27 +195,28 @@ func TestSessionResolveRejectsInvalidInputs(t *testing.T) {
 	fingerprint := EnvironmentFingerprint([]string{"PATH=" + filepath.Dir(bin)})
 
 	tests := []struct {
-		name      string
-		sessionID string
-		command   []string
-		exe       string
-		identity  fileidentity.Identity
-		cwd       string
-		env       string
-		want      error
+		name         string
+		sessionToken string
+		command      []string
+		exe          string
+		identity     fileidentity.Identity
+		cwd          string
+		env          string
+		want         error
 	}{
-		{name: "bad session id", sessionID: "session_abc", command: []string{bin}, exe: bin, identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidSessionID},
-		{name: "missing command", sessionID: "asess_abc", command: nil, exe: bin, identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidCommand},
-		{name: "relative cwd", sessionID: "asess_abc", command: []string{bin}, exe: bin, identity: identity, cwd: "deploy", env: fingerprint, want: ErrInvalidRequest},
-		{name: "relative executable", sessionID: "asess_abc", command: []string{bin}, exe: "terraform", identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidRequest},
-		{name: "missing identity", sessionID: "asess_abc", command: []string{bin}, exe: bin, identity: fileidentity.Identity{}, cwd: dir, env: fingerprint, want: ErrInvalidRequest},
-		{name: "bad env fingerprint", sessionID: "asess_abc", command: []string{bin}, exe: bin, identity: identity, cwd: dir, env: "sha256:bad", want: ErrInvalidRequest},
+		{name: "bad session token", sessionToken: "session_abc", command: []string{bin}, exe: bin, identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidSessionToken},
+		{name: "session id is not a token", sessionToken: "asid_abc", command: []string{bin}, exe: bin, identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidSessionToken},
+		{name: "missing command", sessionToken: "astok_abc", command: nil, exe: bin, identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidCommand},
+		{name: "relative cwd", sessionToken: "astok_abc", command: []string{bin}, exe: bin, identity: identity, cwd: "deploy", env: fingerprint, want: ErrInvalidRequest},
+		{name: "relative executable", sessionToken: "astok_abc", command: []string{bin}, exe: "terraform", identity: identity, cwd: dir, env: fingerprint, want: ErrInvalidRequest},
+		{name: "missing identity", sessionToken: "astok_abc", command: []string{bin}, exe: bin, identity: fileidentity.Identity{}, cwd: dir, env: fingerprint, want: ErrInvalidRequest},
+		{name: "bad env fingerprint", sessionToken: "astok_abc", command: []string{bin}, exe: bin, identity: identity, cwd: dir, env: "sha256:bad", want: ErrInvalidRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := NewSessionResolve(tt.sessionID, tt.command, tt.exe, tt.identity, tt.cwd, tt.env)
+			_, err := NewSessionResolve(tt.sessionToken, tt.command, tt.exe, tt.identity, tt.cwd, tt.env)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("NewSessionResolve error = %v, want %v", err, tt.want)
 			}
@@ -229,7 +230,7 @@ func TestSessionResolveDaemonValidationRejectsMissingPeerMetadata(t *testing.T) 
 	dir := testResolvedDir(t)
 	bin, identity := testExecutable(t, dir, "terraform")
 	req, err := NewSessionResolve(
-		"asess_abc",
+		"astok_abc",
 		[]string{bin},
 		bin,
 		identity,
@@ -248,18 +249,34 @@ func TestSessionResolveDaemonValidationRejectsMissingPeerMetadata(t *testing.T) 
 func TestSessionDestroyValidation(t *testing.T) {
 	t.Parallel()
 
-	req, err := NewSessionDestroy("asess_abc123")
+	req, err := NewSessionDestroy("asid_abc123")
 	if err != nil {
 		t.Fatalf("NewSessionDestroy returned error: %v", err)
 	}
-	if req.SessionID != "asess_abc123" {
+	if req.SessionID != "asid_abc123" {
 		t.Fatalf("session id = %q", req.SessionID)
 	}
 	if err := req.ValidateForDaemon(); err != nil {
 		t.Fatalf("ValidateForDaemon returned error: %v", err)
 	}
-	if err := ValidateSessionID("asess_abc-DEF_123"); err != nil {
+	if err := ValidateSessionID("asid_abc-DEF_123"); err != nil {
 		t.Fatalf("ValidateSessionID returned error: %v", err)
+	}
+	if err := ValidateSessionToken("astok_abc-DEF_123"); err != nil {
+		t.Fatalf("ValidateSessionToken returned error: %v", err)
+	}
+	if err := ValidateSessionID("astok_abc-DEF_123"); !errors.Is(err, ErrInvalidSessionID) {
+		t.Fatalf("ValidateSessionID with token error = %v, want ErrInvalidSessionID", err)
+	}
+	all := NewSessionDestroyAll()
+	if !all.All || all.SessionID != "" {
+		t.Fatalf("destroy all request = %+v", all)
+	}
+	if err := all.ValidateForDaemon(); err != nil {
+		t.Fatalf("destroy all ValidateForDaemon returned error: %v", err)
+	}
+	if err := (SessionDestroyRequest{SessionID: "asid_abc123", All: true}).ValidateForDaemon(); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("destroy all with id error = %v, want ErrInvalidRequest", err)
 	}
 	_, err = NewSessionDestroy("bad")
 	if !errors.Is(err, ErrInvalidSessionID) {

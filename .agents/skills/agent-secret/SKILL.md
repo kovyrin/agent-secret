@@ -107,24 +107,24 @@ Approve a bounded multi-command session:
 
 ```bash
 agent-secret session create --profile terraform-cloudflare --max-reads 3
-agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- \
+agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- \
   terraform plan
-agent-secret with-session asess_123 \
+agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
-agent-secret session destroy asess_123
+agent-secret session destroy asid_123
 ```
 
 Use sessions when the user approves a bag of secrets once and later commands
 need different subsets. `session create` accepts the same config, profile,
-env-file, and `--secret` inputs as `exec`, then returns only an opaque session
-ID. Agent Secret keeps resolved values in background helper memory until TTL,
-read count, explicit destroy, or helper stop clears them. `session list` shows
-active-session metadata but does not reveal session IDs or working directories;
-keep the handle returned by `session create` for later `with-session` or
-`session destroy` calls. `with-session` injects every approved alias by default;
-add `--only ALIAS[,ALIAS...]` to deliver only the aliases needed by that child
-command. Unknown aliases fail before the child process starts.
+env-file, and `--secret` inputs as `exec`, then returns a public `session_id`
+for list/destroy operations and a secret `session_token` for `with-session`.
+Agent Secret keeps resolved values in background helper memory until TTL, read
+count, explicit destroy, or helper stop clears them. `session list` shows active
+session IDs and metadata, but never session tokens. `with-session` injects every
+approved alias by default; add `--only ALIAS[,ALIAS...]` to deliver only the
+aliases needed by that child command. Unknown aliases fail before the child
+process starts.
 
 Use a shell only when the shell is the command you actually want approved:
 

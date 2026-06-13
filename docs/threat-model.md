@@ -106,8 +106,8 @@ Agent Secret must meet these goals:
   behavior.
 - Reusable approvals expire at their TTL, consume uses correctly, and clear
   cached raw values when exhausted, expired, or rolled back.
-- Bounded session handles are returned only to the creator at `session create`
-  time and are not enumerable through session listing.
+- Bounded session tokens are returned only at `session create` time and are not
+  enumerable through session listing.
 - The daemon accepts exec and stop requests only from trusted Agent Secret CLI
   executables.
 - The CLI accepts secret-bearing responses only from a trusted Agent Secret

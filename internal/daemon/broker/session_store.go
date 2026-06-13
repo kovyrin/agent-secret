@@ -23,14 +23,16 @@ var (
 )
 
 type sessionStore struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	random   io.Reader
-	sessions map[string]*sessionRecord
+	mu            sync.Mutex
+	now           func() time.Time
+	random        io.Reader
+	sessions      map[string]*sessionRecord
+	sessionTokens map[string]*sessionRecord
 }
 
 type sessionRecord struct {
 	ID            string
+	Token         string
 	Reason        string
 	CWD           string
 	Secrets       []request.Secret
@@ -45,6 +47,7 @@ type sessionRecord struct {
 
 type sessionReservation struct {
 	SessionID      string
+	SessionToken   string
 	Reason         string
 	CWD            string
 	Secrets        []request.Secret
@@ -61,9 +64,10 @@ func newSessionStore(now func() time.Time) *sessionStore {
 		now = time.Now
 	}
 	return &sessionStore{
-		now:      now,
-		random:   rand.Reader,
-		sessions: make(map[string]*sessionRecord),
+		now:           now,
+		random:        rand.Reader,
+		sessions:      make(map[string]*sessionRecord),
+		sessionTokens: make(map[string]*sessionRecord),
 	}
 }
 
@@ -75,8 +79,13 @@ func (s *sessionStore) create(req request.SessionCreateRequest, env map[string]s
 	if err != nil {
 		return request.SessionSummary{}, err
 	}
+	token, err := s.randomToken()
+	if err != nil {
+		return request.SessionSummary{}, err
+	}
 	record := &sessionRecord{
 		ID:            id,
+		Token:         token,
 		Reason:        req.Reason,
 		CWD:           req.CWD,
 		Secrets:       slices.Clone(req.Secrets),
@@ -87,6 +96,7 @@ func (s *sessionStore) create(req request.SessionCreateRequest, env map[string]s
 		OverrideEnv:   req.OverrideEnv,
 	}
 	s.sessions[id] = record
+	s.sessionTokens[token] = record
 	return record.summary(), nil
 }
 
@@ -98,19 +108,19 @@ func (s *sessionStore) reserve(req request.SessionResolveRequest, peer peercred.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	record, ok := s.sessions[req.SessionID]
+	record, ok := s.sessionTokens[req.SessionToken]
 	if !ok {
 		return sessionReservation{}, ErrSessionNotFound
 	}
 	if !s.now().Before(record.ExpiresAt) {
-		delete(s.sessions, record.ID)
+		s.deleteRecord(record)
 		return sessionReservation{}, approval.ErrRequestExpired
 	}
 	if record.CWD != req.CWD {
 		return sessionReservation{}, fmt.Errorf("%w: cwd %q != %q", ErrSessionPeerMismatch, req.CWD, record.CWD)
 	}
 	if record.Reads+record.ReservedReads >= record.MaxReads {
-		delete(s.sessions, record.ID)
+		s.deleteRecord(record)
 		return sessionReservation{}, ErrSessionReadExhausted
 	}
 
@@ -121,6 +131,7 @@ func (s *sessionStore) reserve(req request.SessionResolveRequest, peer peercred.
 	record.ReservedReads++
 	return sessionReservation{
 		SessionID:      record.ID,
+		SessionToken:   record.Token,
 		Reason:         record.Reason,
 		CWD:            record.CWD,
 		Secrets:        secrets,
@@ -133,11 +144,11 @@ func (s *sessionStore) reserve(req request.SessionResolveRequest, peer peercred.
 	}, nil
 }
 
-func (s *sessionStore) finishReservation(sessionID string, delivered bool) {
+func (s *sessionStore) finishReservation(sessionToken string, delivered bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	record, ok := s.sessions[sessionID]
+	record, ok := s.sessionTokens[sessionToken]
 	if !ok || record.ReservedReads <= 0 {
 		return
 	}
@@ -146,7 +157,7 @@ func (s *sessionStore) finishReservation(sessionID string, delivered bool) {
 		record.Reads++
 	}
 	if record.Reads >= record.MaxReads || !s.now().Before(record.ExpiresAt) {
-		delete(s.sessions, sessionID)
+		s.deleteRecord(record)
 	}
 }
 
@@ -157,8 +168,18 @@ func (s *sessionStore) destroy(sessionID string) bool {
 	if _, ok := s.sessions[sessionID]; !ok {
 		return false
 	}
-	delete(s.sessions, sessionID)
+	s.deleteRecord(s.sessions[sessionID])
 	return true
+}
+
+func (s *sessionStore) destroyAll() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := len(s.sessions)
+	s.sessions = make(map[string]*sessionRecord)
+	s.sessionTokens = make(map[string]*sessionRecord)
+	return count
 }
 
 func (s *sessionStore) list() []request.SessionSummary {
@@ -167,9 +188,9 @@ func (s *sessionStore) list() []request.SessionSummary {
 
 	now := s.now()
 	summaries := make([]request.SessionSummary, 0, len(s.sessions))
-	for id, record := range s.sessions {
+	for _, record := range s.sessions {
 		if !now.Before(record.ExpiresAt) || record.Reads+record.ReservedReads >= record.MaxReads {
-			delete(s.sessions, id)
+			s.deleteRecord(record)
 			continue
 		}
 		summaries = append(summaries, record.summary())
@@ -190,15 +211,26 @@ func (s *sessionStore) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions = make(map[string]*sessionRecord)
+	s.sessionTokens = make(map[string]*sessionRecord)
 }
 
 func (s *sessionStore) randomID() (string, error) {
-	return randid.Generate(s.random, "asess")
+	return randid.Generate(s.random, "asid")
+}
+
+func (s *sessionStore) randomToken() (string, error) {
+	return randid.Generate(s.random, "astok")
+}
+
+func (s *sessionStore) deleteRecord(record *sessionRecord) {
+	delete(s.sessions, record.ID)
+	delete(s.sessionTokens, record.Token)
 }
 
 func (s sessionRecord) summary() request.SessionSummary {
 	return request.SessionSummary{
 		SessionID:      s.ID,
+		SessionToken:   s.Token,
 		Reason:         s.Reason,
 		CWD:            s.CWD,
 		SecretAliases:  slices.Clone(s.SecretAliases),

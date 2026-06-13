@@ -935,7 +935,7 @@ Status: Not started
   reusable-approval infrastructure.
 - Failing test/check: daemon tests fail until the server accepts valid session
   requests, rejects malformed versions, rejects wrong-UID peers, and enforces
-  strict PID/executable/cwd checks before resolving session handles.
+  strict PID/executable/cwd checks before resolving session tokens.
 - Implementation:
   - add session request, list, destroy, and value-read envelopes
   - persist session metadata and approved references in daemon memory only

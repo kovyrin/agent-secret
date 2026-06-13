@@ -45,7 +45,9 @@ cli_ref="${AGENT_SECRET_E2E_CLI_REF:-op://Agent Secret Integration/Another Test 
 
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-session-e2e.XXXXXX")"
 SESSION_ID=""
+SESSION_TOKEN=""
 EXHAUST_ID=""
+EXHAUST_TOKEN=""
 
 cleanup() {
   if [[ -n "${SESSION_ID:-}" ]]; then
@@ -104,34 +106,37 @@ SESSION_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
     --max-reads 5)"
 SESSION_ID="$(printf '%s' "$SESSION_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
+SESSION_TOKEN="$(printf '%s' "$SESSION_JSON" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
 printf 'created mixed config+CLI session: %s\n' "$SESSION_ID"
 
 agent-secret session list --json |
-  python3 -c '
-import json, sys
+  python3 -c 'import os, json, sys
+session_id = sys.argv[1]
 data = json.load(sys.stdin)
 matches = [
     s for s in data["sessions"]
-    if s["remaining_reads"] == 5 and s["secret_aliases"] == [
+    if s["session_id"] == session_id
+    and s["remaining_reads"] == 5 and s["secret_aliases"] == [
         "SESSION_E2E_CLI_TOKEN",
         "SESSION_E2E_PROFILE_TOKEN",
     ]
 ]
 assert len(matches) >= 1, data
-assert "session_id" not in matches[0], matches[0]
-assert "cwd" not in matches[0], matches[0]
-print("session list ok")'
+assert matches[0]["cwd"] == os.getcwd(), matches[0]
+assert "session_token" not in matches[0], matches[0]
+print("session list ok")' "$SESSION_ID"
 
-run_with_session "$SESSION_ID" \
+run_with_session "$SESSION_TOKEN" \
   --allow-mutable-executable \
   -- python3 -c "$check_py" full
-run_with_session "$SESSION_ID" \
+run_with_session "$SESSION_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
   -- python3 -c "$check_py" profile
 
 missing_output="$workdir/missing-alias.out"
-if run_with_session "$SESSION_ID" \
+if run_with_session "$SESSION_TOKEN" \
   --only SESSION_E2E_MISSING_TOKEN \
   --allow-mutable-executable \
   -- python3 -c 'print("UNEXPECTED_CHILD_STARTED")' \
@@ -145,34 +150,35 @@ if grep -q 'UNEXPECTED_CHILD_STARTED' "$missing_output"; then
 fi
 echo 'missing alias rejected before child spawn'
 
-run_with_session "$SESSION_ID" \
+run_with_session "$SESSION_TOKEN" \
   --only SESSION_E2E_CLI_TOKEN \
   --allow-mutable-executable \
   -- python3 -c "$check_py" cli
-run_with_session "$SESSION_ID" \
+run_with_session "$SESSION_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN,SESSION_E2E_CLI_TOKEN \
   --allow-mutable-executable \
   -- python3 -c "$check_py" both
 
 agent-secret session list --json |
-  python3 -c '
-import json, sys
+  python3 -c 'import os, json, sys
+session_id = sys.argv[1]
 data = json.load(sys.stdin)
 matches = [
     s for s in data["sessions"]
-    if s["remaining_reads"] == 1 and s["secret_aliases"] == [
+    if s["session_id"] == session_id
+    and s["remaining_reads"] == 1 and s["secret_aliases"] == [
         "SESSION_E2E_CLI_TOKEN",
         "SESSION_E2E_PROFILE_TOKEN",
     ]
 ]
 assert len(matches) >= 1, data
-assert "session_id" not in matches[0], matches[0]
-assert "cwd" not in matches[0], matches[0]
-print("read count after subset runs ok")'
+assert matches[0]["cwd"] == os.getcwd(), matches[0]
+assert "session_token" not in matches[0], matches[0]
+print("read count after subset runs ok")' "$SESSION_ID"
 
 agent-secret session destroy "$SESSION_ID" >/dev/null
 destroyed_output="$workdir/destroyed.out"
-if run_with_session "$SESSION_ID" \
+if run_with_session "$SESSION_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
   -- python3 -c 'print("UNEXPECTED_CHILD_STARTED")' \
@@ -186,6 +192,7 @@ if grep -q 'UNEXPECTED_CHILD_STARTED' "$destroyed_output"; then
 fi
 echo 'destroyed session rejected before child spawn'
 SESSION_ID=""
+SESSION_TOKEN=""
 
 EXHAUST_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
@@ -195,14 +202,16 @@ EXHAUST_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
     --max-reads 1)"
 EXHAUST_ID="$(printf '%s' "$EXHAUST_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
+EXHAUST_TOKEN="$(printf '%s' "$EXHAUST_JSON" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
 printf 'created one-read session: %s\n' "$EXHAUST_ID"
-run_with_session "$EXHAUST_ID" \
+run_with_session "$EXHAUST_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
   -- python3 -c "$check_py" profile
 
 exhausted_output="$workdir/exhausted.out"
-if run_with_session "$EXHAUST_ID" \
+if run_with_session "$EXHAUST_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
   -- python3 -c 'print("UNEXPECTED_CHILD_STARTED")' \
@@ -216,6 +225,7 @@ if grep -q 'UNEXPECTED_CHILD_STARTED' "$exhausted_output"; then
 fi
 echo 'read exhaustion rejected before child spawn'
 EXHAUST_ID=""
+EXHAUST_TOKEN=""
 
 python3 - "$audit_log" "$start_lines" <<'PY'
 import json
@@ -265,7 +275,7 @@ echo 'session E2E ok'
 The exact session IDs vary, but a passing run prints these checkpoints:
 
 ```text
-created mixed config+CLI session: asess_...
+created mixed config+CLI session: asid_...
 session list ok
 full ok
 profile ok
@@ -274,7 +284,7 @@ cli ok
 both ok
 read count after subset runs ok
 destroyed session rejected before child spawn
-created one-read session: asess_...
+created one-read session: asid_...
 profile ok
 read exhaustion rejected before child spawn
 audit metadata ok
@@ -286,8 +296,8 @@ session E2E ok
 This E2E run proves:
 
 - `session create` accepts secrets from a project config profile and CLI args.
-- `session list` shows metadata for active sessions without values, session
-  IDs, or working directories.
+- `session list` shows public session IDs and working directories for active
+  sessions without values or session tokens.
 - `with-session` injects the full approved bag when `--only` is omitted.
 - `with-session --only` injects config-only, CLI-only, and combined subsets.
 - Unknown aliases fail before the child process starts.

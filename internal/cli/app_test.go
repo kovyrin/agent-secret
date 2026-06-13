@@ -179,7 +179,8 @@ profiles:
 	expiresAt := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
 	client := &appFakeDaemonClient{
 		sessionCreatePayload: protocol.SessionCreateResponsePayload{
-			SessionID:      "asess_test",
+			SessionID:      "asid_test",
+			SessionToken:   "astok_test",
 			SecretAliases:  []string{"TOKEN"},
 			ExpiresAt:      expiresAt,
 			MaxReads:       2,
@@ -219,7 +220,7 @@ profiles:
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("decode stdout JSON: %v; stdout=%q", err, stdout.String())
 	}
-	if got.SessionID != "asess_test" || got.RemainingReads != 2 || got.MaxReads != 2 {
+	if got.SessionID != "asid_test" || got.SessionToken != "astok_test" || got.RemainingReads != 2 || got.MaxReads != 2 {
 		t.Fatalf("session create json = %+v", got)
 	}
 	if strings.Contains(stdout.String(), "synthetic-secret-value") || strings.Contains(stderr.String(), "synthetic-secret-value") {
@@ -233,7 +234,8 @@ func TestAppSessionCreatePrintsText(t *testing.T) {
 	expiresAt := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
 	client := &appFakeDaemonClient{
 		sessionCreatePayload: protocol.SessionCreateResponsePayload{
-			SessionID:      "asess_text",
+			SessionID:      "asid_text",
+			SessionToken:   "astok_text",
 			SecretAliases:  []string{"TOKEN"},
 			ExpiresAt:      expiresAt,
 			MaxReads:       1,
@@ -259,14 +261,14 @@ func TestAppSessionCreatePrintsText(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	for _, want := range []string{"session: asess_text", "reads: 1/1 remaining", "secrets: TOKEN"} {
+	for _, want := range []string{"session id: asid_text", "session token: astok_text", "reads: 1/1 remaining", "secrets: TOKEN"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("session create stdout = %q, want %q", stdout.String(), want)
 		}
 	}
 }
 
-func TestAppSessionListAndDestroy(t *testing.T) {
+func TestAppSessionList(t *testing.T) {
 	t.Parallel()
 
 	expiresAt := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
@@ -276,7 +278,9 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		client := &appFakeDaemonClient{
 			sessionListPayload: protocol.SessionListResponsePayload{
 				Sessions: []protocol.SessionInfoPayload{{
+					SessionID:      "asid_test",
 					Reason:         "Deploy workflow",
+					CWD:            "/tmp/project",
 					SecretAliases:  []string{"TOKEN"},
 					ExpiresAt:      expiresAt,
 					MaxReads:       2,
@@ -300,14 +304,14 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		if client.sessionListCalls != 1 || client.closeCalls != 1 {
 			t.Fatalf("client calls: list=%d close=%d", client.sessionListCalls, client.closeCalls)
 		}
-		for _, want := range []string{"reads=1/2", "secrets=TOKEN", "reason=Deploy workflow"} {
+		for _, want := range []string{"asid_test", "reads=1/2", "cwd=/tmp/project", "secrets=TOKEN", "reason=Deploy workflow"} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("session list stdout = %q, want %q", stdout.String(), want)
 			}
 		}
-		for _, forbidden := range []string{"asess_test", "/tmp/project", "cwd="} {
+		for _, forbidden := range []string{"session_token", "astok_test"} {
 			if strings.Contains(stdout.String(), forbidden) {
-				t.Fatalf("session list stdout = %q, must not include %q", stdout.String(), forbidden)
+				t.Fatalf("session list stdout = %q, must not include token data %q", stdout.String(), forbidden)
 			}
 		}
 	})
@@ -318,7 +322,9 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		client := &appFakeDaemonClient{
 			sessionListPayload: protocol.SessionListResponsePayload{
 				Sessions: []protocol.SessionInfoPayload{{
+					SessionID:      "asid_test",
 					Reason:         "Deploy workflow",
+					CWD:            "/tmp/project",
 					SecretAliases:  []string{"TOKEN"},
 					ExpiresAt:      expiresAt,
 					MaxReads:       2,
@@ -343,11 +349,14 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatalf("decode session list json: %v; stdout=%q", err, stdout.String())
 		}
-		if len(got.Sessions) != 1 || got.Sessions[0].RemainingReads != 1 {
+		if len(got.Sessions) != 1 ||
+			got.Sessions[0].SessionID != "asid_test" ||
+			got.Sessions[0].CWD != "/tmp/project" ||
+			got.Sessions[0].RemainingReads != 1 {
 			t.Fatalf("session list json = %+v", got)
 		}
-		if strings.Contains(stdout.String(), "session_id") || strings.Contains(stdout.String(), "cwd") {
-			t.Fatalf("session list json exposes a session capability or cwd: %s", stdout.String())
+		if strings.Contains(stdout.String(), "session_token") || strings.Contains(stdout.String(), "astok_") {
+			t.Fatalf("session list json exposes a session token: %s", stdout.String())
 		}
 	})
 
@@ -372,13 +381,17 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 			t.Fatalf("session list empty stdout = %q", stdout.String())
 		}
 	})
+}
+
+func TestAppSessionDestroy(t *testing.T) {
+	t.Parallel()
 
 	t.Run("destroy", func(t *testing.T) {
 		t.Parallel()
 
 		client := &appFakeDaemonClient{
 			sessionDestroyPayload: protocol.SessionDestroyResponsePayload{
-				SessionID: "asess_test",
+				SessionID: "asid_test",
 				Destroyed: true,
 			},
 		}
@@ -391,18 +404,48 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		var stderr bytes.Buffer
 		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 
-		code := app.Run(context.Background(), []string{"session", "destroy", "asess_test"})
+		code := app.Run(context.Background(), []string{"session", "destroy", "asid_test"})
 		if code != 0 {
 			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 		}
 		if client.sessionDestroyCalls != 1 || client.closeCalls != 1 {
 			t.Fatalf("client calls: destroy=%d close=%d", client.sessionDestroyCalls, client.closeCalls)
 		}
-		if len(client.sessionDestroyRequests) != 1 || client.sessionDestroyRequests[0].SessionID != "asess_test" {
+		if len(client.sessionDestroyRequests) != 1 || client.sessionDestroyRequests[0].SessionID != "asid_test" {
 			t.Fatalf("destroy requests = %+v", client.sessionDestroyRequests)
 		}
-		if !strings.Contains(stdout.String(), "destroyed session: asess_test") {
+		if !strings.Contains(stdout.String(), "destroyed session: asid_test") {
 			t.Fatalf("session destroy stdout = %q", stdout.String())
+		}
+	})
+
+	t.Run("destroy all", func(t *testing.T) {
+		t.Parallel()
+
+		client := &appFakeDaemonClient{
+			sessionDestroyPayload: protocol.SessionDestroyResponsePayload{
+				Destroyed:      true,
+				DestroyedCount: 2,
+			},
+		}
+		manager := &appFakeDaemonManager{
+			socketPath: filepath.Join(t.TempDir(), "d.sock"),
+			client:     client,
+			status:     protocol.StatusPayload{PID: 1234},
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+
+		code := app.Run(context.Background(), []string{"session", "destroy", "--all"})
+		if code != 0 {
+			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+		}
+		if len(client.sessionDestroyRequests) != 1 || !client.sessionDestroyRequests[0].All {
+			t.Fatalf("destroy requests = %+v", client.sessionDestroyRequests)
+		}
+		if !strings.Contains(stdout.String(), "destroyed sessions: 2") {
+			t.Fatalf("session destroy --all stdout = %q", stdout.String())
 		}
 	})
 
@@ -411,7 +454,7 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 
 		client := &appFakeDaemonClient{
 			sessionDestroyPayload: protocol.SessionDestroyResponsePayload{
-				SessionID: "asess_test",
+				SessionID: "asid_test",
 				Destroyed: true,
 			},
 		}
@@ -424,7 +467,7 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		var stderr bytes.Buffer
 		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 
-		code := app.Run(context.Background(), []string{"session", "destroy", "--json", "asess_test"})
+		code := app.Run(context.Background(), []string{"session", "destroy", "--json", "asid_test"})
 		if code != 0 {
 			t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 		}
@@ -432,7 +475,7 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatalf("decode session destroy json: %v; stdout=%q", err, stdout.String())
 		}
-		if got.SessionID != "asess_test" || !got.Destroyed {
+		if got.SessionID != "asid_test" || !got.Destroyed {
 			t.Fatalf("session destroy json = %+v", got)
 		}
 	})
@@ -531,7 +574,7 @@ func TestAppSessionCommandFailures(t *testing.T) {
 		var stderr bytes.Buffer
 		app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
 
-		code := app.Run(context.Background(), []string{"session", "destroy", "asess_missing"})
+		code := app.Run(context.Background(), []string{"session", "destroy", "asid_missing"})
 		if code != 1 {
 			t.Fatalf("exit code = %d, want 1", code)
 		}
@@ -555,7 +598,7 @@ func TestAppSessionCommandFailures(t *testing.T) {
 
 		code := app.Run(context.Background(), []string{
 			"with-session",
-			"asess_test",
+			"astok_test",
 			"--cwd", root,
 			"--allow-mutable-executable",
 			"--",
@@ -599,7 +642,7 @@ func TestAppWithSessionRunsChildWithResolvedEnv(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"with-session",
-		"asess_test",
+		"astok_test",
 		"--cwd", root,
 		"--only", "TOKEN",
 		"--allow-mutable-executable",
@@ -619,7 +662,7 @@ func TestAppWithSessionRunsChildWithResolvedEnv(t *testing.T) {
 		t.Fatalf("session resolve requests = %d", len(client.sessionResolveRequests))
 	}
 	req := client.sessionResolveRequests[0]
-	if req.SessionID != "asess_test" || req.ExpectedPeer.PID <= 0 || req.CWD == "" {
+	if req.SessionToken != "astok_test" || req.ExpectedPeer.PID <= 0 || req.CWD == "" {
 		t.Fatalf("session resolve request = %+v", req)
 	}
 	if len(req.RequestedAliases) != 1 || req.RequestedAliases[0] != "TOKEN" {

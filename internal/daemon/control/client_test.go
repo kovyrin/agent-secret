@@ -101,7 +101,7 @@ func testSessionResolveRequest(t *testing.T) request.SessionResolveRequest {
 	t.Helper()
 
 	req, err := request.NewSessionResolve(
-		"asess_abc123",
+		"astok_abc123",
 		[]string{"/opt/homebrew/bin/terraform", "plan"},
 		"/opt/homebrew/bin/terraform",
 		fileidentity.Identity{Device: 2, Inode: 2, Mode: 0o755},
@@ -450,6 +450,7 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 
 				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
 					SessionID:      "bad",
+					SessionToken:   "astok_abc123",
 					SecretAliases:  []string{"TOKEN"},
 					MaxReads:       sessionCreateReq.MaxReads,
 					RemainingReads: sessionCreateReq.MaxReads,
@@ -462,12 +463,32 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			wantErrMsg: "invalid session id",
 		},
 		{
+			name: "session create token",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
+					SessionID:      "asid_abc123",
+					SessionToken:   "bad",
+					SecretAliases:  []string{"TOKEN"},
+					MaxReads:       sessionCreateReq.MaxReads,
+					RemainingReads: sessionCreateReq.MaxReads,
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateSession(ctx, testCorrelation("req_1", "nonce_1"), sessionCreateReq)
+				return err
+			},
+			wantErrMsg: "invalid session token",
+		},
+		{
 			name: "session create aliases",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
 				t.Helper()
 
 				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
-					SessionID:      "asess_abc123",
+					SessionID:      "asid_abc123",
+					SessionToken:   "astok_abc123",
 					SecretAliases:  []string{"OTHER"},
 					MaxReads:       sessionCreateReq.MaxReads,
 					RemainingReads: sessionCreateReq.MaxReads,
@@ -485,7 +506,8 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 				t.Helper()
 
 				return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
-					SessionID:      "asess_abc123",
+					SessionID:      "asid_abc123",
+					SessionToken:   "astok_abc123",
 					SecretAliases:  []string{"TOKEN"},
 					MaxReads:       sessionCreateReq.MaxReads,
 					RemainingReads: 1,
@@ -590,7 +612,7 @@ func TestClientDescribeItemRoundTripsPayload(t *testing.T) {
 	}
 }
 
-func TestClientSessionRoundTripsPayloads(t *testing.T) {
+func TestClientSessionCreateAndResolveRoundTripsPayloads(t *testing.T) {
 	t.Parallel()
 
 	t.Run("create", func(t *testing.T) {
@@ -601,7 +623,8 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
 			requests <- env
 			return okResponseFrame(t, env, protocol.SessionCreateResponsePayload{
-				SessionID:      "asess_abc123",
+				SessionID:      "asid_abc123",
+				SessionToken:   "astok_abc123",
 				SecretAliases:  []string{"TOKEN"},
 				ExpiresAt:      req.ExpiresAt,
 				MaxReads:       2,
@@ -614,7 +637,7 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSession returned error: %v", err)
 		}
-		if payload.SessionID != "asess_abc123" || payload.RemainingReads != 2 {
+		if payload.SessionID != "asid_abc123" || payload.SessionToken != "astok_abc123" || payload.RemainingReads != 2 {
 			t.Fatalf("unexpected create payload: %+v", payload)
 		}
 		env := receiveStalledRequest(t, requests)
@@ -664,7 +687,7 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode session resolve request: %v", err)
 		}
-		if got.SessionID != req.SessionID || got.CWD != req.CWD {
+		if got.SessionToken != req.SessionToken || got.CWD != req.CWD {
 			t.Fatalf("unexpected session resolve request: %+v", got)
 		}
 		if len(got.RequestedAliases) != 1 || got.RequestedAliases[0] != "TOKEN" {
@@ -692,16 +715,20 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 			t.Fatalf("ResolveSession error = %v, want ErrMalformedEnvelope", err)
 		}
 	})
+}
+
+func TestClientSessionManagementRoundTripsPayloads(t *testing.T) {
+	t.Parallel()
 
 	t.Run("destroy", func(t *testing.T) {
 		t.Parallel()
 
-		req := request.SessionDestroyRequest{SessionID: "asess_abc123"}
+		req := request.SessionDestroyRequest{SessionID: "asid_abc123"}
 		requests := make(chan protocol.Envelope, 1)
 		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
 			requests <- env
 			return okResponseFrame(t, env, protocol.SessionDestroyResponsePayload{
-				SessionID: "asess_abc123",
+				SessionID: "asid_abc123",
 				Destroyed: true,
 			})
 		})
@@ -720,6 +747,33 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		}
 	})
 
+	t.Run("destroy all", func(t *testing.T) {
+		t.Parallel()
+
+		req := request.NewSessionDestroyAll()
+		requests := make(chan protocol.Envelope, 1)
+		client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+			requests <- env
+			return okResponseFrame(t, env, protocol.SessionDestroyResponsePayload{
+				Destroyed:      true,
+				DestroyedCount: 2,
+			})
+		})
+		defer cleanup()
+
+		payload, err := client.DestroySession(context.Background(), req)
+		if err != nil {
+			t.Fatalf("DestroySession --all returned error: %v", err)
+		}
+		if !payload.Destroyed || payload.DestroyedCount != 2 {
+			t.Fatalf("unexpected destroy all payload: %+v", payload)
+		}
+		env := receiveStalledRequest(t, requests)
+		if env.Type != protocol.TypeSessionDestroy {
+			t.Fatalf("request type = %s, want %s", env.Type, protocol.TypeSessionDestroy)
+		}
+	})
+
 	t.Run("list", func(t *testing.T) {
 		t.Parallel()
 
@@ -728,7 +782,9 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 			requests <- env
 			return okResponseFrame(t, env, protocol.SessionListResponsePayload{
 				Sessions: []protocol.SessionInfoPayload{{
+					SessionID:      "asid_abc123",
 					Reason:         "Deploy workflow",
+					CWD:            "/tmp/project",
 					SecretAliases:  []string{"TOKEN"},
 					ExpiresAt:      time.Now().Add(time.Minute),
 					MaxReads:       2,

@@ -130,11 +130,10 @@ terraform apply
 ansible-playbook site.yml --check
 ```
 
-The user approves once for a TTL and max-read count. The broker returns an
-opaque session ID, keeps values in Agent Secret's background helper memory, and
-subsequent commands must run through `agent-secret with-session`. The wrapper
-resolves values over the daemon command channel and injects them only into the
-approved child process.
+The user approves once for a TTL and max-read count. The broker returns a
+public `session_id` for management plus a secret `session_token` for
+`agent-secret with-session`, keeps values in Agent Secret's background helper
+memory, and injects them only into the approved child process.
 V1 sessions do not add generic socket reads or credential-helper protocols.
 
 ### Use Case 3: Config-Driven Secret Sync
@@ -362,7 +361,7 @@ Each approved request should bind these fields:
 The broker rejects access if the request is expired, the requested
 reference/alias is not approved, the reusable or session read count is
 exhausted, the command or cwd policy mismatches, the nonce is invalid, the
-session ID is unknown, peer metadata mismatches, or the request was denied or
+session token is unknown, peer metadata mismatches, or the request was denied or
 canceled.
 
 For `agent-secret exec`, `--cwd` is operational. It sets the child process
@@ -676,12 +675,13 @@ Limitations:
 - Environment variables can still be exposed by child process behavior, crash
   reporters, debuggers, or subprocesses.
 
-### Mode 2: Background-Helper Session IDs
+### Mode 2: Background-Helper Sessions
 
-The broker creates a short-lived session and returns an opaque session ID
-instead of values. Values stay in Agent Secret's background helper memory and
-are useful only through `agent-secret with-session`, matching peer credentials,
-cwd, remaining read count, and unexpired policy.
+The broker creates a short-lived session and returns a public `session_id` for
+list/destroy operations plus a secret `session_token` instead of values. Values
+stay in Agent Secret's background helper memory and are useful only through
+`agent-secret with-session`, matching peer credentials, cwd, remaining read
+count, and unexpired policy.
 
 Unlike same-command reuse, sessions approve a bounded set of references for a
 workflow lifetime and allow those approved references to be injected into
@@ -693,10 +693,10 @@ exhausted, the daemon stops, or the session is destroyed.
 
 ### Mode 3: `with-session`
 
-The agent receives a session ID but must wrap each command:
+The agent receives a session token but must wrap each command:
 
 ```bash
-agent-secret with-session asess_123 \
+agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
 ```
@@ -855,9 +855,10 @@ V1 commands:
 ```bash
 agent-secret exec [options] -- command [args...]
 agent-secret session create [options]
-agent-secret with-session asess_123 [--only ALIAS[,ALIAS...]] -- command [args...]
+agent-secret with-session astok_123 [--only ALIAS[,ALIAS...]] -- command [args...]
 agent-secret session list
-agent-secret session destroy asess_123
+agent-secret session destroy asid_123
+agent-secret session destroy --all
 agent-secret repair
 agent-secret daemon status
 agent-secret daemon start
@@ -1085,7 +1086,7 @@ Exit criteria:
 Deliverables:
 
 - session create, list, and destroy
-- opaque session IDs
+- public session IDs for management and secret session tokens for resolution
 - `with-session` wrapper
 - background-helper-memory value storage and wrapper-only resolution
 - TTL and max-read enforcement
@@ -1185,12 +1186,12 @@ Exit criteria:
 
 ### Session Mode Criteria
 
-- Session create returns opaque session IDs only.
-- Session IDs cannot be resolved after TTL.
-- Session IDs cannot be resolved more than the allowed read count.
+- Session create returns a public session ID and secret session token.
+- Session tokens cannot be resolved after TTL.
+- Session tokens cannot be resolved more than the allowed read count.
 - On macOS, session resolution fails closed if peer UID, PID, executable path, or
   cwd cannot be obtained or does not match the approved session policy.
-- Destroying a session invalidates the session ID.
+- Destroying a session invalidates the session token.
 
 ### Audit Criteria
 

@@ -1488,14 +1488,21 @@ func TestParseSessionListDestroyAndHelp(t *testing.T) {
 		t.Fatalf("session list command = %+v", listCommand)
 	}
 
-	destroyCommand, err := parser.Parse([]string{"session", "destroy", "--json", "asess_abc123"})
+	destroyCommand, err := parser.Parse([]string{"session", "destroy", "--json", "asid_abc123"})
 	if err != nil {
 		t.Fatalf("Parse session destroy returned error: %v", err)
 	}
 	if destroyCommand.Kind != KindSessionDestroy ||
 		!destroyCommand.OutputJSON ||
-		destroyCommand.SessionDestroyRequest.SessionID != "asess_abc123" {
+		destroyCommand.SessionDestroyRequest.SessionID != "asid_abc123" {
 		t.Fatalf("session destroy command = %+v", destroyCommand)
+	}
+	destroyAllCommand, err := parser.Parse([]string{"session", "destroy", "--all"})
+	if err != nil {
+		t.Fatalf("Parse session destroy --all returned error: %v", err)
+	}
+	if destroyAllCommand.Kind != KindSessionDestroy || !destroyAllCommand.SessionDestroyRequest.All {
+		t.Fatalf("session destroy --all command = %+v", destroyAllCommand)
 	}
 
 	for _, args := range [][]string{
@@ -1565,7 +1572,7 @@ func TestParseWithSessionRecordsRequestedAliases(t *testing.T) {
 
 	command, err := NewParser().Parse([]string{
 		"with-session",
-		"asess_abc123",
+		"astok_abc123",
 		"--cwd", root,
 		"--only", "B_TOKEN,A_TOKEN",
 		"--allow-mutable-executable",
@@ -1579,6 +1586,9 @@ func TestParseWithSessionRecordsRequestedAliases(t *testing.T) {
 		t.Fatalf("kind = %s, want with-session", command.Kind)
 	}
 	req := command.SessionResolveRequest
+	if req.SessionToken != "astok_abc123" {
+		t.Fatalf("session token = %q, want astok_abc123", req.SessionToken)
+	}
 	if strings.Join(req.RequestedAliases, ",") != "A_TOKEN,B_TOKEN" {
 		t.Fatalf("requested aliases = %v, want sorted A_TOKEN,B_TOKEN", req.RequestedAliases)
 	}
@@ -1595,12 +1605,14 @@ func TestParseSessionRejectsInvalidForms(t *testing.T) {
 	}{
 		{name: "unknown session command", args: []string{"session", "open"}, want: ErrInvalidArguments},
 		{name: "create child command", args: []string{"session", "create", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token", "--", "tool"}, want: ErrInvalidArguments},
-		{name: "list args", args: []string{"session", "list", "asess_abc"}, want: ErrInvalidArguments},
+		{name: "list args", args: []string{"session", "list", "asid_abc"}, want: ErrInvalidArguments},
 		{name: "destroy missing id", args: []string{"session", "destroy"}, want: ErrInvalidArguments},
 		{name: "destroy bad id", args: []string{"session", "destroy", "bad"}, want: request.ErrInvalidSessionID},
-		{name: "with-session missing boundary", args: []string{"with-session", "asess_abc", "tool"}, want: ErrShellStringCommand},
-		{name: "with-session missing command", args: []string{"with-session", "asess_abc", "--"}, want: ErrShellStringCommand},
-		{name: "with-session misplaced arg", args: []string{"with-session", "asess_abc", "extra", "--", "tool"}, want: ErrInvalidArguments},
+		{name: "destroy all with id", args: []string{"session", "destroy", "--all", "asid_abc"}, want: ErrInvalidArguments},
+		{name: "with-session public id", args: []string{"with-session", "asid_abc", "--", "tool"}, want: request.ErrInvalidSessionToken},
+		{name: "with-session missing boundary", args: []string{"with-session", "astok_abc", "tool"}, want: ErrShellStringCommand},
+		{name: "with-session missing command", args: []string{"with-session", "astok_abc", "--"}, want: ErrShellStringCommand},
+		{name: "with-session misplaced arg", args: []string{"with-session", "astok_abc", "extra", "--", "tool"}, want: ErrInvalidArguments},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1656,7 +1668,7 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "with-session",
 			args:  []string{"with-session", "--help"},
-			wants: []string{"with-session SESSION_ID", "--cwd", "--only", "--allow-mutable-executable", "never printed"},
+			wants: []string{"with-session SESSION_TOKEN", "--cwd", "--only", "--allow-mutable-executable", "never printed"},
 		},
 		{
 			name:  "profile",

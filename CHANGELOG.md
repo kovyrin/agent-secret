@@ -24,9 +24,11 @@ version numbers for public releases.
 
 ### Security
 
-- Stopped `agent-secret session list` from returning session IDs or working
-  directories, preventing active session handles from being enumerated and
-  replayed by another local trusted CLI process.
+- Split bounded sessions into listable `session_id` values for management and
+  secret `session_token` values for `with-session`, preventing active session
+  resolve capabilities from being enumerated through `agent-secret session list`.
+- Added `agent-secret session destroy --all` for clearing every active
+  background-helper session without needing individual session IDs.
 
 ## [0.0.22] - 2026-06-10
 

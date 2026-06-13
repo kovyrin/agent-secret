@@ -128,15 +128,15 @@ Approve a bounded multi-command session and run commands through the wrapper:
 
 ```bash
 agent-secret session create --profile terraform-cloudflare --max-reads 2
-agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
-agent-secret with-session asess_123 \
+agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
+agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
-agent-secret session destroy asess_123
+agent-secret session destroy asid_123
 ```
 
-Keep the session handle returned by `session create`; `session list` reports
-active-session metadata without revealing session IDs or working directories.
+Keep the `session_token` returned by `session create` for `with-session`.
+Use the `session_id` shown by `session list` for inspection and cleanup.
 
 Inspect item metadata without revealing values:
 
@@ -200,7 +200,7 @@ precedence, env-file migration, and the full schema.
 - `agent-secret exec -- COMMAND [ARG...]`: run a command with approved secrets.
 - `agent-secret session create|list|destroy`: manage bounded background-helper
   sessions.
-- `agent-secret with-session SESSION_ID -- COMMAND [ARG...]`: run one command
+- `agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]`: run one command
   with secrets from an approved session. Add `--only ALIAS[,ALIAS...]` to inject
   a per-command subset of the approved session bag.
 - `agent-secret item describe REF`: inspect 1Password item fields without

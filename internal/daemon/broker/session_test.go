@@ -34,12 +34,12 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleSessionCreate returned error: %v", err)
 	}
-	if created.SessionID == "" || created.RemainingReads != 1 {
+	if created.SessionID == "" || created.SessionToken == "" || created.RemainingReads != 1 {
 		t.Fatalf("created session payload = %+v", created)
 	}
 
 	peer := testSessionPeer(t, createReq.CWD)
-	resolveReq := testSessionResolveRequest(t, created.SessionID, createReq.CWD, peer)
+	resolveReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 	delivery, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq, peer)
 	if err != nil {
 		t.Fatalf("PrepareSessionResolve returned error: %v", err)
@@ -109,7 +109,7 @@ func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
 	}
 
 	peer := testSessionPeer(t, createReq.CWD)
-	missingReq := testSessionResolveRequest(t, created.SessionID, createReq.CWD, peer)
+	missingReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 	missingReq, err = missingReq.WithRequestedAliases([]string{"MISSING_TOKEN"})
 	if err != nil {
 		t.Fatalf("WithRequestedAliases returned error: %v", err)
@@ -118,7 +118,7 @@ func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
 		t.Fatalf("missing alias PrepareSessionResolve error = %v, want ErrInvalidAlias", err)
 	}
 
-	resolveReq := testSessionResolveRequest(t, created.SessionID, createReq.CWD, peer)
+	resolveReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 	resolveReq, err = resolveReq.WithRequestedAliases([]string{"B_TOKEN", "A_TOKEN"})
 	if err != nil {
 		t.Fatalf("WithRequestedAliases returned error: %v", err)
@@ -175,7 +175,7 @@ func TestBrokerSessionResolveAbortRestoresRead(t *testing.T) {
 		t.Fatalf("HandleSessionCreate returned error: %v", err)
 	}
 	peer := testSessionPeer(t, createReq.CWD)
-	resolveReq := testSessionResolveRequest(t, created.SessionID, createReq.CWD, peer)
+	resolveReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 
 	first, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq, peer)
 	if err != nil {
@@ -216,7 +216,10 @@ func TestBrokerSessionListAndDestroy(t *testing.T) {
 	if len(listed.Sessions) != 1 {
 		t.Fatalf("listed sessions = %+v, want one active session", listed.Sessions)
 	}
-	if listed.Sessions[0].RemainingReads != 2 || listed.Sessions[0].SecretAliases[0] != "TOKEN" {
+	if listed.Sessions[0].SessionID != created.SessionID ||
+		listed.Sessions[0].CWD != createReq.CWD ||
+		listed.Sessions[0].RemainingReads != 2 ||
+		listed.Sessions[0].SecretAliases[0] != "TOKEN" {
 		t.Fatalf("listed session metadata = %+v", listed.Sessions[0])
 	}
 
@@ -238,8 +241,29 @@ func TestBrokerSessionListAndDestroy(t *testing.T) {
 		t.Fatalf("second HandleSessionDestroy error = %v, want ErrSessionNotFound", err)
 	}
 
+	createdAgain, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create_again", "nonce_create_again"), createReq)
+	if err != nil {
+		t.Fatalf("second HandleSessionCreate returned error: %v", err)
+	}
+	destroyedAll, err := broker.HandleSessionDestroy(context.Background(), request.NewSessionDestroyAll())
+	if err != nil {
+		t.Fatalf("HandleSessionDestroy --all returned error: %v", err)
+	}
+	if !destroyedAll.Destroyed || destroyedAll.DestroyedCount != 1 {
+		t.Fatalf("destroy all payload = %+v", destroyedAll)
+	}
+	if _, err := broker.HandleSessionDestroy(context.Background(), request.SessionDestroyRequest{SessionID: createdAgain.SessionID}); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("destroy after --all error = %v, want ErrSessionNotFound", err)
+	}
+
 	got := auditEventTypes(aud.Events())
 	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventSecretFetchStarted,
+		audit.EventSessionCreated,
+		audit.EventSessionDestroyed,
+		audit.EventSessionDestroyed,
 		audit.EventApprovalRequested,
 		audit.EventApprovalGranted,
 		audit.EventSecretFetchStarted,
@@ -309,8 +333,9 @@ func TestSessionStoreListPrunesExpiredAndExhaustedSessions(t *testing.T) {
 
 	now := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
 	store := newSessionStore(func() time.Time { return now })
-	store.sessions["asess_live_b"] = &sessionRecord{
-		ID:            "asess_live_b",
+	store.sessions["asid_live_b"] = &sessionRecord{
+		ID:            "asid_live_b",
+		Token:         "astok_live_b",
 		Reason:        "Deploy",
 		CWD:           "/tmp/project",
 		SecretAliases: []string{"TOKEN"},
@@ -318,24 +343,27 @@ func TestSessionStoreListPrunesExpiredAndExhaustedSessions(t *testing.T) {
 		MaxReads:      2,
 		Reads:         1,
 	}
-	store.sessions["asess_live_a"] = &sessionRecord{
-		ID:            "asess_live_a",
+	store.sessions["asid_live_a"] = &sessionRecord{
+		ID:            "asid_live_a",
+		Token:         "astok_live_a",
 		Reason:        "Deploy",
 		CWD:           "/tmp/project",
 		SecretAliases: []string{"TOKEN"},
 		ExpiresAt:     now.Add(time.Minute),
 		MaxReads:      2,
 	}
-	store.sessions["asess_expired"] = &sessionRecord{
-		ID:            "asess_expired",
+	store.sessions["asid_expired"] = &sessionRecord{
+		ID:            "asid_expired",
+		Token:         "astok_expired",
 		Reason:        "Deploy",
 		CWD:           "/tmp/project",
 		SecretAliases: []string{"TOKEN"},
 		ExpiresAt:     now,
 		MaxReads:      2,
 	}
-	store.sessions["asess_exhausted"] = &sessionRecord{
-		ID:            "asess_exhausted",
+	store.sessions["asid_exhausted"] = &sessionRecord{
+		ID:            "asid_exhausted",
+		Token:         "astok_exhausted",
 		Reason:        "Deploy",
 		CWD:           "/tmp/project",
 		SecretAliases: []string{"TOKEN"},
@@ -348,16 +376,16 @@ func TestSessionStoreListPrunesExpiredAndExhaustedSessions(t *testing.T) {
 	if len(summaries) != 2 {
 		t.Fatalf("list returned %d sessions: %+v", len(summaries), summaries)
 	}
-	if summaries[0].SessionID != "asess_live_a" || summaries[1].SessionID != "asess_live_b" {
+	if summaries[0].SessionID != "asid_live_a" || summaries[1].SessionID != "asid_live_b" {
 		t.Fatalf("sessions not sorted by id for equal expiry: %+v", summaries)
 	}
 	if summaries[0].RemainingReads != 2 || summaries[1].RemainingReads != 1 {
 		t.Fatalf("remaining reads mismatch: %+v", summaries)
 	}
-	if _, ok := store.sessions["asess_expired"]; ok {
+	if _, ok := store.sessions["asid_expired"]; ok {
 		t.Fatal("expired session was not pruned")
 	}
-	if _, ok := store.sessions["asess_exhausted"]; ok {
+	if _, ok := store.sessions["asid_exhausted"]; ok {
 		t.Fatal("exhausted session was not pruned")
 	}
 }
@@ -397,7 +425,7 @@ func testSessionCreateRequest(
 
 func testSessionResolveRequest(
 	t *testing.T,
-	sessionID string,
+	sessionToken string,
 	cwd string,
 	peer peercred.Info,
 ) request.SessionResolveRequest {
@@ -408,7 +436,7 @@ func testSessionResolveRequest(
 		t.Fatalf("capture executable identity: %v", err)
 	}
 	req, err := request.NewSessionResolve(
-		sessionID,
+		sessionToken,
 		[]string{exe, "-test.run=TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand", "--", "child"},
 		exe,
 		identity,

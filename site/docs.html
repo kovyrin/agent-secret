@@ -212,24 +212,25 @@ profiles:
             <p>
               Sessions are for short workflows where an agent needs the same
               approved set of references in different combinations. Agent
-              Secret stores values in background helper memory and returns only
-              an opaque session ID.
+              Secret stores values in background helper memory and returns a
+              public session ID for management plus a secret session token for
+              <code>with-session</code>.
             </p>
             <div class="code-panel">
               <pre><code>agent-secret session create --profile terraform-cloudflare --max-reads 3
-agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
-agent-secret with-session asess_123 \
+agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
+agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
-agent-secret session destroy asess_123</code></pre>
+agent-secret session destroy asid_123</code></pre>
             </div>
             <p>
               <code>session create</code> can combine a project profile, env
               files, and one-off <code>--secret ALIAS=REF</code> flags.
-              Keep the returned handle for later <code>with-session</code> or
-              <code>session destroy</code> calls; <code>session list</code>
-              reports active-session metadata without revealing session IDs or
-              working directories.
+              Keep the returned <code>session_token</code> for
+              <code>with-session</code>; use the listed <code>session_id</code>
+              for inspection and cleanup. <code>session list</code> never
+              reveals session tokens.
               <code>with-session</code> injects every approved alias by default,
               or a per-command subset with <code>--only</code>. Unknown aliases
               fail before the child command starts.
