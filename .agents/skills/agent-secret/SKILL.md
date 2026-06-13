@@ -119,10 +119,12 @@ Use sessions when the user approves a bag of secrets once and later commands
 need different subsets. `session create` accepts the same config, profile,
 env-file, and `--secret` inputs as `exec`, then returns only an opaque session
 ID. Agent Secret keeps resolved values in background helper memory until TTL,
-read count, explicit destroy, or helper stop clears them. `with-session`
-injects every approved alias by default; add `--only ALIAS[,ALIAS...]` to
-deliver only the aliases needed by that child command. Unknown aliases fail
-before the child process starts.
+read count, explicit destroy, or helper stop clears them. `session list` shows
+active-session metadata but does not reveal session IDs or working directories;
+keep the handle returned by `session create` for later `with-session` or
+`session destroy` calls. `with-session` injects every approved alias by default;
+add `--only ALIAS[,ALIAS...]` to deliver only the aliases needed by that child
+command. Unknown aliases fail before the child process starts.
 
 Use a shell only when the shell is the command you actually want approved:
 

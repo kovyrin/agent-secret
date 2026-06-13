@@ -226,6 +226,10 @@ agent-secret session destroy asess_123</code></pre>
             <p>
               <code>session create</code> can combine a project profile, env
               files, and one-off <code>--secret ALIAS=REF</code> flags.
+              Keep the returned handle for later <code>with-session</code> or
+              <code>session destroy</code> calls; <code>session list</code>
+              reports active-session metadata without revealing session IDs or
+              working directories.
               <code>with-session</code> injects every approved alias by default,
               or a per-command subset with <code>--only</code>. Unknown aliases
               fail before the child command starts.

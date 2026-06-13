@@ -844,9 +844,7 @@ func sessionCreatePayload(summary request.SessionSummary) protocol.SessionCreate
 
 func sessionInfoPayload(summary request.SessionSummary) protocol.SessionInfoPayload {
 	return protocol.SessionInfoPayload{
-		SessionID:      summary.SessionID,
 		Reason:         summary.Reason,
-		CWD:            summary.CWD,
 		SecretAliases:  slices.Clone(summary.SecretAliases),
 		ExpiresAt:      summary.ExpiresAt,
 		MaxReads:       summary.MaxReads,

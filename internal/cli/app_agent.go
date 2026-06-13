@@ -223,7 +223,7 @@ func agentContextCommands() map[string]commandContext {
 					Notes:   []string{"returns a session id only", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
 				},
 				"list": {
-					Summary: "List active session ids and non-secret metadata.",
+					Summary: "List active sessions without session ids or working directories.",
 					Flags:   jsonFlag(),
 					Outputs: []string{"text", "json"},
 				},

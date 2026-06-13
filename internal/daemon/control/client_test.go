@@ -728,9 +728,7 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 			requests <- env
 			return okResponseFrame(t, env, protocol.SessionListResponsePayload{
 				Sessions: []protocol.SessionInfoPayload{{
-					SessionID:      "asess_abc123",
 					Reason:         "Deploy workflow",
-					CWD:            "/tmp/project",
 					SecretAliases:  []string{"TOKEN"},
 					ExpiresAt:      time.Now().Add(time.Minute),
 					MaxReads:       2,
@@ -744,7 +742,7 @@ func TestClientSessionRoundTripsPayloads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListSessions returned error: %v", err)
 		}
-		if len(payload.Sessions) != 1 || payload.Sessions[0].SessionID != "asess_abc123" {
+		if len(payload.Sessions) != 1 || payload.Sessions[0].RemainingReads != 1 {
 			t.Fatalf("unexpected list payload: %+v", payload)
 		}
 		env := receiveStalledRequest(t, requests)

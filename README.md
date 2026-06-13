@@ -135,6 +135,9 @@ agent-secret with-session asess_123 \
 agent-secret session destroy asess_123
 ```
 
+Keep the session handle returned by `session create`; `session list` reports
+active-session metadata without revealing session IDs or working directories.
+
 Inspect item metadata without revealing values:
 
 ```bash

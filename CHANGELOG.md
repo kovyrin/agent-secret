@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.23] - Pending
+
+### Security
+
+- Stopped `agent-secret session list` from returning session IDs or working
+  directories, preventing active session handles from being enumerated and
+  replayed by another local trusted CLI process.
+
 ## [0.0.22] - 2026-06-10
 
 ### Fixed

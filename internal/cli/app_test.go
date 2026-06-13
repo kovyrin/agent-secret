@@ -276,9 +276,7 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		client := &appFakeDaemonClient{
 			sessionListPayload: protocol.SessionListResponsePayload{
 				Sessions: []protocol.SessionInfoPayload{{
-					SessionID:      "asess_test",
 					Reason:         "Deploy workflow",
-					CWD:            "/tmp/project",
 					SecretAliases:  []string{"TOKEN"},
 					ExpiresAt:      expiresAt,
 					MaxReads:       2,
@@ -302,9 +300,14 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		if client.sessionListCalls != 1 || client.closeCalls != 1 {
 			t.Fatalf("client calls: list=%d close=%d", client.sessionListCalls, client.closeCalls)
 		}
-		for _, want := range []string{"asess_test", "reads=1/2", "secrets=TOKEN"} {
+		for _, want := range []string{"reads=1/2", "secrets=TOKEN", "reason=Deploy workflow"} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("session list stdout = %q, want %q", stdout.String(), want)
+			}
+		}
+		for _, forbidden := range []string{"asess_test", "/tmp/project", "cwd="} {
+			if strings.Contains(stdout.String(), forbidden) {
+				t.Fatalf("session list stdout = %q, must not include %q", stdout.String(), forbidden)
 			}
 		}
 	})
@@ -315,9 +318,7 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		client := &appFakeDaemonClient{
 			sessionListPayload: protocol.SessionListResponsePayload{
 				Sessions: []protocol.SessionInfoPayload{{
-					SessionID:      "asess_test",
 					Reason:         "Deploy workflow",
-					CWD:            "/tmp/project",
 					SecretAliases:  []string{"TOKEN"},
 					ExpiresAt:      expiresAt,
 					MaxReads:       2,
@@ -342,8 +343,11 @@ func TestAppSessionListAndDestroy(t *testing.T) {
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatalf("decode session list json: %v; stdout=%q", err, stdout.String())
 		}
-		if len(got.Sessions) != 1 || got.Sessions[0].SessionID != "asess_test" {
+		if len(got.Sessions) != 1 || got.Sessions[0].RemainingReads != 1 {
 			t.Fatalf("session list json = %+v", got)
+		}
+		if strings.Contains(stdout.String(), "session_id") || strings.Contains(stdout.String(), "cwd") {
+			t.Fatalf("session list json exposes a session capability or cwd: %s", stdout.String())
 		}
 	})
 

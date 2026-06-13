@@ -352,7 +352,7 @@ func SessionHelp() string {
 	Commands:
 
 	  create   Ask for approval, resolve requested refs, and return an opaque session id.
-	  list     List active session ids and non-secret metadata.
+	  list     List active sessions without session ids or working directories.
 	  destroy  Destroy one session and clear its cached values.
 
 	Examples:

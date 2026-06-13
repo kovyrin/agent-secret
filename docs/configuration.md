@@ -356,11 +356,14 @@ agent-secret with-session asess_123 \
   -- terraform apply
 ```
 
-`session create` returns only an opaque session ID and non-secret metadata. It
-does not print secret values. Without `--only`, `with-session` injects every
-approved session alias into that child process. With `--only`, it injects only
-the requested approved aliases. If any requested alias was not in the approved
-session, Agent Secret fails before spawning the child command.
+`session create` returns the opaque session ID needed by `with-session`, plus
+non-secret metadata. It does not print secret values. `session list` reports
+active-session metadata without session IDs or working directories, so listing
+cannot be used to discover another workflow's `with-session` handle. Without
+`--only`, `with-session` injects every approved session alias into that child
+process. With `--only`, it injects only the requested approved aliases. If any
+requested alias was not in the approved session, Agent Secret fails before
+spawning the child command.
 
 `with-session` accepts `--cwd DIR`, `--only ALIAS[,ALIAS...]`, and
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current

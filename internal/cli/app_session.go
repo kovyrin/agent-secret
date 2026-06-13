@@ -102,13 +102,12 @@ func (a App) runSessionList(ctx context.Context, command Command) int {
 	}
 	for _, session := range payload.Sessions {
 		a.stdoutf(
-			"%s expires=%s reads=%d/%d cwd=%s secrets=%s\n",
-			session.SessionID,
+			"expires=%s reads=%d/%d secrets=%s reason=%s\n",
 			session.ExpiresAt.Format(time.RFC3339),
 			session.RemainingReads,
 			session.MaxReads,
-			session.CWD,
 			strings.Join(session.SecretAliases, ","),
+			session.Reason,
 		)
 	}
 	return 0

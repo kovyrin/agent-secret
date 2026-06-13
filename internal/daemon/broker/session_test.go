@@ -213,8 +213,8 @@ func TestBrokerSessionListAndDestroy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleSessionList returned error: %v", err)
 	}
-	if len(listed.Sessions) != 1 || listed.Sessions[0].SessionID != created.SessionID {
-		t.Fatalf("listed sessions = %+v, want created session %s", listed.Sessions, created.SessionID)
+	if len(listed.Sessions) != 1 {
+		t.Fatalf("listed sessions = %+v, want one active session", listed.Sessions)
 	}
 	if listed.Sessions[0].RemainingReads != 2 || listed.Sessions[0].SecretAliases[0] != "TOKEN" {
 		t.Fatalf("listed session metadata = %+v", listed.Sessions[0])

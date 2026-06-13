@@ -128,9 +128,7 @@ type SessionListResponsePayload struct {
 }
 
 type SessionInfoPayload struct {
-	SessionID      string    `json:"session_id"`
 	Reason         string    `json:"reason"`
-	CWD            string    `json:"cwd"`
 	SecretAliases  []string  `json:"secret_aliases"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	MaxReads       int       `json:"max_reads"`

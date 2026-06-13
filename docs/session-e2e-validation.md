@@ -107,18 +107,19 @@ SESSION_ID="$(printf '%s' "$SESSION_JSON" |
 printf 'created mixed config+CLI session: %s\n' "$SESSION_ID"
 
 agent-secret session list --json |
-  SESSION_ID="$SESSION_ID" python3 -c '
-import json, os, sys
+  python3 -c '
+import json, sys
 data = json.load(sys.stdin)
-sid = os.environ["SESSION_ID"]
-matches = [s for s in data["sessions"] if s["session_id"] == sid]
-assert len(matches) == 1, matches
-s = matches[0]
-assert s["remaining_reads"] == 5, s
-assert s["secret_aliases"] == [
-    "SESSION_E2E_CLI_TOKEN",
-    "SESSION_E2E_PROFILE_TOKEN",
-], s
+matches = [
+    s for s in data["sessions"]
+    if s["remaining_reads"] == 5 and s["secret_aliases"] == [
+        "SESSION_E2E_CLI_TOKEN",
+        "SESSION_E2E_PROFILE_TOKEN",
+    ]
+]
+assert len(matches) >= 1, data
+assert "session_id" not in matches[0], matches[0]
+assert "cwd" not in matches[0], matches[0]
 print("session list ok")'
 
 run_with_session "$SESSION_ID" \
@@ -154,13 +155,19 @@ run_with_session "$SESSION_ID" \
   -- python3 -c "$check_py" both
 
 agent-secret session list --json |
-  SESSION_ID="$SESSION_ID" python3 -c '
-import json, os, sys
+  python3 -c '
+import json, sys
 data = json.load(sys.stdin)
-sid = os.environ["SESSION_ID"]
-matches = [s for s in data["sessions"] if s["session_id"] == sid]
-assert len(matches) == 1, matches
-assert matches[0]["remaining_reads"] == 1, matches[0]
+matches = [
+    s for s in data["sessions"]
+    if s["remaining_reads"] == 1 and s["secret_aliases"] == [
+        "SESSION_E2E_CLI_TOKEN",
+        "SESSION_E2E_PROFILE_TOKEN",
+    ]
+]
+assert len(matches) >= 1, data
+assert "session_id" not in matches[0], matches[0]
+assert "cwd" not in matches[0], matches[0]
 print("read count after subset runs ok")'
 
 agent-secret session destroy "$SESSION_ID" >/dev/null
@@ -279,7 +286,8 @@ session E2E ok
 This E2E run proves:
 
 - `session create` accepts secrets from a project config profile and CLI args.
-- `session list` shows metadata for active sessions without values.
+- `session list` shows metadata for active sessions without values, session
+  IDs, or working directories.
 - `with-session` injects the full approved bag when `--only` is omitted.
 - `with-session --only` injects config-only, CLI-only, and combined subsets.
 - Unknown aliases fail before the child process starts.
