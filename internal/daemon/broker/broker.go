@@ -215,7 +215,7 @@ func (b *Broker) PrepareSessionResolve(
 	}
 	activeReq := execRequestFromSessionResolve(req, reservation)
 	if err := b.activateExec(correlation, activeReq); err != nil {
-		b.sessions.finishReservation(reservation.SessionID, false)
+		b.sessions.finishReservation(reservation.SessionToken, false)
 		return nil, err
 	}
 	delivery := &SessionResolveDelivery{
@@ -258,6 +258,7 @@ func (d *SessionResolveDelivery) BeforeWrite(ctx context.Context) error {
 		d.req,
 		auditRefsForIdentities(d.reservation.Secrets, uniqueSecretIdentities(d.reservation.Secrets)),
 	)
+	event.SessionID = d.reservation.SessionID
 	event.RemainingReads = &d.reservation.RemainingReads
 	event.MaxReads = &d.reservation.MaxReads
 	if err := recordRequiredAudit(ctx, d.broker.audit, event); err != nil {
@@ -271,14 +272,14 @@ func (d *SessionResolveDelivery) BeforeWrite(ctx context.Context) error {
 
 func (d *SessionResolveDelivery) CommitDelivered() {
 	d.finalizeOnce.Do(func() {
-		d.broker.sessions.finishReservation(d.reservation.SessionID, true)
+		d.broker.sessions.finishReservation(d.reservation.SessionToken, true)
 	})
 }
 
 func (d *SessionResolveDelivery) AbortBeforePayload() {
 	d.finalizeOnce.Do(func() {
 		d.broker.deactivateExec(d.correlation)
-		d.broker.sessions.finishReservation(d.reservation.SessionID, false)
+		d.broker.sessions.finishReservation(d.reservation.SessionToken, false)
 	})
 }
 
@@ -289,6 +290,17 @@ func (b *Broker) HandleSessionDestroy(ctx context.Context, req request.SessionDe
 	if err := preflightRequiredAudit(ctx, b.audit); err != nil {
 		return protocol.SessionDestroyResponsePayload{}, err
 	}
+	if req.All {
+		count := b.sessions.destroyAll()
+		event := audit.Event{
+			Type: audit.EventSessionDestroyed,
+		}
+		if err := recordRequiredAudit(ctx, b.audit, event); err != nil {
+			return protocol.SessionDestroyResponsePayload{}, err
+		}
+		return protocol.SessionDestroyResponsePayload{Destroyed: true, DestroyedCount: count}, nil
+	}
+
 	destroyed := b.sessions.destroy(req.SessionID)
 	event := audit.Event{
 		Type:      audit.EventSessionDestroyed,
@@ -835,6 +847,7 @@ func execRequestFromSessionResolve(req request.SessionResolveRequest, reservatio
 func sessionCreatePayload(summary request.SessionSummary) protocol.SessionCreateResponsePayload {
 	return protocol.SessionCreateResponsePayload{
 		SessionID:      summary.SessionID,
+		SessionToken:   summary.SessionToken,
 		SecretAliases:  slices.Clone(summary.SecretAliases),
 		ExpiresAt:      summary.ExpiresAt,
 		MaxReads:       summary.MaxReads,

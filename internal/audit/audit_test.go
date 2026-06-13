@@ -369,7 +369,7 @@ func TestFromSessionRequestsUseMetadataOnly(t *testing.T) {
 	}
 
 	resolveReq, err := request.NewSessionResolve(
-		"asess_abc123",
+		"astok_abc123",
 		[]string{"/usr/bin/env", "terraform", "plan"},
 		"/usr/bin/env",
 		fileidentity.Identity{Device: 1, Inode: 2, Mode: 0o755, Size: 64},
@@ -386,7 +386,7 @@ func TestFromSessionRequestsUseMetadataOnly(t *testing.T) {
 		[]SecretRef{{Alias: "TOKEN", Ref: "op://Example Vault/Deploy Token/token", Account: "Work"}},
 	)
 	if resolveEvent.Type != EventSessionResolved ||
-		resolveEvent.SessionID != "asess_abc123" ||
+		resolveEvent.SessionID != "" ||
 		resolveEvent.CWD != dir ||
 		len(resolveEvent.SecretRefs) != 1 {
 		t.Fatalf("resolve event missing expected metadata: %+v", resolveEvent)

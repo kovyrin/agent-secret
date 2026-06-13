@@ -134,7 +134,7 @@ func buildSessionCreateRequest(opts sessionCreateRequestBuildOptions) (request.S
 }
 
 type sessionResolveRequestBuildOptions struct {
-	sessionID              string
+	sessionToken           string
 	command                []string
 	cwd                    string
 	env                    []string
@@ -143,6 +143,9 @@ type sessionResolveRequestBuildOptions struct {
 }
 
 func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request.SessionResolveRequest, error) {
+	if err := request.ValidateSessionToken(opts.sessionToken); err != nil {
+		return request.SessionResolveRequest{}, err
+	}
 	cwd, err := normalizeCWD(opts.cwd)
 	if err != nil {
 		return request.SessionResolveRequest{}, err
@@ -165,7 +168,7 @@ func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request
 		return request.SessionResolveRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
 	}
 	req, err := request.NewSessionResolve(
-		opts.sessionID,
+		opts.sessionToken,
 		command,
 		resolvedExecutable,
 		executableIdentity,

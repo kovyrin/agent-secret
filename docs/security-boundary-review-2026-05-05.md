@@ -23,7 +23,7 @@ This review covered the shipped macOS Apple Silicon surface:
 - Metadata-only audit log.
 - Release DMG, install, and uninstall trust checks.
 
-This review did not cover unshipped session handles, `with-session`, credential
+This review did not cover unshipped bounded sessions, `with-session`, credential
 helpers, Linux, Windows, automatic updates, or alternative secret backends.
 
 ## Boundary Walk
