@@ -113,6 +113,7 @@ agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
 agent-secret session destroy asid_123
+agent-secret session destroy --all
 ```
 
 Use sessions when the user approves a bag of secrets once and later commands
@@ -124,7 +125,8 @@ count, explicit destroy, or helper stop clears them. `session list` shows active
 session IDs and metadata, but never session tokens. `with-session` injects every
 approved alias by default; add `--only ALIAS[,ALIAS...]` to deliver only the
 aliases needed by that child command. Unknown aliases fail before the child
-process starts.
+process starts. Use `session destroy SESSION_ID` for one session or
+`session destroy --all` to clear every active session.
 
 Use a shell only when the shell is the command you actually want approved:
 

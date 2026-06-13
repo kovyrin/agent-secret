@@ -10,9 +10,11 @@ The supported runtime scope is narrow:
 - macOS on Apple Silicon.
 - 1Password Desktop integration through the official 1Password SDK.
 - CLI-supervised `agent-secret exec` with environment injection.
+- Bounded background-helper sessions through `session create`, `session list`,
+  `session destroy`, and `with-session`.
 
-Linux, Windows, session handles, credential helpers, automatic updates, and
-alternative secret backends are not supported security surfaces yet.
+Linux, Windows, credential helpers, automatic updates, and alternative secret
+backends are not supported security surfaces yet.
 
 ## Reporting A Vulnerability
 

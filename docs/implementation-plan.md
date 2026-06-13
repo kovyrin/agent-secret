@@ -898,17 +898,17 @@ Status: Complete
   - `go test ./...`
   - manual smoke with the native helper
 
-## Epic 6: Session Handles And `with-session`
+## Epic 6: Bounded Sessions And `with-session`
 
-Status: Not started
+Status: Complete
 
 ### Epic 6 Acceptance Criteria
 
 - Session state lives inside the existing hidden per-user daemon.
 - `session create`, `session list`, `session destroy`, and `with-session` work.
-- Handles cannot be resolved after TTL, max-read exhaustion, or destroy.
-- Handles cannot be resolved when macOS peer UID, PID, executable path, or cwd
-  is missing or mismatched.
+- Session tokens cannot be resolved after TTL, max-read exhaustion, or destroy.
+- Session tokens cannot be resolved when macOS peer UID, PID, executable path,
+  or cwd is missing or mismatched.
 - Sessions approve a bounded set of references and allow those references to be
   read in any order the approved workflow needs.
 - Socket directories and files use restrictive permissions.
@@ -929,7 +929,7 @@ Status: Not started
 
 #### Task 1: Add session endpoints to the daemon socket
 
-- Goal: add session-handle lifecycle and value-read messages to the existing
+- Goal: add session lifecycle and value-read messages to the existing
   per-user Unix socket.
 - Preconditions/inputs: working daemon socket, approval, resolver, audit, and
   reusable-approval infrastructure.
@@ -954,7 +954,7 @@ Status: Not started
   - implement `session create`
   - implement `session list`
   - implement `session destroy`
-  - return handles, not values
+  - return identifiers, not values
 - Verification:
   - `go test ./...`
 
@@ -966,8 +966,8 @@ Status: Not started
   session secrets into the child and rejects expired, destroyed, or peer-policy
   mismatched sessions.
 - Implementation:
-  - resolve handles internally through the daemon
-  - enforce strict macOS peer validation before resolving handles
+  - resolve session tokens internally through the daemon
+  - enforce strict macOS peer validation before resolving session tokens
   - reuse the CLI-owned process supervisor
   - preserve command exit behavior
 - Verification:
@@ -1052,8 +1052,8 @@ Status: Not started
 - Epic 6 depends on the completed `exec`, daemon socket, native approval, and
   reusable approval paths. It should not block initial Terraform/Ansible
   validation.
-- Epic 7 should follow the first working `exec` path, then broaden after session
-  handles land.
+- Epic 7 should follow the first working `exec` path, then broaden after
+  bounded sessions land.
 
 ## Testing Strategy
 

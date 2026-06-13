@@ -222,15 +222,16 @@ agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- terraform pla
 agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
+agent-secret session list
 agent-secret session destroy asid_123</code></pre>
             </div>
             <p>
               <code>session create</code> can combine a project profile, env
               files, and one-off <code>--secret ALIAS=REF</code> flags.
               Keep the returned <code>session_token</code> for
-              <code>with-session</code>; use the listed <code>session_id</code>
-              for inspection and cleanup. <code>session list</code> never
-              reveals session tokens.
+              <code>with-session</code>; use the returned or listed
+              <code>session_id</code> for inspection and cleanup.
+              <code>session list</code> never reveals session tokens.
               <code>with-session</code> injects every approved alias by default,
               or a per-command subset with <code>--only</code>. Unknown aliases
               fail before the child command starts.

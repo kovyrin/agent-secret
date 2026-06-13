@@ -170,7 +170,7 @@ func (p Parser) parseWithSession(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
 	if fs.NArg() != 0 {
-		return Command{}, fmt.Errorf("%w: with-session flags must appear after the session id and before --", ErrInvalidArguments)
+		return Command{}, fmt.Errorf("%w: with-session flags must appear after the session token and before --", ErrInvalidArguments)
 	}
 	env := os.Environ()
 	req, err := buildSessionResolveRequest(sessionResolveRequestBuildOptions{

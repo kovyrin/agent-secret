@@ -364,10 +364,12 @@ agent-secret with-session astok_123 \
 - `session_token`: a secret bearer token accepted by `with-session` and never
   shown by `session list`.
 
-It does not print secret values. Without `--only`, `with-session` injects every
-approved session alias into that child process. With `--only`, it injects only
-the requested approved aliases. If any requested alias was not in the approved
-session, Agent Secret fails before spawning the child command.
+It does not print secret values. `session list` shows active `session_id` values
+and non-secret metadata for inspection and cleanup. Without `--only`,
+`with-session` injects every approved session alias into that child process.
+With `--only`, it injects only the requested approved aliases. If any requested
+alias was not in the approved session, Agent Secret fails before spawning the
+child command.
 
 `with-session` accepts `--cwd DIR`, `--only ALIAS[,ALIAS...]`, and
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current

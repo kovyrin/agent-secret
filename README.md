@@ -132,11 +132,13 @@ agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- terraform pla
 agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
+agent-secret session list
 agent-secret session destroy asid_123
 ```
 
 Keep the `session_token` returned by `session create` for `with-session`.
-Use the `session_id` shown by `session list` for inspection and cleanup.
+Use the `session_id` returned by `session create` or shown by `session list`
+for inspection and cleanup. `session list` never shows session tokens.
 
 Inspect item metadata without revealing values:
 
