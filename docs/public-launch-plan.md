@@ -493,7 +493,7 @@ Use this as a final launch gate only. Day-to-day tracking belongs in
 - [x] Security contact path is clear.
 - [x] Blog article draft exists.
 - [x] Demo video is recorded.
-- [ ] X post and thread are drafted.
+- [x] X post and thread are drafted.
 - [ ] LinkedIn post is drafted.
 - [ ] HN title and human-written first comment are prepared.
 - [ ] Product Hunt is ready or explicitly deferred.
