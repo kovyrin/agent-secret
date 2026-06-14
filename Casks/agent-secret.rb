@@ -20,12 +20,6 @@ cask "agent-secret" do
   app "Agent Secret.app"
   binary "#{appdir}/Agent Secret.app/Contents/Resources/bin/agent-secret"
 
-  uninstall_preflight do
-    system_command "#{HOMEBREW_PREFIX}/bin/agent-secret",
-                   args:         ["daemon", "stop"],
-                   must_succeed: false
-  end
-
   uninstall quit: [
     "com.kovyrin.agent-secret",
     "com.kovyrin.agent-secret.daemon",

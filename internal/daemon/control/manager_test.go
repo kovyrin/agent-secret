@@ -293,6 +293,60 @@ func TestManagerCheckOnePasswordUsesRunningHelper(t *testing.T) {
 	}
 }
 
+func TestManagerCheckOnePasswordRepairsRetiringHelper(t *testing.T) {
+	if os.Getenv("AGENT_SECRET_DAEMON_MANAGER_CHECK_HELPER") == "1" {
+		runDaemonManagerHelper(t)
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	hello := helperidentity.ForExecutable(executable, os.Getpid())
+	path, stopRetiring := startFakeHelperDaemonWithOptions(t, fakeHelperOptions{
+		hello:                hello,
+		onePasswordErrorCode: protocol.ErrorCodeDaemonStopped,
+	})
+	defer stopRetiring()
+
+	output, err := os.Create(filepath.Join(t.TempDir(), "check-helper.log"))
+	if err != nil {
+		t.Fatalf("create helper output log: %v", err)
+	}
+	defer func() { _ = output.Close() }()
+	manager := Manager{
+		socketPath:     path,
+		DaemonPath:     executable,
+		DaemonArgs:     []string{"-test.run=TestManagerCheckOnePasswordRepairsRetiringHelper", "--", "--socket", "{socket}"},
+		StartupTimeout: 2 * time.Second,
+		daemonStdout:   output,
+		daemonStderr:   output,
+	}
+	t.Setenv("AGENT_SECRET_DAEMON_MANAGER_CHECK_HELPER", "1")
+
+	err = manager.CheckOnePassword(context.Background(), "my.1password.ca")
+	if err == nil {
+		t.Fatal("CheckOnePassword unexpectedly succeeded with diagnostic-only helper")
+	}
+	if !IsProtocolError(err, protocol.ErrorCodeResolveFailed) {
+		helperOutput := readManagerHelperOutput(t, output.Name())
+		if strings.Contains(helperOutput, managerHelperBindUnavailablePrefix) {
+			t.Skipf("Unix socket bind unavailable in daemon check helper: %s", helperOutput)
+		}
+		t.Fatalf("CheckOnePassword error = %v, want post-repair resolve failure\nhelper output:\n%s", err, helperOutput)
+	}
+	defer func() { _ = manager.Stop(context.Background()) }()
+
+	status, err := manager.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+	if status.PID <= 0 || status.PID == os.Getpid() {
+		t.Fatalf("refreshed daemon pid = %d, want separate helper process", status.PID)
+	}
+}
+
 func TestManagerStopReturnsDaemonStopError(t *testing.T) {
 	t.Parallel()
 
@@ -1463,8 +1517,9 @@ func startFakeHelperDaemon(t *testing.T, hello protocol.HelperHelloPayload) (str
 }
 
 type fakeHelperOptions struct {
-	hello         protocol.HelperHelloPayload
-	stopErrorCode protocol.ErrorCode
+	hello                protocol.HelperHelloPayload
+	stopErrorCode        protocol.ErrorCode
+	onePasswordErrorCode protocol.ErrorCode
 }
 
 func startFakeHelperDaemonWithOptions(t *testing.T, opts fakeHelperOptions) (string, func()) {
@@ -1527,6 +1582,13 @@ func serveFakeHelperDaemonConn(
 				return
 			}
 		case protocol.TypeOnePasswordStatus:
+			if opts.onePasswordErrorCode != "" {
+				if !writeFakeHelperError(encoder, env.Correlation(), opts.onePasswordErrorCode) {
+					return
+				}
+				shutdown()
+				return
+			}
 			if !writeFakeHelperEmptyResponse(encoder, env.Correlation()) {
 				return
 			}

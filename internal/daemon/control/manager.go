@@ -289,6 +289,23 @@ func (m Manager) Stop(ctx context.Context) error {
 }
 
 func (m Manager) CheckOnePassword(ctx context.Context, account string) error {
+	err := m.checkOnePasswordOnce(ctx, account)
+	if err == nil {
+		return nil
+	}
+	if !isRetiringDaemon(err) {
+		return err
+	}
+	if waitErr := m.waitUntilUnavailableWith(ctx, 25*time.Millisecond, "trusted helper", m.rawSocketUnavailable); waitErr != nil {
+		return err
+	}
+	if _, repairErr := m.Repair(ctx); repairErr != nil {
+		return repairErr
+	}
+	return m.checkOnePasswordOnce(ctx, account)
+}
+
+func (m Manager) checkOnePasswordOnce(ctx context.Context, account string) error {
 	client, err := m.Connect(ctx)
 	if err != nil {
 		return err
