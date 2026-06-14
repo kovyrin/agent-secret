@@ -18,7 +18,15 @@ version numbers for public releases.
 - Use `Pending` for an unreleased version. Replace `Pending` with the release
   date in `YYYY-MM-DD` form as part of the release commit.
 - GitHub release notes are copied from the matching version section in this
-  file before a release is published.
+file before a release is published.
+
+## [0.0.24] - 2026-06-14
+
+### Fixed
+
+- Made `agent-secret doctor` repair and retry the 1Password desktop integration
+  check when a running helper stops because its app bundle was replaced during
+  an upgrade, so post-upgrade diagnostics recover in one run.
 
 ## [0.0.23] - 2026-06-14
 
