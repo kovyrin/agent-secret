@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.25] - Pending
+
+### Changed
+
+- Added public FAQ guidance comparing Agent Secret's approval-broker model with
+  Varlock and fnox.
+
 ## [0.0.24] - 2026-06-14
 
 ### Fixed

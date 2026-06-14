@@ -346,6 +346,41 @@ agent-secret session destroy asid_123</code></pre>
                   metadata.
                 </p>
               </details>
+              <details>
+                <summary>How is Agent Secret different from Varlock?</summary>
+                <p>
+                  Varlock is built for application environment configuration:
+                  schema, validation, type-safe environment access, provider
+                  plugins, encrypted local overrides, leak scanning, and runtime
+                  integrations. Agent Secret is narrower. It is a local approval
+                  broker for agent-run commands: an agent requests exact secret
+                  references for an exact command, you approve or deny that
+                  request locally, and approved values are injected only into the
+                  wrapped child process.
+                </p>
+              </details>
+              <details>
+                <summary>How is Agent Secret different from fnox?</summary>
+                <p>
+                  fnox is a full secret manager for development, CI, and
+                  production. It supports encrypted secrets in Git, remote secret
+                  providers, shell integration, profiles, local sync, credential
+                  leases, and MCP access. Agent Secret deliberately avoids shell
+                  auto-loading and general secret management. It focuses on
+                  approval before resolution, exact command scope, short reuse
+                  windows, and value-free audit logs for coding-agent workflows.
+                </p>
+              </details>
+              <details>
+                <summary>Can I use Agent Secret with Varlock or fnox?</summary>
+                <p>
+                  Yes. Use Varlock or fnox for application and team secret
+                  workflows when they fit your stack. Use Agent Secret for
+                  high-trust agent operations where you want explicit human
+                  approval before a specific command receives operational
+                  secrets.
+                </p>
+              </details>
             </div>
           </section>
         </div>
