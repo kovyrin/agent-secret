@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 cask "agent-secret" do
   version "0.0.23"
   sha256 "8b7cb4d0b1cc3cdcc7fb34541f59d9733499db074be693e69a672f82d7fab67e"
@@ -17,6 +19,12 @@ cask "agent-secret" do
 
   app "Agent Secret.app"
   binary "#{appdir}/Agent Secret.app/Contents/Resources/bin/agent-secret"
+
+  preflight do
+    system_command "#{HOMEBREW_PREFIX}/bin/agent-secret",
+                   args:         ["daemon", "stop"],
+                   must_succeed: false
+  end
 
   uninstall quit: [
     "com.kovyrin.agent-secret",
