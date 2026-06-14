@@ -106,14 +106,25 @@ agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
 Approve a bounded multi-command session:
 
 ```bash
-agent-secret session create --profile terraform-cloudflare --max-reads 3
-agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- \
+session_json="$(agent-secret session create \
+  --json \
+  --profile terraform-cloudflare \
+  --max-reads 3)"
+session_id="$(printf '%s' "$session_json" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
+session_token="$(printf '%s' "$session_json" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
+
+cleanup_session() {
+  agent-secret session destroy "$session_id" >/dev/null 2>&1 || true
+}
+trap cleanup_session EXIT
+
+agent-secret with-session "$session_token" --only CLOUDFLARE_API_TOKEN -- \
   terraform plan
-agent-secret with-session astok_123 \
+agent-secret with-session "$session_token" \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
-agent-secret session destroy asid_123
-agent-secret session destroy --all
 ```
 
 Use sessions when the user approves a bag of secrets once and later commands
