@@ -314,10 +314,11 @@ different combinations.
 
 ```bash
 agent-secret session create [flags]
-agent-secret with-session SESSION_ID [--cwd DIR] \
+agent-secret with-session SESSION_TOKEN [--cwd DIR] \
   [--only ALIAS[,ALIAS...]] [--allow-mutable-executable] -- COMMAND [ARG...]
 agent-secret session list [--json]
 agent-secret session destroy [--json] SESSION_ID
+agent-secret session destroy [--json] --all
 ```
 
 `session create` accepts the same secret-source flags as `exec`:
@@ -348,28 +349,37 @@ agent-secret session create \
   --max-reads 3 \
   --json
 
-agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- \
+agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- \
   terraform plan
 
-agent-secret with-session asess_123 \
+agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
 ```
 
-`session create` returns only an opaque session ID and non-secret metadata. It
-does not print secret values. Without `--only`, `with-session` injects every
-approved session alias into that child process. With `--only`, it injects only
-the requested approved aliases. If any requested alias was not in the approved
-session, Agent Secret fails before spawning the child command.
+`session create` returns two identifiers and non-secret metadata:
+
+- `session_id`: a management identifier shown by `session list` and accepted by
+  `session destroy`.
+- `session_token`: a secret bearer token accepted by `with-session` and never
+  shown by `session list`.
+
+It does not print secret values. `session list` shows active `session_id` values
+and non-secret metadata for inspection and cleanup. Without `--only`,
+`with-session` injects every approved session alias into that child process.
+With `--only`, it injects only the requested approved aliases. If any requested
+alias was not in the approved session, Agent Secret fails before spawning the
+child command.
 
 `with-session` accepts `--cwd DIR`, `--only ALIAS[,ALIAS...]`, and
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current
 directory and must match the session working directory.
 
 Sessions are background-helper-memory only. They expire when TTL passes, the
-read count is exhausted, `agent-secret session destroy SESSION_ID` succeeds, or
-the helper stops. V1 sessions intentionally do not expose raw socket value
-reads, credential-helper protocols, or long-lived interactive shells.
+read count is exhausted, `agent-secret session destroy SESSION_ID` or
+`agent-secret session destroy --all` succeeds, or the helper stops. V1 sessions
+intentionally do not expose raw socket value reads, credential-helper protocols,
+or long-lived interactive shells.
 
 ## Agent-Friendly Introspection
 

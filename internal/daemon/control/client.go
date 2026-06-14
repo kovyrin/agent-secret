@@ -194,6 +194,12 @@ func (c *Client) DestroySession(ctx context.Context, req request.SessionDestroyR
 	if err != nil {
 		return protocol.SessionDestroyResponsePayload{}, err
 	}
+	if req.All {
+		if !payload.Destroyed || payload.SessionID != "" {
+			return protocol.SessionDestroyResponsePayload{}, fmt.Errorf("%w: session.destroy --all response does not match request", protocol.ErrMalformedEnvelope)
+		}
+		return payload, nil
+	}
 	if payload.SessionID != req.SessionID || !payload.Destroyed {
 		return protocol.SessionDestroyResponsePayload{}, fmt.Errorf("%w: session.destroy response does not match request", protocol.ErrMalformedEnvelope)
 	}
@@ -355,6 +361,9 @@ func validateExecResponsePayload(payload protocol.ExecResponsePayload, req reque
 func validateSessionCreateResponsePayload(payload protocol.SessionCreateResponsePayload, req request.SessionCreateRequest) error {
 	if err := request.ValidateSessionID(payload.SessionID); err != nil {
 		return fmt.Errorf("%w: invalid session id in session.create response: %w", protocol.ErrMalformedEnvelope, err)
+	}
+	if err := request.ValidateSessionToken(payload.SessionToken); err != nil {
+		return fmt.Errorf("%w: invalid session token in session.create response: %w", protocol.ErrMalformedEnvelope, err)
 	}
 	expectedAliases := request.SecretAliases(req.Secrets)
 	if !slices.Equal(payload.SecretAliases, expectedAliases) {

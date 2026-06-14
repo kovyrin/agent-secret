@@ -20,6 +20,16 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
   file before a release is published.
 
+## [0.0.23] - Pending
+
+### Security
+
+- Split bounded sessions into listable `session_id` values for management and
+  secret `session_token` values for `with-session`, preventing active session
+  resolve capabilities from being enumerated through `agent-secret session list`.
+- Added `agent-secret session destroy --all` for clearing every active
+  background-helper session without needing individual session IDs.
+
 ## [0.0.22] - 2026-06-10
 
 ### Fixed

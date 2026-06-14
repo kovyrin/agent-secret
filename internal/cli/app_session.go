@@ -17,6 +17,7 @@ import (
 type sessionCreateOutput struct {
 	SchemaVersion  string    `json:"schema_version"`
 	SessionID      string    `json:"session_id"`
+	SessionToken   string    `json:"session_token"`
 	SecretAliases  []string  `json:"secret_aliases"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	MaxReads       int       `json:"max_reads"`
@@ -52,6 +53,7 @@ func (a App) runSessionCreate(ctx context.Context, command Command) int {
 	output := sessionCreateOutput{
 		SchemaVersion:  "1",
 		SessionID:      payload.SessionID,
+		SessionToken:   payload.SessionToken,
 		SecretAliases:  payload.SecretAliases,
 		ExpiresAt:      payload.ExpiresAt,
 		MaxReads:       payload.MaxReads,
@@ -64,7 +66,8 @@ func (a App) runSessionCreate(ctx context.Context, command Command) int {
 		}
 		return 0
 	}
-	a.stdoutf("session: %s\n", payload.SessionID)
+	a.stdoutf("session id: %s\n", payload.SessionID)
+	a.stdoutf("session token: %s\n", payload.SessionToken)
 	a.stdoutf("expires: %s\n", payload.ExpiresAt.Format(time.RFC3339))
 	a.stdoutf("reads: %d/%d remaining\n", payload.RemainingReads, payload.MaxReads)
 	a.stdoutf("secrets: %s\n", strings.Join(payload.SecretAliases, ", "))
@@ -102,13 +105,14 @@ func (a App) runSessionList(ctx context.Context, command Command) int {
 	}
 	for _, session := range payload.Sessions {
 		a.stdoutf(
-			"%s expires=%s reads=%d/%d cwd=%s secrets=%s\n",
+			"%s expires=%s reads=%d/%d cwd=%s secrets=%s reason=%s\n",
 			session.SessionID,
 			session.ExpiresAt.Format(time.RFC3339),
 			session.RemainingReads,
 			session.MaxReads,
 			session.CWD,
 			strings.Join(session.SecretAliases, ","),
+			session.Reason,
 		)
 	}
 	return 0
@@ -137,6 +141,10 @@ func (a App) runSessionDestroy(ctx context.Context, command Command) int {
 			a.stderrf("agent-secret: write session destroy json: %v\n", err)
 			return 1
 		}
+		return 0
+	}
+	if command.SessionDestroyRequest.All {
+		a.stdoutf("destroyed sessions: %d\n", payload.DestroyedCount)
 		return 0
 	}
 	a.stdoutf("destroyed session: %s\n", payload.SessionID)

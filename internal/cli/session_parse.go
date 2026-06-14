@@ -119,8 +119,15 @@ func parseSessionDestroy(args []string) (Command, error) {
 	fs := flag.NewFlagSet("session destroy", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	jsonOutput := fs.Bool("json", false, "print json")
+	all := fs.Bool("all", false, "destroy all active sessions")
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if *all {
+		if fs.NArg() != 0 {
+			return Command{}, fmt.Errorf("%w: session destroy --all does not accept a session id", ErrInvalidArguments)
+		}
+		return Command{Kind: KindSessionDestroy, OutputJSON: *jsonOutput, SessionDestroyRequest: request.NewSessionDestroyAll()}, nil
 	}
 	if fs.NArg() != 1 {
 		return Command{}, fmt.Errorf("%w: session destroy requires one session id", ErrInvalidArguments)
@@ -134,7 +141,7 @@ func parseSessionDestroy(args []string) (Command, error) {
 
 func (p Parser) parseWithSession(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, fmt.Errorf("%w: with-session requires a session id and -- command", ErrInvalidArguments)
+		return Command{}, fmt.Errorf("%w: with-session requires a session token and -- command", ErrInvalidArguments)
 	}
 	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		return Command{Kind: KindHelp, HelpText: WithSessionHelp()}, ErrHelpRequested
@@ -147,7 +154,7 @@ func (p Parser) parseWithSession(args []string) (Command, error) {
 	if len(commandArgs) == 0 {
 		return Command{}, ErrShellStringCommand
 	}
-	sessionID := args[0]
+	sessionToken := args[0]
 	var flags withSessionFlags
 	fs := flag.NewFlagSet("with-session", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -163,11 +170,11 @@ func (p Parser) parseWithSession(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
 	if fs.NArg() != 0 {
-		return Command{}, fmt.Errorf("%w: with-session flags must appear after the session id and before --", ErrInvalidArguments)
+		return Command{}, fmt.Errorf("%w: with-session flags must appear after the session token and before --", ErrInvalidArguments)
 	}
 	env := os.Environ()
 	req, err := buildSessionResolveRequest(sessionResolveRequestBuildOptions{
-		sessionID:              sessionID,
+		sessionToken:           sessionToken,
 		command:                commandArgs,
 		cwd:                    flags.cwd,
 		env:                    env,

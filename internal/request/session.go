@@ -18,11 +18,15 @@ const (
 )
 
 var (
-	ErrInvalidSessionID   = fmt.Errorf("%w: invalid session id", ErrInvalidRequest)
-	ErrInvalidSessionRead = fmt.Errorf("%w: invalid session read count", ErrInvalidRequest)
+	ErrInvalidSessionID    = fmt.Errorf("%w: invalid session id", ErrInvalidRequest)
+	ErrInvalidSessionToken = fmt.Errorf("%w: invalid session token", ErrInvalidRequest)
+	ErrInvalidSessionRead  = fmt.Errorf("%w: invalid session read count", ErrInvalidRequest)
 )
 
-var sessionIDPattern = regexp.MustCompile(`^asess_[A-Za-z0-9_-]+$`)
+var (
+	sessionIDPattern    = regexp.MustCompile(`^asid_[A-Za-z0-9_-]+$`)
+	sessionTokenPattern = regexp.MustCompile(`^astok_[A-Za-z0-9_-]+$`)
+)
 
 type SessionCreateOptions struct {
 	Reason             string
@@ -52,7 +56,7 @@ type SessionCreateRequest struct {
 }
 
 type SessionResolveRequest struct {
-	SessionID              string                `json:"session_id"`
+	SessionToken           string                `json:"session_token"`
 	Command                []string              `json:"command"`
 	ResolvedExecutable     string                `json:"resolved_executable"`
 	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
@@ -63,11 +67,13 @@ type SessionResolveRequest struct {
 }
 
 type SessionDestroyRequest struct {
-	SessionID string `json:"session_id"`
+	SessionID string `json:"session_id,omitempty"`
+	All       bool   `json:"all,omitempty"`
 }
 
 type SessionSummary struct {
 	SessionID      string    `json:"session_id"`
+	SessionToken   string    `json:"session_token,omitempty"`
 	Reason         string    `json:"reason"`
 	CWD            string    `json:"cwd"`
 	SecretAliases  []string  `json:"secret_aliases"`
@@ -177,14 +183,14 @@ func (r SessionCreateRequest) ValidateForDaemon() error {
 }
 
 func NewSessionResolve(
-	sessionID string,
+	sessionToken string,
 	command []string,
 	resolvedExecutable string,
 	executableIdentity fileidentity.Identity,
 	cwd string,
 	environmentFingerprint string,
 ) (SessionResolveRequest, error) {
-	if err := ValidateSessionID(sessionID); err != nil {
+	if err := ValidateSessionToken(sessionToken); err != nil {
 		return SessionResolveRequest{}, err
 	}
 	if len(command) == 0 || command[0] == "" {
@@ -203,7 +209,7 @@ func NewSessionResolve(
 		return SessionResolveRequest{}, err
 	}
 	return SessionResolveRequest{
-		SessionID:              sessionID,
+		SessionToken:           sessionToken,
 		Command:                slices.Clone(command),
 		ResolvedExecutable:     resolvedExecutable,
 		ExecutableIdentity:     executableIdentity,
@@ -227,7 +233,7 @@ func (r SessionResolveRequest) WithRequestedAliases(aliases []string) (SessionRe
 }
 
 func (r SessionResolveRequest) ValidateForDaemon() error {
-	if err := ValidateSessionID(r.SessionID); err != nil {
+	if err := ValidateSessionToken(r.SessionToken); err != nil {
 		return err
 	}
 	if len(r.Command) == 0 || r.Command[0] == "" {
@@ -266,13 +272,30 @@ func NewSessionDestroy(sessionID string) (SessionDestroyRequest, error) {
 	return req, nil
 }
 
+func NewSessionDestroyAll() SessionDestroyRequest {
+	return SessionDestroyRequest{All: true}
+}
+
 func (r SessionDestroyRequest) ValidateForDaemon() error {
+	if r.All {
+		if r.SessionID != "" {
+			return fmt.Errorf("%w: --all cannot be combined with a session id", ErrInvalidRequest)
+		}
+		return nil
+	}
 	return ValidateSessionID(r.SessionID)
 }
 
 func ValidateSessionID(sessionID string) error {
 	if !sessionIDPattern.MatchString(sessionID) {
 		return fmt.Errorf("%w: %q", ErrInvalidSessionID, sessionID)
+	}
+	return nil
+}
+
+func ValidateSessionToken(sessionToken string) error {
+	if !sessionTokenPattern.MatchString(sessionToken) {
+		return fmt.Errorf("%w: %q", ErrInvalidSessionToken, sessionToken)
 	}
 	return nil
 }

@@ -106,23 +106,47 @@ agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
 Approve a bounded multi-command session:
 
 ```bash
-agent-secret session create --profile terraform-cloudflare --max-reads 3
-agent-secret with-session asess_123 --only CLOUDFLARE_API_TOKEN -- \
+session_json="$(agent-secret session create \
+  --json \
+  --profile terraform-cloudflare \
+  --max-reads 3)"
+session_id="$(printf '%s' "$session_json" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
+session_token="$(printf '%s' "$session_json" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
+
+cleanup_session() {
+  agent-secret session destroy "$session_id" >/dev/null 2>&1 || true
+}
+trap cleanup_session EXIT
+
+agent-secret with-session "$session_token" --only CLOUDFLARE_API_TOKEN -- \
   terraform plan
-agent-secret with-session asess_123 \
+agent-secret with-session "$session_token" \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
   -- terraform apply
-agent-secret session destroy asess_123
 ```
 
 Use sessions when the user approves a bag of secrets once and later commands
 need different subsets. `session create` accepts the same config, profile,
-env-file, and `--secret` inputs as `exec`, then returns only an opaque session
-ID. Agent Secret keeps resolved values in background helper memory until TTL,
-read count, explicit destroy, or helper stop clears them. `with-session`
-injects every approved alias by default; add `--only ALIAS[,ALIAS...]` to
-deliver only the aliases needed by that child command. Unknown aliases fail
-before the child process starts.
+env-file, and `--secret` inputs as `exec`, then returns a public `session_id`
+for list/destroy operations and a secret `session_token` for `with-session`.
+Agent Secret keeps resolved values in background helper memory until TTL, read
+count, explicit destroy, or helper stop clears them. `session list` shows active
+session IDs and metadata, but never session tokens. `with-session` injects every
+approved alias by default; add `--only ALIAS[,ALIAS...]` to deliver only the
+aliases needed by that child command. Unknown aliases fail before the child
+process starts. Use `session destroy SESSION_ID` for one session or
+`session destroy --all` to clear every active session.
+
+Treat `session_token` as a short-lived bearer capability. Keep it in the current
+task context or a local shell variable only for the duration of the bounded
+workflow; do not write it to repo files, durable agent memory, PR comments,
+logs, `.env` files, or documentation. Keep the public `session_id` separately
+for cleanup. If separate processes must share the token, use a private per-user
+temporary file outside the repo with mode `0600`, delete it during cleanup, and
+prefer `session destroy SESSION_ID` or `session destroy --all` when the workflow
+is done.
 
 Use a shell only when the shell is the command you actually want approved:
 

@@ -106,6 +106,7 @@ type ExecResponsePayload struct {
 
 type SessionCreateResponsePayload struct {
 	SessionID      string    `json:"session_id"`
+	SessionToken   string    `json:"session_token"`
 	SecretAliases  []string  `json:"secret_aliases"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	MaxReads       int       `json:"max_reads"`
@@ -119,8 +120,9 @@ type SessionResolveResponsePayload struct {
 }
 
 type SessionDestroyResponsePayload struct {
-	SessionID string `json:"session_id"`
-	Destroyed bool   `json:"destroyed"`
+	SessionID      string `json:"session_id,omitempty"`
+	Destroyed      bool   `json:"destroyed"`
+	DestroyedCount int    `json:"destroyed_count,omitempty"`
 }
 
 type SessionListResponsePayload struct {

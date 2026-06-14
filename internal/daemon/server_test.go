@@ -228,7 +228,7 @@ func TestServerSessionProtocolLifecycle(t *testing.T) {
 	peer := peerInfoForTest(t, os.Getpid(), peerExe)
 	peer.CWD = cwd
 	resolveReq, err := request.NewSessionResolve(
-		created.SessionID,
+		created.SessionToken,
 		[]string{exe, "-test.run=TestServerSessionProtocolLifecycle", "--", "child"},
 		exe,
 		identity,
@@ -315,7 +315,7 @@ func TestServerSessionResolveRejectsUnapprovedAliasProjection(t *testing.T) {
 		t.Fatalf("CreateSession returned error: %v", err)
 	}
 	resolveReq, err := request.NewSessionResolve(
-		created.SessionID,
+		created.SessionToken,
 		[]string{exe, "-test.run=TestServerSessionResolveRejectsUnapprovedAliasProjection", "--", "child"},
 		exe,
 		identity,
@@ -389,10 +389,12 @@ func TestServerSessionListAndDestroyProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSessions returned error: %v", err)
 	}
-	if len(listed.Sessions) != 1 || listed.Sessions[0].SessionID != created.SessionID {
-		t.Fatalf("listed sessions = %+v, want %s", listed.Sessions, created.SessionID)
+	if len(listed.Sessions) != 1 {
+		t.Fatalf("listed sessions = %+v, want one active session", listed.Sessions)
 	}
-	if listed.Sessions[0].RemainingReads != 2 || listed.Sessions[0].CWD != cwd {
+	if listed.Sessions[0].SessionID != created.SessionID ||
+		listed.Sessions[0].CWD != cwd ||
+		listed.Sessions[0].RemainingReads != 2 {
 		t.Fatalf("listed session metadata = %+v", listed.Sessions[0])
 	}
 

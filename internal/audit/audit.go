@@ -108,7 +108,6 @@ func FromSessionResolveRequest(eventType EventType, requestID string, req reques
 	return Event{
 		Type:               eventType,
 		RequestID:          requestID,
-		SessionID:          req.SessionID,
 		Command:            slices.Clone(req.Command),
 		ResolvedExecutable: req.ResolvedExecutable,
 		CWD:                req.CWD,
