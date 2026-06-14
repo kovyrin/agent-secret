@@ -128,6 +128,15 @@ aliases needed by that child command. Unknown aliases fail before the child
 process starts. Use `session destroy SESSION_ID` for one session or
 `session destroy --all` to clear every active session.
 
+Treat `session_token` as a short-lived bearer capability. Keep it in the current
+task context or a local shell variable only for the duration of the bounded
+workflow; do not write it to repo files, durable agent memory, PR comments,
+logs, `.env` files, or documentation. Keep the public `session_id` separately
+for cleanup. If separate processes must share the token, use a private per-user
+temporary file outside the repo with mode `0600`, delete it during cleanup, and
+prefer `session destroy SESSION_ID` or `session destroy --all` when the workflow
+is done.
+
 Use a shell only when the shell is the command you actually want approved:
 
 ```bash
