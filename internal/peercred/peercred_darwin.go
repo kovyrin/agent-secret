@@ -139,7 +139,7 @@ func processAncestry(pid int) ([]ProcessIdentity, error) {
 
 		identity, err := inspectProcess(current)
 		if err != nil {
-			return nil, err
+			return ancestry, err
 		}
 		ancestry = append(ancestry, identity)
 		if identity.ParentPID <= 1 || identity.ParentPID == identity.PID {

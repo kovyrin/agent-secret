@@ -29,6 +29,14 @@ file before a release is published.
 - Expanded the release session E2E runbook to require multi-secret session
   validation and a detached process-tree replay rejection check before release.
 
+### Fixed
+
+- Reduced false session rejections when requester ancestry changes during
+  validation by accepting a caller once the approved process-tree anchor has
+  already been observed.
+- Kept same-executable subshell anchor skipping intact even when an ineligible
+  intermediate process appears between shell ancestors.
+
 ### Security
 
 - Bound session token use to the process tree that created the approved

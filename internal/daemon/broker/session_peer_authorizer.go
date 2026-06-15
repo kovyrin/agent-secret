@@ -48,11 +48,11 @@ func (a processTreeSessionPeerAuthorizer) ValidateSessionPeer(
 		return fmt.Errorf("%w: session is missing requester process binding", ErrSessionPeerMismatch)
 	}
 	ancestry, err := a.processAncestry(peer.PID)
-	if err != nil {
-		return fmt.Errorf("%w: inspect session caller process tree: %w", ErrSessionPeerMismatch, err)
-	}
 	if processAncestryContains(ancestry, binding.Anchor) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%w: inspect session caller process tree: %w", ErrSessionPeerMismatch, err)
 	}
 	return fmt.Errorf(
 		"%w: caller pid %d is not in the approved requester process tree rooted at pid %d",
@@ -66,9 +66,11 @@ func sessionPeerAnchor(peer peercred.Info, ancestry []peercred.ProcessIdentity) 
 	if len(ancestry) == 0 || ancestry[0].PID != peer.PID {
 		return peercred.ProcessIdentity{}, fmt.Errorf("%w: session creator process tree does not start at pid %d", ErrSessionPeerMismatch, peer.PID)
 	}
-	for i, candidate := range ancestry[1:] {
+	for i := 1; i < len(ancestry); i++ {
+		candidate := ancestry[i]
 		if isEligibleSessionPeerAnchor(peer, candidate) {
-			if i+2 < len(ancestry) && isSameExecutableAncestor(candidate, ancestry[i+2]) {
+			if next, ok := nextEligibleSessionPeerAnchor(peer, ancestry[i+1:]); ok &&
+				isSameExecutableAncestor(candidate, next) {
 				continue
 			}
 			return candidate, nil
@@ -82,6 +84,18 @@ func isEligibleSessionPeerAnchor(peer peercred.Info, candidate peercred.ProcessI
 		return false
 	}
 	return filepath.Base(candidate.ExecutablePath) != "launchd"
+}
+
+func nextEligibleSessionPeerAnchor(
+	peer peercred.Info,
+	ancestry []peercred.ProcessIdentity,
+) (peercred.ProcessIdentity, bool) {
+	for _, candidate := range ancestry {
+		if isEligibleSessionPeerAnchor(peer, candidate) {
+			return candidate, true
+		}
+	}
+	return peercred.ProcessIdentity{}, false
 }
 
 func isSameExecutableAncestor(candidate peercred.ProcessIdentity, ancestor peercred.ProcessIdentity) bool {
