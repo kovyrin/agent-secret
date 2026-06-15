@@ -26,6 +26,22 @@ file before a release is published.
 
 - Added public FAQ guidance comparing Agent Secret's approval-broker model with
   Varlock and fnox.
+- Expanded the release session E2E runbook to require multi-secret session
+  validation and a detached process-tree replay rejection check before release.
+
+### Fixed
+
+- Reduced false session rejections when requester ancestry changes during
+  validation by accepting a caller once the approved process-tree anchor has
+  already been observed.
+- Kept same-executable subshell anchor skipping intact even when an ineligible
+  intermediate process appears between shell ancestors.
+
+### Security
+
+- Bound session token use to the process tree that created the approved
+  session, so an unrelated same-user process cannot replay an observed
+  `session_token` from the same working directory.
 
 ## [0.0.24] - 2026-06-14
 

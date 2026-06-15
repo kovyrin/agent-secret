@@ -76,7 +76,7 @@ Safety rules:
   - exec --dry-run --json validates locally without starting the background helper, prompting, resolving values, or spawning the child.
   - exec --reuse-only uses a matching reusable approval or fails without opening a new approval prompt.
 	  - Text file/document refs such as op://Example/GitHub App/key.pem are injected as env values; binary attachments are not supported.
-	  - session create returns a public session id plus a secret session token; values stay in background helper memory and are injected only by with-session.
+	  - session create returns a public session id plus a secret session token bound to the requester process tree; values stay in background helper memory and are injected only by with-session.
   - item describe requires approval and prints item metadata only: field labels, types, concealment flags, and refs.
   - agent-secret skill-install links the bundled Agent Secret skill into ~/.agents/skills/agent-secret.
   - Reusable approval is selected only in the approval UI, not by a CLI flag.
@@ -365,7 +365,8 @@ func SessionHelp() string {
 
 	Values are never printed. Session values live in Agent Secret's background helper memory
 	until TTL, read count exhaustion, destroy, or helper stop. Session list shows
-	session ids for management, but never session tokens.
+	session ids for management, but never session tokens. Session tokens are accepted
+	only from the requester process tree that created the session.
 	`)
 }
 
@@ -388,6 +389,7 @@ func WithSessionHelp() string {
 	The session token must come from agent-secret session create. Secret values are
 	injected into the child environment only and are never printed by agent-secret.
 	Without --only, every approved session alias is injected for that command.
+	The caller must be in the same requester process tree that created the session.
 	`)
 }
 

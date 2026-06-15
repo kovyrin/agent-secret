@@ -214,7 +214,8 @@ profiles:
               approved set of references in different combinations. Agent
               Secret stores values in background helper memory and returns a
               public session ID for management plus a secret session token for
-              <code>with-session</code>.
+              <code>with-session</code> calls from the same requester process
+              tree.
             </p>
             <div class="code-panel">
               <pre><code>agent-secret session create --profile terraform-cloudflare --max-reads 3
@@ -234,7 +235,8 @@ agent-secret session destroy asid_123</code></pre>
               <code>session list</code> never reveals session tokens.
               <code>with-session</code> injects every approved alias by default,
               or a per-command subset with <code>--only</code>. Unknown aliases
-              fail before the child command starts.
+              fail before the child command starts. Use sessions inside one
+              task shell, wrapper script, or agent process tree.
             </p>
             <p>
               Sessions end when TTL passes, the read count is exhausted,

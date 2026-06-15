@@ -132,8 +132,9 @@ ansible-playbook site.yml --check
 
 The user approves once for a TTL and max-read count. The broker returns a
 public `session_id` for management plus a secret `session_token` for
-`agent-secret with-session`, keeps values in Agent Secret's background helper
-memory, and injects them only into the approved child process.
+`agent-secret with-session` calls from the approved requester process tree,
+keeps values in Agent Secret's background helper memory, and injects them only
+into wrapped child processes.
 V1 sessions do not add generic socket reads or credential-helper protocols.
 
 ### Use Case 3: Config-Driven Secret Sync
@@ -680,16 +681,16 @@ Limitations:
 The broker creates a short-lived session and returns a public `session_id` for
 list/destroy operations plus a secret `session_token` instead of values. Values
 stay in Agent Secret's background helper memory and are useful only through
-`agent-secret with-session`, matching peer credentials, cwd, remaining read
-count, and unexpired policy.
+`agent-secret with-session`, matching requester process tree, peer credentials,
+cwd, remaining read count, and unexpired policy.
 
 Unlike same-command reuse, sessions approve a bounded set of references for a
 workflow lifetime and allow those approved references to be injected into
 multiple wrapped commands, subject to TTL, max-read, peer, and destroy policy.
 On macOS, session resolution must fail closed unless the daemon can validate the
-same UID, peer PID, executable path, cwd, TTL, and read count against the
-approved session. Session values must clear when TTL expires, read counts are
-exhausted, the daemon stops, or the session is destroyed.
+same UID, trusted wrapper peer, requester process tree, cwd, TTL, and read count
+against the approved session. Session values must clear when TTL expires, read
+counts are exhausted, the daemon stops, or the session is destroyed.
 
 ### Mode 3: `with-session`
 
@@ -942,8 +943,8 @@ MVP requirements:
 - stale socket cleanup on startup
 - request envelopes with protocol version and message type
 - session create/resolve/list/destroy over the daemon command socket, with
-  `session.resolve` restricted to `with-session` wrappers that provide complete
-  expected peer metadata
+  `session.resolve` restricted to `with-session` wrappers from the approved
+  requester process tree that provide complete expected peer metadata
 
 Future raw session socket requirements:
 

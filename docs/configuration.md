@@ -307,8 +307,8 @@ value and env-var delivery does not support binary attachments with NUL bytes.
 
 Sessions approve one bag of secret references, keep the resolved values in
 Agent Secret's background helper memory, and let later child commands consume
-that bag only through `agent-secret with-session`. Use them for bounded
-workflows where a user
+that bag only through `agent-secret with-session` from the same requester
+process tree. Use them for bounded workflows where a user
 approves several secrets once and subsequent commands need those secrets in
 different combinations.
 
@@ -361,8 +361,9 @@ agent-secret with-session astok_123 \
 
 - `session_id`: a management identifier shown by `session list` and accepted by
   `session destroy`.
-- `session_token`: a secret bearer token accepted by `with-session` and never
-  shown by `session list`.
+- `session_token`: a secret token accepted by `with-session` only from the
+  requester process tree that created the session. It is never shown by
+  `session list`.
 
 It does not print secret values. `session list` shows active `session_id` values
 and non-secret metadata for inspection and cleanup. Without `--only`,
@@ -373,7 +374,9 @@ child command.
 
 `with-session` accepts `--cwd DIR`, `--only ALIAS[,ALIAS...]`, and
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current
-directory and must match the session working directory.
+directory and must match the session working directory. The caller must also be
+inside the same requester process tree that ran `session create`; keep session
+creation and use inside one task shell, wrapper script, or agent process tree.
 
 Sessions are background-helper-memory only. They expire when TTL passes, the
 read count is exhausted, `agent-secret session destroy SESSION_ID` or

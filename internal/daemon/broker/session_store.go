@@ -26,6 +26,7 @@ type sessionStore struct {
 	mu            sync.Mutex
 	now           func() time.Time
 	random        io.Reader
+	authorizer    SessionPeerAuthorizer
 	sessions      map[string]*sessionRecord
 	sessionTokens map[string]*sessionRecord
 }
@@ -40,6 +41,7 @@ type sessionRecord struct {
 	SecretAliases []string
 	ExpiresAt     time.Time
 	MaxReads      int
+	PeerBinding   SessionPeerBinding
 	Reads         int
 	ReservedReads int
 	OverrideEnv   bool
@@ -59,19 +61,28 @@ type sessionReservation struct {
 	OverrideEnv    bool
 }
 
-func newSessionStore(now func() time.Time) *sessionStore {
+func newSessionStore(now func() time.Time, authorizer SessionPeerAuthorizer) *sessionStore {
 	if now == nil {
 		now = time.Now
+	}
+	if authorizer == nil {
+		defaultAuthorizer := newProcessTreeSessionPeerAuthorizer()
+		authorizer = defaultAuthorizer
 	}
 	return &sessionStore{
 		now:           now,
 		random:        rand.Reader,
+		authorizer:    authorizer,
 		sessions:      make(map[string]*sessionRecord),
 		sessionTokens: make(map[string]*sessionRecord),
 	}
 }
 
-func (s *sessionStore) create(req request.SessionCreateRequest, env map[string]string) (request.SessionSummary, error) {
+func (s *sessionStore) create(
+	req request.SessionCreateRequest,
+	env map[string]string,
+	peerBinding SessionPeerBinding,
+) (request.SessionSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -93,6 +104,7 @@ func (s *sessionStore) create(req request.SessionCreateRequest, env map[string]s
 		SecretAliases: request.SecretAliases(req.Secrets),
 		ExpiresAt:     req.ExpiresAt,
 		MaxReads:      req.MaxReads,
+		PeerBinding:   peerBinding,
 		OverrideEnv:   req.OverrideEnv,
 	}
 	s.sessions[id] = record
@@ -118,6 +130,9 @@ func (s *sessionStore) reserve(req request.SessionResolveRequest, peer peercred.
 	}
 	if record.CWD != req.CWD {
 		return sessionReservation{}, fmt.Errorf("%w: cwd %q != %q", ErrSessionPeerMismatch, req.CWD, record.CWD)
+	}
+	if err := s.authorizer.ValidateSessionPeer(record.PeerBinding, peer); err != nil {
+		return sessionReservation{}, err
 	}
 	if record.Reads+record.ReservedReads >= record.MaxReads {
 		s.deleteRecord(record)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
@@ -29,6 +30,15 @@ type Expected struct {
 	PID            int
 	ExecutablePath string
 	CWD            string
+}
+
+type ProcessIdentity struct {
+	UID            int
+	GID            int
+	PID            int
+	ParentPID      int
+	ExecutablePath string
+	StartTime      time.Time
 }
 
 func Inspect(conn *net.UnixConn) (Info, error) {
@@ -103,6 +113,16 @@ func Validate(info Info, expected Expected) error {
 
 func CurrentExpected() (Expected, error) {
 	return currentExpected(os.Executable, os.Getwd)
+}
+
+// ProcessAncestry returns the process identities observed while walking from
+// pid toward its ancestors. If an ancestor exits mid-walk, the returned slice
+// may be partial and still useful for callers that only need a known anchor.
+func ProcessAncestry(pid int) ([]ProcessIdentity, error) {
+	if pid <= 0 {
+		return nil, fmt.Errorf("%w: invalid pid %d", ErrMissingMetadata, pid)
+	}
+	return processAncestry(pid)
 }
 
 func currentExpected(executable func() (string, error), getwd func() (string, error)) (Expected, error) {

@@ -139,14 +139,14 @@ aliases needed by that child command. Unknown aliases fail before the child
 process starts. Use `session destroy SESSION_ID` for one session or
 `session destroy --all` to clear every active session.
 
-Treat `session_token` as a short-lived bearer capability. Keep it in the current
-task context or a local shell variable only for the duration of the bounded
-workflow; do not write it to repo files, durable agent memory, PR comments,
-logs, `.env` files, or documentation. Keep the public `session_id` separately
-for cleanup. If separate processes must share the token, use a private per-user
-temporary file outside the repo with mode `0600`, delete it during cleanup, and
-prefer `session destroy SESSION_ID` or `session destroy --all` when the workflow
-is done.
+Treat `session_token` as a short-lived secret capability bound to the requester
+process tree that created the session. Create and consume a session inside the
+same task shell, wrapper script, or agent process tree. Keep the token in a
+local shell variable only for the duration of the bounded workflow; do not write
+it to repo files, durable agent memory, PR comments, logs, `.env` files, or
+documentation. Keep the public `session_id` separately for cleanup. Prefer
+`session destroy SESSION_ID` or `session destroy --all` when the workflow is
+done.
 
 Use a shell only when the shell is the command you actually want approved:
 
@@ -463,7 +463,11 @@ Before reporting success, prove the migrated path works:
   `--only` wrapper that filters aliases.
 - For session workflows, test `session create`, `session list`, at least one
   full `with-session` invocation, any `with-session --only` subsets, and
-  session exhaustion or `session destroy`.
+  session exhaustion or `session destroy`. Run session create and session use
+  from the same task shell or wrapper script so the process-tree binding is
+  exercised. For product or release validation, run
+  `docs/session-e2e-validation.md` and confirm the detached process-tree replay
+  attempt is rejected before the child command starts.
 - For `--env-file` migrations, test that the real command receives both a
   secret-backed variable and at least one plain env-file variable without
   printing either secret value.

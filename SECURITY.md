@@ -11,7 +11,8 @@ The supported runtime scope is narrow:
 - 1Password Desktop integration through the official 1Password SDK.
 - CLI-supervised `agent-secret exec` with environment injection.
 - Bounded background-helper sessions through `session create`, `session list`,
-  `session destroy`, and `with-session`.
+  `session destroy`, and `with-session`, with token use bound to the requester
+  process tree that created the session.
 
 Linux, Windows, credential helpers, automatic updates, and alternative secret
 backends are not supported security surfaces yet.

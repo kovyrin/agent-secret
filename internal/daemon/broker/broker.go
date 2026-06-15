@@ -47,16 +47,17 @@ type SecretCache interface {
 }
 
 type Broker struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	grants   *grantIssuer
-	sessions *sessionStore
-	approver approval.Approver
-	resolver Resolver
-	audit    AuditSink
-	active   map[string]*activeExec
-	stopOnce sync.Once
-	stop     chan struct{}
+	mu                    sync.Mutex
+	now                   func() time.Time
+	grants                *grantIssuer
+	sessions              *sessionStore
+	sessionPeerAuthorizer SessionPeerAuthorizer
+	approver              approval.Approver
+	resolver              Resolver
+	audit                 AuditSink
+	active                map[string]*activeExec
+	stopOnce              sync.Once
+	stop                  chan struct{}
 }
 
 type activeExec struct {
@@ -72,13 +73,14 @@ type itemDescribeResult struct {
 }
 
 type Options struct {
-	Now        func() time.Time
-	Store      *policy.Store
-	Cache      SecretCache
-	Approver   approval.Approver
-	Resolver   Resolver
-	Audit      AuditSink
-	FetchLimit int
+	Now                   func() time.Time
+	Store                 *policy.Store
+	Cache                 SecretCache
+	Approver              approval.Approver
+	Resolver              Resolver
+	Audit                 AuditSink
+	FetchLimit            int
+	SessionPeerAuthorizer SessionPeerAuthorizer
 }
 
 func New(opts Options) (*Broker, error) {
@@ -107,15 +109,21 @@ func New(opts Options) (*Broker, error) {
 	if fetchLimit <= 0 {
 		fetchLimit = 4
 	}
-	broker := &Broker{
-		now:      now,
-		approver: opts.Approver,
-		resolver: opts.Resolver,
-		audit:    opts.Audit,
-		active:   make(map[string]*activeExec),
-		stop:     make(chan struct{}),
+	sessionPeerAuthorizer := opts.SessionPeerAuthorizer
+	if sessionPeerAuthorizer == nil {
+		defaultAuthorizer := newProcessTreeSessionPeerAuthorizer()
+		sessionPeerAuthorizer = defaultAuthorizer
 	}
-	broker.sessions = newSessionStore(now)
+	broker := &Broker{
+		now:                   now,
+		sessionPeerAuthorizer: sessionPeerAuthorizer,
+		approver:              opts.Approver,
+		resolver:              opts.Resolver,
+		audit:                 opts.Audit,
+		active:                make(map[string]*activeExec),
+		stop:                  make(chan struct{}),
+	}
+	broker.sessions = newSessionStore(now, sessionPeerAuthorizer)
 	broker.grants = newGrantIssuer(
 		now,
 		store,
@@ -133,6 +141,7 @@ func (b *Broker) HandleSessionCreate(
 	ctx context.Context,
 	correlation protocol.Correlation,
 	req request.SessionCreateRequest,
+	peer peercred.Info,
 ) (protocol.SessionCreateResponsePayload, error) {
 	if correlation.RequestID == "" || correlation.Nonce == "" {
 		return protocol.SessionCreateResponsePayload{}, protocol.ErrInvalidNonce
@@ -141,6 +150,10 @@ func (b *Broker) HandleSessionCreate(
 		return protocol.SessionCreateResponsePayload{}, ErrDaemonStopped
 	}
 	if err := preflightRequiredAudit(ctx, b.audit); err != nil {
+		return protocol.SessionCreateResponsePayload{}, err
+	}
+	peerBinding, err := b.sessionPeerAuthorizer.BindSessionPeer(peer)
+	if err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
 	if req.Expired(b.now()) {
@@ -179,7 +192,7 @@ func (b *Broker) HandleSessionCreate(
 		return protocol.SessionCreateResponsePayload{}, err
 	}
 	values := fanoutValues(req.Secrets, refValues)
-	summary, err := b.sessions.create(req, values)
+	summary, err := b.sessions.create(req, values, peerBinding)
 	if err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}

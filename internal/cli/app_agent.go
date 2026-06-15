@@ -106,7 +106,7 @@ func (a App) runAgentContext(command Command) int {
 				"secret values are never printed by agent-secret",
 				"exec passes child stdin/stdout/stderr through unchanged",
 				"item describe returns metadata only",
-				"session create returns a public session id and secret session token; with-session never prints values",
+				"session create returns a public session id and secret session token bound to the requester process tree; with-session never prints values",
 			},
 			MutationBoundary: []string{
 				"exec --dry-run validates without prompting or spawning",
@@ -220,7 +220,7 @@ func agentContextCommands() map[string]commandContext {
 						{Name: "--json", Type: "bool", Description: "Print session metadata as JSON."},
 					},
 					Outputs: []string{"text", "json"},
-					Notes:   []string{"returns a public session id for management and a secret session token for with-session", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
+					Notes:   []string{"returns a public session id for management and a secret session token bound to the requester process tree for with-session", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
 				},
 				"list": {
 					Summary: "List active session ids and non-secret metadata.",
@@ -243,7 +243,7 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
 			},
 			Outputs: []string{"child passthrough"},
-			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "session values are injected into the child environment and never printed"},
+			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "caller must be in the requester process tree that created the session", "session values are injected into the child environment and never printed"},
 		},
 		"bitwarden": {
 			Summary: "Manage local Bitwarden Secrets Manager token aliases.",

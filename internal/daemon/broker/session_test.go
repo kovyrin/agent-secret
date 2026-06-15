@@ -30,7 +30,8 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 	})
 
 	createReq := testSessionCreateRequest(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}, 1)
-	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	peer := testSessionPeer(t, createReq.CWD)
+	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, peer)
 	if err != nil {
 		t.Fatalf("HandleSessionCreate returned error: %v", err)
 	}
@@ -38,7 +39,6 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 		t.Fatalf("created session payload = %+v", created)
 	}
 
-	peer := testSessionPeer(t, createReq.CWD)
 	resolveReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 	delivery, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq, peer)
 	if err != nil {
@@ -100,7 +100,8 @@ func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
 	})
 
 	createReq := testSessionCreateRequest(t, now, specs, 2)
-	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	peer := testSessionPeer(t, createReq.CWD)
+	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, peer)
 	if err != nil {
 		t.Fatalf("HandleSessionCreate returned error: %v", err)
 	}
@@ -108,7 +109,6 @@ func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
 		t.Fatalf("created secret aliases = %v", created.SecretAliases)
 	}
 
-	peer := testSessionPeer(t, createReq.CWD)
 	missingReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 	missingReq, err = missingReq.WithRequestedAliases([]string{"MISSING_TOKEN"})
 	if err != nil {
@@ -158,6 +158,46 @@ func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
 	}
 }
 
+func TestBrokerSessionResolveRejectsUnrelatedRequesterTree(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
+	ref := "op://Example/Item/token"
+	broker := newTestBroker(t, Options{
+		Now: func() time.Time { return now },
+		SessionPeerAuthorizer: testSessionPeerAuthorizer{roots: map[int]int{
+			1001: 10,
+			2001: 20,
+		}},
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+
+	createReq := testSessionCreateRequest(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}, 1)
+	creatorPeer := testSessionPeerWithPID(t, createReq.CWD, 1001)
+	created, err := broker.HandleSessionCreate(
+		context.Background(),
+		testCorrelation("req_create", "nonce_create"),
+		createReq,
+		creatorPeer,
+	)
+	if err != nil {
+		t.Fatalf("HandleSessionCreate returned error: %v", err)
+	}
+
+	attackerPeer := testSessionPeerWithPID(t, createReq.CWD, 2001)
+	replayReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, attackerPeer)
+	if _, err := broker.PrepareSessionResolve(
+		context.Background(),
+		testCorrelation("req_replay", "nonce_replay"),
+		replayReq,
+		attackerPeer,
+	); !errors.Is(err, ErrSessionPeerMismatch) {
+		t.Fatalf("replay PrepareSessionResolve error = %v, want ErrSessionPeerMismatch", err)
+	}
+}
+
 func TestBrokerSessionResolveAbortRestoresRead(t *testing.T) {
 	t.Parallel()
 
@@ -170,11 +210,11 @@ func TestBrokerSessionResolveAbortRestoresRead(t *testing.T) {
 		Audit:    &memoryAudit{},
 	})
 	createReq := testSessionCreateRequest(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}, 1)
-	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	peer := testSessionPeer(t, createReq.CWD)
+	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, peer)
 	if err != nil {
 		t.Fatalf("HandleSessionCreate returned error: %v", err)
 	}
-	peer := testSessionPeer(t, createReq.CWD)
 	resolveReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 
 	first, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq, peer)
@@ -204,7 +244,8 @@ func TestBrokerSessionListAndDestroy(t *testing.T) {
 	})
 
 	createReq := testSessionCreateRequest(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}, 2)
-	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+	peer := testSessionPeer(t, createReq.CWD)
+	created, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, peer)
 	if err != nil {
 		t.Fatalf("HandleSessionCreate returned error: %v", err)
 	}
@@ -241,7 +282,7 @@ func TestBrokerSessionListAndDestroy(t *testing.T) {
 		t.Fatalf("second HandleSessionDestroy error = %v, want ErrSessionNotFound", err)
 	}
 
-	createdAgain, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create_again", "nonce_create_again"), createReq)
+	createdAgain, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create_again", "nonce_create_again"), createReq, peer)
 	if err != nil {
 		t.Fatalf("second HandleSessionCreate returned error: %v", err)
 	}
@@ -311,8 +352,9 @@ func TestBrokerSessionCreateRecordsTerminalApprovalFailures(t *testing.T) {
 				Audit:    aud,
 			})
 			createReq := testSessionCreateRequest(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}, 1)
+			peer := testSessionPeer(t, createReq.CWD)
 
-			_, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq)
+			_, err := broker.HandleSessionCreate(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, peer)
 			if err == nil {
 				t.Fatal("HandleSessionCreate unexpectedly succeeded")
 			}
@@ -332,7 +374,7 @@ func TestSessionStoreListPrunesExpiredAndExhaustedSessions(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
-	store := newSessionStore(func() time.Time { return now })
+	store := newSessionStore(func() time.Time { return now }, testSessionPeerAuthorizer{})
 	store.sessions["asid_live_b"] = &sessionRecord{
 		ID:            "asid_live_b",
 		Token:         "astok_live_b",
@@ -451,10 +493,15 @@ func testSessionResolveRequest(
 
 func testSessionPeer(t *testing.T, cwd string) peercred.Info {
 	t.Helper()
+	return testSessionPeerWithPID(t, cwd, os.Getpid())
+}
+
+func testSessionPeerWithPID(t *testing.T, cwd string, pid int) peercred.Info {
+	t.Helper()
 	return peercred.Info{
 		UID:            os.Getuid(),
 		GID:            os.Getgid(),
-		PID:            os.Getpid(),
+		PID:            pid,
 		ExecutablePath: currentTestExecutable(t),
 		CWD:            cwd,
 	}
