@@ -20,7 +20,7 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
-## [0.0.25] - Pending
+## [0.0.25] - 2026-06-15
 
 ### Changed
 
@@ -36,6 +36,8 @@ file before a release is published.
   already been observed.
 - Kept same-executable subshell anchor skipping intact even when an ineligible
   intermediate process appears between shell ancestors.
+- Reduced false approver health-check failures on loaded machines by allowing
+  more time for the native helper health probe to launch.
 
 ### Security
 

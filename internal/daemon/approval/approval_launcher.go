@@ -24,6 +24,8 @@ type healthCheckRunner interface {
 	RunHealthCheck(ctx context.Context, executablePath string) (string, error)
 }
 
+const approverHealthCheckTimeout = 10 * time.Second
+
 func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
 	executable, err := l.executablePath()
 	if err != nil {
@@ -34,7 +36,7 @@ func (l ProcessApproverLauncher) CheckHealth(ctx context.Context) error {
 		return err
 	}
 
-	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, approverHealthCheckTimeout)
 	defer cancel()
 	stdout, err := l.healthCheckRunner().RunHealthCheck(checkCtx, identity.ExecutablePath)
 	if err != nil {
