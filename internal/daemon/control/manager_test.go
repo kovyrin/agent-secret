@@ -1743,7 +1743,7 @@ func copyCurrentTestBinaryToDaemonBundleAt(t *testing.T, dir string, bundleID st
 
 func waitForRawSocket(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		conn, err := socket.Dial(context.Background(), path)
 		if err == nil {

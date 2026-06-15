@@ -17,6 +17,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
+	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
 )
@@ -176,6 +177,40 @@ func (a *afterApprovalApprover) Approve(
 		a.after()
 	}
 	return a.decision, nil
+}
+
+type testSessionPeerAuthorizer struct {
+	roots map[int]int
+}
+
+func (a testSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (SessionPeerBinding, error) {
+	return SessionPeerBinding{
+		CreatorPeer: peer,
+		Anchor: peercred.ProcessIdentity{
+			UID:            peer.UID,
+			GID:            peer.GID,
+			PID:            a.rootFor(peer.PID),
+			ExecutablePath: "/test/requester",
+			StartTime:      time.Unix(1, 0).UTC(),
+		},
+	}, nil
+}
+
+func (a testSessionPeerAuthorizer) ValidateSessionPeer(binding SessionPeerBinding, peer peercred.Info) error {
+	if peer.UID != binding.CreatorPeer.UID || peer.GID != binding.CreatorPeer.GID ||
+		a.rootFor(peer.PID) != binding.Anchor.PID {
+		return ErrSessionPeerMismatch
+	}
+	return nil
+}
+
+func (a testSessionPeerAuthorizer) rootFor(pid int) int {
+	if a.roots != nil {
+		if root, ok := a.roots[pid]; ok {
+			return root
+		}
+	}
+	return pid
 }
 
 type contextExpiringApprover struct {
@@ -534,6 +569,9 @@ func newTestBroker(t *testing.T, opts Options) *Broker {
 	if opts.Now == nil {
 		now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 		opts.Now = func() time.Time { return now }
+	}
+	if opts.SessionPeerAuthorizer == nil {
+		opts.SessionPeerAuthorizer = testSessionPeerAuthorizer{}
 	}
 	broker, err := New(opts)
 	if err != nil {

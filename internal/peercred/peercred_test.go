@@ -196,6 +196,49 @@ func TestCurrentExpectedWrapsOSErrors(t *testing.T) {
 	}
 }
 
+func TestProcessAncestryCapturesCurrentProcess(t *testing.T) {
+	t.Parallel()
+
+	ancestry, err := ProcessAncestry(os.Getpid())
+	if errors.Is(err, ErrUnsupportedOS) {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatalf("ProcessAncestry returned error: %v", err)
+	}
+	if len(ancestry) == 0 {
+		t.Fatal("ProcessAncestry returned empty ancestry")
+	}
+	current := ancestry[0]
+	if current.PID != os.Getpid() {
+		t.Fatalf("current pid = %d, want %d", current.PID, os.Getpid())
+	}
+	if current.UID != os.Getuid() || current.GID != os.Getgid() {
+		t.Fatalf("current uid/gid = %d/%d, want %d/%d", current.UID, current.GID, os.Getuid(), os.Getgid())
+	}
+	if current.ParentPID <= 0 {
+		t.Fatalf("current parent pid = %d, want positive", current.ParentPID)
+	}
+	if current.ExecutablePath == "" {
+		t.Fatal("current executable path is empty")
+	}
+	if current.StartTime.IsZero() {
+		t.Fatal("current start time is zero")
+	}
+	if len(ancestry) > 1 && ancestry[1].PID != current.ParentPID {
+		t.Fatalf("parent ancestry pid = %d, want %d", ancestry[1].PID, current.ParentPID)
+	}
+}
+
+func TestProcessAncestryRejectsInvalidPID(t *testing.T) {
+	t.Parallel()
+
+	_, err := ProcessAncestry(0)
+	if !errors.Is(err, ErrMissingMetadata) {
+		t.Fatalf("ProcessAncestry error = %v, want ErrMissingMetadata", err)
+	}
+}
+
 func withUID(info Info, uid int) Info {
 	info.UID = uid
 	return info

@@ -32,8 +32,9 @@ present.
 ## Run
 
 The script creates a temporary project config with one secret from a profile and
-adds the second secret with a CLI `--secret` flag. Approve the native prompts
-when they appear.
+adds the second secret with a CLI `--secret` flag. It creates and consumes each
+session inside one shell so `with-session` runs from the approved requester
+process tree. Approve the native prompts when they appear.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -300,6 +301,8 @@ This E2E run proves:
   sessions without values or session tokens.
 - `with-session` injects the full approved bag when `--only` is omitted.
 - `with-session --only` injects config-only, CLI-only, and combined subsets.
+- `with-session` accepts session tokens from the same requester process tree
+  that created the session.
 - Unknown aliases fail before the child process starts.
 - `session destroy` prevents further resolution.
 - Read exhaustion prevents further resolution.

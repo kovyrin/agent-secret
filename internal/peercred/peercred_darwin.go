@@ -61,13 +61,28 @@ static int agentsecret_pidcwd(pid_t pid, char *buf, size_t size) {
 	strlcpy(buf, info.pvi_cdir.vip_path, size);
 	return 0;
 }
+
+static int agentsecret_pidbsdinfo(pid_t pid, struct proc_bsdinfo *info) {
+	int ret = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, info, sizeof(*info));
+	if (ret <= 0) {
+		return -1;
+	}
+	if ((size_t)ret < sizeof(*info)) {
+		errno = EINVAL;
+		return -1;
+	}
+	return ret;
+}
 */
 import "C"
 
 import (
 	"fmt"
+	"time"
 	"unsafe"
 )
+
+const maxProcessAncestryDepth = 64
 
 func inspectFD(fd uintptr) (Info, error) {
 	var uid C.uid_t
@@ -106,5 +121,52 @@ func inspectFD(fd uintptr) (Info, error) {
 		PID:            int(pid),
 		ExecutablePath: C.GoString((*C.char)(unsafe.Pointer(&exe[0]))),
 		CWD:            C.GoString((*C.char)(unsafe.Pointer(&cwd[0]))),
+	}, nil
+}
+
+func processAncestry(pid int) ([]ProcessIdentity, error) {
+	ancestry := make([]ProcessIdentity, 0, 8)
+	seen := make(map[int]struct{}, 8)
+	current := pid
+	for range maxProcessAncestryDepth {
+		if current <= 0 {
+			break
+		}
+		if _, ok := seen[current]; ok {
+			break
+		}
+		seen[current] = struct{}{}
+
+		identity, err := inspectProcess(current)
+		if err != nil {
+			return nil, err
+		}
+		ancestry = append(ancestry, identity)
+		if identity.ParentPID <= 1 || identity.ParentPID == identity.PID {
+			break
+		}
+		current = identity.ParentPID
+	}
+	return ancestry, nil
+}
+
+func inspectProcess(pid int) (ProcessIdentity, error) {
+	var info C.struct_proc_bsdinfo
+	if _, err := C.agentsecret_pidbsdinfo(C.pid_t(pid), &info); err != nil {
+		return ProcessIdentity{}, fmt.Errorf("PROC_PIDTBSDINFO pid %d: %w", pid, err)
+	}
+
+	exe := make([]C.char, int(C.agentsecret_proc_path_size))
+	if _, err := C.agentsecret_pidpath(C.pid_t(pid), (*C.char)(unsafe.Pointer(&exe[0])), C.size_t(len(exe))); err != nil {
+		return ProcessIdentity{}, fmt.Errorf("proc_pidpath pid %d: %w", pid, err)
+	}
+
+	return ProcessIdentity{
+		UID:            int(info.pbi_uid),
+		GID:            int(info.pbi_gid),
+		PID:            pid,
+		ParentPID:      int(info.pbi_ppid),
+		ExecutablePath: C.GoString((*C.char)(unsafe.Pointer(&exe[0]))),
+		StartTime:      time.Unix(int64(info.pbi_start_tvsec), int64(info.pbi_start_tvusec)*1000).UTC(),
 	}, nil
 }

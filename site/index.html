@@ -362,7 +362,7 @@ profiles:
               <li>The background helper fetches only the secrets you approved for the request.</li>
               <li>Audit logs record metadata, never raw secrets.</li>
               <li>Reusable approvals stay bounded by command, cwd, references, account, TTL, and use count.</li>
-              <li>Sessions stay bounded by cwd, aliases, TTL, read count, secret tokens, and the <code>with-session</code> wrapper.</li>
+              <li>Sessions stay bounded by requester process tree, cwd, aliases, TTL, read count, secret tokens, and the <code>with-session</code> wrapper.</li>
             </ul>
           </div>
           <div>

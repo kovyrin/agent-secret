@@ -503,7 +503,12 @@ func (s *Server) handleSessionCreate(
 		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
 		return
 	}
-	payload, err := s.broker.HandleSessionCreate(ctx, env.Correlation(), req)
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
+		return
+	}
+	payload, err := s.broker.HandleSessionCreate(ctx, env.Correlation(), req, peer)
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return

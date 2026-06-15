@@ -27,6 +27,12 @@ file before a release is published.
 - Added public FAQ guidance comparing Agent Secret's approval-broker model with
   Varlock and fnox.
 
+### Security
+
+- Bound session token use to the process tree that created the approved
+  session, so an unrelated same-user process cannot replay an observed
+  `session_token` from the same working directory.
+
 ## [0.0.24] - 2026-06-14
 
 ### Fixed

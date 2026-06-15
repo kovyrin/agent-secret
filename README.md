@@ -139,6 +139,9 @@ agent-secret session destroy asid_123
 Keep the `session_token` returned by `session create` for `with-session`.
 Use the `session_id` returned by `session create` or shown by `session list`
 for inspection and cleanup. `session list` never shows session tokens.
+Session tokens are accepted only from the requester process tree that created
+the session, so create and use them inside the same task shell, wrapper script,
+or agent process tree.
 
 Inspect item metadata without revealing values:
 
@@ -203,8 +206,9 @@ precedence, env-file migration, and the full schema.
 - `agent-secret session create|list|destroy`: manage bounded background-helper
   sessions.
 - `agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]`: run one command
-  with secrets from an approved session. Add `--only ALIAS[,ALIAS...]` to inject
-  a per-command subset of the approved session bag.
+  with secrets from an approved session and requester process tree. Add
+  `--only ALIAS[,ALIAS...]` to inject a per-command subset of the approved
+  session bag.
 - `agent-secret item describe REF`: inspect 1Password item fields without
   values.
 - `agent-secret agent-context --json`: print a machine-readable command and
@@ -260,8 +264,9 @@ The launch build is intentionally narrow:
 
 - macOS on Apple Silicon only.
 - 1Password Desktop and Bitwarden Secrets Manager only; no other providers yet.
-- Sessions are bounded, background-helper-memory only, and usable only through
-  `agent-secret with-session`; no long-lived interactive shells.
+- Sessions are bounded by requester process tree, cwd, TTL, read count, aliases,
+  background-helper memory, and `agent-secret with-session`; no long-lived
+  interactive shells.
 - No writing, updating, or rotating secrets yet.
 - No GCP Secret Manager or GCP token minting support yet.
 - No sandbox guarantee after you approve a child process.

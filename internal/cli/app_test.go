@@ -3280,6 +3280,25 @@ func (appAllowPeer) Validate(_ *net.UnixConn) error {
 	return nil
 }
 
+type appSessionPeerAuthorizer struct{}
+
+func (appSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (daemonbroker.SessionPeerBinding, error) {
+	return daemonbroker.SessionPeerBinding{
+		CreatorPeer: peer,
+		Anchor: peercred.ProcessIdentity{
+			UID:            peer.UID,
+			GID:            peer.GID,
+			PID:            peer.PID,
+			ExecutablePath: peer.ExecutablePath,
+			StartTime:      time.Unix(1, 0).UTC(),
+		},
+	}, nil
+}
+
+func (appSessionPeerAuthorizer) ValidateSessionPeer(daemonbroker.SessionPeerBinding, peercred.Info) error {
+	return nil
+}
+
 func startAppTestServer(
 	t *testing.T,
 	opts daemonbroker.Options,
@@ -3295,6 +3314,9 @@ func startAppTestServer(
 	unixsocket.SkipIfBindUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("ListenUnix returned error: %v", err)
+	}
+	if opts.SessionPeerAuthorizer == nil {
+		opts.SessionPeerAuthorizer = appSessionPeerAuthorizer{}
 	}
 	broker, err := daemonbroker.New(opts)
 	if err != nil {

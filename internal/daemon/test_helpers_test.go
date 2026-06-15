@@ -261,11 +261,33 @@ func newTestBroker(t *testing.T, opts daemonbroker.Options) *daemonbroker.Broker
 		now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 		opts.Now = func() time.Time { return now }
 	}
+	if opts.SessionPeerAuthorizer == nil {
+		opts.SessionPeerAuthorizer = testSessionPeerAuthorizer{}
+	}
 	broker, err := daemonbroker.New(opts)
 	if err != nil {
 		t.Fatalf("broker.New returned error: %v", err)
 	}
 	return broker
+}
+
+type testSessionPeerAuthorizer struct{}
+
+func (testSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (daemonbroker.SessionPeerBinding, error) {
+	return daemonbroker.SessionPeerBinding{
+		CreatorPeer: peer,
+		Anchor: peercred.ProcessIdentity{
+			UID:            peer.UID,
+			GID:            peer.GID,
+			PID:            peer.PID,
+			ExecutablePath: peer.ExecutablePath,
+			StartTime:      time.Unix(1, 0).UTC(),
+		},
+	}, nil
+}
+
+func (testSessionPeerAuthorizer) ValidateSessionPeer(daemonbroker.SessionPeerBinding, peercred.Info) error {
+	return nil
 }
 
 func newSocketApproverForTest(t *testing.T, launcher approval.ApproverLauncher, now func() time.Time) *approval.SocketApprover {
