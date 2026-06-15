@@ -797,22 +797,15 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 		Audit:    aud,
 	})
 
-	var connMu sync.Mutex
-	var firstConn *net.UnixConn
 	var closeOnce sync.Once
 	firstWriteAttempted := make(chan struct{})
 
 	path, stop := startRawServerWithOptions(t, ServerOptions{
 		Broker:    broker,
 		Validator: allowPeerValidator{},
-		beforeExecResponseWrite: func() {
+		beforeExecResponseWrite: func(conn *net.UnixConn) {
 			closeOnce.Do(func() {
-				connMu.Lock()
-				conn := firstConn
-				connMu.Unlock()
-				if conn != nil {
-					_ = conn.Close()
-				}
+				_ = conn.Close()
 				close(firstWriteAttempted)
 			})
 		},
@@ -823,9 +816,6 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial returned error: %v", err)
 	}
-	connMu.Lock()
-	firstConn = conn
-	connMu.Unlock()
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
 	select {
 	case <-firstWriteAttempted:
@@ -879,7 +869,7 @@ func TestServerRejectsExecPayloadWriteAfterDeliveryExpiry(t *testing.T) {
 		Broker:          broker,
 		Validator:       validator,
 		ClientValidator: clientValidator,
-		beforeExecResponseWrite: func() {
+		beforeExecResponseWrite: func(*net.UnixConn) {
 			hookOnce.Do(func() {
 				now = daemonNow.Add(request.DefaultExecTTL + time.Second)
 			})

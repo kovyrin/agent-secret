@@ -56,7 +56,7 @@ type Server struct {
 	readTimeout             time.Duration
 	now                     func() time.Time
 	beforeRead              func(time.Duration)
-	beforeExecResponseWrite func()
+	beforeExecResponseWrite func(*net.UnixConn)
 	listenUnix              func(string) (unixListener, error)
 	retireMu                sync.Mutex
 	retireAfterActive       bool
@@ -75,7 +75,7 @@ type ServerOptions struct {
 	ReadTimeout             time.Duration
 	now                     func() time.Time
 	beforeRead              func(time.Duration)
-	beforeExecResponseWrite func()
+	beforeExecResponseWrite func(*net.UnixConn)
 }
 
 const DefaultProtocolReadTimeout = 30 * time.Second
@@ -756,7 +756,7 @@ func (s *Server) handleRequestExec(
 		}
 	}()
 	if s.beforeExecResponseWrite != nil {
-		s.beforeExecResponseWrite()
+		s.beforeExecResponseWrite(conn)
 	}
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
