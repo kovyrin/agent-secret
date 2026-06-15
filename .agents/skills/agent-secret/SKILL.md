@@ -465,7 +465,9 @@ Before reporting success, prove the migrated path works:
   full `with-session` invocation, any `with-session --only` subsets, and
   session exhaustion or `session destroy`. Run session create and session use
   from the same task shell or wrapper script so the process-tree binding is
-  exercised.
+  exercised. For product or release validation, run
+  `docs/session-e2e-validation.md` and confirm the detached process-tree replay
+  attempt is rejected before the child command starts.
 - For `--env-file` migrations, test that the real command receives both a
   secret-backed variable and at least one plain env-file variable without
   printing either secret value.

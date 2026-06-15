@@ -26,6 +26,8 @@ file before a release is published.
 
 - Added public FAQ guidance comparing Agent Secret's approval-broker model with
   Varlock and fnox.
+- Expanded the release session E2E runbook to require multi-secret session
+  validation and a detached process-tree replay rejection check before release.
 
 ### Security
 

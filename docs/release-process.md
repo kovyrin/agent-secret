@@ -61,6 +61,12 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    mise run build
    ```
 
+1. Run the bounded-session product E2E in
+   `docs/session-e2e-validation.md` before tagging. The run must include
+   multi-secret session creation from config plus CLI args, same-tree
+   `with-session` reuse, and the checkpoint:
+   `detached process-tree replay rejected before child spawn`.
+
 1. Run the mixed-install helper recovery smoke before tagging. This catches the
    common local-operator state where the installed release background helper is
    valid but an ad-hoc development CLI is earlier on `PATH`:
@@ -237,6 +243,11 @@ AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask-audit.sh
 cd approver && swift run agent-secret-app-smoke
 ```
+
+The live bounded-session product E2E is documented in
+`docs/session-e2e-validation.md`. Run it manually before release tags because
+it requires the real native approver, test-only 1Password refs, and a macOS
+user launchd session for the detached process-tree replay check.
 
 The Homebrew cask should also be checked after every cask bump:
 

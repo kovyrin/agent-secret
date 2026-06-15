@@ -1,8 +1,8 @@
 # Session E2E Validation
 
-Use this runbook to manually re-test bounded sessions against the real
-CLI, background helper, native approver, provider resolver, audit log, and
-child-process environment injection path.
+Use this runbook to manually re-test bounded sessions against the real CLI,
+background helper, native approver, provider resolver, audit log,
+child-process environment injection path, and requester process-tree binding.
 
 The test uses two test-only secret references. It never prints resolved values.
 The child commands only assert whether expected environment variables are
@@ -29,12 +29,18 @@ present.
    - `op://Agent Secret Integration/Test Secret/password`
    - `op://Agent Secret Integration/Another Test Secret/password`
 
+4. Run from a macOS user session where `launchctl submit` can start a per-user
+   helper job. The detached replay check intentionally launches a requester
+   outside the shell that created the session.
+
 ## Run
 
 The script creates a temporary project config with one secret from a profile and
 adds the second secret with a CLI `--secret` flag. It creates and consumes each
 session inside one shell so `with-session` runs from the approved requester
-process tree. Approve the native prompts when they appear.
+process tree, then submits a launchd helper to prove the same token cannot be
+used from a different requester process tree. Approve the native prompts when
+they appear.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -43,14 +49,20 @@ set -euo pipefail
 
 profile_ref="${AGENT_SECRET_E2E_PROFILE_REF:-op://Agent Secret Integration/Test Secret/password}"
 cli_ref="${AGENT_SECRET_E2E_CLI_REF:-op://Agent Secret Integration/Another Test Secret/password}"
+agent_secret_bin="$(command -v agent-secret)"
 
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-session-e2e.XXXXXX")"
+chmod 700 "$workdir"
 SESSION_ID=""
 SESSION_TOKEN=""
 EXHAUST_ID=""
 EXHAUST_TOKEN=""
+DETACHED_LABEL=""
 
 cleanup() {
+  if [[ -n "${DETACHED_LABEL:-}" ]]; then
+    launchctl remove "$DETACHED_LABEL" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${SESSION_ID:-}" ]]; then
     agent-secret session destroy "$SESSION_ID" >/dev/null 2>&1 || true
   fi
@@ -135,6 +147,71 @@ run_with_session "$SESSION_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
   -- python3 -c "$check_py" profile
+
+detached_dir="$workdir/detached-replay"
+mkdir -p "$detached_dir"
+chmod 700 "$detached_dir"
+detached_helper="$detached_dir/replay.sh"
+detached_token_file="$detached_dir/session-token"
+detached_output="$detached_dir/output"
+detached_status="$detached_dir/status"
+printf '%s' "$SESSION_TOKEN" > "$detached_token_file"
+chmod 600 "$detached_token_file"
+cat > "$detached_helper" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+agent_secret_bin="$1"
+workdir="$2"
+token_file="$3"
+output_file="$4"
+status_file="$5"
+
+cd "$workdir"
+token="$(cat "$token_file")"
+set +e
+env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
+  "$agent_secret_bin" with-session "$token" \
+    --only SESSION_E2E_PROFILE_TOKEN \
+    --allow-mutable-executable \
+    -- python3 -c 'print("UNEXPECTED_CHILD_STARTED")' \
+    >"$output_file" 2>&1
+exit_code="$?"
+set -e
+printf '%s\n' "$exit_code" > "$status_file"
+SH
+chmod 700 "$detached_helper"
+
+DETACHED_LABEL="com.kovyrin.agent-secret.session-e2e.$RANDOM.$RANDOM"
+launchctl submit -l "$DETACHED_LABEL" -- \
+  "$detached_helper" \
+  "$agent_secret_bin" \
+  "$workdir" \
+  "$detached_token_file" \
+  "$detached_output" \
+  "$detached_status"
+for _ in {1..150}; do
+  if [[ -f "$detached_status" ]]; then
+    break
+  fi
+  sleep 0.1
+done
+launchctl remove "$DETACHED_LABEL" >/dev/null 2>&1 || true
+DETACHED_LABEL=""
+if [[ ! -f "$detached_status" ]]; then
+  echo 'BUG: detached replay attempt did not finish' >&2
+  exit 1
+fi
+detached_rc="$(tr -d '[:space:]' < "$detached_status")"
+if [[ "$detached_rc" == "0" ]]; then
+  echo 'BUG: detached process-tree replay unexpectedly succeeded' >&2
+  exit 1
+fi
+if grep -q 'UNEXPECTED_CHILD_STARTED' "$detached_output"; then
+  echo 'BUG: detached process-tree replay spawned child' >&2
+  exit 1
+fi
+echo 'detached process-tree replay rejected before child spawn'
 
 missing_output="$workdir/missing-alias.out"
 if run_with_session "$SESSION_TOKEN" \
@@ -280,6 +357,7 @@ created mixed config+CLI session: asid_...
 session list ok
 full ok
 profile ok
+detached process-tree replay rejected before child spawn
 missing alias rejected before child spawn
 cli ok
 both ok
@@ -303,6 +381,8 @@ This E2E run proves:
 - `with-session --only` injects config-only, CLI-only, and combined subsets.
 - `with-session` accepts session tokens from the same requester process tree
   that created the session.
+- The same `session_token` is rejected before child spawn when a detached
+  launchd job from a different requester process tree tries to replay it.
 - Unknown aliases fail before the child process starts.
 - `session destroy` prevents further resolution.
 - Read exhaustion prevents further resolution.
