@@ -37,6 +37,8 @@ file before a release is published.
 - Session create/list JSON and approval prompts now include non-secret session
   binding metadata: binding mode, ancestor depth, bound process, and creator
   process.
+- Session `--max-reads` now accepts up to `100` successful `with-session`
+  commands for longer approved workflows.
 - Session process mismatch errors now include the bound process and requester
   process names, PIDs, and paths to make binding failures diagnosable.
 

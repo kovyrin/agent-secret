@@ -343,7 +343,7 @@ agent-secret session destroy [--json] --all
 
 It also accepts `--max-reads COUNT`, which limits the number of successful
 `with-session` reads. The default is `1`; the allowed range is `1` through
-`20`. `--json=compact` emits one JSON object on a single line for shell
+`100`. `--json=compact` emits one JSON object on a single line for shell
 wrappers. Plain `--json` remains pretty-printed.
 
 By default, Agent Secret binds a session token to a stable requester process in

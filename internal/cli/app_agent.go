@@ -215,7 +215,7 @@ func agentContextCommands() map[string]commandContext {
 						{Name: "--config", Type: "path", Description: "Profile config path."},
 						{Name: "--cwd", Type: "path", Description: "Session working directory."},
 						{Name: "--ttl", Type: "duration", Default: request.DefaultSessionTTL.String(), Description: "Session TTL.", Values: []string{request.MinRequestTTL.String() + ".." + request.MaxRequestTTL.String()}},
-						{Name: "--max-reads", Type: "int", Default: "1", Values: []string{"1..20"}, Description: "Maximum with-session resolves before the session is exhausted."},
+						{Name: "--max-reads", Type: "int", Default: "1", Values: []string{"1..100"}, Description: "Maximum with-session resolves before the session is exhausted."},
 						{Name: "--override-env", Type: "bool", Description: "Allow with-session to replace existing child env vars with approved aliases."},
 						{Name: "--bind-parent", Type: "bool", Description: "Bind the session to the parent of this agent-secret process."},
 						{Name: "--bind-ancestor", Type: "int", Values: []string{"1..3"}, Description: "Bind the session to an ancestor process depth; only ancestors are accepted."},

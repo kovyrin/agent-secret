@@ -14,7 +14,7 @@ import (
 const (
 	DefaultSessionTTL      = 2 * time.Minute
 	DefaultSessionMaxReads = 1
-	MaxSessionReads        = 20
+	MaxSessionReads        = 100
 	MaxSessionBindAncestor = 3
 )
 

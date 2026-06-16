@@ -69,6 +69,31 @@ func TestNewSessionCreateDefaultsAndDaemonValidation(t *testing.T) {
 	}
 }
 
+func TestNewSessionCreateAcceptsMaximumReadLimit(t *testing.T) {
+	t.Parallel()
+
+	dir := testResolvedDir(t)
+	bin, identity := testExecutable(t, dir, "agent-secret")
+
+	req, err := NewSessionCreate(SessionCreateOptions{
+		Reason:             "Run long workflow",
+		Command:            []string{"agent-secret", "session", "create"},
+		ResolvedExecutable: bin,
+		ExecutableIdentity: identity,
+		CWD:                dir,
+		MaxReads:           MaxSessionReads,
+		Secrets: []SecretSpec{
+			{Alias: "TOKEN", Ref: "op://Example Vault/Deploy/token", Account: "Work"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSessionCreate returned error: %v", err)
+	}
+	if req.MaxReads != MaxSessionReads {
+		t.Fatalf("max reads = %d, want %d", req.MaxReads, MaxSessionReads)
+	}
+}
+
 func TestNewSessionCreateRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
