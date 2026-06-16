@@ -38,6 +38,19 @@ import Foundation
                     )
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+                sessionBindingRow
+            }
+        }
+
+        @ViewBuilder private var sessionBindingRow: some View {
+            if let sessionBindingSummary = viewModel.sessionBindingSummary {
+                ApprovalPanelContextRow(
+                    icon: "link",
+                    title: "Session binding",
+                    value: sessionBindingSummary,
+                    inspectAction: requestScopeInspectionAction
+                )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
 

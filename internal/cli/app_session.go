@@ -15,13 +15,14 @@ import (
 )
 
 type sessionCreateOutput struct {
-	SchemaVersion  string    `json:"schema_version"`
-	SessionID      string    `json:"session_id"`
-	SessionToken   string    `json:"session_token"`
-	SecretAliases  []string  `json:"secret_aliases"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	MaxReads       int       `json:"max_reads"`
-	RemainingReads int       `json:"remaining_reads"`
+	SchemaVersion  string                     `json:"schema_version"`
+	SessionID      string                     `json:"session_id"`
+	SessionToken   string                     `json:"session_token"`
+	SecretAliases  []string                   `json:"secret_aliases"`
+	ExpiresAt      time.Time                  `json:"expires_at"`
+	MaxReads       int                        `json:"max_reads"`
+	RemainingReads int                        `json:"remaining_reads"`
+	Binding        request.SessionBindingInfo `json:"session_binding"`
 }
 
 type sessionListOutput struct {
@@ -58,9 +59,10 @@ func (a App) runSessionCreate(ctx context.Context, command Command) int {
 		ExpiresAt:      payload.ExpiresAt,
 		MaxReads:       payload.MaxReads,
 		RemainingReads: payload.RemainingReads,
+		Binding:        payload.Binding,
 	}
 	if command.OutputJSON {
-		if err := a.writeJSON(output); err != nil {
+		if err := a.writeJSONMode(output, command.jsonOutputMode()); err != nil {
 			a.stderrf("agent-secret: write session create json: %v\n", err)
 			return 1
 		}
@@ -71,6 +73,9 @@ func (a App) runSessionCreate(ctx context.Context, command Command) int {
 	a.stdoutf("expires: %s\n", payload.ExpiresAt.Format(time.RFC3339))
 	a.stdoutf("reads: %d/%d remaining\n", payload.RemainingReads, payload.MaxReads)
 	a.stdoutf("secrets: %s\n", strings.Join(payload.SecretAliases, ", "))
+	if payload.Binding.BoundProcess.PID != 0 || payload.Binding.BoundProcess.Name != "" {
+		a.stdoutf("bound process: %s pid=%d path=%s\n", payload.Binding.BoundProcess.Name, payload.Binding.BoundProcess.PID, payload.Binding.BoundProcess.Path)
+	}
 	return 0
 }
 
@@ -93,7 +98,7 @@ func (a App) runSessionList(ctx context.Context, command Command) int {
 	}
 	defer func() { _ = client.Close() }()
 	if command.OutputJSON {
-		if err := a.writeJSON(sessionListOutput{SchemaVersion: "1", Sessions: payload.Sessions}); err != nil {
+		if err := a.writeJSONMode(sessionListOutput{SchemaVersion: "1", Sessions: payload.Sessions}, command.jsonOutputMode()); err != nil {
 			a.stderrf("agent-secret: write session list json: %v\n", err)
 			return 1
 		}
@@ -114,6 +119,14 @@ func (a App) runSessionList(ctx context.Context, command Command) int {
 			strings.Join(session.SecretAliases, ","),
 			session.Reason,
 		)
+		if session.Binding.BoundProcess.PID != 0 || session.Binding.BoundProcess.Name != "" {
+			a.stdoutf(
+				"  bound=%s pid=%d path=%s\n",
+				session.Binding.BoundProcess.Name,
+				session.Binding.BoundProcess.PID,
+				session.Binding.BoundProcess.Path,
+			)
+		}
 	}
 	return 0
 }
@@ -137,7 +150,7 @@ func (a App) runSessionDestroy(ctx context.Context, command Command) int {
 	}
 	defer func() { _ = client.Close() }()
 	if command.OutputJSON {
-		if err := a.writeJSON(payload); err != nil {
+		if err := a.writeJSONMode(payload, command.jsonOutputMode()); err != nil {
 			a.stderrf("agent-secret: write session destroy json: %v\n", err)
 			return 1
 		}

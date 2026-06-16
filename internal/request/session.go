@@ -14,13 +14,15 @@ import (
 const (
 	DefaultSessionTTL      = 2 * time.Minute
 	DefaultSessionMaxReads = 1
-	MaxSessionReads        = 20
+	MaxSessionReads        = 100
+	MaxSessionBindAncestor = 3
 )
 
 var (
 	ErrInvalidSessionID    = fmt.Errorf("%w: invalid session id", ErrInvalidRequest)
 	ErrInvalidSessionToken = fmt.Errorf("%w: invalid session token", ErrInvalidRequest)
 	ErrInvalidSessionRead  = fmt.Errorf("%w: invalid session read count", ErrInvalidRequest)
+	ErrInvalidSessionBind  = fmt.Errorf("%w: invalid session binding", ErrInvalidRequest)
 )
 
 var (
@@ -39,6 +41,7 @@ type SessionCreateOptions struct {
 	ReceivedAt         time.Time
 	MaxReads           int
 	OverrideEnv        bool
+	Binding            SessionBindingPolicy
 }
 
 type SessionCreateRequest struct {
@@ -53,6 +56,7 @@ type SessionCreateRequest struct {
 	ExpiresAt          time.Time             `json:"expires_at"`
 	MaxReads           int                   `json:"max_reads"`
 	OverrideEnv        bool                  `json:"override_env"`
+	Binding            SessionBindingPolicy  `json:"session_binding"`
 }
 
 type SessionResolveRequest struct {
@@ -72,15 +76,75 @@ type SessionDestroyRequest struct {
 }
 
 type SessionSummary struct {
-	SessionID      string    `json:"session_id"`
-	SessionToken   string    `json:"session_token,omitempty"`
-	Reason         string    `json:"reason"`
-	CWD            string    `json:"cwd"`
-	SecretAliases  []string  `json:"secret_aliases"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	MaxReads       int       `json:"max_reads"`
-	RemainingReads int       `json:"remaining_reads"`
-	OverrideEnv    bool      `json:"override_env"`
+	SessionID      string             `json:"session_id"`
+	SessionToken   string             `json:"session_token,omitempty"`
+	Reason         string             `json:"reason"`
+	CWD            string             `json:"cwd"`
+	SecretAliases  []string           `json:"secret_aliases"`
+	ExpiresAt      time.Time          `json:"expires_at"`
+	MaxReads       int                `json:"max_reads"`
+	RemainingReads int                `json:"remaining_reads"`
+	OverrideEnv    bool               `json:"override_env"`
+	Binding        SessionBindingInfo `json:"session_binding"`
+}
+
+type SessionBindingMode string
+
+const (
+	SessionBindingModeAuto     SessionBindingMode = "auto"
+	SessionBindingModeAncestor SessionBindingMode = "ancestor"
+)
+
+type SessionBindingPolicy struct {
+	Mode          SessionBindingMode `json:"mode,omitempty"`
+	AncestorDepth int                `json:"ancestor_depth,omitempty"`
+}
+
+type SessionBindingInfo struct {
+	Mode           SessionBindingMode    `json:"mode"`
+	AncestorDepth  int                   `json:"ancestor_depth,omitempty"`
+	BoundProcess   SessionBindingProcess `json:"bound_process"`
+	CreatorProcess SessionBindingProcess `json:"creator_process"`
+}
+
+type SessionBindingProcess struct {
+	PID       int    `json:"pid"`
+	ParentPID int    `json:"parent_pid,omitempty"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+}
+
+func DefaultSessionBindingPolicy() SessionBindingPolicy {
+	return SessionBindingPolicy{Mode: SessionBindingModeAuto}
+}
+
+func NewSessionAncestorBinding(depth int) (SessionBindingPolicy, error) {
+	policy := SessionBindingPolicy{Mode: SessionBindingModeAncestor, AncestorDepth: depth}
+	return NormalizeSessionBindingPolicy(policy)
+}
+
+func NormalizeSessionBindingPolicy(policy SessionBindingPolicy) (SessionBindingPolicy, error) {
+	if policy.Mode == "" {
+		policy.Mode = SessionBindingModeAuto
+	}
+	switch policy.Mode {
+	case SessionBindingModeAuto:
+		if policy.AncestorDepth != 0 {
+			return SessionBindingPolicy{}, fmt.Errorf("%w: auto binding does not accept ancestor depth", ErrInvalidSessionBind)
+		}
+		return policy, nil
+	case SessionBindingModeAncestor:
+		if policy.AncestorDepth < 1 || policy.AncestorDepth > MaxSessionBindAncestor {
+			return SessionBindingPolicy{}, fmt.Errorf(
+				"%w: ancestor depth must be between 1 and %d",
+				ErrInvalidSessionBind,
+				MaxSessionBindAncestor,
+			)
+		}
+		return policy, nil
+	default:
+		return SessionBindingPolicy{}, fmt.Errorf("%w: unknown binding mode %q", ErrInvalidSessionBind, policy.Mode)
+	}
 }
 
 func NewSessionCreate(opts SessionCreateOptions) (SessionCreateRequest, error) {
@@ -119,6 +183,10 @@ func NewSessionCreate(opts SessionCreateOptions) (SessionCreateRequest, error) {
 	if err != nil {
 		return SessionCreateRequest{}, err
 	}
+	binding, err := NormalizeSessionBindingPolicy(opts.Binding)
+	if err != nil {
+		return SessionCreateRequest{}, err
+	}
 	receivedAt := opts.ReceivedAt
 	expiresAt := time.Time{}
 	if !receivedAt.IsZero() {
@@ -136,6 +204,7 @@ func NewSessionCreate(opts SessionCreateOptions) (SessionCreateRequest, error) {
 		ExpiresAt:          expiresAt,
 		MaxReads:           maxReads,
 		OverrideEnv:        opts.OverrideEnv,
+		Binding:            binding,
 	}, nil
 }
 
@@ -166,6 +235,9 @@ func (r SessionCreateRequest) ValidateForDaemon() error {
 	}
 	if r.ExecutableIdentity.IsZero() {
 		return fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
+	}
+	if _, err := NormalizeSessionBindingPolicy(r.Binding); err != nil {
+		return err
 	}
 	if err := validateDaemonPreparedPath("cwd", r.CWD, false); err != nil {
 		return err

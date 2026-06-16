@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
+	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type profileListOutput struct {
@@ -130,6 +131,11 @@ func (a App) runProfileShow(command Command) int {
 			return a.profileWriteError(err)
 		}
 	}
+	if profile.Session != nil && profile.Session.Bind != nil {
+		if _, err := fmt.Fprintf(writer, "session_bind:\t%s\n", sessionBindingPolicyText(*profile.Session.Bind)); err != nil {
+			return a.profileWriteError(err)
+		}
+	}
 	if _, err := fmt.Fprintln(writer, "secrets:"); err != nil {
 		return a.profileWriteError(err)
 	}
@@ -177,6 +183,20 @@ func joinComma(values []string) string {
 		out.WriteString(value)
 	}
 	return out.String()
+}
+
+func sessionBindingPolicyText(policy request.SessionBindingPolicy) string {
+	switch policy.Mode {
+	case request.SessionBindingModeAuto, "":
+		return "auto"
+	case request.SessionBindingModeAncestor:
+		if policy.AncestorDepth == 1 {
+			return "parent"
+		}
+		return fmt.Sprintf("ancestor:%d", policy.AncestorDepth)
+	default:
+		return string(policy.Mode)
+	}
 }
 
 func (a App) profileError(jsonOutput bool, context string, err error) int {

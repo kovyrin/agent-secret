@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/itemmetadata"
+	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 const ProtocolVersion = 1
@@ -105,12 +106,13 @@ type ExecResponsePayload struct {
 }
 
 type SessionCreateResponsePayload struct {
-	SessionID      string    `json:"session_id"`
-	SessionToken   string    `json:"session_token"`
-	SecretAliases  []string  `json:"secret_aliases"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	MaxReads       int       `json:"max_reads"`
-	RemainingReads int       `json:"remaining_reads"`
+	SessionID      string                     `json:"session_id"`
+	SessionToken   string                     `json:"session_token"`
+	SecretAliases  []string                   `json:"secret_aliases"`
+	ExpiresAt      time.Time                  `json:"expires_at"`
+	MaxReads       int                        `json:"max_reads"`
+	RemainingReads int                        `json:"remaining_reads"`
+	Binding        request.SessionBindingInfo `json:"session_binding"`
 }
 
 type SessionResolveResponsePayload struct {
@@ -130,14 +132,15 @@ type SessionListResponsePayload struct {
 }
 
 type SessionInfoPayload struct {
-	SessionID      string    `json:"session_id"`
-	Reason         string    `json:"reason"`
-	CWD            string    `json:"cwd"`
-	SecretAliases  []string  `json:"secret_aliases"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	MaxReads       int       `json:"max_reads"`
-	RemainingReads int       `json:"remaining_reads"`
-	OverrideEnv    bool      `json:"override_env"`
+	SessionID      string                     `json:"session_id"`
+	Reason         string                     `json:"reason"`
+	CWD            string                     `json:"cwd"`
+	SecretAliases  []string                   `json:"secret_aliases"`
+	ExpiresAt      time.Time                  `json:"expires_at"`
+	MaxReads       int                        `json:"max_reads"`
+	RemainingReads int                        `json:"remaining_reads"`
+	OverrideEnv    bool                       `json:"override_env"`
+	Binding        request.SessionBindingInfo `json:"session_binding"`
 }
 
 type ItemDescribeResponsePayload struct {

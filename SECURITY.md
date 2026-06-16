@@ -12,7 +12,7 @@ The supported runtime scope is narrow:
 - CLI-supervised `agent-secret exec` with environment injection.
 - Bounded background-helper sessions through `session create`, `session list`,
   `session destroy`, and `with-session`, with token use bound to the requester
-  process tree that created the session.
+  process tree or explicit ancestor binding selected at session creation.
 
 Linux, Windows, credential helpers, automatic updates, and alternative secret
 backends are not supported security surfaces yet.

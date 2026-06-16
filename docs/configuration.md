@@ -52,6 +52,8 @@ profiles:
     account: Example Corp
     reason: Terraform DNS management
     ttl: 10m
+    session:
+      bind: parent
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
       PREVIEW_TOKEN:
@@ -85,6 +87,8 @@ Profile fields:
 - `ttl`: optional approval TTL, such as `90s`, `2m`, or `10m`.
 - `account`: optional 1Password account override for all secrets in a profile.
 - `include`: optional list of profile names to merge before this profile.
+- `session`: optional session-specific policy. Currently supports
+  `bind: auto`, `bind: parent`, or `bind: { ancestor: N }`.
 - `secrets`: map of environment aliases to secret references. Required
   unless `include` contributes at least one secret.
 
@@ -113,8 +117,8 @@ profiles:
 
 Includes are resolved in order. Later included profiles override earlier
 secrets with the same alias, and the selected profile overrides all included
-profiles. `reason` and `ttl` also follow that order: the last included value is
-used unless the selected profile sets its own value.
+profiles. `reason`, `ttl`, and `session.bind` also follow that order: the last
+included value is used unless the selected profile sets its own value.
 
 Each included secret keeps the account chosen by the profile that defined it.
 If the selected profile needs a different account or reference for a secret,
@@ -307,7 +311,7 @@ value and env-var delivery does not support binary attachments with NUL bytes.
 
 Sessions approve one bag of secret references, keep the resolved values in
 Agent Secret's background helper memory, and let later child commands consume
-that bag only through `agent-secret with-session` from the same requester
+that bag only through `agent-secret with-session` from the approved requester
 process tree. Use them for bounded workflows where a user
 approves several secrets once and subsequent commands need those secrets in
 different combinations.
@@ -334,10 +338,41 @@ agent-secret session destroy [--json] --all
 - `--ttl DURATION`
 - `--override-env`
 - `--json`
+- `--bind-parent`
+- `--bind-ancestor N`
 
 It also accepts `--max-reads COUNT`, which limits the number of successful
 `with-session` reads. The default is `1`; the allowed range is `1` through
-`20`.
+`100`. `--json=compact` emits one JSON object on a single line for shell
+wrappers. Plain `--json` remains pretty-printed.
+
+By default, Agent Secret binds a session token to a stable requester process in
+the creator's process tree. `--bind-parent` binds to the direct parent of the
+`agent-secret session create` process, which is usually the right choice when a
+shell wrapper captures the JSON in command substitution and later runs
+`with-session` from the parent shell. `--bind-ancestor N` binds to a deeper
+ancestor, up to `3`. Agent Secret rejects arbitrary PIDs; explicit bindings can
+target only ancestors of the current `agent-secret` process.
+
+The same binding policy can live in a profile:
+
+```yaml
+profiles:
+  deploy:
+    reason: Deploy application
+    session:
+      bind: parent
+    secrets:
+      DEPLOY_TOKEN: op://Example/Deploy/token
+
+  nested-wrapper:
+    include: [deploy]
+    session:
+      bind:
+        ancestor: 2
+```
+
+CLI `--bind-parent` or `--bind-ancestor` overrides profile `session.bind`.
 
 For example, approve a project profile plus a one-off CLI reference, then use
 different aliases for different commands:
@@ -347,7 +382,8 @@ agent-secret session create \
   --profile terraform-cloudflare \
   --secret STATE_TOKEN=op://Example/Terraform\ State/token \
   --max-reads 3 \
-  --json
+  --bind-parent \
+  --json=compact
 
 agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- \
   terraform plan
@@ -362,8 +398,11 @@ agent-secret with-session astok_123 \
 - `session_id`: a management identifier shown by `session list` and accepted by
   `session destroy`.
 - `session_token`: a secret token accepted by `with-session` only from the
-  requester process tree that created the session. It is never shown by
+  requester process tree that created the session or the explicit ancestor tree
+  selected by `--bind-parent` / `--bind-ancestor`. It is never shown by
   `session list`.
+- `session_binding`: non-secret binding metadata including binding mode,
+  ancestor depth, bound process, and creator process.
 
 It does not print secret values. `session list` shows active `session_id` values
 and non-secret metadata for inspection and cleanup. Without `--only`,
@@ -375,8 +414,10 @@ child command.
 `with-session` accepts `--cwd DIR`, `--only ALIAS[,ALIAS...]`, and
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current
 directory and must match the session working directory. The caller must also be
-inside the same requester process tree that ran `session create`; keep session
-creation and use inside one task shell, wrapper script, or agent process tree.
+inside the same requester process tree that ran `session create`, or inside the
+explicit ancestor tree selected by `--bind-parent` / `--bind-ancestor`. If
+`with-session` fails with a process mismatch, the error includes the bound
+process and requester process names, PIDs, and paths.
 
 Sessions are background-helper-memory only. They expire when TTL passes, the
 read count is exhausted, `agent-secret session destroy SESSION_ID` or

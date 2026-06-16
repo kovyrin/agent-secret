@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 func TestLoadFindsProfileInParentAndSortsSecrets(t *testing.T) {
@@ -46,6 +48,119 @@ profiles:
 	}
 	if got := profile.Secrets[1].Alias; got != "Z_TOKEN" {
 		t.Fatalf("second alias = %q, want sorted Z_TOKEN", got)
+	}
+}
+
+func TestLoadAppliesSessionBindingFromProfile(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, "agent-secret.yml"), `
+version: 1
+profiles:
+  base:
+    reason: Base
+    session:
+      bind: parent
+    secrets:
+      BASE_TOKEN: op://Example/Base/token
+  deploy:
+    include: [base]
+    reason: Deploy
+    session:
+      bind:
+        ancestor: 2
+    secrets:
+      DEPLOY_TOKEN: op://Example/Deploy/token
+`)
+
+	base, err := Load(LoadOptions{Name: "base", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load base returned error: %v", err)
+	}
+	if base.SessionBinding == nil ||
+		base.SessionBinding.Mode != request.SessionBindingModeAncestor ||
+		base.SessionBinding.AncestorDepth != 1 {
+		t.Fatalf("base session binding = %+v", base.SessionBinding)
+	}
+
+	deploy, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load deploy returned error: %v", err)
+	}
+	if deploy.SessionBinding == nil ||
+		deploy.SessionBinding.Mode != request.SessionBindingModeAncestor ||
+		deploy.SessionBinding.AncestorDepth != 2 {
+		t.Fatalf("deploy session binding = %+v", deploy.SessionBinding)
+	}
+
+	info, err := Inspect(LoadOptions{StartDir: root})
+	if err != nil {
+		t.Fatalf("Inspect returned error: %v", err)
+	}
+	deployInfo := findProfileInfo(t, info, "deploy")
+	if deployInfo.Session == nil || deployInfo.Session.Bind == nil || deployInfo.Session.Bind.AncestorDepth != 2 {
+		t.Fatalf("inspect deploy session binding = %+v", deployInfo.Session)
+	}
+}
+
+func TestLoadRejectsInvalidSessionBindingConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "unknown scalar",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    session:
+      bind: pid
+    secrets:
+      TOKEN: op://Example/Item/token
+`,
+		},
+		{
+			name: "too deep",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    session:
+      bind:
+        ancestor: 4
+    secrets:
+      TOKEN: op://Example/Item/token
+`,
+		},
+		{
+			name: "unknown mapping key",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    session:
+      bind:
+        pid: 123
+    secrets:
+      TOKEN: op://Example/Item/token
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			writeConfig(t, filepath.Join(root, "agent-secret.yml"), tt.config)
+			_, err := Load(LoadOptions{Name: "deploy", StartDir: root})
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("Load error = %v, want ErrInvalidConfig", err)
+			}
+		})
 	}
 }
 
@@ -860,6 +975,18 @@ profiles:
 	if !errors.Is(err, ErrProfileNotFound) {
 		t.Fatalf("expected ErrProfileNotFound, got %v", err)
 	}
+}
+
+func findProfileInfo(t *testing.T, info ConfigInfo, name string) ProfileInfo {
+	t.Helper()
+
+	for _, profile := range info.Profiles {
+		if profile.Name == name {
+			return profile
+		}
+	}
+	t.Fatalf("profile %q not found in %+v", name, info.Profiles)
+	return ProfileInfo{}
 }
 
 func writeConfig(t *testing.T, path string, contents string) {

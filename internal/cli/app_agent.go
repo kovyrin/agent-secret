@@ -106,7 +106,7 @@ func (a App) runAgentContext(command Command) int {
 				"secret values are never printed by agent-secret",
 				"exec passes child stdin/stdout/stderr through unchanged",
 				"item describe returns metadata only",
-				"session create returns a public session id and secret session token bound to the requester process tree; with-session never prints values",
+				"session create returns a public session id and secret session token bound to the approved requester process tree; with-session never prints values",
 			},
 			MutationBoundary: []string{
 				"exec --dry-run validates without prompting or spawning",
@@ -215,24 +215,26 @@ func agentContextCommands() map[string]commandContext {
 						{Name: "--config", Type: "path", Description: "Profile config path."},
 						{Name: "--cwd", Type: "path", Description: "Session working directory."},
 						{Name: "--ttl", Type: "duration", Default: request.DefaultSessionTTL.String(), Description: "Session TTL.", Values: []string{request.MinRequestTTL.String() + ".." + request.MaxRequestTTL.String()}},
-						{Name: "--max-reads", Type: "int", Default: "1", Values: []string{"1..20"}, Description: "Maximum with-session resolves before the session is exhausted."},
+						{Name: "--max-reads", Type: "int", Default: "1", Values: []string{"1..100"}, Description: "Maximum with-session resolves before the session is exhausted."},
 						{Name: "--override-env", Type: "bool", Description: "Allow with-session to replace existing child env vars with approved aliases."},
-						{Name: "--json", Type: "bool", Description: "Print session metadata as JSON."},
+						{Name: "--bind-parent", Type: "bool", Description: "Bind the session to the parent of this agent-secret process."},
+						{Name: "--bind-ancestor", Type: "int", Values: []string{"1..3"}, Description: "Bind the session to an ancestor process depth; only ancestors are accepted."},
+						{Name: "--json", Type: "enum", Values: []string{"true", "pretty", "compact"}, Description: "Print session metadata as JSON; compact emits one line."},
 					},
-					Outputs: []string{"text", "json"},
-					Notes:   []string{"returns a public session id for management and a secret session token bound to the requester process tree for with-session", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
+					Outputs: []string{"text", "json", "compact json"},
+					Notes:   []string{"returns a public session id for management and a secret session token bound to the requester process tree for with-session", "use --bind-parent for shell command substitution wrappers that later call with-session from the parent shell", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
 				},
 				"list": {
 					Summary: "List active session ids and non-secret metadata.",
-					Flags:   jsonFlag(),
-					Outputs: []string{"text", "json"},
+					Flags:   sessionJSONFlag(),
+					Outputs: []string{"text", "json", "compact json"},
 				},
 				"destroy": {
 					Summary: "Destroy one session and clear its cached values.",
 					Flags: append([]flagContext{
 						{Name: "--all", Type: "bool", Description: "Destroy all active sessions."},
-					}, jsonFlag()...),
-					Outputs: []string{"text", "json"},
+					}, sessionJSONFlag()...),
+					Outputs: []string{"text", "json", "compact json"},
 				},
 			},
 		},
@@ -243,7 +245,7 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
 			},
 			Outputs: []string{"child passthrough"},
-			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "caller must be in the requester process tree that created the session", "session values are injected into the child environment and never printed"},
+			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "caller must be in the requester process tree that created the session or in the ancestor tree selected with session create --bind-parent/--bind-ancestor", "session values are injected into the child environment and never printed"},
 		},
 		"bitwarden": {
 			Summary: "Manage local Bitwarden Secrets Manager token aliases.",
@@ -327,4 +329,8 @@ func agentContextCommands() map[string]commandContext {
 
 func jsonFlag() []flagContext {
 	return []flagContext{{Name: "--json", Type: "bool", Description: "Print JSON output."}}
+}
+
+func sessionJSONFlag() []flagContext {
+	return []flagContext{{Name: "--json", Type: "enum", Values: []string{"true", "pretty", "compact"}, Description: "Print JSON output; compact emits one line."}}
 }

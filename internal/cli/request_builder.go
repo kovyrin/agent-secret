@@ -98,6 +98,7 @@ type sessionCreateRequestBuildOptions struct {
 	ttl                time.Duration
 	maxReads           int
 	overrideEnv        bool
+	binding            request.SessionBindingPolicy
 }
 
 func buildSessionCreateRequest(opts sessionCreateRequestBuildOptions) (request.SessionCreateRequest, error) {
@@ -130,6 +131,7 @@ func buildSessionCreateRequest(opts sessionCreateRequestBuildOptions) (request.S
 		TTL:                opts.ttl,
 		MaxReads:           opts.maxReads,
 		OverrideEnv:        opts.overrideEnv,
+		Binding:            opts.binding,
 	})
 }
 

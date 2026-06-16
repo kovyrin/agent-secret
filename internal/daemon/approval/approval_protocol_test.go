@@ -78,6 +78,69 @@ func TestNewExecPayloadUsesEmptyOverriddenAliasesSlice(t *testing.T) {
 	}
 }
 
+func TestNewSessionCreatePayloadIncludesBindingMetadata(t *testing.T) {
+	t.Parallel()
+
+	expiresAt := time.Now().Add(time.Minute).UTC()
+	req := request.SessionCreateRequest{
+		Reason:             "deploy",
+		Command:            []string{"agent-secret", "session", "create"},
+		CWD:                "/tmp/project",
+		ResolvedExecutable: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		ExpiresAt:          expiresAt,
+		Secrets: []request.Secret{
+			{
+				Alias: "TOKEN",
+				Ref: request.SecretRef{
+					Raw: "op://Vault/Item/token",
+				},
+			},
+		},
+		MaxReads: 2,
+	}
+	binding := request.SessionBindingInfo{
+		Mode:          request.SessionBindingModeAncestor,
+		AncestorDepth: 1,
+		BoundProcess: request.SessionBindingProcess{
+			PID:       501,
+			ParentPID: 1,
+			Name:      "zsh",
+			Path:      "/bin/zsh",
+		},
+		CreatorProcess: request.SessionBindingProcess{
+			PID:  502,
+			Name: "agent-secret",
+			Path: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		},
+	}
+
+	payload := NewSessionCreatePayload(protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"}, req, binding)
+
+	if payload.SessionBinding == nil {
+		t.Fatal("SessionBinding is nil, want binding metadata")
+	}
+	if payload.SessionBinding.BoundProcess.Name != "zsh" || payload.SessionBinding.BoundProcess.PID != 501 {
+		t.Fatalf("session binding = %+v", payload.SessionBinding)
+	}
+	if payload.Operation != ApprovalOperationSessionCreate || payload.AllowsReusable {
+		t.Fatalf("operation/reuse = %s/%v", payload.Operation, payload.AllowsReusable)
+	}
+}
+
+func TestNewSessionCreatePayloadOmitsZeroBindingMetadata(t *testing.T) {
+	t.Parallel()
+
+	payload := NewSessionCreatePayload(
+		protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"},
+		request.SessionCreateRequest{Reason: "deploy"},
+		request.SessionBindingInfo{},
+	)
+
+	if payload.SessionBinding != nil {
+		t.Fatalf("SessionBinding = %+v, want nil for zero-value metadata", payload.SessionBinding)
+	}
+}
+
 func TestValidateDecisionReusableUses(t *testing.T) {
 	t.Parallel()
 

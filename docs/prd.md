@@ -132,9 +132,9 @@ ansible-playbook site.yml --check
 
 The user approves once for a TTL and max-read count. The broker returns a
 public `session_id` for management plus a secret `session_token` for
-`agent-secret with-session` calls from the approved requester process tree,
-keeps values in Agent Secret's background helper memory, and injects them only
-into wrapped child processes.
+`agent-secret with-session` calls from the approved requester process tree or
+explicit ancestor binding, keeps values in Agent Secret's background helper
+memory, and injects them only into wrapped child processes.
 V1 sessions do not add generic socket reads or credential-helper protocols.
 
 ### Use Case 3: Config-Driven Secret Sync
@@ -681,16 +681,19 @@ Limitations:
 The broker creates a short-lived session and returns a public `session_id` for
 list/destroy operations plus a secret `session_token` instead of values. Values
 stay in Agent Secret's background helper memory and are useful only through
-`agent-secret with-session`, matching requester process tree, peer credentials,
-cwd, remaining read count, and unexpired policy.
+`agent-secret with-session`, matching requester process tree or explicit
+ancestor binding, peer credentials, cwd, remaining read count, and unexpired
+policy.
 
 Unlike same-command reuse, sessions approve a bounded set of references for a
 workflow lifetime and allow those approved references to be injected into
 multiple wrapped commands, subject to TTL, max-read, peer, and destroy policy.
 On macOS, session resolution must fail closed unless the daemon can validate the
-same UID, trusted wrapper peer, requester process tree, cwd, TTL, and read count
-against the approved session. Session values must clear when TTL expires, read
-counts are exhausted, the daemon stops, or the session is destroyed.
+same UID, trusted wrapper peer, requester process tree or configured ancestor
+binding, cwd, TTL, and read count against the approved session. Explicit
+bindings can target only ancestors of the current `agent-secret` process, not
+arbitrary PIDs. Session values must clear when TTL expires, read counts are
+exhausted, the daemon stops, or the session is destroyed.
 
 ### Mode 3: `with-session`
 
@@ -848,7 +851,10 @@ Global options:
 Session option:
 
 ```text
---max-reads integer          Session create only. Default: 1. Max: 20.
+--max-reads integer          Session create only. Default: 1. Max: 100.
+--bind-parent                Session create only. Bind to the parent process.
+--bind-ancestor integer      Session create only. Bind to ancestor depth 1..3.
+--json=compact               Session create/list/destroy. One-line JSON output.
 ```
 
 V1 commands:
@@ -1190,6 +1196,8 @@ Exit criteria:
 - Session create returns a public session ID and secret session token.
 - Session tokens cannot be resolved after TTL.
 - Session tokens cannot be resolved more than the allowed read count.
+- Session tokens cannot be resolved outside the approved requester process tree
+  or explicit ancestor binding.
 - On macOS, session resolution fails closed if peer UID, PID, executable path, or
   cwd cannot be obtained or does not match the approved session policy.
 - Destroying a session invalidates the session token.

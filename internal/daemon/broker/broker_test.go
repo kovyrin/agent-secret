@@ -183,7 +183,10 @@ type testSessionPeerAuthorizer struct {
 	roots map[int]int
 }
 
-func (a testSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (SessionPeerBinding, error) {
+func (a testSessionPeerAuthorizer) BindSessionPeer(
+	peer peercred.Info,
+	policy request.SessionBindingPolicy,
+) (SessionPeerBinding, error) {
 	return SessionPeerBinding{
 		CreatorPeer: peer,
 		Anchor: peercred.ProcessIdentity{
@@ -193,6 +196,7 @@ func (a testSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (SessionP
 			ExecutablePath: "/test/requester",
 			StartTime:      time.Unix(1, 0).UTC(),
 		},
+		Policy: policy,
 	}, nil
 }
 

@@ -20,6 +20,28 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.26] - Pending
+
+### Added
+
+- Added `agent-secret session create --bind-parent` and `--bind-ancestor N` so
+  shell wrappers can bind approved sessions to a stable ancestor process instead
+  of the short-lived `agent-secret` process.
+- Added profile config support for session binding with `session.bind: parent`,
+  `session.bind: auto`, and `session.bind: { ancestor: N }`.
+- Added `--json=compact` for session create, list, and destroy output so shell
+  wrappers can safely read one JSON object per line.
+
+### Changed
+
+- Session create/list JSON and approval prompts now include non-secret session
+  binding metadata: binding mode, ancestor depth, bound process, and creator
+  process.
+- Session `--max-reads` now accepts up to `100` successful `with-session`
+  commands for longer approved workflows.
+- Session process mismatch errors now include the bound process and requester
+  process names, PIDs, and paths to make binding failures diagnosable.
+
 ## [0.0.25] - 2026-06-15
 
 ### Changed

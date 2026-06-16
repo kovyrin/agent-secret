@@ -33,6 +33,8 @@ struct ApprovalRequestViewModel: Equatable {
     let reusableUses: Int
     let allowsReusableApproval: Bool
     let scopeSummary: String
+    let sessionBindingSummary: String?
+    let sessionBindingInspectionText: String?
     let allowReusableTitle: String
     let printsEnvironmentWarning: Bool
     let overrideEnv: Bool
@@ -52,6 +54,7 @@ struct ApprovalRequestViewModel: Equatable {
                 commandArgumentRows: commandArguments.map(\.inspectorLine),
                 cwd: cwd,
                 scopeSummary: scopeSummary,
+                sessionBindingSummary: sessionBindingSummary,
                 resolvedExecutable: resolvedExecutable,
                 allowMutableExecutable: allowMutableExecutable,
                 resourceRows: resourceRows,
@@ -94,6 +97,8 @@ struct ApprovalRequestViewModel: Equatable {
             resourcePresentation.count >= Self.highScopeResourceThreshold
         (reusableUses, allowsReusableApproval) = (request.reusableUses, request.allowsReusable)
         (scopeSummary, allowReusableTitle) = (copy.scopeSummary, copy.allowReusableTitle)
+        sessionBindingSummary = Self.sessionBindingSummary(request.sessionBinding)
+        sessionBindingInspectionText = Self.sessionBindingInspectionText(request.sessionBinding)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
         (printsEnvironmentWarning, overrideWarning, cautionMessages) = (
             warnings.printsEnvironment,
@@ -172,6 +177,9 @@ struct ApprovalRequestViewModel: Equatable {
             "Working directory: \(viewModel.cwd)",
             "Scope: \(viewModel.scopeSummary)"
         ])
+        if let sessionBindingSummary: String = viewModel.sessionBindingSummary {
+            lines.append("Session binding: \(sessionBindingSummary)")
+        }
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
         lines.append("Mutable executable allowed: \(viewModel.allowMutableExecutable ? "yes" : "no")")
         if operation == .itemDescribe {

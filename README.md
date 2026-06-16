@@ -127,7 +127,8 @@ agent-secret exec --reuse-only --profile terraform-cloudflare -- terraform plan
 Approve a bounded multi-command session and run commands through the wrapper:
 
 ```bash
-agent-secret session create --profile terraform-cloudflare --max-reads 2
+agent-secret session create --profile terraform-cloudflare --bind-parent \
+  --max-reads 2 --json=compact
 agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
 agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
@@ -139,9 +140,11 @@ agent-secret session destroy asid_123
 Keep the `session_token` returned by `session create` for `with-session`.
 Use the `session_id` returned by `session create` or shown by `session list`
 for inspection and cleanup. `session list` never shows session tokens.
-Session tokens are accepted only from the requester process tree that created
-the session, so create and use them inside the same task shell, wrapper script,
-or agent process tree.
+Session tokens are accepted only from the approved requester process tree. Use
+`--bind-parent` when a shell wrapper creates the session inside command
+substitution and later calls `with-session` from the parent shell.
+Advanced wrappers can use `--bind-ancestor N` up to `3`, but only ancestors of
+the current `agent-secret` process are accepted.
 
 Inspect item metadata without revealing values:
 
@@ -186,6 +189,8 @@ profiles:
   terraform-cloudflare:
     reason: Terraform DNS management
     ttl: 10m
+    session:
+      bind: parent
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
       STATE_TOKEN: op://Example/Terraform State/token
@@ -264,9 +269,9 @@ The launch build is intentionally narrow:
 
 - macOS on Apple Silicon only.
 - 1Password Desktop and Bitwarden Secrets Manager only; no other providers yet.
-- Sessions are bounded by requester process tree, cwd, TTL, read count, aliases,
-  background-helper memory, and `agent-secret with-session`; no long-lived
-  interactive shells.
+- Sessions are bounded by requester process tree or explicit ancestor binding,
+  cwd, TTL, read count, aliases, background-helper memory, and
+  `agent-secret with-session`; no long-lived interactive shells.
 - No writing, updating, or rotating secrets yet.
 - No GCP Secret Manager or GCP token minting support yet.
 - No sandbox guarantee after you approve a child process.

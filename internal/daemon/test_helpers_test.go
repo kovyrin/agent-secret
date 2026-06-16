@@ -273,7 +273,10 @@ func newTestBroker(t *testing.T, opts daemonbroker.Options) *daemonbroker.Broker
 
 type testSessionPeerAuthorizer struct{}
 
-func (testSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (daemonbroker.SessionPeerBinding, error) {
+func (testSessionPeerAuthorizer) BindSessionPeer(
+	peer peercred.Info,
+	policy request.SessionBindingPolicy,
+) (daemonbroker.SessionPeerBinding, error) {
 	return daemonbroker.SessionPeerBinding{
 		CreatorPeer: peer,
 		Anchor: peercred.ProcessIdentity{
@@ -283,6 +286,7 @@ func (testSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (daemonbrok
 			ExecutablePath: peer.ExecutablePath,
 			StartTime:      time.Unix(1, 0).UTC(),
 		},
+		Policy: policy,
 	}, nil
 }
 

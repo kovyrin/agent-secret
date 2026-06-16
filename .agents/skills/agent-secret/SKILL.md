@@ -107,7 +107,8 @@ Approve a bounded multi-command session:
 
 ```bash
 session_json="$(agent-secret session create \
-  --json \
+  --json=compact \
+  --bind-parent \
   --profile terraform-cloudflare \
   --max-reads 3)"
 session_id="$(printf '%s' "$session_json" |
@@ -140,13 +141,23 @@ process starts. Use `session destroy SESSION_ID` for one session or
 `session destroy --all` to clear every active session.
 
 Treat `session_token` as a short-lived secret capability bound to the requester
-process tree that created the session. Create and consume a session inside the
-same task shell, wrapper script, or agent process tree. Keep the token in a
-local shell variable only for the duration of the bounded workflow; do not write
-it to repo files, durable agent memory, PR comments, logs, `.env` files, or
-documentation. Keep the public `session_id` separately for cleanup. Prefer
+process tree that created the session. Use `--bind-parent` when the session is
+created inside command substitution and later used from the parent shell. Use
+`--bind-ancestor N` only for deeper wrappers; N must be 1..3 and Agent Secret
+only accepts ancestors of the current `agent-secret` process. Profiles can set:
+
+- `session.bind: parent`
+- `session.bind: auto`
+- `session.bind: { ancestor: N }`
+
+CLI binding flags override profile config. Keep the token in a local shell
+variable only for the duration of the bounded workflow; do not write it to repo
+files, durable agent memory, PR comments, logs, `.env` files, or documentation.
+Keep the public `session_id` separately for cleanup. Prefer
 `session destroy SESSION_ID` or `session destroy --all` when the workflow is
-done.
+done. If `with-session` reports a process mismatch, use the bound/requester
+process names, PIDs, and paths in the error to decide whether the session
+should be recreated with `--bind-parent`.
 
 Use a shell only when the shell is the command you actually want approved:
 
@@ -206,6 +217,8 @@ profiles:
   cloudflare:
     reason: Terraform DNS management
     ttl: 10m
+    session:
+      bind: parent
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
 
@@ -463,9 +476,11 @@ Before reporting success, prove the migrated path works:
   `--only` wrapper that filters aliases.
 - For session workflows, test `session create`, `session list`, at least one
   full `with-session` invocation, any `with-session --only` subsets, and
-  session exhaustion or `session destroy`. Run session create and session use
-  from the same task shell or wrapper script so the process-tree binding is
-  exercised. For product or release validation, run
+  session exhaustion or `session destroy`. Use `--json=compact` for shell
+  wrappers and verify `session list --json` includes `session_binding` metadata.
+  Run session create and session use from the same task shell or wrapper script
+  so the process-tree binding is exercised. For product or release validation,
+  run
   `docs/session-e2e-validation.md` and confirm the detached process-tree replay
   attempt is rejected before the child command starts.
 - For `--env-file` migrations, test that the real command receives both a

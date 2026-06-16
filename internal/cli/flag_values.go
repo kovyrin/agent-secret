@@ -1,11 +1,57 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/request"
 )
+
+type jsonOutputMode string
+
+const (
+	jsonOutputOff     jsonOutputMode = ""
+	jsonOutputPretty  jsonOutputMode = "pretty"
+	jsonOutputCompact jsonOutputMode = "compact"
+)
+
+func (m jsonOutputMode) enabled() bool {
+	return m == jsonOutputPretty || m == jsonOutputCompact
+}
+
+type jsonOutputFlag struct {
+	mode *jsonOutputMode
+}
+
+func registerJSONOutputFlag(fs *flag.FlagSet, mode *jsonOutputMode, usage string) {
+	fs.Var(jsonOutputFlag{mode: mode}, "json", usage)
+}
+
+func (f jsonOutputFlag) IsBoolFlag() bool {
+	return true
+}
+
+func (f jsonOutputFlag) String() string {
+	if f.mode == nil {
+		return string(jsonOutputOff)
+	}
+	return string(*f.mode)
+}
+
+func (f jsonOutputFlag) Set(value string) error {
+	switch strings.TrimSpace(value) {
+	case "", "true", "pretty":
+		*f.mode = jsonOutputPretty
+	case "compact":
+		*f.mode = jsonOutputCompact
+	case "false":
+		*f.mode = jsonOutputOff
+	default:
+		return fmt.Errorf("%w: --json accepts true, false, pretty, or compact", ErrInvalidArguments)
+	}
+	return nil
+}
 
 type secretFlags struct {
 	specs []request.SecretSpec

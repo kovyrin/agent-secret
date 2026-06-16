@@ -152,7 +152,7 @@ func (b *Broker) HandleSessionCreate(
 	if err := preflightRequiredAudit(ctx, b.audit); err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	peerBinding, err := b.sessionPeerAuthorizer.BindSessionPeer(peer)
+	peerBinding, err := b.sessionPeerAuthorizer.BindSessionPeer(peer, req.Binding)
 	if err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
@@ -165,7 +165,7 @@ func (b *Broker) HandleSessionCreate(
 	if err := recordRequiredAudit(sessionCtx, b.audit, audit.FromSessionCreateRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	decision, err := b.approver.Approve(sessionCtx, approval.NewSessionCreatePayload(correlation, req))
+	decision, err := b.approver.Approve(sessionCtx, approval.NewSessionCreatePayload(correlation, req, peerBinding.Info()))
 	if err != nil {
 		if auditErr := b.recordSessionCreateApprovalError(ctx, correlation.RequestID, req, err); auditErr != nil {
 			return protocol.SessionCreateResponsePayload{}, auditErr
@@ -865,6 +865,7 @@ func sessionCreatePayload(summary request.SessionSummary) protocol.SessionCreate
 		ExpiresAt:      summary.ExpiresAt,
 		MaxReads:       summary.MaxReads,
 		RemainingReads: summary.RemainingReads,
+		Binding:        summary.Binding,
 	}
 }
 
@@ -878,5 +879,6 @@ func sessionInfoPayload(summary request.SessionSummary) protocol.SessionInfoPayl
 		MaxReads:       summary.MaxReads,
 		RemainingReads: summary.RemainingReads,
 		OverrideEnv:    summary.OverrideEnv,
+		Binding:        summary.Binding,
 	}
 }
