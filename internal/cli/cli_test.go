@@ -1581,6 +1581,7 @@ func TestParseSessionCreateBindingFlagsOverrideProfile(t *testing.T) {
 	root := t.TempDir()
 	writeProfileConfig(t, root, `
 version: 1
+account: Example
 profiles:
   deploy:
     reason: Deploy workflow
