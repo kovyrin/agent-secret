@@ -156,6 +156,8 @@ func ancestorSessionPeerAnchor(
 		)
 	}
 	anchor := ancestry[depth]
+	// Explicit binding means exactly the requested ancestor depth. Unlike auto
+	// mode, it intentionally does not skip same-executable subshells.
 	if !isEligibleSessionPeerAnchor(peer, anchor) {
 		return peercred.ProcessIdentity{}, fmt.Errorf(
 			"%w: ancestor depth %d is not an eligible same-user non-launchd binding target: %s pid=%d path=%q",

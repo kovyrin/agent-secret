@@ -127,6 +127,20 @@ func TestNewSessionCreatePayloadIncludesBindingMetadata(t *testing.T) {
 	}
 }
 
+func TestNewSessionCreatePayloadOmitsZeroBindingMetadata(t *testing.T) {
+	t.Parallel()
+
+	payload := NewSessionCreatePayload(
+		protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"},
+		request.SessionCreateRequest{Reason: "deploy"},
+		request.SessionBindingInfo{},
+	)
+
+	if payload.SessionBinding != nil {
+		t.Fatalf("SessionBinding = %+v, want nil for zero-value metadata", payload.SessionBinding)
+	}
+}
+
 func TestValidateDecisionReusableUses(t *testing.T) {
 	t.Parallel()
 

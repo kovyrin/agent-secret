@@ -151,8 +151,15 @@ func NewSessionCreatePayload(
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      []string{},
 		ReusableUses:           1,
-		SessionBinding:         &binding,
+		SessionBinding:         sessionBindingPointer(binding),
 	}
+}
+
+func sessionBindingPointer(binding request.SessionBindingInfo) *request.SessionBindingInfo {
+	if binding.Mode == "" && binding.BoundProcess.PID == 0 && binding.CreatorProcess.PID == 0 {
+		return nil
+	}
+	return &binding
 }
 
 func ValidateDecision(decision ApprovalDecisionPayload, expectedReusableUses int, allowsReusable bool) error {
