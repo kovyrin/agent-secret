@@ -253,6 +253,7 @@ func (s sessionRecord) summary() request.SessionSummary {
 		MaxReads:       s.MaxReads,
 		RemainingReads: s.remainingReads(),
 		OverrideEnv:    s.OverrideEnv,
+		Binding:        s.PeerBinding.Info(),
 	}
 }
 

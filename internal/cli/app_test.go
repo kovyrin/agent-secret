@@ -46,6 +46,24 @@ func newTestAppWithDaemonManager(manager daemonManager, stdout io.Writer, stderr
 	return app
 }
 
+func testSessionBindingInfo() request.SessionBindingInfo {
+	return request.SessionBindingInfo{
+		Mode:          request.SessionBindingModeAncestor,
+		AncestorDepth: 1,
+		BoundProcess: request.SessionBindingProcess{
+			PID:       501,
+			ParentPID: 1,
+			Name:      "zsh",
+			Path:      "/bin/zsh",
+		},
+		CreatorProcess: request.SessionBindingProcess{
+			PID:  502,
+			Name: "agent-secret",
+			Path: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		},
+	}
+}
+
 func runConfigProfileExec(
 	t *testing.T,
 	app App,
@@ -185,6 +203,7 @@ profiles:
 			ExpiresAt:      expiresAt,
 			MaxReads:       2,
 			RemainingReads: 2,
+			Binding:        testSessionBindingInfo(),
 		},
 	}
 	manager := &appFakeDaemonManager{
@@ -201,7 +220,7 @@ profiles:
 		"create",
 		"--account", "Work",
 		"--max-reads", "2",
-		"--json",
+		"--json=compact",
 	})
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
@@ -223,6 +242,12 @@ profiles:
 	if got.SessionID != "asid_test" || got.SessionToken != "astok_test" || got.RemainingReads != 2 || got.MaxReads != 2 {
 		t.Fatalf("session create json = %+v", got)
 	}
+	if got.Binding.BoundProcess.Name != "zsh" || got.Binding.BoundProcess.PID != 501 {
+		t.Fatalf("session create binding = %+v", got.Binding)
+	}
+	if strings.Count(stdout.String(), "\n") != 1 {
+		t.Fatalf("compact json should be one line, stdout=%q", stdout.String())
+	}
 	if strings.Contains(stdout.String(), "synthetic-secret-value") || strings.Contains(stderr.String(), "synthetic-secret-value") {
 		t.Fatalf("session create leaked secret: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
@@ -240,6 +265,7 @@ func TestAppSessionCreatePrintsText(t *testing.T) {
 			ExpiresAt:      expiresAt,
 			MaxReads:       1,
 			RemainingReads: 1,
+			Binding:        testSessionBindingInfo(),
 		},
 	}
 	manager := &appFakeDaemonManager{
@@ -261,7 +287,7 @@ func TestAppSessionCreatePrintsText(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	for _, want := range []string{"session id: asid_text", "session token: astok_text", "reads: 1/1 remaining", "secrets: TOKEN"} {
+	for _, want := range []string{"session id: asid_text", "session token: astok_text", "reads: 1/1 remaining", "secrets: TOKEN", "bound process: zsh pid=501"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("session create stdout = %q, want %q", stdout.String(), want)
 		}
@@ -285,6 +311,7 @@ func TestAppSessionList(t *testing.T) {
 					ExpiresAt:      expiresAt,
 					MaxReads:       2,
 					RemainingReads: 1,
+					Binding:        testSessionBindingInfo(),
 				}},
 			},
 		}
@@ -304,7 +331,7 @@ func TestAppSessionList(t *testing.T) {
 		if client.sessionListCalls != 1 || client.closeCalls != 1 {
 			t.Fatalf("client calls: list=%d close=%d", client.sessionListCalls, client.closeCalls)
 		}
-		for _, want := range []string{"asid_test", "reads=1/2", "cwd=/tmp/project", "secrets=TOKEN", "reason=Deploy workflow"} {
+		for _, want := range []string{"asid_test", "reads=1/2", "cwd=/tmp/project", "secrets=TOKEN", "reason=Deploy workflow", "bound=zsh pid=501"} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("session list stdout = %q, want %q", stdout.String(), want)
 			}
@@ -329,6 +356,7 @@ func TestAppSessionList(t *testing.T) {
 					ExpiresAt:      expiresAt,
 					MaxReads:       2,
 					RemainingReads: 1,
+					Binding:        testSessionBindingInfo(),
 				}},
 			},
 		}
@@ -352,7 +380,8 @@ func TestAppSessionList(t *testing.T) {
 		if len(got.Sessions) != 1 ||
 			got.Sessions[0].SessionID != "asid_test" ||
 			got.Sessions[0].CWD != "/tmp/project" ||
-			got.Sessions[0].RemainingReads != 1 {
+			got.Sessions[0].RemainingReads != 1 ||
+			got.Sessions[0].Binding.BoundProcess.Name != "zsh" {
 			t.Fatalf("session list json = %+v", got)
 		}
 		if strings.Contains(stdout.String(), "session_token") || strings.Contains(stdout.String(), "astok_") {
@@ -3282,7 +3311,10 @@ func (appAllowPeer) Validate(_ *net.UnixConn) error {
 
 type appSessionPeerAuthorizer struct{}
 
-func (appSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (daemonbroker.SessionPeerBinding, error) {
+func (appSessionPeerAuthorizer) BindSessionPeer(
+	peer peercred.Info,
+	policy request.SessionBindingPolicy,
+) (daemonbroker.SessionPeerBinding, error) {
 	return daemonbroker.SessionPeerBinding{
 		CreatorPeer: peer,
 		Anchor: peercred.ProcessIdentity{
@@ -3292,6 +3324,7 @@ func (appSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (daemonbroke
 			ExecutablePath: peer.ExecutablePath,
 			StartTime:      time.Unix(1, 0).UTC(),
 		},
+		Policy: policy,
 	}, nil
 }
 

@@ -11,18 +11,20 @@ import (
 )
 
 type sessionCreateFlags struct {
-	reason      string
-	cwd         string
-	ttl         time.Duration
-	maxReads    int
-	profileName string
-	configPath  string
-	account     string
-	overrideEnv bool
-	json        bool
-	secrets     secretFlags
-	only        onlyFlags
-	envFiles    envFileFlags
+	reason       string
+	cwd          string
+	ttl          time.Duration
+	maxReads     int
+	profileName  string
+	configPath   string
+	account      string
+	overrideEnv  bool
+	bindParent   bool
+	bindAncestor int
+	jsonMode     jsonOutputMode
+	secrets      secretFlags
+	only         onlyFlags
+	envFiles     envFileFlags
 }
 
 type withSessionFlags struct {
@@ -61,7 +63,9 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 	fs.StringVar(&flags.configPath, "config", "", "profile config path")
 	fs.StringVar(&flags.account, "account", "", "1Password account")
 	fs.BoolVar(&flags.overrideEnv, "override-env", false, "allow with-session to override existing env aliases")
-	fs.BoolVar(&flags.json, "json", false, "print json")
+	fs.BoolVar(&flags.bindParent, "bind-parent", false, "bind session to the parent of this agent-secret process")
+	fs.IntVar(&flags.bindAncestor, "bind-ancestor", 0, "bind session to an ancestor process depth 1..3")
+	registerJSONOutputFlag(fs, &flags.jsonMode, "print json; use --json=compact for one-line output")
 	fs.Var(&flags.secrets, "secret", "secret mapping")
 	fs.Var(&flags.only, "only", "profile alias filter")
 	fs.Var(&flags.envFiles, "env-file", "dotenv env file")
@@ -70,6 +74,16 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 	}
 	if fs.NArg() != 0 {
 		return Command{}, fmt.Errorf("%w: session create does not accept a child command", ErrInvalidArguments)
+	}
+	bindAncestorSet := false
+	fs.Visit(func(flag *flag.Flag) {
+		if flag.Name == "bind-ancestor" {
+			bindAncestorSet = true
+		}
+	})
+	binding, err := sessionCreateBinding(flags, bindAncestorSet)
+	if err != nil {
+		return Command{}, err
 	}
 
 	inputs, err := p.resolveExecInputs(execFlags{
@@ -87,6 +101,9 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
+	if !bindAncestorSet && !flags.bindParent && inputs.sessionBindingProfile {
+		binding = inputs.sessionBinding
+	}
 	req, err := buildSessionCreateRequest(sessionCreateRequestBuildOptions{
 		reason:      inputs.reason,
 		command:     []string{"agent-secret", "session", "create"},
@@ -95,30 +112,38 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 		ttl:         inputs.ttl,
 		maxReads:    flags.maxReads,
 		overrideEnv: flags.overrideEnv,
+		binding:     binding,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build session create request: %w", err)
 	}
-	return Command{Kind: KindSessionCreate, OutputJSON: flags.json, SessionCreateRequest: req}, nil
+	return Command{
+		Kind:                 KindSessionCreate,
+		OutputJSON:           flags.jsonMode.enabled(),
+		OutputJSONCompact:    flags.jsonMode == jsonOutputCompact,
+		SessionCreateRequest: req,
+	}, nil
 }
 
 func parseSessionList(args []string) (Command, error) {
 	fs := flag.NewFlagSet("session list", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	jsonOutput := fs.Bool("json", false, "print json")
+	var jsonMode jsonOutputMode
+	registerJSONOutputFlag(fs, &jsonMode, "print json; use --json=compact for one-line output")
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
 	}
 	if fs.NArg() != 0 {
 		return Command{}, fmt.Errorf("%w: session list does not accept arguments", ErrInvalidArguments)
 	}
-	return Command{Kind: KindSessionList, OutputJSON: *jsonOutput}, nil
+	return Command{Kind: KindSessionList, OutputJSON: jsonMode.enabled(), OutputJSONCompact: jsonMode == jsonOutputCompact}, nil
 }
 
 func parseSessionDestroy(args []string) (Command, error) {
 	fs := flag.NewFlagSet("session destroy", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	jsonOutput := fs.Bool("json", false, "print json")
+	var jsonMode jsonOutputMode
+	registerJSONOutputFlag(fs, &jsonMode, "print json; use --json=compact for one-line output")
 	all := fs.Bool("all", false, "destroy all active sessions")
 	if err := fs.Parse(args); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
@@ -127,7 +152,12 @@ func parseSessionDestroy(args []string) (Command, error) {
 		if fs.NArg() != 0 {
 			return Command{}, fmt.Errorf("%w: session destroy --all does not accept a session id", ErrInvalidArguments)
 		}
-		return Command{Kind: KindSessionDestroy, OutputJSON: *jsonOutput, SessionDestroyRequest: request.NewSessionDestroyAll()}, nil
+		return Command{
+			Kind:                  KindSessionDestroy,
+			OutputJSON:            jsonMode.enabled(),
+			OutputJSONCompact:     jsonMode == jsonOutputCompact,
+			SessionDestroyRequest: request.NewSessionDestroyAll(),
+		}, nil
 	}
 	if fs.NArg() != 1 {
 		return Command{}, fmt.Errorf("%w: session destroy requires one session id", ErrInvalidArguments)
@@ -136,7 +166,33 @@ func parseSessionDestroy(args []string) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	return Command{Kind: KindSessionDestroy, OutputJSON: *jsonOutput, SessionDestroyRequest: req}, nil
+	return Command{
+		Kind:                  KindSessionDestroy,
+		OutputJSON:            jsonMode.enabled(),
+		OutputJSONCompact:     jsonMode == jsonOutputCompact,
+		SessionDestroyRequest: req,
+	}, nil
+}
+
+func sessionCreateBinding(flags sessionCreateFlags, bindAncestorSet bool) (request.SessionBindingPolicy, error) {
+	if flags.bindParent && bindAncestorSet {
+		return request.SessionBindingPolicy{}, fmt.Errorf("%w: use either --bind-parent or --bind-ancestor", ErrInvalidArguments)
+	}
+	if flags.bindParent {
+		policy, err := request.NewSessionAncestorBinding(1)
+		if err != nil {
+			return request.SessionBindingPolicy{}, err
+		}
+		return policy, nil
+	}
+	if bindAncestorSet {
+		policy, err := request.NewSessionAncestorBinding(flags.bindAncestor)
+		if err != nil {
+			return request.SessionBindingPolicy{}, err
+		}
+		return policy, nil
+	}
+	return request.DefaultSessionBindingPolicy(), nil
 }
 
 func (p Parser) parseWithSession(args []string) (Command, error) {

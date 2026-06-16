@@ -86,6 +86,8 @@ profiles:
   session-e2e:
     reason: Agent Secret session E2E multi-secret validation
     ttl: 2m
+    session:
+      bind: parent
     secrets:
       SESSION_E2E_PROFILE_TOKEN: "$profile_ref"
 YAML
@@ -113,7 +115,7 @@ run_with_session() {
 
 SESSION_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
-    --json \
+    --json=compact \
     --profile session-e2e \
     --secret "SESSION_E2E_CLI_TOKEN=$cli_ref" \
     --max-reads 5)"
@@ -123,7 +125,7 @@ SESSION_TOKEN="$(printf '%s' "$SESSION_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
 printf 'created mixed config+CLI session: %s\n' "$SESSION_ID"
 
-agent-secret session list --json |
+agent-secret session list --json=compact |
   python3 -c 'import os, json, sys
 session_id = sys.argv[1]
 data = json.load(sys.stdin)
@@ -138,7 +140,12 @@ matches = [
 assert len(matches) >= 1, data
 assert matches[0]["cwd"] == os.getcwd(), matches[0]
 assert "session_token" not in matches[0], matches[0]
-print("session list ok")' "$SESSION_ID"
+binding = matches[0]["session_binding"]
+assert binding["mode"] == "ancestor", binding
+assert binding["ancestor_depth"] == 1, binding
+assert binding["bound_process"]["pid"] > 1, binding
+assert binding["bound_process"]["path"], binding
+print("session list and binding metadata ok")' "$SESSION_ID"
 
 run_with_session "$SESSION_TOKEN" \
   --allow-mutable-executable \
@@ -237,7 +244,7 @@ run_with_session "$SESSION_TOKEN" \
   --allow-mutable-executable \
   -- python3 -c "$check_py" both
 
-agent-secret session list --json |
+agent-secret session list --json=compact |
   python3 -c 'import os, json, sys
 session_id = sys.argv[1]
 data = json.load(sys.stdin)
@@ -274,9 +281,10 @@ SESSION_TOKEN=""
 
 EXHAUST_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
-    --json \
+    --json=compact \
     --profile session-e2e \
     --secret "SESSION_E2E_CLI_TOKEN=$cli_ref" \
+    --bind-ancestor 1 \
     --max-reads 1)"
 EXHAUST_ID="$(printf '%s' "$EXHAUST_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
@@ -354,7 +362,7 @@ The exact session IDs vary, but a passing run prints these checkpoints:
 
 ```text
 created mixed config+CLI session: asid_...
-session list ok
+session list and binding metadata ok
 full ok
 profile ok
 detached process-tree replay rejected before child spawn
@@ -375,8 +383,13 @@ session E2E ok
 This E2E run proves:
 
 - `session create` accepts secrets from a project config profile and CLI args.
+- `session create` accepts `session.bind: parent` from profile config and
+  explicit `--bind-ancestor 1` from CLI flags.
+- `session create`, `session list`, and JSON parsing work with
+  `--json=compact`.
 - `session list` shows public session IDs and working directories for active
-  sessions without values or session tokens.
+  sessions without values or session tokens, and includes non-secret binding
+  metadata.
 - `with-session` injects the full approved bag when `--only` is omitted.
 - `with-session --only` injects config-only, CLI-only, and combined subsets.
 - `with-session` accepts session tokens from the same requester process tree

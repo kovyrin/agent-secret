@@ -2,10 +2,12 @@ package broker
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 func TestProcessTreeSessionPeerAuthorizerAllowsRequesterTreeSiblings(t *testing.T) {
@@ -28,7 +30,7 @@ func TestProcessTreeSessionPeerAuthorizerAllowsRequesterTreeSiblings(t *testing.
 	}
 	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
 
-	binding, err := authorizer.BindSessionPeer(creator)
+	binding, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy())
 	if err != nil {
 		t.Fatalf("BindSessionPeer returned error: %v", err)
 	}
@@ -62,7 +64,7 @@ func TestProcessTreeSessionPeerAuthorizerSkipsSameExecutableSubshellAnchor(t *te
 	}
 	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
 
-	binding, err := authorizer.BindSessionPeer(creator)
+	binding, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy())
 	if err != nil {
 		t.Fatalf("BindSessionPeer returned error: %v", err)
 	}
@@ -100,7 +102,7 @@ func TestProcessTreeSessionPeerAuthorizerSkipsSameExecutableSubshellAcrossInelig
 	}
 	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
 
-	binding, err := authorizer.BindSessionPeer(creator)
+	binding, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy())
 	if err != nil {
 		t.Fatalf("BindSessionPeer returned error: %v", err)
 	}
@@ -109,6 +111,101 @@ func TestProcessTreeSessionPeerAuthorizerSkipsSameExecutableSubshellAcrossInelig
 	}
 	if err := authorizer.ValidateSessionPeer(binding, caller); err != nil {
 		t.Fatalf("ValidateSessionPeer returned error for task shell sibling: %v", err)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerBindsExplicitParent(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	subShell := testProcessIdentity(501, 500, "/bin/bash")
+	taskShell := testProcessIdentity(500, 1, "/bin/bash")
+	lookup := map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, subShell.PID, creator.ExecutablePath),
+			subShell,
+			taskShell,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	}
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
+	policy, err := request.NewSessionAncestorBinding(1)
+	if err != nil {
+		t.Fatalf("NewSessionAncestorBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	if binding.Anchor.PID != subShell.PID {
+		t.Fatalf("binding anchor pid = %d, want explicit parent pid %d", binding.Anchor.PID, subShell.PID)
+	}
+	if binding.Policy != policy {
+		t.Fatalf("binding policy = %+v, want %+v", binding.Policy, policy)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerBindsExplicitAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	subShell := testProcessIdentity(501, 500, "/bin/zsh")
+	agent := testProcessIdentity(500, 400, "/Applications/Codex.app/Contents/MacOS/Codex")
+	terminal := testProcessIdentity(400, 1, "/Applications/iTerm.app/Contents/MacOS/iTerm2")
+	lookup := map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, subShell.PID, creator.ExecutablePath),
+			subShell,
+			agent,
+			terminal,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	}
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
+	policy, err := request.NewSessionAncestorBinding(2)
+	if err != nil {
+		t.Fatalf("NewSessionAncestorBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	if binding.Anchor.PID != agent.PID {
+		t.Fatalf("binding anchor pid = %d, want explicit ancestor pid %d", binding.Anchor.PID, agent.PID)
+	}
+	info := binding.Info()
+	if info.Mode != request.SessionBindingModeAncestor ||
+		info.AncestorDepth != 2 ||
+		info.BoundProcess.PID != agent.PID ||
+		info.BoundProcess.Name != "Codex" ||
+		info.CreatorProcess.PID != creator.PID {
+		t.Fatalf("binding info = %+v", info)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerRejectsIneligibleExplicitAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	rootParent := testProcessIdentity(500, 1, "/bin/zsh")
+	rootParent.UID = 0
+	rootParent.GID = 0
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, rootParent.PID, creator.ExecutablePath),
+			rootParent,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorBinding(1)
+	if err != nil {
+		t.Fatalf("NewSessionAncestorBinding returned error: %v", err)
+	}
+
+	if _, err := authorizer.BindSessionPeer(creator, policy); !errors.Is(err, ErrSessionPeerMismatch) {
+		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
 	}
 }
 
@@ -137,7 +234,7 @@ func TestProcessTreeSessionPeerAuthorizerAllowsPartialCallerAncestryWhenAnchorWa
 		}
 	}}
 
-	binding, err := authorizer.BindSessionPeer(creator)
+	binding, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy())
 	if err != nil {
 		t.Fatalf("BindSessionPeer returned error: %v", err)
 	}
@@ -172,12 +269,14 @@ func TestProcessTreeSessionPeerAuthorizerRejectsPartialCallerAncestryWhenAnchorW
 		}
 	}}
 
-	binding, err := authorizer.BindSessionPeer(creator)
+	binding, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy())
 	if err != nil {
 		t.Fatalf("BindSessionPeer returned error: %v", err)
 	}
 	if err := authorizer.ValidateSessionPeer(binding, caller); !errors.Is(err, ErrSessionPeerMismatch) {
 		t.Fatalf("ValidateSessionPeer error = %v, want ErrSessionPeerMismatch", err)
+	} else if !strings.Contains(err.Error(), "process exited while walking ancestry") {
+		t.Fatalf("ValidateSessionPeer error = %q, want caller ancestry inspection failure", err.Error())
 	}
 }
 
@@ -202,7 +301,7 @@ func TestProcessTreeSessionPeerAuthorizerRejectsUnrelatedTree(t *testing.T) {
 	}
 	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
 
-	binding, err := authorizer.BindSessionPeer(creator)
+	binding, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy())
 	if err != nil {
 		t.Fatalf("BindSessionPeer returned error: %v", err)
 	}
@@ -222,7 +321,7 @@ func TestProcessTreeSessionPeerAuthorizerDoesNotUseLaunchdAsAnchor(t *testing.T)
 		},
 	})}
 
-	if _, err := authorizer.BindSessionPeer(creator); !errors.Is(err, ErrSessionPeerMismatch) {
+	if _, err := authorizer.BindSessionPeer(creator, request.DefaultSessionBindingPolicy()); !errors.Is(err, ErrSessionPeerMismatch) {
 		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
 	}
 }

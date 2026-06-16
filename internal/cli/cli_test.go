@@ -1487,6 +1487,13 @@ func TestParseSessionListDestroyAndHelp(t *testing.T) {
 	if listCommand.Kind != KindSessionList || !listCommand.OutputJSON {
 		t.Fatalf("session list command = %+v", listCommand)
 	}
+	compactListCommand, err := parser.Parse([]string{"session", "list", "--json=compact"})
+	if err != nil {
+		t.Fatalf("Parse compact session list returned error: %v", err)
+	}
+	if compactListCommand.Kind != KindSessionList || !compactListCommand.OutputJSON || !compactListCommand.OutputJSONCompact {
+		t.Fatalf("compact session list command = %+v", compactListCommand)
+	}
 
 	destroyCommand, err := parser.Parse([]string{"session", "destroy", "--json", "asid_abc123"})
 	if err != nil {
@@ -1531,6 +1538,9 @@ profiles:
     secrets:
       A_TOKEN: op://Example/A/token
       B_TOKEN: op://Example/B/token
+    session:
+      bind:
+        ancestor: 2
 `)
 	t.Chdir(root)
 
@@ -1540,12 +1550,12 @@ profiles:
 		"--profile", "deploy",
 		"--secret", "CLI_TOKEN=op://Example/CLI/token",
 		"--max-reads", "3",
-		"--json",
+		"--json=compact",
 	})
 	if err != nil {
 		t.Fatalf("Parse session create returned error: %v", err)
 	}
-	if command.Kind != KindSessionCreate || !command.OutputJSON {
+	if command.Kind != KindSessionCreate || !command.OutputJSON || !command.OutputJSONCompact {
 		t.Fatalf("command = %+v, want session create json", command)
 	}
 	req := command.SessionCreateRequest
@@ -1561,6 +1571,53 @@ profiles:
 	}
 	if strings.Join(aliases, ",") != "A_TOKEN,B_TOKEN,CLI_TOKEN" {
 		t.Fatalf("secret aliases = %v", aliases)
+	}
+	if req.Binding.Mode != request.SessionBindingModeAncestor || req.Binding.AncestorDepth != 2 {
+		t.Fatalf("session binding = %+v, want profile ancestor 2", req.Binding)
+	}
+}
+
+func TestParseSessionCreateBindingFlagsOverrideProfile(t *testing.T) {
+	root := t.TempDir()
+	writeProfileConfig(t, root, `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy workflow
+    session:
+      bind:
+        ancestor: 3
+    secrets:
+      TOKEN: op://Example/Item/token
+`)
+	t.Chdir(root)
+
+	command, err := NewParser().Parse([]string{
+		"session",
+		"create",
+		"--profile", "deploy",
+		"--bind-parent",
+	})
+	if err != nil {
+		t.Fatalf("Parse session create returned error: %v", err)
+	}
+	if command.SessionCreateRequest.Binding.Mode != request.SessionBindingModeAncestor ||
+		command.SessionCreateRequest.Binding.AncestorDepth != 1 {
+		t.Fatalf("binding = %+v, want --bind-parent override", command.SessionCreateRequest.Binding)
+	}
+
+	command, err = NewParser().Parse([]string{
+		"session",
+		"create",
+		"--profile", "deploy",
+		"--bind-ancestor", "2",
+	})
+	if err != nil {
+		t.Fatalf("Parse session create with ancestor returned error: %v", err)
+	}
+	if command.SessionCreateRequest.Binding.Mode != request.SessionBindingModeAncestor ||
+		command.SessionCreateRequest.Binding.AncestorDepth != 2 {
+		t.Fatalf("binding = %+v, want --bind-ancestor 2 override", command.SessionCreateRequest.Binding)
 	}
 }
 
@@ -1609,6 +1666,9 @@ func TestParseSessionRejectsInvalidForms(t *testing.T) {
 		{name: "destroy missing id", args: []string{"session", "destroy"}, want: ErrInvalidArguments},
 		{name: "destroy bad id", args: []string{"session", "destroy", "bad"}, want: request.ErrInvalidSessionID},
 		{name: "destroy all with id", args: []string{"session", "destroy", "--all", "asid_abc"}, want: ErrInvalidArguments},
+		{name: "create conflicting bind flags", args: []string{"session", "create", "--bind-parent", "--bind-ancestor", "2", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
+		{name: "create bad bind depth", args: []string{"session", "create", "--bind-ancestor", "4", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: request.ErrInvalidSessionBind},
+		{name: "create bad json mode", args: []string{"session", "create", "--json=ndjson", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
 		{name: "with-session public id", args: []string{"with-session", "asid_abc", "--", "tool"}, want: request.ErrInvalidSessionToken},
 		{name: "with-session missing boundary", args: []string{"with-session", "astok_abc", "tool"}, want: ErrShellStringCommand},
 		{name: "with-session missing command", args: []string{"with-session", "astok_abc", "--"}, want: ErrShellStringCommand},

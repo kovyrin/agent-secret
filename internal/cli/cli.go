@@ -45,6 +45,7 @@ const (
 type Command struct {
 	Kind                  Kind
 	OutputJSON            bool
+	OutputJSONCompact     bool
 	ExecRequest           request.ExecRequest
 	ExecEnv               []string
 	ExecDryRun            bool
@@ -62,6 +63,16 @@ type Command struct {
 	InstallSkillOptions   install.SkillOptions
 	HelpText              string
 	VersionText           string
+}
+
+func (c Command) jsonOutputMode() jsonOutputMode {
+	if !c.OutputJSON {
+		return jsonOutputOff
+	}
+	if c.OutputJSONCompact {
+		return jsonOutputCompact
+	}
+	return jsonOutputPretty
 }
 
 type Parser struct {

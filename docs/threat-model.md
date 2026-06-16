@@ -2,7 +2,7 @@
 
 Status: living review contract.
 
-Last reviewed: 2026-06-07.
+Last reviewed: 2026-06-16.
 
 ## Purpose
 
@@ -108,7 +108,9 @@ Agent Secret must meet these goals:
   cached raw values when exhausted, expired, or rolled back.
 - Bounded session tokens are returned only at `session create` time, are not
   enumerable through session listing, and are usable only from the requester
-  process tree that created the session.
+  process tree selected at session creation. Explicit parent or ancestor
+  bindings can target only ancestors of the current `agent-secret` process, not
+  arbitrary PIDs.
 - The daemon accepts exec and stop requests only from trusted Agent Secret CLI
   executables.
 - The CLI accepts secret-bearing responses only from a trusted Agent Secret

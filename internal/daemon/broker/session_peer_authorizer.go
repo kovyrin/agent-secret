@@ -5,16 +5,59 @@ import (
 	"path/filepath"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/request"
 )
 
 type SessionPeerAuthorizer interface {
-	BindSessionPeer(peer peercred.Info) (SessionPeerBinding, error)
+	BindSessionPeer(peer peercred.Info, policy request.SessionBindingPolicy) (SessionPeerBinding, error)
 	ValidateSessionPeer(binding SessionPeerBinding, peer peercred.Info) error
 }
 
 type SessionPeerBinding struct {
 	CreatorPeer peercred.Info
 	Anchor      peercred.ProcessIdentity
+	Policy      request.SessionBindingPolicy
+}
+
+func (b SessionPeerBinding) Info() request.SessionBindingInfo {
+	return request.SessionBindingInfo{
+		Mode:          b.Policy.Mode,
+		AncestorDepth: b.Policy.AncestorDepth,
+		BoundProcess:  processInfoFromIdentity(b.Anchor),
+		CreatorProcess: request.SessionBindingProcess{
+			PID:  b.CreatorPeer.PID,
+			Name: processName(b.CreatorPeer.ExecutablePath),
+			Path: b.CreatorPeer.ExecutablePath,
+		},
+	}
+}
+
+type SessionPeerMismatchError struct {
+	Bound     request.SessionBindingProcess
+	Requester request.SessionBindingProcess
+	Reason    string
+}
+
+func (e *SessionPeerMismatchError) Error() string {
+	reason := e.Reason
+	if reason == "" {
+		reason = "requester ancestry does not include the approved session binding"
+	}
+	return fmt.Sprintf(
+		"%s: %s; bound_process=%s pid=%d path=%q; requester=%s pid=%d path=%q; recreate the session from the shell or agent process tree that will run with-session, or use --bind-parent / --bind-ancestor N",
+		ErrSessionPeerMismatch,
+		reason,
+		e.Bound.Name,
+		e.Bound.PID,
+		e.Bound.Path,
+		e.Requester.Name,
+		e.Requester.PID,
+		e.Requester.Path,
+	)
+}
+
+func (e *SessionPeerMismatchError) Unwrap() error {
+	return ErrSessionPeerMismatch
 }
 
 type processTreeSessionPeerAuthorizer struct {
@@ -25,18 +68,26 @@ func newProcessTreeSessionPeerAuthorizer() processTreeSessionPeerAuthorizer {
 	return processTreeSessionPeerAuthorizer{processAncestry: peercred.ProcessAncestry}
 }
 
-func (a processTreeSessionPeerAuthorizer) BindSessionPeer(peer peercred.Info) (SessionPeerBinding, error) {
+func (a processTreeSessionPeerAuthorizer) BindSessionPeer(
+	peer peercred.Info,
+	policy request.SessionBindingPolicy,
+) (SessionPeerBinding, error) {
+	policy, err := request.NormalizeSessionBindingPolicy(policy)
+	if err != nil {
+		return SessionPeerBinding{}, err
+	}
 	ancestry, err := a.processAncestry(peer.PID)
 	if err != nil {
 		return SessionPeerBinding{}, fmt.Errorf("%w: inspect session creator process tree: %w", ErrSessionPeerMismatch, err)
 	}
-	anchor, err := sessionPeerAnchor(peer, ancestry)
+	anchor, err := sessionPeerAnchor(peer, ancestry, policy)
 	if err != nil {
 		return SessionPeerBinding{}, err
 	}
 	return SessionPeerBinding{
 		CreatorPeer: peer,
 		Anchor:      anchor,
+		Policy:      policy,
 	}, nil
 }
 
@@ -54,18 +105,31 @@ func (a processTreeSessionPeerAuthorizer) ValidateSessionPeer(
 	if err != nil {
 		return fmt.Errorf("%w: inspect session caller process tree: %w", ErrSessionPeerMismatch, err)
 	}
-	return fmt.Errorf(
-		"%w: caller pid %d is not in the approved requester process tree rooted at pid %d",
-		ErrSessionPeerMismatch,
-		peer.PID,
-		binding.Anchor.PID,
-	)
+	return &SessionPeerMismatchError{
+		Bound:     processInfoFromIdentity(binding.Anchor),
+		Requester: processInfoFromPeer(peer),
+	}
 }
 
-func sessionPeerAnchor(peer peercred.Info, ancestry []peercred.ProcessIdentity) (peercred.ProcessIdentity, error) {
+func sessionPeerAnchor(
+	peer peercred.Info,
+	ancestry []peercred.ProcessIdentity,
+	policy request.SessionBindingPolicy,
+) (peercred.ProcessIdentity, error) {
 	if len(ancestry) == 0 || ancestry[0].PID != peer.PID {
 		return peercred.ProcessIdentity{}, fmt.Errorf("%w: session creator process tree does not start at pid %d", ErrSessionPeerMismatch, peer.PID)
 	}
+	switch policy.Mode {
+	case request.SessionBindingModeAuto:
+		return automaticSessionPeerAnchor(peer, ancestry)
+	case request.SessionBindingModeAncestor:
+		return ancestorSessionPeerAnchor(peer, ancestry, policy.AncestorDepth)
+	default:
+		return peercred.ProcessIdentity{}, fmt.Errorf("%w: unknown binding mode %q", request.ErrInvalidSessionBind, policy.Mode)
+	}
+}
+
+func automaticSessionPeerAnchor(peer peercred.Info, ancestry []peercred.ProcessIdentity) (peercred.ProcessIdentity, error) {
 	for i := 1; i < len(ancestry); i++ {
 		candidate := ancestry[i]
 		if isEligibleSessionPeerAnchor(peer, candidate) {
@@ -77,6 +141,32 @@ func sessionPeerAnchor(peer peercred.Info, ancestry []peercred.ProcessIdentity) 
 		}
 	}
 	return peercred.ProcessIdentity{}, fmt.Errorf("%w: session creator has no stable requester parent", ErrSessionPeerMismatch)
+}
+
+func ancestorSessionPeerAnchor(
+	peer peercred.Info,
+	ancestry []peercred.ProcessIdentity,
+	depth int,
+) (peercred.ProcessIdentity, error) {
+	if depth < 1 || depth >= len(ancestry) {
+		return peercred.ProcessIdentity{}, fmt.Errorf(
+			"%w: session creator does not have ancestor depth %d",
+			ErrSessionPeerMismatch,
+			depth,
+		)
+	}
+	anchor := ancestry[depth]
+	if !isEligibleSessionPeerAnchor(peer, anchor) {
+		return peercred.ProcessIdentity{}, fmt.Errorf(
+			"%w: ancestor depth %d is not an eligible same-user non-launchd binding target: %s pid=%d path=%q",
+			ErrSessionPeerMismatch,
+			depth,
+			processName(anchor.ExecutablePath),
+			anchor.PID,
+			anchor.ExecutablePath,
+		)
+	}
+	return anchor, nil
 }
 
 func isEligibleSessionPeerAnchor(peer peercred.Info, candidate peercred.ProcessIdentity) bool {
@@ -120,4 +210,32 @@ func sameProcessIdentity(a peercred.ProcessIdentity, b peercred.ProcessIdentity)
 		a.GID == b.GID &&
 		a.StartTime.Equal(b.StartTime) &&
 		a.ExecutablePath == b.ExecutablePath
+}
+
+func processInfoFromIdentity(identity peercred.ProcessIdentity) request.SessionBindingProcess {
+	return request.SessionBindingProcess{
+		PID:       identity.PID,
+		ParentPID: identity.ParentPID,
+		Name:      processName(identity.ExecutablePath),
+		Path:      identity.ExecutablePath,
+	}
+}
+
+func processInfoFromPeer(peer peercred.Info) request.SessionBindingProcess {
+	return request.SessionBindingProcess{
+		PID:  peer.PID,
+		Name: processName(peer.ExecutablePath),
+		Path: peer.ExecutablePath,
+	}
+}
+
+func processName(path string) string {
+	if path == "" {
+		return "unknown"
+	}
+	name := filepath.Base(path)
+	if name == "." || name == string(filepath.Separator) {
+		return path
+	}
+	return name
 }

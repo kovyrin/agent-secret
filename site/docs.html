@@ -48,7 +48,7 @@
           Secrets Manager, keep references in project profiles, and validate
           requests without printing secret values.
         </p>
-        <p class="legal-date">Last updated: June 9, 2026</p>
+        <p class="legal-date">Last updated: June 16, 2026</p>
       </section>
 
       <div class="docs-layout">
@@ -192,6 +192,8 @@ profiles:
     account: Example Corp
     reason: Deploy application
     ttl: 10m
+    session:
+      bind: parent
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token
       RELEASE_WEBHOOK:
@@ -218,7 +220,11 @@ profiles:
               tree.
             </p>
             <div class="code-panel">
-              <pre><code>agent-secret session create --profile terraform-cloudflare --max-reads 3
+              <pre><code>agent-secret session create \
+  --profile terraform-cloudflare \
+  --bind-parent \
+  --max-reads 3 \
+  --json=compact
 agent-secret with-session astok_123 --only CLOUDFLARE_API_TOKEN -- terraform plan
 agent-secret with-session astok_123 \
   --only CLOUDFLARE_API_TOKEN,STATE_TOKEN \
@@ -229,6 +235,8 @@ agent-secret session destroy asid_123</code></pre>
             <p>
               <code>session create</code> can combine a project profile, env
               files, and one-off <code>--secret ALIAS=REF</code> flags.
+              Use <code>--json=compact</code> when a shell wrapper needs one
+              JSON object on one line.
               Keep the returned <code>session_token</code> for
               <code>with-session</code>; use the returned or listed
               <code>session_id</code> for inspection and cleanup.
@@ -237,6 +245,20 @@ agent-secret session destroy asid_123</code></pre>
               or a per-command subset with <code>--only</code>. Unknown aliases
               fail before the child command starts. Use sessions inside one
               task shell, wrapper script, or agent process tree.
+            </p>
+            <p>
+              Session tokens are bound to the requester process tree by default.
+              Use <code>--bind-parent</code> when a wrapper creates the session
+              inside command substitution and later calls
+              <code>with-session</code> from the parent shell. Deeper wrappers
+              can use <code>--bind-ancestor N</code> up to <code>3</code>;
+              Agent Secret accepts only ancestors of the current
+              <code>agent-secret</code> process, not arbitrary PIDs. Profiles
+              can set <code>session.bind: parent</code>,
+              <code>session.bind: auto</code>, or
+              <code>session.bind: { ancestor: N }</code>. Session list JSON
+              includes non-secret binding metadata so process mismatch failures
+              are easier to debug.
             </p>
             <p>
               Sessions end when TTL passes, the read count is exhausted,

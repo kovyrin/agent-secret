@@ -56,17 +56,23 @@ type ProfileInfo struct {
 	Reason  string               `json:"reason,omitempty"`
 	TTL     string               `json:"ttl,omitempty"`
 	Include []string             `json:"include,omitempty"`
+	Session *SessionInfo         `json:"session,omitempty"`
 	Secrets []request.SecretSpec `json:"secrets,omitempty"`
 }
 
 type Profile struct {
-	Name       string
-	SourcePath string
-	Account    string
-	Sources    Sources
-	Reason     string
-	Secrets    []request.SecretSpec
-	TTL        time.Duration
+	Name           string
+	SourcePath     string
+	Account        string
+	Sources        Sources
+	Reason         string
+	Secrets        []request.SecretSpec
+	TTL            time.Duration
+	SessionBinding *request.SessionBindingPolicy
+}
+
+type SessionInfo struct {
+	Bind *request.SessionBindingPolicy `json:"bind,omitempty"`
 }
 
 type configFile struct {
@@ -100,15 +106,17 @@ type profileYAML struct {
 	Account string                `yaml:"account"`
 	Include []string              `yaml:"include"`
 	Reason  string                `yaml:"reason"`
+	Session profileSessionYAML    `yaml:"session"`
 	Secrets map[string]secretYAML `yaml:"secrets"`
 	TTL     string                `yaml:"ttl"`
 }
 
 type resolvedProfile struct {
-	account string
-	reason  string
-	secrets map[string]resolvedSecret
-	ttl     time.Duration
+	account        string
+	reason         string
+	secrets        map[string]resolvedSecret
+	ttl            time.Duration
+	sessionBinding *request.SessionBindingPolicy
 }
 
 type resolvedSecret struct {
@@ -122,6 +130,15 @@ type secretYAML struct {
 	Ref     string
 	Account string
 	Source  string
+}
+
+type profileSessionYAML struct {
+	Bind sessionBindYAML `yaml:"bind"`
+}
+
+type sessionBindYAML struct {
+	policy request.SessionBindingPolicy
+	set    bool
 }
 
 func (s *secretYAML) UnmarshalYAML(value *yaml.Node) error {
@@ -165,6 +182,70 @@ func (s *secretYAML) unmarshalMapping(value *yaml.Node) error {
 	return nil
 }
 
+func (s *sessionBindYAML) policyPointer() *request.SessionBindingPolicy {
+	if !s.set {
+		return nil
+	}
+	policy := s.policy
+	return &policy
+}
+
+func (s *sessionBindYAML) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var raw string
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		return s.setFromScalar(raw)
+	case yaml.MappingNode:
+		return s.unmarshalMapping(value)
+	case yaml.DocumentNode, yaml.SequenceNode, yaml.AliasNode:
+		return errors.New("session bind must be auto, parent, or a mapping")
+	}
+	return errors.New("session bind must be auto, parent, or a mapping")
+}
+
+func (s *sessionBindYAML) setFromScalar(raw string) error {
+	switch strings.TrimSpace(raw) {
+	case "auto":
+		s.policy = request.DefaultSessionBindingPolicy()
+	case "parent":
+		policy, err := request.NewSessionAncestorBinding(1)
+		if err != nil {
+			return err
+		}
+		s.policy = policy
+	default:
+		return errors.New("session bind must be auto, parent, or a mapping")
+	}
+	s.set = true
+	return nil
+}
+
+func (s *sessionBindYAML) unmarshalMapping(value *yaml.Node) error {
+	var ancestorDepth int
+	for i := 0; i < len(value.Content); i += 2 {
+		key := value.Content[i].Value
+		item := value.Content[i+1]
+		switch key {
+		case "ancestor":
+			if err := item.Decode(&ancestorDepth); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown session bind field %q", key)
+		}
+	}
+	policy, err := request.NewSessionAncestorBinding(ancestorDepth)
+	if err != nil {
+		return err
+	}
+	s.policy = policy
+	s.set = true
+	return nil
+}
+
 func Load(opts LoadOptions) (Profile, error) {
 	path, doc, err := loadConfigFile(opts)
 	if err != nil {
@@ -196,13 +277,14 @@ func Load(opts LoadOptions) (Profile, error) {
 	}
 
 	return Profile{
-		Name:       profileName,
-		SourcePath: path,
-		Account:    resolved.account,
-		Sources:    sources,
-		Reason:     resolved.reason,
-		Secrets:    secrets,
-		TTL:        resolved.ttl,
+		Name:           profileName,
+		SourcePath:     path,
+		Account:        resolved.account,
+		Sources:        sources,
+		Reason:         resolved.reason,
+		Secrets:        secrets,
+		TTL:            resolved.ttl,
+		SessionBinding: cloneSessionBindingPolicy(resolved.sessionBinding),
 	}, nil
 }
 
@@ -262,6 +344,7 @@ func Inspect(opts LoadOptions) (ConfigInfo, error) {
 			Account: resolved.account,
 			Reason:  resolved.reason,
 			Include: trimmedList(rawProfile.Include),
+			Session: sessionInfo(resolved.sessionBinding),
 			Secrets: secrets,
 		}
 		if resolved.ttl != 0 {
@@ -396,6 +479,9 @@ func (r *profileResolver) resolve(profileName string, stack []string) (resolvedP
 		if included.ttl != 0 {
 			result.ttl = included.ttl
 		}
+		if included.sessionBinding != nil {
+			result.sessionBinding = cloneSessionBindingPolicy(included.sessionBinding)
+		}
 	}
 
 	ttl, err := parseTTL(rawProfile.TTL, r.path, profileName)
@@ -407,6 +493,9 @@ func (r *profileResolver) resolve(profileName string, stack []string) (resolvedP
 	}
 	if ttl != 0 {
 		result.ttl = ttl
+	}
+	if policy := rawProfile.Session.Bind.policyPointer(); policy != nil {
+		result.sessionBinding = policy
 	}
 	if err := mergeSecrets(result.secrets, rawProfile.Secrets, result.account, r.sources, r.path, profileName); err != nil {
 		return resolvedProfile{}, err
@@ -420,11 +509,27 @@ func (r *profileResolver) resolve(profileName string, stack []string) (resolvedP
 
 func cloneResolvedProfile(profile resolvedProfile) resolvedProfile {
 	return resolvedProfile{
-		account: profile.account,
-		reason:  profile.reason,
-		secrets: cloneResolvedSecrets(profile.secrets),
-		ttl:     profile.ttl,
+		account:        profile.account,
+		reason:         profile.reason,
+		secrets:        cloneResolvedSecrets(profile.secrets),
+		ttl:            profile.ttl,
+		sessionBinding: cloneSessionBindingPolicy(profile.sessionBinding),
 	}
+}
+
+func sessionInfo(policy *request.SessionBindingPolicy) *SessionInfo {
+	if policy == nil {
+		return nil
+	}
+	return &SessionInfo{Bind: cloneSessionBindingPolicy(policy)}
+}
+
+func cloneSessionBindingPolicy(policy *request.SessionBindingPolicy) *request.SessionBindingPolicy {
+	if policy == nil {
+		return nil
+	}
+	clone := *policy
+	return &clone
 }
 
 func cloneResolvedSecrets(secrets map[string]resolvedSecret) map[string]resolvedSecret {

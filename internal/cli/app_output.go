@@ -6,8 +6,14 @@ import (
 )
 
 func (a App) writeJSON(value any) error {
+	return a.writeJSONMode(value, jsonOutputPretty)
+}
+
+func (a App) writeJSONMode(value any, mode jsonOutputMode) error {
 	encoder := json.NewEncoder(a.Stdout)
-	encoder.SetIndent("", "  ")
+	if mode != jsonOutputCompact {
+		encoder.SetIndent("", "  ")
+	}
 	return encoder.Encode(value)
 }
 

@@ -24,6 +24,7 @@ type ApprovalRequestPayload struct {
 	OverrideEnv            bool                        `json:"override_env"`
 	OverriddenAliases      []string                    `json:"overridden_aliases"`
 	ReusableUses           int                         `json:"reusable_uses"`
+	SessionBinding         *request.SessionBindingInfo `json:"session_binding,omitempty"`
 }
 
 type ApprovalOperation string
@@ -120,7 +121,11 @@ func NewItemDescribePayload(
 	}
 }
 
-func NewSessionCreatePayload(correlation protocol.Correlation, req request.SessionCreateRequest) ApprovalRequestPayload {
+func NewSessionCreatePayload(
+	correlation protocol.Correlation,
+	req request.SessionCreateRequest,
+	binding request.SessionBindingInfo,
+) ApprovalRequestPayload {
 	resources := make([]ApprovalRequestedResource, 0, len(req.Secrets))
 	for _, secret := range req.Secrets {
 		resources = append(resources, ApprovalRequestedResource{
@@ -146,6 +151,7 @@ func NewSessionCreatePayload(correlation protocol.Correlation, req request.Sessi
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      []string{},
 		ReusableUses:           1,
+		SessionBinding:         &binding,
 	}
 }
 

@@ -178,7 +178,7 @@
             <div class="command-row copyable">
               <div class="command-line">
                 <span class="prompt" aria-hidden="true">$</span>
-                <code data-copy-text>agent-secret session create --profile terraform-cloudflare --max-reads 3</code>
+                <code data-copy-text>agent-secret session create --profile terraform-cloudflare --bind-parent --max-reads 3 --json=compact</code>
               </div>
               <button class="copy-button" type="button" data-copy-button aria-label="Copy session command">
                 <svg class="copy-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -241,6 +241,8 @@ profiles:
   terraform-cloudflare:
     reason: Terraform DNS management
     ttl: 10m
+    session:
+      bind: parent
     secrets:
       CLOUDFLARE_API_TOKEN: op://Example/Cloudflare/token</code></pre>
           </div>
@@ -362,7 +364,7 @@ profiles:
               <li>The background helper fetches only the secrets you approved for the request.</li>
               <li>Audit logs record metadata, never raw secrets.</li>
               <li>Reusable approvals stay bounded by command, cwd, references, account, TTL, and use count.</li>
-              <li>Sessions stay bounded by requester process tree, cwd, aliases, TTL, read count, secret tokens, and the <code>with-session</code> wrapper.</li>
+              <li>Sessions stay bounded by requester process tree or an explicit ancestor binding, cwd, aliases, TTL, read count, secret tokens, and the <code>with-session</code> wrapper.</li>
             </ul>
           </div>
           <div>

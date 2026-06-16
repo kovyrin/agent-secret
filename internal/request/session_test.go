@@ -44,6 +44,9 @@ func TestNewSessionCreateDefaultsAndDaemonValidation(t *testing.T) {
 	if req.MaxReads != DefaultSessionMaxReads {
 		t.Fatalf("max reads = %d, want %d", req.MaxReads, DefaultSessionMaxReads)
 	}
+	if req.Binding.Mode != SessionBindingModeAuto || req.Binding.AncestorDepth != 0 {
+		t.Fatalf("binding = %+v, want auto", req.Binding)
+	}
 	if !req.ExpiresAt.Equal(receivedAt.Add(DefaultSessionTTL)) {
 		t.Fatalf("expires_at = %s, want %s", req.ExpiresAt, receivedAt.Add(DefaultSessionTTL))
 	}
@@ -95,6 +98,9 @@ func TestNewSessionCreateRejectsInvalidInputs(t *testing.T) {
 		{name: "missing executable identity", mutate: func(o *SessionCreateOptions) { o.ExecutableIdentity = fileidentity.Identity{} }, want: ErrInvalidRequest},
 		{name: "missing command", mutate: func(o *SessionCreateOptions) { o.Command = nil }, want: ErrInvalidCommand},
 		{name: "bad secret", mutate: func(o *SessionCreateOptions) { o.Secrets[0].Alias = "token" }, want: ErrInvalidAlias},
+		{name: "bad bind depth", mutate: func(o *SessionCreateOptions) {
+			o.Binding = SessionBindingPolicy{Mode: SessionBindingModeAncestor, AncestorDepth: MaxSessionBindAncestor + 1}
+		}, want: ErrInvalidSessionBind},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -107,6 +113,37 @@ func TestNewSessionCreateRejectsInvalidInputs(t *testing.T) {
 			_, err := NewSessionCreate(opts)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("NewSessionCreate error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestSessionBindingPolicyValidation(t *testing.T) {
+	t.Parallel()
+
+	parent, err := NewSessionAncestorBinding(1)
+	if err != nil {
+		t.Fatalf("NewSessionAncestorBinding returned error: %v", err)
+	}
+	if parent.Mode != SessionBindingModeAncestor || parent.AncestorDepth != 1 {
+		t.Fatalf("parent binding = %+v", parent)
+	}
+
+	tests := []struct {
+		name   string
+		policy SessionBindingPolicy
+	}{
+		{name: "zero ancestor", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestor}},
+		{name: "too deep ancestor", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestor, AncestorDepth: MaxSessionBindAncestor + 1}},
+		{name: "auto with depth", policy: SessionBindingPolicy{Mode: SessionBindingModeAuto, AncestorDepth: 1}},
+		{name: "unknown mode", policy: SessionBindingPolicy{Mode: "pid", AncestorDepth: 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := NormalizeSessionBindingPolicy(tt.policy); !errors.Is(err, ErrInvalidSessionBind) {
+				t.Fatalf("NormalizeSessionBindingPolicy error = %v, want ErrInvalidSessionBind", err)
 			}
 		})
 	}

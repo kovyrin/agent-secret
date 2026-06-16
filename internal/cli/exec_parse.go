@@ -37,10 +37,12 @@ type execFlags struct {
 }
 
 type execInputs struct {
-	reason  string
-	ttl     time.Duration
-	env     []string
-	secrets []request.SecretSpec
+	reason                string
+	ttl                   time.Duration
+	env                   []string
+	secrets               []request.SecretSpec
+	sessionBinding        request.SessionBindingPolicy
+	sessionBindingProfile bool
 }
 
 type execInputSources struct {
@@ -155,11 +157,20 @@ func (p Parser) resolveExecInputs(flags execFlags) (execInputs, error) {
 	}
 
 	return execInputs{
-		reason:  sources.reason,
-		ttl:     sources.ttl,
-		env:     sources.env,
-		secrets: secrets,
+		reason:                sources.reason,
+		ttl:                   sources.ttl,
+		env:                   sources.env,
+		secrets:               secrets,
+		sessionBinding:        sessionBindingFromProfile(sources.profile),
+		sessionBindingProfile: sources.loadedProfile && sources.profile.SessionBinding != nil,
 	}, nil
+}
+
+func sessionBindingFromProfile(profile profileconfig.Profile) request.SessionBindingPolicy {
+	if profile.SessionBinding == nil {
+		return request.DefaultSessionBindingPolicy()
+	}
+	return *profile.SessionBinding
 }
 
 func loadExecInputSources(flags execFlags) (execInputSources, error) {

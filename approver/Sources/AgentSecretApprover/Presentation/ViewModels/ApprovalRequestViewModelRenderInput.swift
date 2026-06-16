@@ -5,6 +5,7 @@ struct ApprovalRequestViewModelRenderInput {
     let commandArgumentRows: [String]
     let cwd: String
     let scopeSummary: String
+    let sessionBindingSummary: String?
     let resolvedExecutable: String
     let allowMutableExecutable: Bool
     let resourceRows: [String]

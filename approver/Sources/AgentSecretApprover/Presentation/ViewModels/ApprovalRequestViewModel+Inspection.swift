@@ -15,6 +15,7 @@ extension ApprovalRequestViewModel {
                 resourceSectionTitle: Self.inspectionResourceSectionTitle(for: operation),
                 resourceRows: resourceRows,
                 scopeSummary: scopeSummary,
+                sessionBindingInspectionText: sessionBindingInspectionText,
                 timeRemaining: timeRemaining
             )
         )
@@ -33,6 +34,7 @@ extension ApprovalRequestViewModel {
         let resourceSectionTitle: String
         let resourceRows: [String]
         let scopeSummary: String
+        let sessionBindingInspectionText: String?
         let timeRemaining: String
     }
 
@@ -66,6 +68,10 @@ extension ApprovalRequestViewModel {
             lines.append(contentsOf: input.overriddenAliases.map { "- \($0)" })
         }
         lines.append("Scope: \(input.scopeSummary)")
+        if let sessionBindingInspectionText: String = input.sessionBindingInspectionText {
+            lines.append("Session binding:")
+            lines.append(sessionBindingInspectionText)
+        }
         lines.append(input.resourceSectionTitle)
         lines.append(contentsOf: input.resourceRows)
         lines.append("Time remaining: \(input.timeRemaining)")

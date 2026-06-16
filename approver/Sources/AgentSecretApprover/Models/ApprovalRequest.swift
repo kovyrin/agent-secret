@@ -17,6 +17,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case allowMutableExecutable = "allow_mutable_executable"
         case reusableUses = "reusable_uses"
         case resources
+        case sessionBinding = "session_binding"
     }
 
     /// Default reusable approval count for programmatic requests and out-of-range daemon values.
@@ -38,6 +39,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var overrideEnv: Bool
     public var overriddenAliases: [String]
     public var reusableUses: Int
+    public var sessionBinding: SessionBindingInfo?
 
     init(
         requestID: String,
@@ -53,7 +55,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         allowsReusable: Bool = true,
         overrideEnv: Bool = false,
         overriddenAliases: [String] = [],
-        reusableUses: Int = Self.defaultReusableUses
+        reusableUses: Int = Self.defaultReusableUses,
+        sessionBinding: SessionBindingInfo? = nil
     ) {
         self.requestID = requestID
         self.nonce = nonce
@@ -69,6 +72,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.overrideEnv = overrideEnv
         self.overriddenAliases = overriddenAliases
         self.reusableUses = Self.boundedReusableUses(reusableUses)
+        self.sessionBinding = sessionBinding
     }
 
     /// Decodes current daemon protocol payloads.
@@ -92,6 +96,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
             forKey: .reusableUses
         )
         reusableUses = Self.boundedReusableUses(decodedReusableUses)
+        sessionBinding = try container.decodeIfPresent(SessionBindingInfo.self, forKey: .sessionBinding)
     }
 
     static func boundedReusableUses(_ uses: Int) -> Int {
