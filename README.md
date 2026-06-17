@@ -144,10 +144,10 @@ Session tokens are accepted only from the approved requester process tree. Use
 `--bind-parent` when a shell wrapper creates the session inside command
 substitution and later calls `with-session` from the parent shell.
 Advanced wrappers can use `--bind-ancestor N` up to `3`, but only ancestors of
-the current `agent-secret` process are accepted. If wrapper depth varies but
-the target process name is stable, use `--bind-ancestor-name NAME`; it matches
-the nearest eligible ancestor executable basename and does not search arbitrary
-PIDs.
+the current `agent-secret` process are accepted. If wrapper depth varies across
+different agents, repeat `--bind-ancestor-name NAME`; Agent Secret matches the
+nearest eligible ancestor executable basename in the allowed set and does not
+search arbitrary PIDs.
 
 Inspect item metadata without revealing values:
 

@@ -60,7 +60,8 @@ final class ApprovalRequestInspectionTests: XCTestCase {
                     path: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret"
                 ),
                 ancestorDepth: 1,
-                ancestorName: "zsh"
+                ancestorName: "zsh",
+                ancestorNames: ["Codex", "zsh"]
             )
         )
     }
@@ -88,7 +89,8 @@ final class ApprovalRequestInspectionTests: XCTestCase {
         XCTAssertEqual(viewModel.sessionBindingSummary, "zsh pid=501")
         XCTAssertTrue(inspection.contains("Session binding:"))
         XCTAssertTrue(inspection.contains("Mode: ancestor_name"))
-        XCTAssertTrue(inspection.contains("Ancestor name: zsh"))
+        XCTAssertTrue(inspection.contains("Ancestor names: Codex, zsh"))
+        XCTAssertTrue(inspection.contains("Matched ancestor name: zsh"))
         XCTAssertTrue(inspection.contains("Ancestor depth: 1"))
         XCTAssertTrue(inspection.contains("Bound process: zsh pid=501 ppid=1 path=/bin/zsh"))
         let creatorLine = "Creator process: agent-secret pid=502 " +

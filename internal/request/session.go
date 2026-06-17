@@ -16,6 +16,7 @@ const (
 	DefaultSessionMaxReads = 1
 	MaxSessionReads        = 100
 	MaxSessionBindAncestor = 3
+	MaxSessionBindNames    = 16
 	MaxSessionBindNameLen  = 128
 )
 
@@ -101,12 +102,14 @@ type SessionBindingPolicy struct {
 	Mode          SessionBindingMode `json:"mode,omitempty"`
 	AncestorDepth int                `json:"ancestor_depth,omitempty"`
 	AncestorName  string             `json:"ancestor_name,omitempty"`
+	AncestorNames []string           `json:"ancestor_names,omitempty"`
 }
 
 type SessionBindingInfo struct {
 	Mode           SessionBindingMode    `json:"mode"`
 	AncestorDepth  int                   `json:"ancestor_depth,omitempty"`
 	AncestorName   string                `json:"ancestor_name,omitempty"`
+	AncestorNames  []string              `json:"ancestor_names,omitempty"`
 	BoundProcess   SessionBindingProcess `json:"bound_process"`
 	CreatorProcess SessionBindingProcess `json:"creator_process"`
 }
@@ -128,11 +131,11 @@ func NewSessionAncestorBinding(depth int) (SessionBindingPolicy, error) {
 }
 
 func NewSessionAncestorNameBinding(name string) (SessionBindingPolicy, error) {
-	name, err := validateSessionAncestorName(name)
-	if err != nil {
-		return SessionBindingPolicy{}, err
-	}
-	policy := SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorName: name}
+	return NewSessionAncestorNamesBinding([]string{name})
+}
+
+func NewSessionAncestorNamesBinding(names []string) (SessionBindingPolicy, error) {
+	policy := SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorNames: names}
 	return NormalizeSessionBindingPolicy(policy)
 }
 
@@ -148,6 +151,9 @@ func NormalizeSessionBindingPolicy(policy SessionBindingPolicy) (SessionBindingP
 		if policy.AncestorName != "" {
 			return SessionBindingPolicy{}, fmt.Errorf("%w: auto binding does not accept ancestor name", ErrInvalidSessionBind)
 		}
+		if len(policy.AncestorNames) > 0 {
+			return SessionBindingPolicy{}, fmt.Errorf("%w: auto binding does not accept ancestor names", ErrInvalidSessionBind)
+		}
 		return policy, nil
 	case SessionBindingModeAncestor:
 		if policy.AncestorDepth < 1 || policy.AncestorDepth > MaxSessionBindAncestor {
@@ -160,20 +166,67 @@ func NormalizeSessionBindingPolicy(policy SessionBindingPolicy) (SessionBindingP
 		if policy.AncestorName != "" {
 			return SessionBindingPolicy{}, fmt.Errorf("%w: ancestor depth binding does not accept ancestor name", ErrInvalidSessionBind)
 		}
+		if len(policy.AncestorNames) > 0 {
+			return SessionBindingPolicy{}, fmt.Errorf("%w: ancestor depth binding does not accept ancestor names", ErrInvalidSessionBind)
+		}
 		return policy, nil
 	case SessionBindingModeAncestorName:
 		if policy.AncestorDepth != 0 {
 			return SessionBindingPolicy{}, fmt.Errorf("%w: ancestor name binding does not accept ancestor depth", ErrInvalidSessionBind)
 		}
-		name, err := validateSessionAncestorName(policy.AncestorName)
+		names, selectedName, err := normalizeSessionAncestorNames(policy.AncestorName, policy.AncestorNames)
 		if err != nil {
 			return SessionBindingPolicy{}, err
 		}
-		policy.AncestorName = name
+		policy.AncestorName = selectedName
+		policy.AncestorNames = names
 		return policy, nil
 	default:
 		return SessionBindingPolicy{}, fmt.Errorf("%w: unknown binding mode %q", ErrInvalidSessionBind, policy.Mode)
 	}
+}
+
+func normalizeSessionAncestorNames(singleName string, rawNames []string) ([]string, string, error) {
+	if singleName == "" && len(rawNames) == 0 {
+		return nil, "", fmt.Errorf("%w: ancestor name is required", ErrInvalidSessionBind)
+	}
+	if len(rawNames) > MaxSessionBindNames {
+		return nil, "", fmt.Errorf("%w: ancestor names must include at most %d entries", ErrInvalidSessionBind, MaxSessionBindNames)
+	}
+	names := make([]string, 0, max(1, len(rawNames)))
+	seen := make(map[string]struct{}, len(rawNames)+1)
+	for _, rawName := range rawNames {
+		name, err := validateSessionAncestorName(rawName)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	selectedName := ""
+	if singleName != "" {
+		name, err := validateSessionAncestorName(singleName)
+		if err != nil {
+			return nil, "", err
+		}
+		selectedName = name
+		if _, ok := seen[name]; !ok {
+			if len(rawNames) > 0 {
+				return nil, "", fmt.Errorf("%w: ancestor_name must be included in ancestor_names", ErrInvalidSessionBind)
+			}
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil, "", fmt.Errorf("%w: ancestor name is required", ErrInvalidSessionBind)
+	}
+	if len(names) == 1 && selectedName == "" {
+		selectedName = names[0]
+	}
+	return names, selectedName, nil
 }
 
 func validateSessionAncestorName(raw string) (string, error) {

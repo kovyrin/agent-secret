@@ -284,12 +284,14 @@ if [ -z "$bind_name" ]; then
   echo 'failed to determine current shell process name for bind-ancestor-name' >&2
   exit 1
 fi
+missing_bind_name="agent-secret-e2e-missing-ancestor"
 
 EXHAUST_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
     --json=compact \
     --profile session-e2e \
     --secret "SESSION_E2E_CLI_TOKEN=$cli_ref" \
+    --bind-ancestor-name "$missing_bind_name" \
     --bind-ancestor-name "$bind_name" \
     --max-reads 1)"
 EXHAUST_ID="$(printf '%s' "$EXHAUST_JSON" |
@@ -307,8 +309,9 @@ assert len(matches) == 1, data
 binding = matches[0]["session_binding"]
 assert binding["mode"] == "ancestor_name", binding
 assert binding["ancestor_name"] == bind_name, binding
+assert binding["ancestor_names"] == [sys.argv[3], bind_name], binding
 assert binding["ancestor_depth"] >= 1, binding
-print("ancestor-name binding metadata ok")' "$EXHAUST_ID" "$bind_name"
+print("ancestor-name binding metadata ok")' "$EXHAUST_ID" "$bind_name" "$missing_bind_name"
 run_with_session "$EXHAUST_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
@@ -403,7 +406,7 @@ This E2E run proves:
 
 - `session create` accepts secrets from a project config profile and CLI args.
 - `session create` accepts `session.bind: parent` from profile config and
-  explicit `--bind-ancestor-name NAME` from CLI flags.
+  repeated explicit `--bind-ancestor-name NAME` CLI flags.
 - `session create`, `session list`, and JSON parsing work with
   `--json=compact`.
 - `session list` shows public session IDs and working directories for active

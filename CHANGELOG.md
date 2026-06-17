@@ -27,11 +27,13 @@ file before a release is published.
 - Added `agent-secret session create --bind-parent` and `--bind-ancestor N` so
   shell wrappers can bind approved sessions to a stable ancestor process instead
   of the short-lived `agent-secret` process.
-- Added `agent-secret session create --bind-ancestor-name NAME` for wrappers
-  where the desired ancestor executable name is stable but the depth can vary.
+- Added repeatable `agent-secret session create --bind-ancestor-name NAME` for
+  wrappers that can run under different agent executables while still binding
+  only to the nearest matching ancestor process.
 - Added profile config support for session binding with `session.bind: parent`,
   `session.bind: auto`, `session.bind: { ancestor: N }`, and
-  `session.bind: { ancestor_name: NAME }`.
+  `session.bind: { ancestor_name: NAME }` or
+  `session.bind: { ancestor_names: [NAME, ...] }`.
 - Added `--json=compact` for session create, list, and destroy output so shell
   wrappers can safely read one JSON object per line.
 

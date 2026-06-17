@@ -854,8 +854,9 @@ Session option:
 --max-reads integer          Session create only. Default: 1. Max: 100.
 --bind-parent                Session create only. Bind to the parent process.
 --bind-ancestor integer      Session create only. Bind to ancestor depth 1..3.
---bind-ancestor-name string  Session create only. Bind to the nearest matching
-                             ancestor executable basename.
+--bind-ancestor-name string  Session create only. Repeatable. Bind to the
+                             nearest ancestor executable basename in the
+                             allowed set.
 --json=compact               Session create/list/destroy. One-line JSON output.
 ```
 

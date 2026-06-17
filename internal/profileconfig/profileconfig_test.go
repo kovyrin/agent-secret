@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -77,6 +78,15 @@ profiles:
         ancestor_name: Codex
     secrets:
       CODEX_TOKEN: op://Example/Codex/token
+  agents:
+    reason: Agent wrappers
+    session:
+      bind:
+        ancestor_names:
+          - Claude
+          - Codex
+    secrets:
+      AGENT_TOKEN: op://Example/Agent/token
 `)
 
 	base, err := Load(LoadOptions{Name: "base", StartDir: root})
@@ -108,6 +118,20 @@ profiles:
 		codex.SessionBinding.AncestorName != "Codex" {
 		t.Fatalf("codex session binding = %+v", codex.SessionBinding)
 	}
+	if !slices.Equal(codex.SessionBinding.AncestorNames, []string{"Codex"}) {
+		t.Fatalf("codex ancestor names = %v, want [Codex]", codex.SessionBinding.AncestorNames)
+	}
+
+	agents, err := Load(LoadOptions{Name: "agents", StartDir: root})
+	if err != nil {
+		t.Fatalf("Load agents returned error: %v", err)
+	}
+	if agents.SessionBinding == nil ||
+		agents.SessionBinding.Mode != request.SessionBindingModeAncestorName ||
+		agents.SessionBinding.AncestorName != "" ||
+		!slices.Equal(agents.SessionBinding.AncestorNames, []string{"Claude", "Codex"}) {
+		t.Fatalf("agents session binding = %+v", agents.SessionBinding)
+	}
 
 	info, err := Inspect(LoadOptions{StartDir: root})
 	if err != nil {
@@ -122,6 +146,12 @@ profiles:
 		codexInfo.Session.Bind == nil ||
 		codexInfo.Session.Bind.AncestorName != "Codex" {
 		t.Fatalf("inspect codex session binding = %+v", codexInfo.Session)
+	}
+	agentsInfo := findProfileInfo(t, info, "agents")
+	if agentsInfo.Session == nil ||
+		agentsInfo.Session.Bind == nil ||
+		!slices.Equal(agentsInfo.Session.Bind.AncestorNames, []string{"Claude", "Codex"}) {
+		t.Fatalf("inspect agents session binding = %+v", agentsInfo.Session)
 	}
 }
 
@@ -187,6 +217,21 @@ profiles:
 `,
 		},
 		{
+			name: "multiple ancestor name mapping keys",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    session:
+      bind:
+        ancestor_name: zsh
+        ancestor_names: [zsh, bash]
+    secrets:
+      TOKEN: op://Example/Item/token
+`,
+		},
+		{
 			name: "bad ancestor name",
 			config: `
 version: 1
@@ -196,6 +241,34 @@ profiles:
     session:
       bind:
         ancestor_name: /bin/zsh
+    secrets:
+      TOKEN: op://Example/Item/token
+`,
+		},
+		{
+			name: "bad ancestor names entry",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    session:
+      bind:
+        ancestor_names: [zsh, /bin/bash]
+    secrets:
+      TOKEN: op://Example/Item/token
+`,
+		},
+		{
+			name: "empty ancestor names",
+			config: `
+version: 1
+profiles:
+  deploy:
+    reason: Deploy
+    session:
+      bind:
+        ancestor_names: []
     secrets:
       TOKEN: op://Example/Item/token
 `,

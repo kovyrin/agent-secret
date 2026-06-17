@@ -21,7 +21,7 @@ type sessionCreateFlags struct {
 	overrideEnv  bool
 	bindParent   bool
 	bindAncestor int
-	bindName     string
+	bindNames    ancestorNameFlags
 	jsonMode     jsonOutputMode
 	secrets      secretFlags
 	only         onlyFlags
@@ -66,7 +66,7 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 	fs.BoolVar(&flags.overrideEnv, "override-env", false, "allow with-session to override existing env aliases")
 	fs.BoolVar(&flags.bindParent, "bind-parent", false, "bind session to the parent of this agent-secret process")
 	fs.IntVar(&flags.bindAncestor, "bind-ancestor", 0, "bind session to an ancestor process depth 1..3")
-	fs.StringVar(&flags.bindName, "bind-ancestor-name", "", "bind session to the nearest ancestor process with this executable name")
+	fs.Var(&flags.bindNames, "bind-ancestor-name", "bind session to the nearest ancestor process with this executable name; repeatable")
 	registerJSONOutputFlag(fs, &flags.jsonMode, "print json; use --json=compact for one-line output")
 	fs.Var(&flags.secrets, "secret", "secret mapping")
 	fs.Var(&flags.only, "only", "profile alias filter")
@@ -213,7 +213,7 @@ func sessionCreateBinding(
 		return policy, nil
 	}
 	if bindNameSet {
-		policy, err := request.NewSessionAncestorNameBinding(flags.bindName)
+		policy, err := request.NewSessionAncestorNamesBinding(flags.bindNames.names)
 		if err != nil {
 			return request.SessionBindingPolicy{}, err
 		}

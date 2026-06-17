@@ -195,6 +195,9 @@ func sessionBindingPolicyText(policy request.SessionBindingPolicy) string {
 		}
 		return fmt.Sprintf("ancestor:%d", policy.AncestorDepth)
 	case request.SessionBindingModeAncestorName:
+		if len(policy.AncestorNames) > 1 {
+			return "ancestor_names:" + strings.Join(policy.AncestorNames, ",")
+		}
 		return "ancestor_name:" + policy.AncestorName
 	default:
 		return string(policy.Mode)

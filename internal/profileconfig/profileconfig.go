@@ -226,8 +226,10 @@ func (s *sessionBindYAML) setFromScalar(raw string) error {
 func (s *sessionBindYAML) unmarshalMapping(value *yaml.Node) error {
 	var ancestorDepth int
 	var ancestorName string
+	var ancestorNames []string
 	ancestorDepthSet := false
 	ancestorNameSet := false
+	ancestorNamesSet := false
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
 		item := value.Content[i+1]
@@ -242,21 +244,35 @@ func (s *sessionBindYAML) unmarshalMapping(value *yaml.Node) error {
 			if err := item.Decode(&ancestorName); err != nil {
 				return err
 			}
+		case "ancestor_names":
+			ancestorNamesSet = true
+			if err := item.Decode(&ancestorNames); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown session bind field %q", key)
 		}
 	}
-	if ancestorDepthSet == ancestorNameSet {
-		return errors.New("session bind mapping must set exactly one of ancestor or ancestor_name")
+	setCount := 0
+	for _, set := range []bool{ancestorDepthSet, ancestorNameSet, ancestorNamesSet} {
+		if set {
+			setCount++
+		}
+	}
+	if setCount != 1 {
+		return errors.New("session bind mapping must set exactly one of ancestor, ancestor_name, or ancestor_names")
 	}
 	var (
 		policy request.SessionBindingPolicy
 		err    error
 	)
-	if ancestorDepthSet {
+	switch {
+	case ancestorDepthSet:
 		policy, err = request.NewSessionAncestorBinding(ancestorDepth)
-	} else {
+	case ancestorNameSet:
 		policy, err = request.NewSessionAncestorNameBinding(ancestorName)
+	default:
+		policy, err = request.NewSessionAncestorNamesBinding(ancestorNames)
 	}
 	if err != nil {
 		return err
@@ -549,6 +565,7 @@ func cloneSessionBindingPolicy(policy *request.SessionBindingPolicy) *request.Se
 		return nil
 	}
 	clone := *policy
+	clone.AncestorNames = slices.Clone(policy.AncestorNames)
 	return &clone
 }
 

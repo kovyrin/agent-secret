@@ -340,7 +340,7 @@ agent-secret session destroy [--json] --all
 - `--json`
 - `--bind-parent`
 - `--bind-ancestor N`
-- `--bind-ancestor-name NAME`
+- `--bind-ancestor-name NAME` (repeatable)
 
 It also accepts `--max-reads COUNT`, which limits the number of successful
 `with-session` reads. The default is `1`; the allowed range is `1` through
@@ -354,9 +354,10 @@ shell wrapper captures the JSON in command substitution and later runs
 `with-session` from the parent shell. `--bind-ancestor N` binds to a deeper
 ancestor, up to `3`. Agent Secret rejects arbitrary PIDs; explicit bindings can
 target only ancestors of the current `agent-secret` process.
-`--bind-ancestor-name NAME` walks that same ancestry and binds to the nearest
-eligible ancestor whose executable basename exactly matches `NAME`, which is
-useful when wrapper depth varies but the shell or agent process name is stable.
+Repeated `--bind-ancestor-name NAME` walks that same ancestry and binds to the
+nearest eligible ancestor whose executable basename exactly matches any allowed
+name. This is useful when the same wrapper may run from different agents with
+different process-tree shapes. Name matching is exact and case-sensitive.
 
 The same binding policy can live in a profile:
 
@@ -380,6 +381,15 @@ profiles:
     session:
       bind:
         ancestor_name: Codex
+
+  agent-wrapper:
+    include: [deploy]
+    session:
+      bind:
+        ancestor_names:
+          - Codex
+          - Claude
+          - Cursor
 ```
 
 CLI `--bind-parent`, `--bind-ancestor`, or `--bind-ancestor-name` overrides
@@ -413,8 +423,8 @@ agent-secret with-session astok_123 \
   selected by `--bind-parent`, `--bind-ancestor`, or `--bind-ancestor-name`. It
   is never shown by `session list`.
 - `session_binding`: non-secret binding metadata including binding mode,
-  requested ancestor name when configured, resolved ancestor depth, bound
-  process, and creator process.
+  requested ancestor names when configured, the matched ancestor name, resolved
+  ancestor depth, bound process, and creator process.
 
 It does not print secret values. `session list` shows active `session_id` values
 and non-secret metadata for inspection and cleanup. Without `--only`,

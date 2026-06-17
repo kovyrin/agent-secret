@@ -2,6 +2,7 @@ package broker
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,7 +142,10 @@ func TestProcessTreeSessionPeerAuthorizerBindsExplicitParent(t *testing.T) {
 	if binding.Anchor.PID != subShell.PID {
 		t.Fatalf("binding anchor pid = %d, want explicit parent pid %d", binding.Anchor.PID, subShell.PID)
 	}
-	if binding.Policy != policy {
+	if binding.Policy.Mode != policy.Mode ||
+		binding.Policy.AncestorDepth != policy.AncestorDepth ||
+		binding.Policy.AncestorName != policy.AncestorName ||
+		!slices.Equal(binding.Policy.AncestorNames, policy.AncestorNames) {
 		t.Fatalf("binding policy = %+v, want %+v", binding.Policy, policy)
 	}
 }
@@ -219,10 +223,44 @@ func TestProcessTreeSessionPeerAuthorizerBindsNearestNamedAncestor(t *testing.T)
 	info := binding.Info()
 	if info.Mode != request.SessionBindingModeAncestorName ||
 		info.AncestorName != "Codex" ||
+		!slices.Equal(info.AncestorNames, []string{"Codex"}) ||
 		info.AncestorDepth != 3 ||
 		info.BoundProcess.Name != "Codex" ||
 		info.BoundProcess.PID != agentApp.PID {
 		t.Fatalf("binding info = %+v", info)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerUsesNearestAllowedAncestorName(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	nearestAgent := testProcessIdentity(501, 500, "/Applications/Claude.app/Contents/MacOS/Claude")
+	fartherAgent := testProcessIdentity(500, 1, "/Applications/Codex.app/Contents/MacOS/Codex")
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, nearestAgent.PID, creator.ExecutablePath),
+			nearestAgent,
+			fartherAgent,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorNamesBinding([]string{"Codex", "Claude"})
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNamesBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	info := binding.Info()
+	if binding.Anchor.PID != nearestAgent.PID ||
+		binding.Policy.AncestorName != "Claude" ||
+		binding.Policy.AncestorDepth != 1 ||
+		info.AncestorName != "Claude" ||
+		!slices.Equal(info.AncestorNames, []string{"Codex", "Claude"}) {
+		t.Fatalf("binding = %+v info=%+v, want nearest matching ancestor with original allowlist", binding, info)
 	}
 }
 
@@ -286,6 +324,36 @@ func TestProcessTreeSessionPeerAuthorizerSkipsIneligibleNamedAncestor(t *testing
 	}
 }
 
+func TestProcessTreeSessionPeerAuthorizerSkipsIneligibleAllowedAncestorName(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	nearestClaude := testProcessIdentity(501, 500, "/Applications/Claude.app/Contents/MacOS/Claude")
+	nearestClaude.UID = 0
+	nearestClaude.GID = 0
+	eligibleCodex := testProcessIdentity(500, 1, "/Applications/Codex.app/Contents/MacOS/Codex")
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, nearestClaude.PID, creator.ExecutablePath),
+			nearestClaude,
+			eligibleCodex,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorNamesBinding([]string{"Claude", "Codex"})
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNamesBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	if binding.Anchor.PID != eligibleCodex.PID || binding.Policy.AncestorName != "Codex" || binding.Policy.AncestorDepth != 2 {
+		t.Fatalf("binding = %+v, want eligible allowed ancestor at depth 2", binding)
+	}
+}
+
 func TestProcessTreeSessionPeerAuthorizerRejectsIneligibleNamedAncestor(t *testing.T) {
 	t.Parallel()
 
@@ -307,7 +375,7 @@ func TestProcessTreeSessionPeerAuthorizerRejectsIneligibleNamedAncestor(t *testi
 
 	if _, err := authorizer.BindSessionPeer(creator, policy); !errors.Is(err, ErrSessionPeerMismatch) {
 		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
-	} else if !strings.Contains(err.Error(), "matched only ineligible binding targets") {
+	} else if !strings.Contains(err.Error(), "ancestor names [\"zsh\"] matched only ineligible binding targets") {
 		t.Fatalf("BindSessionPeer error = %q, want ineligible target detail", err.Error())
 	}
 }
@@ -330,7 +398,7 @@ func TestProcessTreeSessionPeerAuthorizerRejectsMissingNamedAncestor(t *testing.
 
 	if _, err := authorizer.BindSessionPeer(creator, policy); !errors.Is(err, ErrSessionPeerMismatch) {
 		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
-	} else if !strings.Contains(err.Error(), "no eligible ancestor named") {
+	} else if !strings.Contains(err.Error(), "no eligible ancestor named one of [\"Codex\"]") {
 		t.Fatalf("BindSessionPeer error = %q, want missing ancestor detail", err.Error())
 	}
 }

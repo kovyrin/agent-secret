@@ -44,7 +44,10 @@ func TestNewSessionCreateDefaultsAndDaemonValidation(t *testing.T) {
 	if req.MaxReads != DefaultSessionMaxReads {
 		t.Fatalf("max reads = %d, want %d", req.MaxReads, DefaultSessionMaxReads)
 	}
-	if req.Binding.Mode != SessionBindingModeAuto || req.Binding.AncestorDepth != 0 || req.Binding.AncestorName != "" {
+	if req.Binding.Mode != SessionBindingModeAuto ||
+		req.Binding.AncestorDepth != 0 ||
+		req.Binding.AncestorName != "" ||
+		len(req.Binding.AncestorNames) != 0 {
 		t.Fatalf("binding = %+v, want auto", req.Binding)
 	}
 	if !req.ExpiresAt.Equal(receivedAt.Add(DefaultSessionTTL)) {
@@ -163,6 +166,19 @@ func TestSessionBindingPolicyValidation(t *testing.T) {
 	if named.Mode != SessionBindingModeAncestorName || named.AncestorName != "Codex" || named.AncestorDepth != 0 {
 		t.Fatalf("named binding = %+v", named)
 	}
+	if !slices.Equal(named.AncestorNames, []string{"Codex"}) {
+		t.Fatalf("named ancestor names = %v, want [Codex]", named.AncestorNames)
+	}
+
+	names, err := NewSessionAncestorNamesBinding([]string{" claude ", "Codex", "claude"})
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNamesBinding returned error: %v", err)
+	}
+	if names.Mode != SessionBindingModeAncestorName ||
+		names.AncestorName != "" ||
+		!slices.Equal(names.AncestorNames, []string{"claude", "Codex"}) {
+		t.Fatalf("names binding = %+v, want ordered deduplicated allowlist", names)
+	}
 
 	tests := []struct {
 		name   string
@@ -172,10 +188,15 @@ func TestSessionBindingPolicyValidation(t *testing.T) {
 		{name: "too deep ancestor", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestor, AncestorDepth: MaxSessionBindAncestor + 1}},
 		{name: "auto with depth", policy: SessionBindingPolicy{Mode: SessionBindingModeAuto, AncestorDepth: 1}},
 		{name: "auto with name", policy: SessionBindingPolicy{Mode: SessionBindingModeAuto, AncestorName: "Codex"}},
+		{name: "auto with names", policy: SessionBindingPolicy{Mode: SessionBindingModeAuto, AncestorNames: []string{"Codex"}}},
 		{name: "ancestor with name", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestor, AncestorDepth: 1, AncestorName: "Codex"}},
+		{name: "ancestor with names", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestor, AncestorDepth: 1, AncestorNames: []string{"Codex"}}},
 		{name: "ancestor name with depth", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorDepth: 1, AncestorName: "Codex"}},
 		{name: "empty ancestor name", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName}},
 		{name: "path ancestor name", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorName: "/bin/zsh"}},
+		{name: "path ancestor names entry", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorNames: []string{"zsh", "/bin/bash"}}},
+		{name: "too many ancestor names", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorNames: repeatedStrings("zsh", MaxSessionBindNames+1)}},
+		{name: "single name not in names", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorName: "zsh", AncestorNames: []string{"bash"}}},
 		{name: "dot ancestor name", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorName: "."}},
 		{name: "long ancestor name", policy: SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorName: strings.Repeat("a", MaxSessionBindNameLen+1)}},
 		{name: "unknown mode", policy: SessionBindingPolicy{Mode: "pid", AncestorDepth: 1}},
@@ -189,6 +210,14 @@ func TestSessionBindingPolicyValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func repeatedStrings(value string, count int) []string {
+	values := make([]string, count)
+	for i := range values {
+		values[i] = value
+	}
+	return values
 }
 
 func TestSessionResolveValidation(t *testing.T) {

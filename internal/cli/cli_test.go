@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1625,14 +1626,16 @@ profiles:
 		"session",
 		"create",
 		"--profile", "deploy",
+		"--bind-ancestor-name", "Claude",
 		"--bind-ancestor-name", "Codex",
 	})
 	if err != nil {
 		t.Fatalf("Parse session create with ancestor name returned error: %v", err)
 	}
 	if command.SessionCreateRequest.Binding.Mode != request.SessionBindingModeAncestorName ||
-		command.SessionCreateRequest.Binding.AncestorName != "Codex" {
-		t.Fatalf("binding = %+v, want --bind-ancestor-name Codex override", command.SessionCreateRequest.Binding)
+		command.SessionCreateRequest.Binding.AncestorName != "" ||
+		!slices.Equal(command.SessionCreateRequest.Binding.AncestorNames, []string{"Claude", "Codex"}) {
+		t.Fatalf("binding = %+v, want repeated --bind-ancestor-name override", command.SessionCreateRequest.Binding)
 	}
 }
 
@@ -1683,6 +1686,7 @@ func TestParseSessionRejectsInvalidForms(t *testing.T) {
 		{name: "destroy all with id", args: []string{"session", "destroy", "--all", "asid_abc"}, want: ErrInvalidArguments},
 		{name: "create conflicting bind flags", args: []string{"session", "create", "--bind-parent", "--bind-ancestor", "2", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
 		{name: "create conflicting bind ancestor and name", args: []string{"session", "create", "--bind-ancestor", "2", "--bind-ancestor-name", "zsh", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
+		{name: "create conflicting bind ancestor and repeated names", args: []string{"session", "create", "--bind-ancestor", "2", "--bind-ancestor-name", "zsh", "--bind-ancestor-name", "bash", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
 		{name: "create conflicting bind name", args: []string{"session", "create", "--bind-parent", "--bind-ancestor-name", "zsh", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
 		{name: "create bad bind depth", args: []string{"session", "create", "--bind-ancestor", "4", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: request.ErrInvalidSessionBind},
 		{name: "create empty bind name", args: []string{"session", "create", "--bind-ancestor-name", "", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: request.ErrInvalidSessionBind},

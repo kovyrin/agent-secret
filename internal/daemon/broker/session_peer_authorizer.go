@@ -3,6 +3,8 @@ package broker
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
@@ -24,6 +26,7 @@ func (b SessionPeerBinding) Info() request.SessionBindingInfo {
 		Mode:          b.Policy.Mode,
 		AncestorDepth: b.Policy.AncestorDepth,
 		AncestorName:  b.Policy.AncestorName,
+		AncestorNames: slices.Clone(b.Policy.AncestorNames),
 		BoundProcess:  processInfoFromIdentity(b.Anchor),
 		CreatorProcess: request.SessionBindingProcess{
 			PID:  b.CreatorPeer.PID,
@@ -128,8 +131,9 @@ func sessionPeerAnchor(
 		anchor, err := ancestorSessionPeerAnchor(peer, ancestry, policy.AncestorDepth)
 		return anchor, policy, err
 	case request.SessionBindingModeAncestorName:
-		anchor, depth, err := ancestorNameSessionPeerAnchor(peer, ancestry, policy.AncestorName)
+		anchor, depth, name, err := ancestorNamesSessionPeerAnchor(peer, ancestry, policy.AncestorNames)
 		policy.AncestorDepth = depth
+		policy.AncestorName = name
 		return anchor, policy, err
 	default:
 		return peercred.ProcessIdentity{}, request.SessionBindingPolicy{}, fmt.Errorf("%w: unknown binding mode %q", request.ErrInvalidSessionBind, policy.Mode)
@@ -178,38 +182,54 @@ func ancestorSessionPeerAnchor(
 	return anchor, nil
 }
 
-func ancestorNameSessionPeerAnchor(
+func ancestorNamesSessionPeerAnchor(
 	peer peercred.Info,
 	ancestry []peercred.ProcessIdentity,
-	name string,
-) (peercred.ProcessIdentity, int, error) {
+	names []string,
+) (peercred.ProcessIdentity, int, string, error) {
+	nameSet := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		nameSet[name] = struct{}{}
+	}
 	var ineligible peercred.ProcessIdentity
+	var ineligibleName string
 	matchedIneligible := false
 	for depth := 1; depth < len(ancestry); depth++ {
 		anchor := ancestry[depth]
-		if processName(anchor.ExecutablePath) != name {
+		name := processName(anchor.ExecutablePath)
+		if _, ok := nameSet[name]; !ok {
 			continue
 		}
 		if !isEligibleSessionPeerAnchor(peer, anchor) {
 			if !matchedIneligible {
 				ineligible = anchor
+				ineligibleName = name
 				matchedIneligible = true
 			}
 			continue
 		}
-		return anchor, depth, nil
+		return anchor, depth, name, nil
 	}
+	acceptedNames := formatSessionAncestorNames(names)
 	if matchedIneligible {
-		return peercred.ProcessIdentity{}, 0, fmt.Errorf(
-			"%w: ancestor name %q matched only ineligible binding targets; nearest was %s pid=%d path=%q",
+		return peercred.ProcessIdentity{}, 0, "", fmt.Errorf(
+			"%w: ancestor names %s matched only ineligible binding targets; nearest match was %s pid=%d path=%q",
 			ErrSessionPeerMismatch,
-			name,
-			processName(ineligible.ExecutablePath),
+			acceptedNames,
+			ineligibleName,
 			ineligible.PID,
 			ineligible.ExecutablePath,
 		)
 	}
-	return peercred.ProcessIdentity{}, 0, fmt.Errorf("%w: session creator has no eligible ancestor named %q", ErrSessionPeerMismatch, name)
+	return peercred.ProcessIdentity{}, 0, "", fmt.Errorf("%w: session creator has no eligible ancestor named one of %s", ErrSessionPeerMismatch, acceptedNames)
+}
+
+func formatSessionAncestorNames(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, fmt.Sprintf("%q", name))
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
 func isEligibleSessionPeerAnchor(peer peercred.Info, candidate peercred.ProcessIdentity) bool {

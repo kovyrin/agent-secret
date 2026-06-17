@@ -254,13 +254,15 @@ agent-secret session destroy asid_123</code></pre>
               can use <code>--bind-ancestor N</code> up to <code>3</code>;
               Agent Secret accepts only ancestors of the current
               <code>agent-secret</code> process, not arbitrary PIDs. When the
-              wrapper depth varies but the target process name is stable, use
+              wrapper depth varies across accepted agents, repeat
               <code>--bind-ancestor-name NAME</code>; it matches the nearest
-              eligible ancestor executable basename in the current ancestry.
+              eligible ancestor executable basename in the allowed set within
+              the current ancestry.
               Profiles can set <code>session.bind: parent</code>,
               <code>session.bind: auto</code>,
               <code>session.bind: { ancestor: N }</code>, or
-              <code>session.bind: { ancestor_name: NAME }</code>. Session list
+              <code>session.bind: { ancestor_name: NAME }</code> /
+              <code>session.bind: { ancestor_names: [NAME, ...] }</code>. Session list
               JSON includes non-secret binding metadata so process mismatch
               failures are easier to debug.
             </p>
