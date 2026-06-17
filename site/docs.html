@@ -253,12 +253,16 @@ agent-secret session destroy asid_123</code></pre>
               <code>with-session</code> from the parent shell. Deeper wrappers
               can use <code>--bind-ancestor N</code> up to <code>3</code>;
               Agent Secret accepts only ancestors of the current
-              <code>agent-secret</code> process, not arbitrary PIDs. Profiles
-              can set <code>session.bind: parent</code>,
-              <code>session.bind: auto</code>, or
-              <code>session.bind: { ancestor: N }</code>. Session list JSON
-              includes non-secret binding metadata so process mismatch failures
-              are easier to debug.
+              <code>agent-secret</code> process, not arbitrary PIDs. When the
+              wrapper depth varies but the target process name is stable, use
+              <code>--bind-ancestor-name NAME</code>; it matches the nearest
+              eligible ancestor executable basename in the current ancestry.
+              Profiles can set <code>session.bind: parent</code>,
+              <code>session.bind: auto</code>,
+              <code>session.bind: { ancestor: N }</code>, or
+              <code>session.bind: { ancestor_name: NAME }</code>. Session list
+              JSON includes non-secret binding metadata so process mismatch
+              failures are easier to debug.
             </p>
             <p>
               Sessions end when TTL passes, the read count is exhausted,

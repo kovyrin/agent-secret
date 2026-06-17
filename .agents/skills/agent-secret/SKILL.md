@@ -144,11 +144,15 @@ Treat `session_token` as a short-lived secret capability bound to the requester
 process tree that created the session. Use `--bind-parent` when the session is
 created inside command substitution and later used from the parent shell. Use
 `--bind-ancestor N` only for deeper wrappers; N must be 1..3 and Agent Secret
-only accepts ancestors of the current `agent-secret` process. Profiles can set:
+only accepts ancestors of the current `agent-secret` process. Use
+`--bind-ancestor-name NAME` when wrapper depth varies but the desired ancestor
+executable basename is stable; it matches only the current process ancestry and
+does not search arbitrary PIDs. Profiles can set:
 
 - `session.bind: parent`
 - `session.bind: auto`
 - `session.bind: { ancestor: N }`
+- `session.bind: { ancestor_name: NAME }`
 
 CLI binding flags override profile config. Keep the token in a local shell
 variable only for the duration of the bounded workflow; do not write it to repo
@@ -157,7 +161,8 @@ Keep the public `session_id` separately for cleanup. Prefer
 `session destroy SESSION_ID` or `session destroy --all` when the workflow is
 done. If `with-session` reports a process mismatch, use the bound/requester
 process names, PIDs, and paths in the error to decide whether the session
-should be recreated with `--bind-parent`.
+should be recreated with `--bind-parent`, `--bind-ancestor N`, or
+`--bind-ancestor-name NAME`.
 
 Use a shell only when the shell is the command you actually want approved:
 

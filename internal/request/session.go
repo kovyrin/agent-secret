@@ -16,6 +16,7 @@ const (
 	DefaultSessionMaxReads = 1
 	MaxSessionReads        = 100
 	MaxSessionBindAncestor = 3
+	MaxSessionBindNameLen  = 128
 )
 
 var (
@@ -91,18 +92,21 @@ type SessionSummary struct {
 type SessionBindingMode string
 
 const (
-	SessionBindingModeAuto     SessionBindingMode = "auto"
-	SessionBindingModeAncestor SessionBindingMode = "ancestor"
+	SessionBindingModeAuto         SessionBindingMode = "auto"
+	SessionBindingModeAncestor     SessionBindingMode = "ancestor"
+	SessionBindingModeAncestorName SessionBindingMode = "ancestor_name"
 )
 
 type SessionBindingPolicy struct {
 	Mode          SessionBindingMode `json:"mode,omitempty"`
 	AncestorDepth int                `json:"ancestor_depth,omitempty"`
+	AncestorName  string             `json:"ancestor_name,omitempty"`
 }
 
 type SessionBindingInfo struct {
 	Mode           SessionBindingMode    `json:"mode"`
 	AncestorDepth  int                   `json:"ancestor_depth,omitempty"`
+	AncestorName   string                `json:"ancestor_name,omitempty"`
 	BoundProcess   SessionBindingProcess `json:"bound_process"`
 	CreatorProcess SessionBindingProcess `json:"creator_process"`
 }
@@ -123,6 +127,15 @@ func NewSessionAncestorBinding(depth int) (SessionBindingPolicy, error) {
 	return NormalizeSessionBindingPolicy(policy)
 }
 
+func NewSessionAncestorNameBinding(name string) (SessionBindingPolicy, error) {
+	name, err := validateSessionAncestorName(name)
+	if err != nil {
+		return SessionBindingPolicy{}, err
+	}
+	policy := SessionBindingPolicy{Mode: SessionBindingModeAncestorName, AncestorName: name}
+	return NormalizeSessionBindingPolicy(policy)
+}
+
 func NormalizeSessionBindingPolicy(policy SessionBindingPolicy) (SessionBindingPolicy, error) {
 	if policy.Mode == "" {
 		policy.Mode = SessionBindingModeAuto
@@ -131,6 +144,9 @@ func NormalizeSessionBindingPolicy(policy SessionBindingPolicy) (SessionBindingP
 	case SessionBindingModeAuto:
 		if policy.AncestorDepth != 0 {
 			return SessionBindingPolicy{}, fmt.Errorf("%w: auto binding does not accept ancestor depth", ErrInvalidSessionBind)
+		}
+		if policy.AncestorName != "" {
+			return SessionBindingPolicy{}, fmt.Errorf("%w: auto binding does not accept ancestor name", ErrInvalidSessionBind)
 		}
 		return policy, nil
 	case SessionBindingModeAncestor:
@@ -141,10 +157,37 @@ func NormalizeSessionBindingPolicy(policy SessionBindingPolicy) (SessionBindingP
 				MaxSessionBindAncestor,
 			)
 		}
+		if policy.AncestorName != "" {
+			return SessionBindingPolicy{}, fmt.Errorf("%w: ancestor depth binding does not accept ancestor name", ErrInvalidSessionBind)
+		}
+		return policy, nil
+	case SessionBindingModeAncestorName:
+		if policy.AncestorDepth != 0 {
+			return SessionBindingPolicy{}, fmt.Errorf("%w: ancestor name binding does not accept ancestor depth", ErrInvalidSessionBind)
+		}
+		name, err := validateSessionAncestorName(policy.AncestorName)
+		if err != nil {
+			return SessionBindingPolicy{}, err
+		}
+		policy.AncestorName = name
 		return policy, nil
 	default:
 		return SessionBindingPolicy{}, fmt.Errorf("%w: unknown binding mode %q", ErrInvalidSessionBind, policy.Mode)
 	}
+}
+
+func validateSessionAncestorName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", fmt.Errorf("%w: ancestor name is required", ErrInvalidSessionBind)
+	}
+	if len(name) > MaxSessionBindNameLen {
+		return "", fmt.Errorf("%w: ancestor name must be at most %d bytes", ErrInvalidSessionBind, MaxSessionBindNameLen)
+	}
+	if name == "." || name == ".." || strings.Contains(name, "/") || strings.ContainsRune(name, 0) {
+		return "", fmt.Errorf("%w: ancestor name must be an executable basename", ErrInvalidSessionBind)
+	}
+	return name, nil
 }
 
 func NewSessionCreate(opts SessionCreateOptions) (SessionCreateRequest, error) {

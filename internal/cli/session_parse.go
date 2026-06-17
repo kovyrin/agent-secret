@@ -21,6 +21,7 @@ type sessionCreateFlags struct {
 	overrideEnv  bool
 	bindParent   bool
 	bindAncestor int
+	bindName     string
 	jsonMode     jsonOutputMode
 	secrets      secretFlags
 	only         onlyFlags
@@ -65,6 +66,7 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 	fs.BoolVar(&flags.overrideEnv, "override-env", false, "allow with-session to override existing env aliases")
 	fs.BoolVar(&flags.bindParent, "bind-parent", false, "bind session to the parent of this agent-secret process")
 	fs.IntVar(&flags.bindAncestor, "bind-ancestor", 0, "bind session to an ancestor process depth 1..3")
+	fs.StringVar(&flags.bindName, "bind-ancestor-name", "", "bind session to the nearest ancestor process with this executable name")
 	registerJSONOutputFlag(fs, &flags.jsonMode, "print json; use --json=compact for one-line output")
 	fs.Var(&flags.secrets, "secret", "secret mapping")
 	fs.Var(&flags.only, "only", "profile alias filter")
@@ -76,12 +78,16 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 		return Command{}, fmt.Errorf("%w: session create does not accept a child command", ErrInvalidArguments)
 	}
 	bindAncestorSet := false
+	bindNameSet := false
 	fs.Visit(func(flag *flag.Flag) {
-		if flag.Name == "bind-ancestor" {
+		switch flag.Name {
+		case "bind-ancestor":
 			bindAncestorSet = true
+		case "bind-ancestor-name":
+			bindNameSet = true
 		}
 	})
-	binding, err := sessionCreateBinding(flags, bindAncestorSet)
+	binding, err := sessionCreateBinding(flags, bindAncestorSet, bindNameSet)
 	if err != nil {
 		return Command{}, err
 	}
@@ -101,7 +107,7 @@ func (p Parser) parseSessionCreate(args []string) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	if !bindAncestorSet && !flags.bindParent && inputs.sessionBindingProfile {
+	if !bindAncestorSet && !bindNameSet && !flags.bindParent && inputs.sessionBindingProfile {
 		binding = inputs.sessionBinding
 	}
 	req, err := buildSessionCreateRequest(sessionCreateRequestBuildOptions{
@@ -174,9 +180,23 @@ func parseSessionDestroy(args []string) (Command, error) {
 	}, nil
 }
 
-func sessionCreateBinding(flags sessionCreateFlags, bindAncestorSet bool) (request.SessionBindingPolicy, error) {
-	if flags.bindParent && bindAncestorSet {
-		return request.SessionBindingPolicy{}, fmt.Errorf("%w: use either --bind-parent or --bind-ancestor", ErrInvalidArguments)
+func sessionCreateBinding(
+	flags sessionCreateFlags,
+	bindAncestorSet bool,
+	bindNameSet bool,
+) (request.SessionBindingPolicy, error) {
+	bindFlagCount := 0
+	if flags.bindParent {
+		bindFlagCount++
+	}
+	if bindAncestorSet {
+		bindFlagCount++
+	}
+	if bindNameSet {
+		bindFlagCount++
+	}
+	if bindFlagCount > 1 {
+		return request.SessionBindingPolicy{}, fmt.Errorf("%w: use only one session binding flag", ErrInvalidArguments)
 	}
 	if flags.bindParent {
 		policy, err := request.NewSessionAncestorBinding(1)
@@ -187,6 +207,13 @@ func sessionCreateBinding(flags sessionCreateFlags, bindAncestorSet bool) (reque
 	}
 	if bindAncestorSet {
 		policy, err := request.NewSessionAncestorBinding(flags.bindAncestor)
+		if err != nil {
+			return request.SessionBindingPolicy{}, err
+		}
+		return policy, nil
+	}
+	if bindNameSet {
+		policy, err := request.NewSessionAncestorNameBinding(flags.bindName)
 		if err != nil {
 			return request.SessionBindingPolicy{}, err
 		}

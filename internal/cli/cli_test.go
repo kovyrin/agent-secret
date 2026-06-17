@@ -1620,6 +1620,20 @@ profiles:
 		command.SessionCreateRequest.Binding.AncestorDepth != 2 {
 		t.Fatalf("binding = %+v, want --bind-ancestor 2 override", command.SessionCreateRequest.Binding)
 	}
+
+	command, err = NewParser().Parse([]string{
+		"session",
+		"create",
+		"--profile", "deploy",
+		"--bind-ancestor-name", "Codex",
+	})
+	if err != nil {
+		t.Fatalf("Parse session create with ancestor name returned error: %v", err)
+	}
+	if command.SessionCreateRequest.Binding.Mode != request.SessionBindingModeAncestorName ||
+		command.SessionCreateRequest.Binding.AncestorName != "Codex" {
+		t.Fatalf("binding = %+v, want --bind-ancestor-name Codex override", command.SessionCreateRequest.Binding)
+	}
 }
 
 func TestParseWithSessionRecordsRequestedAliases(t *testing.T) {
@@ -1668,7 +1682,10 @@ func TestParseSessionRejectsInvalidForms(t *testing.T) {
 		{name: "destroy bad id", args: []string{"session", "destroy", "bad"}, want: request.ErrInvalidSessionID},
 		{name: "destroy all with id", args: []string{"session", "destroy", "--all", "asid_abc"}, want: ErrInvalidArguments},
 		{name: "create conflicting bind flags", args: []string{"session", "create", "--bind-parent", "--bind-ancestor", "2", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
+		{name: "create conflicting bind name", args: []string{"session", "create", "--bind-parent", "--bind-ancestor-name", "zsh", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
 		{name: "create bad bind depth", args: []string{"session", "create", "--bind-ancestor", "4", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: request.ErrInvalidSessionBind},
+		{name: "create empty bind name", args: []string{"session", "create", "--bind-ancestor-name", "", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: request.ErrInvalidSessionBind},
+		{name: "create path bind name", args: []string{"session", "create", "--bind-ancestor-name", "/bin/zsh", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: request.ErrInvalidSessionBind},
 		{name: "create bad json mode", args: []string{"session", "create", "--json=ndjson", "--reason", "Deploy", "--secret", "TOKEN=op://Example/Item/token"}, want: ErrInvalidArguments},
 		{name: "with-session public id", args: []string{"with-session", "asid_abc", "--", "tool"}, want: request.ErrInvalidSessionToken},
 		{name: "with-session missing boundary", args: []string{"with-session", "astok_abc", "tool"}, want: ErrShellStringCommand},

@@ -185,6 +185,156 @@ func TestProcessTreeSessionPeerAuthorizerBindsExplicitAncestor(t *testing.T) {
 	}
 }
 
+func TestProcessTreeSessionPeerAuthorizerBindsNearestNamedAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	subShell := testProcessIdentity(501, 500, "/bin/zsh")
+	agentShim := testProcessIdentity(500, 400, "/Applications/Codex.app/Contents/Resources/codex")
+	agentApp := testProcessIdentity(400, 300, "/Applications/Codex.app/Contents/MacOS/Codex")
+	terminal := testProcessIdentity(300, 1, "/Applications/iTerm.app/Contents/MacOS/iTerm2")
+	lookup := map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, subShell.PID, creator.ExecutablePath),
+			subShell,
+			agentShim,
+			agentApp,
+			terminal,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	}
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(lookup)}
+	policy, err := request.NewSessionAncestorNameBinding("Codex")
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNameBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	if binding.Anchor.PID != agentApp.PID {
+		t.Fatalf("binding anchor pid = %d, want named ancestor pid %d", binding.Anchor.PID, agentApp.PID)
+	}
+	info := binding.Info()
+	if info.Mode != request.SessionBindingModeAncestorName ||
+		info.AncestorName != "Codex" ||
+		info.AncestorDepth != 3 ||
+		info.BoundProcess.Name != "Codex" ||
+		info.BoundProcess.PID != agentApp.PID {
+		t.Fatalf("binding info = %+v", info)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerUsesExactAncestorName(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	subShell := testProcessIdentity(501, 500, "/bin/zsh")
+	agentShim := testProcessIdentity(500, 400, "/Applications/Codex.app/Contents/Resources/codex")
+	agentApp := testProcessIdentity(400, 1, "/Applications/Codex.app/Contents/MacOS/Codex")
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, subShell.PID, creator.ExecutablePath),
+			subShell,
+			agentShim,
+			agentApp,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorNameBinding("codex")
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNameBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	if binding.Anchor.PID != agentShim.PID || binding.Policy.AncestorDepth != 2 {
+		t.Fatalf("binding = %+v, want exact lowercase shim at depth 2", binding)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerSkipsIneligibleNamedAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	nearestCodex := testProcessIdentity(501, 500, "/Applications/Codex.app/Contents/MacOS/Codex")
+	nearestCodex.UID = 0
+	nearestCodex.GID = 0
+	eligibleCodex := testProcessIdentity(500, 1, "/Users/example/Applications/Codex.app/Contents/MacOS/Codex")
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, nearestCodex.PID, creator.ExecutablePath),
+			nearestCodex,
+			eligibleCodex,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorNameBinding("Codex")
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNameBinding returned error: %v", err)
+	}
+
+	binding, err := authorizer.BindSessionPeer(creator, policy)
+	if err != nil {
+		t.Fatalf("BindSessionPeer returned error: %v", err)
+	}
+	if binding.Anchor.PID != eligibleCodex.PID || binding.Policy.AncestorDepth != 2 {
+		t.Fatalf("binding = %+v, want eligible named ancestor at depth 2", binding)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerRejectsIneligibleNamedAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	rootParent := testProcessIdentity(500, 1, "/bin/zsh")
+	rootParent.UID = 0
+	rootParent.GID = 0
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, rootParent.PID, creator.ExecutablePath),
+			rootParent,
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorNameBinding("zsh")
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNameBinding returned error: %v", err)
+	}
+
+	if _, err := authorizer.BindSessionPeer(creator, policy); !errors.Is(err, ErrSessionPeerMismatch) {
+		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
+	} else if !strings.Contains(err.Error(), "matched only ineligible binding targets") {
+		t.Fatalf("BindSessionPeer error = %q, want ineligible target detail", err.Error())
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerRejectsMissingNamedAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: ancestryLookup(map[int][]peercred.ProcessIdentity{
+		creator.PID: {
+			testProcessIdentity(creator.PID, 500, creator.ExecutablePath),
+			testProcessIdentity(500, 1, "/bin/zsh"),
+			testProcessIdentity(1, 0, "/sbin/launchd"),
+		},
+	})}
+	policy, err := request.NewSessionAncestorNameBinding("Codex")
+	if err != nil {
+		t.Fatalf("NewSessionAncestorNameBinding returned error: %v", err)
+	}
+
+	if _, err := authorizer.BindSessionPeer(creator, policy); !errors.Is(err, ErrSessionPeerMismatch) {
+		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
+	} else if !strings.Contains(err.Error(), "no eligible ancestor named") {
+		t.Fatalf("BindSessionPeer error = %q, want missing ancestor detail", err.Error())
+	}
+}
+
 func TestProcessTreeSessionPeerAuthorizerRejectsIneligibleExplicitAncestor(t *testing.T) {
 	t.Parallel()
 

@@ -15,6 +15,9 @@ extension ApprovalRequestViewModel {
         var lines = [
             "Mode: \(sanitizedDisplayText(binding.mode))"
         ]
+        if let ancestorName = binding.ancestorName {
+            lines.append("Ancestor name: \(sanitizedDisplayText(ancestorName))")
+        }
         if let ancestorDepth = binding.ancestorDepth {
             lines.append("Ancestor depth: \(ancestorDepth)")
         }

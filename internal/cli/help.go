@@ -371,8 +371,9 @@ func SessionHelp() string {
 	Use --bind-parent when a wrapper creates a session in command substitution and
 	then calls with-session from the parent shell. Use --bind-ancestor N for deeper
 	wrappers; N must be 1..3 and can only target ancestors of the current
-	agent-secret process. session create, list, and destroy accept --json=compact
-	for one-line JSON suitable for shell wrappers.
+	agent-secret process. Use --bind-ancestor-name NAME when wrapper depth varies
+	but the desired ancestor executable basename is stable. session create, list,
+	and destroy accept --json=compact for one-line JSON suitable for shell wrappers.
 	`)
 }
 

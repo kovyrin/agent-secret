@@ -225,19 +225,39 @@ func (s *sessionBindYAML) setFromScalar(raw string) error {
 
 func (s *sessionBindYAML) unmarshalMapping(value *yaml.Node) error {
 	var ancestorDepth int
+	var ancestorName string
+	ancestorDepthSet := false
+	ancestorNameSet := false
 	for i := 0; i < len(value.Content); i += 2 {
 		key := value.Content[i].Value
 		item := value.Content[i+1]
 		switch key {
 		case "ancestor":
+			ancestorDepthSet = true
 			if err := item.Decode(&ancestorDepth); err != nil {
+				return err
+			}
+		case "ancestor_name":
+			ancestorNameSet = true
+			if err := item.Decode(&ancestorName); err != nil {
 				return err
 			}
 		default:
 			return fmt.Errorf("unknown session bind field %q", key)
 		}
 	}
-	policy, err := request.NewSessionAncestorBinding(ancestorDepth)
+	if ancestorDepthSet == ancestorNameSet {
+		return errors.New("session bind mapping must set exactly one of ancestor or ancestor_name")
+	}
+	var (
+		policy request.SessionBindingPolicy
+		err    error
+	)
+	if ancestorDepthSet {
+		policy, err = request.NewSessionAncestorBinding(ancestorDepth)
+	} else {
+		policy, err = request.NewSessionAncestorNameBinding(ancestorName)
+	}
 	if err != nil {
 		return err
 	}
