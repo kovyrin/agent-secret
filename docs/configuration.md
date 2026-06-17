@@ -340,6 +340,7 @@ agent-secret session destroy [--json] --all
 - `--json`
 - `--bind-parent`
 - `--bind-ancestor N`
+- `--bind-ancestor-name NAME` (repeatable)
 
 It also accepts `--max-reads COUNT`, which limits the number of successful
 `with-session` reads. The default is `1`; the allowed range is `1` through
@@ -353,6 +354,10 @@ shell wrapper captures the JSON in command substitution and later runs
 `with-session` from the parent shell. `--bind-ancestor N` binds to a deeper
 ancestor, up to `3`. Agent Secret rejects arbitrary PIDs; explicit bindings can
 target only ancestors of the current `agent-secret` process.
+Repeated `--bind-ancestor-name NAME` walks that same ancestry and binds to the
+nearest eligible ancestor whose executable basename exactly matches any allowed
+name. This is useful when the same wrapper may run from different agents with
+different process-tree shapes. Name matching is exact and case-sensitive.
 
 The same binding policy can live in a profile:
 
@@ -370,9 +375,25 @@ profiles:
     session:
       bind:
         ancestor: 2
+
+  codex-wrapper:
+    include: [deploy]
+    session:
+      bind:
+        ancestor_name: Codex
+
+  agent-wrapper:
+    include: [deploy]
+    session:
+      bind:
+        ancestor_names:
+          - Codex
+          - Claude
+          - Cursor
 ```
 
-CLI `--bind-parent` or `--bind-ancestor` overrides profile `session.bind`.
+CLI `--bind-parent`, `--bind-ancestor`, or `--bind-ancestor-name` overrides
+profile `session.bind`.
 
 For example, approve a project profile plus a one-off CLI reference, then use
 different aliases for different commands:
@@ -399,9 +420,10 @@ agent-secret with-session astok_123 \
   `session destroy`.
 - `session_token`: a secret token accepted by `with-session` only from the
   requester process tree that created the session or the explicit ancestor tree
-  selected by `--bind-parent` / `--bind-ancestor`. It is never shown by
-  `session list`.
+  selected by `--bind-parent`, `--bind-ancestor`, or `--bind-ancestor-name`. It
+  is never shown by `session list`.
 - `session_binding`: non-secret binding metadata including binding mode,
+  requested ancestor names when configured, the matched ancestor name, resolved
   ancestor depth, bound process, and creator process.
 
 It does not print secret values. `session list` shows active `session_id` values
@@ -415,9 +437,9 @@ child command.
 `--allow-mutable-executable`. The `--cwd` value defaults to the caller's current
 directory and must match the session working directory. The caller must also be
 inside the same requester process tree that ran `session create`, or inside the
-explicit ancestor tree selected by `--bind-parent` / `--bind-ancestor`. If
-`with-session` fails with a process mismatch, the error includes the bound
-process and requester process names, PIDs, and paths.
+explicit ancestor tree selected by `--bind-parent`, `--bind-ancestor`, or
+`--bind-ancestor-name`. If `with-session` fails with a process mismatch, the
+error includes the bound process and requester process names, PIDs, and paths.
 
 Sessions are background-helper-memory only. They expire when TTL passes, the
 read count is exhausted, `agent-secret session destroy SESSION_ID` or

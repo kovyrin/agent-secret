@@ -15,6 +15,13 @@ extension ApprovalRequestViewModel {
         var lines = [
             "Mode: \(sanitizedDisplayText(binding.mode))"
         ]
+        if !binding.ancestorNames.isEmpty {
+            let sanitizedNames = binding.ancestorNames.map { sanitizedDisplayText($0) }
+            lines.append("Ancestor names: \(sanitizedNames.joined(separator: ", "))")
+        }
+        if let ancestorName = binding.ancestorName {
+            lines.append("Matched ancestor name: \(sanitizedDisplayText(ancestorName))")
+        }
         if let ancestorDepth = binding.ancestorDepth {
             lines.append("Ancestor depth: \(ancestorDepth)")
         }

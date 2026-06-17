@@ -110,7 +110,8 @@ Agent Secret must meet these goals:
   enumerable through session listing, and are usable only from the requester
   process tree selected at session creation. Explicit parent or ancestor
   bindings can target only ancestors of the current `agent-secret` process, not
-  arbitrary PIDs.
+  arbitrary PIDs. Named ancestor binding still walks only that ancestry and
+  matches the nearest eligible executable basename exactly.
 - The daemon accepts exec and stop requests only from trusted Agent Secret CLI
   executables.
 - The CLI accepts secret-bearing responses only from a trusted Agent Secret

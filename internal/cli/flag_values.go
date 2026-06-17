@@ -89,6 +89,19 @@ func (o *onlyFlags) Set(value string) error {
 	return nil
 }
 
+type ancestorNameFlags struct {
+	names []string
+}
+
+func (n *ancestorNameFlags) String() string {
+	return strings.Join(n.names, ",")
+}
+
+func (n *ancestorNameFlags) Set(value string) error {
+	n.names = append(n.names, value)
+	return nil
+}
+
 type envFileFlags struct {
 	paths []string
 }

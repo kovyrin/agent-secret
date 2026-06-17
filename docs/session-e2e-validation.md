@@ -38,9 +38,9 @@ present.
 The script creates a temporary project config with one secret from a profile and
 adds the second secret with a CLI `--secret` flag. It creates and consumes each
 session inside one shell so `with-session` runs from the approved requester
-process tree, then submits a launchd helper to prove the same token cannot be
-used from a different requester process tree. Approve the native prompts when
-they appear.
+process tree, uses profile and name-based explicit ancestor binding, then
+submits a launchd helper to prove the same token cannot be used from a different
+requester process tree. Approve the native prompts when they appear.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -279,18 +279,39 @@ echo 'destroyed session rejected before child spawn'
 SESSION_ID=""
 SESSION_TOKEN=""
 
+bind_name="$(basename "$(ps -p "$$" -o comm= | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')")"
+if [ -z "$bind_name" ]; then
+  echo 'failed to determine current shell process name for bind-ancestor-name' >&2
+  exit 1
+fi
+missing_bind_name="agent-secret-e2e-missing-ancestor"
+
 EXHAUST_JSON="$(env -u SESSION_E2E_PROFILE_TOKEN -u SESSION_E2E_CLI_TOKEN \
   agent-secret session create \
     --json=compact \
     --profile session-e2e \
     --secret "SESSION_E2E_CLI_TOKEN=$cli_ref" \
-    --bind-ancestor 1 \
+    --bind-ancestor-name "$missing_bind_name" \
+    --bind-ancestor-name "$bind_name" \
     --max-reads 1)"
 EXHAUST_ID="$(printf '%s' "$EXHAUST_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')"
 EXHAUST_TOKEN="$(printf '%s' "$EXHAUST_JSON" |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')"
 printf 'created one-read session: %s\n' "$EXHAUST_ID"
+agent-secret session list --json=compact |
+  python3 -c 'import json, sys
+session_id = sys.argv[1]
+bind_name = sys.argv[2]
+data = json.load(sys.stdin)
+matches = [s for s in data["sessions"] if s["session_id"] == session_id]
+assert len(matches) == 1, data
+binding = matches[0]["session_binding"]
+assert binding["mode"] == "ancestor_name", binding
+assert binding["ancestor_name"] == bind_name, binding
+assert binding["ancestor_names"] == [sys.argv[3], bind_name], binding
+assert binding["ancestor_depth"] >= 1, binding
+print("ancestor-name binding metadata ok")' "$EXHAUST_ID" "$bind_name" "$missing_bind_name"
 run_with_session "$EXHAUST_TOKEN" \
   --only SESSION_E2E_PROFILE_TOKEN \
   --allow-mutable-executable \
@@ -372,6 +393,7 @@ both ok
 read count after subset runs ok
 destroyed session rejected before child spawn
 created one-read session: asid_...
+ancestor-name binding metadata ok
 profile ok
 read exhaustion rejected before child spawn
 audit metadata ok
@@ -384,12 +406,12 @@ This E2E run proves:
 
 - `session create` accepts secrets from a project config profile and CLI args.
 - `session create` accepts `session.bind: parent` from profile config and
-  explicit `--bind-ancestor 1` from CLI flags.
+  repeated explicit `--bind-ancestor-name NAME` CLI flags.
 - `session create`, `session list`, and JSON parsing work with
   `--json=compact`.
 - `session list` shows public session IDs and working directories for active
   sessions without values or session tokens, and includes non-secret binding
-  metadata.
+  metadata for both parent and ancestor-name bindings.
 - `with-session` injects the full approved bag when `--only` is omitted.
 - `with-session --only` injects config-only, CLI-only, and combined subsets.
 - `with-session` accepts session tokens from the same requester process tree

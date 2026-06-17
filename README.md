@@ -144,7 +144,10 @@ Session tokens are accepted only from the approved requester process tree. Use
 `--bind-parent` when a shell wrapper creates the session inside command
 substitution and later calls `with-session` from the parent shell.
 Advanced wrappers can use `--bind-ancestor N` up to `3`, but only ancestors of
-the current `agent-secret` process are accepted.
+the current `agent-secret` process are accepted. If wrapper depth varies across
+different agents, repeat `--bind-ancestor-name NAME`; Agent Secret matches the
+nearest eligible ancestor executable basename in the allowed set and does not
+search arbitrary PIDs.
 
 Inspect item metadata without revealing values:
 
@@ -271,7 +274,9 @@ The launch build is intentionally narrow:
 - 1Password Desktop and Bitwarden Secrets Manager only; no other providers yet.
 - Sessions are bounded by requester process tree or explicit ancestor binding,
   cwd, TTL, read count, aliases, background-helper memory, and
-  `agent-secret with-session`; no long-lived interactive shells.
+  `agent-secret with-session`. Named ancestor binding still matches only the
+  current process ancestry; no arbitrary PID binding or long-lived interactive
+  shells.
 - No writing, updating, or rotating secrets yet.
 - No GCP Secret Manager or GCP token minting support yet.
 - No sandbox guarantee after you approve a child process.

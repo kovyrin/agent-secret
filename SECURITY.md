@@ -13,6 +13,8 @@ The supported runtime scope is narrow:
 - Bounded background-helper sessions through `session create`, `session list`,
   `session destroy`, and `with-session`, with token use bound to the requester
   process tree or explicit ancestor binding selected at session creation.
+  Named ancestor binding walks only the current process ancestry and matches an
+  executable basename; it does not allow arbitrary PID binding.
 
 Linux, Windows, credential helpers, automatic updates, and alternative secret
 backends are not supported security surfaces yet.

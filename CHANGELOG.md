@@ -27,16 +27,21 @@ file before a release is published.
 - Added `agent-secret session create --bind-parent` and `--bind-ancestor N` so
   shell wrappers can bind approved sessions to a stable ancestor process instead
   of the short-lived `agent-secret` process.
+- Added repeatable `agent-secret session create --bind-ancestor-name NAME` for
+  wrappers that can run under different agent executables while still binding
+  only to the nearest matching ancestor process.
 - Added profile config support for session binding with `session.bind: parent`,
-  `session.bind: auto`, and `session.bind: { ancestor: N }`.
+  `session.bind: auto`, `session.bind: { ancestor: N }`, and
+  `session.bind: { ancestor_name: NAME }` or
+  `session.bind: { ancestor_names: [NAME, ...] }`.
 - Added `--json=compact` for session create, list, and destroy output so shell
   wrappers can safely read one JSON object per line.
 
 ### Changed
 
 - Session create/list JSON and approval prompts now include non-secret session
-  binding metadata: binding mode, ancestor depth, bound process, and creator
-  process.
+  binding metadata: binding mode, requested ancestor name, resolved ancestor
+  depth, bound process, and creator process.
 - Session `--max-reads` now accepts up to `100` successful `with-session`
   commands for longer approved workflows.
 - Session process mismatch errors now include the bound process and requester

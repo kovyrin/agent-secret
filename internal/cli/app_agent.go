@@ -219,10 +219,11 @@ func agentContextCommands() map[string]commandContext {
 						{Name: "--override-env", Type: "bool", Description: "Allow with-session to replace existing child env vars with approved aliases."},
 						{Name: "--bind-parent", Type: "bool", Description: "Bind the session to the parent of this agent-secret process."},
 						{Name: "--bind-ancestor", Type: "int", Values: []string{"1..3"}, Description: "Bind the session to an ancestor process depth; only ancestors are accepted."},
+						{Name: "--bind-ancestor-name", Type: "string", Repeatable: true, Description: "Bind the session to the nearest ancestor whose executable basename is in the allowed set."},
 						{Name: "--json", Type: "enum", Values: []string{"true", "pretty", "compact"}, Description: "Print session metadata as JSON; compact emits one line."},
 					},
 					Outputs: []string{"text", "json", "compact json"},
-					Notes:   []string{"returns a public session id for management and a secret session token bound to the requester process tree for with-session", "use --bind-parent for shell command substitution wrappers that later call with-session from the parent shell", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
+					Notes:   []string{"returns a public session id for management and a secret session token bound to the requester process tree for with-session", "use --bind-parent for shell command substitution wrappers that later call with-session from the parent shell", "repeat --bind-ancestor-name NAME when wrapper depth varies across accepted agents; Agent Secret binds the nearest matching ancestor in the current process tree", "secret values stay in Agent Secret's background helper memory until TTL, max reads, destroy, or helper stop"},
 				},
 				"list": {
 					Summary: "List active session ids and non-secret metadata.",
@@ -245,7 +246,7 @@ func agentContextCommands() map[string]commandContext {
 				{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
 			},
 			Outputs: []string{"child passthrough"},
-			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "caller must be in the requester process tree that created the session or in the ancestor tree selected with session create --bind-parent/--bind-ancestor", "session values are injected into the child environment and never printed"},
+			Notes:   []string{"usage: agent-secret with-session SESSION_TOKEN -- COMMAND [ARG...]", "caller must be in the requester process tree that created the session or in the ancestor tree selected with session create --bind-parent/--bind-ancestor/--bind-ancestor-name", "session values are injected into the child environment and never printed"},
 		},
 		"bitwarden": {
 			Summary: "Manage local Bitwarden Secrets Manager token aliases.",
