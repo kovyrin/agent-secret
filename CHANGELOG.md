@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.27] - Pending
+
+### Fixed
+
+- The native approval dialog now keeps decision buttons visible for grouped
+  multi-secret requests and confines scrolling to the requested-secrets section.
+
 ## [0.0.26] - 2026-06-17
 
 ### Added

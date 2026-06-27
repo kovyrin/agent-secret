@@ -59,24 +59,12 @@ import Foundation
         }
 
         private var expandedResources: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Metric.groupExpandedResourceListSpacing) {
-                    ForEach(group.resources, id: \.alias) { resource in
-                        expandedRow(for: resource)
-                    }
+            VStack(alignment: .leading, spacing: Metric.groupExpandedResourceListSpacing) {
+                ForEach(group.resources, id: \.alias) { resource in
+                    expandedRow(for: resource)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: expandedResourceListHeight)
-            .scrollIndicators(.visible)
-        }
-
-        private var expandedResourceListHeight: CGFloat {
-            let rowCount = CGFloat(group.resources.count)
-            let gapCount = CGFloat(max(Metric.singleResourceCount, group.resources.count) - Metric.singleResourceCount)
-            let contentHeight: CGFloat = rowCount * Metric.groupExpandedResourceRowEstimatedHeight +
-                gapCount * Metric.groupExpandedResourceListSpacing
-            return min(contentHeight, Metric.groupExpandedListMaxHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         private var icon: some View {

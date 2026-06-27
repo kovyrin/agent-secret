@@ -48,20 +48,68 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         }
 
         static func panelHeight(visibleScreenHeight: CGFloat?) -> CGFloat {
+            panelHeight(
+                idealContentHeight: Metric.panelMinimumHeight,
+                visibleScreenHeight: visibleScreenHeight
+            )
+        }
+
+        static func panelHeight(idealContentHeight: CGFloat, visibleScreenHeight: CGFloat?) -> CGFloat {
             guard let visibleScreenHeight else {
                 return Metric.panelMinimumHeight
             }
 
-            let usableHeight = max(0, visibleScreenHeight - Metric.panelVisibleFrameVerticalMargin)
-            let preferredHeight = max(Metric.panelMinimumHeight, usableHeight)
-            return min(preferredHeight, Metric.panelMaximumHeight)
+            let preferredHeight = max(Metric.panelMinimumHeight, idealContentHeight)
+            return min(preferredHeight, maximumPanelHeight(visibleScreenHeight: visibleScreenHeight))
         }
 
         static func scrollableContentHeight(forPanelHeight panelHeight: CGFloat) -> CGFloat {
             max(
-                Metric.scrollableApprovalContentMaxHeight,
+                Metric.zeroOffset,
                 panelHeight - Metric.panelFixedVerticalContentHeight
             )
+        }
+
+        private static func maximumPanelHeight(visibleScreenHeight: CGFloat?) -> CGFloat {
+            guard let visibleScreenHeight else {
+                return Metric.panelMinimumHeight
+            }
+
+            if visibleScreenHeight <= Metric.panelVisibleFrameVerticalMargin {
+                return visibleScreenHeight
+            }
+            return visibleScreenHeight - Metric.panelVisibleFrameVerticalMargin
+        }
+
+        @MainActor
+        private static func panelHeight(for request: ApprovalRequest, visibleScreenHeight: CGFloat?) -> CGFloat {
+            let availablePanelHeight = maximumPanelHeight(visibleScreenHeight: visibleScreenHeight)
+            let maximumScrollableContentHeight = scrollableContentHeight(forPanelHeight: availablePanelHeight)
+            let idealContentHeight = idealPanelHeight(
+                for: request,
+                maxScrollableContentHeight: maximumScrollableContentHeight
+            )
+            return panelHeight(
+                idealContentHeight: idealContentHeight,
+                visibleScreenHeight: visibleScreenHeight
+            )
+        }
+
+        @MainActor
+        private static func idealPanelHeight(
+            for request: ApprovalRequest,
+            maxScrollableContentHeight: CGFloat
+        ) -> CGFloat {
+            let hostingView = NSHostingView(
+                rootView: ApprovalRequestPanelView(
+                    request: request,
+                    maxScrollableContentHeight: maxScrollableContentHeight
+                ) { _ in
+                    // The measurement view is never shown, so decisions cannot be submitted from it.
+                }
+            )
+            hostingView.layoutSubtreeIfNeeded()
+            return hostingView.fittingSize.height
         }
 
         @MainActor
@@ -94,9 +142,8 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             let logger = UnifiedApprovalLogger(category: "decisions")
             Self.activate(app)
             let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
-            let panelHeight = Self.panelHeight(
-                visibleScreenHeight: (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height
-            )
+            let visibleScreenHeight = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height
+            let panelHeight = Self.panelHeight(for: request, visibleScreenHeight: visibleScreenHeight)
             let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: Self.panelOrigin,

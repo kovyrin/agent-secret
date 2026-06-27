@@ -106,19 +106,58 @@ import XCTest
         }
 
         @MainActor
-        func testPanelHeightExpandsForTallerVisibleScreens() {
-            XCTAssertEqual(AppKitApprovalPresenter.panelHeight(visibleScreenHeight: 920), 840)
+        func testPanelHeightUsesIdealContentHeightWhenItFits() {
+            XCTAssertEqual(
+                AppKitApprovalPresenter.panelHeight(
+                    idealContentHeight: 820,
+                    visibleScreenHeight: 920
+                ),
+                820
+            )
         }
 
         @MainActor
-        func testPanelHeightCapsAtMaximumForVeryTallVisibleScreens() {
-            XCTAssertEqual(AppKitApprovalPresenter.panelHeight(visibleScreenHeight: 900 + 500), 900)
+        func testPanelHeightUsesVisibleHeightWhenContentExceedsScreen() {
+            XCTAssertEqual(
+                AppKitApprovalPresenter.panelHeight(
+                    idealContentHeight: 999,
+                    visibleScreenHeight: 920
+                ),
+                888
+            )
+        }
+
+        @MainActor
+        func testPanelHeightCanGrowPastOldMaximumOnTallScreens() {
+            XCTAssertEqual(
+                AppKitApprovalPresenter.panelHeight(
+                    idealContentHeight: 950,
+                    visibleScreenHeight: 999
+                ),
+                950
+            )
+        }
+
+        @MainActor
+        func testPanelHeightFitsShortVisibleScreens() {
+            XCTAssertEqual(
+                AppKitApprovalPresenter.panelHeight(
+                    idealContentHeight: 720,
+                    visibleScreenHeight: 640
+                ),
+                608
+            )
         }
 
         @MainActor
         func testScrollableContentHeightExpandsWithPanelHeight() {
-            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 720), 520)
-            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 900), 700)
+            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 720), 60)
+            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 900), 240)
+        }
+
+        @MainActor
+        func testScrollableContentHeightStaysInsideShortPanels() {
+            XCTAssertEqual(AppKitApprovalPresenter.scrollableContentHeight(forPanelHeight: 500), 0)
         }
     }
 #endif

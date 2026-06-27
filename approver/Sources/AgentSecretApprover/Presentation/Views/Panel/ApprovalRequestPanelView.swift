@@ -12,6 +12,8 @@ import Foundation
         let maxScrollableContentHeight: CGFloat
         let decide: (ApprovalDecisionKind) -> Void
 
+        private let resourceScrollTopID = "resource-scroll-top"
+
         @State private var detailsExpanded = false
         @State private var didDecide = false
         @State private var now: Date
@@ -19,7 +21,9 @@ import Foundation
 
         var body: some View {
             VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                scrollableRequestSummary
+                fixedRequestSummary
+                scrollableResourceSection
+                fixedDecisionSection
                 footer
             }
             .padding(.horizontal, Metric.cardHorizontalPadding)
@@ -41,30 +45,49 @@ import Foundation
             }
         }
 
-        private var scrollableRequestSummary: some View {
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                    header
-                    prompt
-                    if viewModel.highScopeWarning {
-                        ApprovalPanelHighScopeWarning(
-                            printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
-                            resourceCount: viewModel.resourceCount
-                        )
-                    }
-                    reasonCard
-                    requestContext
-                    resourceSection
-                    if !viewModel.cautionMessages.isEmpty {
-                        caution
-                    }
-                    details
-                    decisionButtons
+        private var fixedRequestSummary: some View {
+            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
+                header
+                prompt
+                if viewModel.highScopeWarning {
+                    ApprovalPanelHighScopeWarning(
+                        printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
+                        resourceCount: viewModel.resourceCount
+                    )
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                reasonCard
+                requestContext
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private var scrollableResourceSection: some View {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: Metric.zeroOffset) {
+                        Color.clear
+                            .frame(height: Metric.zeroOffset)
+                            .id(resourceScrollTopID)
+                        resourceSection
+                    }
+                }
+                .onAppear {
+                    proxy.scrollTo(resourceScrollTopID, anchor: .top)
+                }
             }
             .frame(maxHeight: maxScrollableContentHeight)
             .scrollIndicators(.automatic)
+        }
+
+        private var fixedDecisionSection: some View {
+            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
+                if !viewModel.cautionMessages.isEmpty {
+                    caution
+                }
+                details
+                decisionButtons
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         var viewModel: ApprovalRequestViewModel {

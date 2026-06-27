@@ -63,11 +63,9 @@ import Foundation
             static let groupChevronExpandedDegrees: Double = 180
             static let groupExpandedIconFontSize: CGFloat = 9
             static let groupExpandedIconSize: CGFloat = 18
-            static let groupExpandedListMaxHeight: CGFloat = 118
             static let groupExpandedRefFontSize: CGFloat = 10
             static let groupExpandedResourceAliasFontSize: CGFloat = 11
             static let groupExpandedResourceListSpacing: CGFloat = 3
-            static let groupExpandedResourceRowEstimatedHeight: CGFloat = 38
             static let groupExpandedResourceRowVerticalPadding: CGFloat = 2
             static let groupAliasFontSize: CGFloat = 11
             static let groupChevronFontSize: CGFloat = 10
@@ -97,10 +95,9 @@ import Foundation
             static let minimumScaleFactor: CGFloat = 0.80
             static let outerPadding: CGFloat = 14
             static let panelCornerRadius: CGFloat = 12
-            static let panelFixedVerticalContentHeight: CGFloat = 200
-            static let panelMaximumHeight: CGFloat = 900
+            static let panelFixedVerticalContentHeight: CGFloat = 660
             static let panelMinimumHeight: CGFloat = 720
-            static let panelVisibleFrameVerticalMargin: CGFloat = 80
+            static let panelVisibleFrameVerticalMargin: CGFloat = 32
             static let pillCornerRadius: CGFloat = 8
             static let pillFontSize: CGFloat = 13
             static let pillHorizontalPadding: CGFloat = 8
