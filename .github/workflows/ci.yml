@@ -64,6 +64,8 @@ jobs:
         run: mise run setup
 
       - name: Run non-secret smoke tests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run test:smoke
 
   draft-release-artifacts:
