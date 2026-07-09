@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 cask "agent-secret" do
-  version "0.0.27"
-  sha256 "8e2fc66625b7ffe8165dc59ea08cfd499aad73da584dffc89720ab7cb71380d9"
+  version "0.0.28"
+  sha256 "d7bba4697ffddab005caea516fb4e5bb4d7ce1ecdde988265386e6a3a60c897c"
 
   url "https://github.com/kovyrin/agent-secret/releases/download/v#{version}/Agent-Secret-v#{version}-macos-arm64.dmg"
   name "Agent Secret"
