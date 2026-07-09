@@ -412,14 +412,14 @@ Usage:
   agent-secret daemon start [--json]
   agent-secret daemon stop [--json]
 
-Normal agent-secret exec use prepares the background helper automatically. Use agent-secret repair for product-level helper recovery.
-Daemon stop clears helper-owned in-memory reusable approvals, use counters, nonces, and cached values. It does not signal or manage already-running child processes.
-`)
+	Normal agent-secret exec use prepares the local service automatically. Use agent-secret install-cli --force for product-level activation.
+	Daemon stop clears helper-owned in-memory reusable approvals, use counters, nonces, and cached values. It does not signal or manage already-running child processes.
+	`)
 }
 
 func DoctorHelp() string {
 	return strings.TrimSpace(`
-agent-secret doctor prepares the background helper if needed and prints non-secret local diagnostics: platform, socket directory privacy, audit log writability, background helper status, native approver health, and 1Password desktop integration readiness.
+agent-secret doctor prepares the local service if needed and prints non-secret local diagnostics: platform, command symlink, socket directory privacy, audit log writability, local service status, native approver health, and 1Password desktop integration readiness.
 It never prints secret values or resolves 1Password item references.
 
 Usage:
@@ -454,7 +454,7 @@ Usage:
 
 func InstallCLIHelp() string {
 	return strings.TrimSpace(`
-agent-secret install-cli installs or repairs the command-line entry point for the current user.
+agent-secret install-cli installs or repairs the command-line entry point for the current user and activates the installed Agent Secret app.
 
 Usage:
 
@@ -471,6 +471,10 @@ When run from a development or test build, it links to the executable that is
 currently running. If the command is already a symlink to that executable, it is
 left in place. Existing regular files and symlinks to different targets are not
 replaced unless --force is passed. Directories are always refused.
+
+When run from a release app, install-cli refuses temporary locations such as a
+mounted disk image or app translocation. Move Agent Secret.app to /Applications
+and run install-cli from the installed app.
 
 Flags:
 

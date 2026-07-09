@@ -99,6 +99,75 @@ func TestInstallCLIUsesBundledCLIPathForDaemonHelperExecutable(t *testing.T) {
 	}
 }
 
+func TestInstallCLIUsesBundledCLIPathForDaemonHelperExecutableWithSeparateBundledCLI(t *testing.T) {
+	t.Parallel()
+
+	bundledCLI, daemonExecutable := writeInstallTestHostedDaemonBundleWithRealCLI(t, t.TempDir())
+	binDir := filepath.Join(t.TempDir(), "bin")
+
+	result, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: daemonExecutable})
+	if err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	wantTarget := filepath.Clean(bundledCLI)
+	if result.TargetPath != wantTarget {
+		t.Fatalf("target path = %q, want bundled CLI %q", result.TargetPath, wantTarget)
+	}
+	target, err := os.Readlink(result.LinkPath)
+	if err != nil {
+		t.Fatalf("read symlink: %v", err)
+	}
+	if target != wantTarget {
+		t.Fatalf("symlink target = %q, want bundled CLI %q", target, wantTarget)
+	}
+}
+
+func TestInstallCLIUsesBundledCLIPathForExternalSymlinkToHostedDaemon(t *testing.T) {
+	t.Parallel()
+
+	bundledCLI, _ := writeInstallTestHostedDaemonBundle(t, resolveInstallTestPath(t, t.TempDir()))
+	outsideBinDir := filepath.Join(t.TempDir(), "outside-bin")
+	if err := os.MkdirAll(outsideBinDir, 0o750); err != nil {
+		t.Fatalf("create outside bin dir: %v", err)
+	}
+	outsideCommand := filepath.Join(outsideBinDir, CommandName)
+	if err := os.Symlink(bundledCLI, outsideCommand); err != nil {
+		t.Fatalf("create outside command symlink: %v", err)
+	}
+	binDir := filepath.Join(t.TempDir(), "bin")
+
+	result, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: outsideCommand})
+	if err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	wantTarget := filepath.Clean(bundledCLI)
+	if result.TargetPath != wantTarget {
+		t.Fatalf("target path = %q, want bundled CLI %q", result.TargetPath, wantTarget)
+	}
+	target, err := os.Readlink(result.LinkPath)
+	if err != nil {
+		t.Fatalf("read symlink: %v", err)
+	}
+	if target != wantTarget {
+		t.Fatalf("symlink target = %q, want bundled CLI %q", target, wantTarget)
+	}
+}
+
+func TestInstallCLIRejectsTemporaryDMGAppLocation(t *testing.T) {
+	tempDMGRoot, err := os.MkdirTemp("/tmp", "agent-secret-dmg.")
+	if err != nil {
+		t.Skipf("could not create temporary DMG-style root: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDMGRoot) }()
+
+	bundledCLI, _ := writeInstallTestHostedDaemonBundle(t, tempDMGRoot)
+
+	_, err = InstallCLI(CLIOptions{BinDir: filepath.Join(t.TempDir(), "bin"), ExecutablePath: bundledCLI})
+	if !errors.Is(err, ErrTransientAppLocation) {
+		t.Fatalf("InstallCLI error = %v, want ErrTransientAppLocation", err)
+	}
+}
+
 func TestInstallCLIRefusesExistingRegularFileWithoutForce(t *testing.T) {
 	t.Parallel()
 
@@ -632,6 +701,18 @@ func writeInstallTestBundle(t *testing.T, dir string) string {
 func writeInstallTestHostedDaemonBundle(t *testing.T, dir string) (string, string) {
 	t.Helper()
 
+	return writeInstallTestHostedDaemonBundleWithPublicCLI(t, dir, true)
+}
+
+func writeInstallTestHostedDaemonBundleWithRealCLI(t *testing.T, dir string) (string, string) {
+	t.Helper()
+
+	return writeInstallTestHostedDaemonBundleWithPublicCLI(t, dir, false)
+}
+
+func writeInstallTestHostedDaemonBundleWithPublicCLI(t *testing.T, dir string, publicCLIIsSymlink bool) (string, string) {
+	t.Helper()
+
 	bundle := filepath.Join(dir, "Agent Secret.app")
 	bundledCLIDir := filepath.Join(bundle, "Contents", "Resources", "bin")
 	daemonDir := filepath.Join(
@@ -654,11 +735,15 @@ func writeInstallTestHostedDaemonBundle(t *testing.T, dir string) (string, strin
 		t.Fatalf("write daemon executable: %v", err)
 	}
 	bundledCLI := filepath.Join(bundledCLIDir, CommandName)
-	if err := os.Symlink(
-		filepath.Join("..", "..", "Library", "Helpers", "AgentSecretDaemon.app", "Contents", "MacOS", "Agent Secret"),
-		bundledCLI,
-	); err != nil {
-		t.Fatalf("create bundled CLI symlink: %v", err)
+	if publicCLIIsSymlink {
+		if err := os.Symlink(
+			filepath.Join("..", "..", "Library", "Helpers", "AgentSecretDaemon.app", "Contents", "MacOS", "Agent Secret"),
+			bundledCLI,
+		); err != nil {
+			t.Fatalf("create bundled CLI symlink: %v", err)
+		}
+	} else if err := os.WriteFile(bundledCLI, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: installer tests need a runnable fixture executable.
+		t.Fatalf("write bundled CLI executable: %v", err)
 	}
 	return bundledCLI, daemonExecutable
 }

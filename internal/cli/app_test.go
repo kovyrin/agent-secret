@@ -1309,8 +1309,8 @@ func TestAppExecReportsBackgroundHelperRefreshBeforeRequest(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "Refreshing Agent Secret background helper") {
-		t.Fatalf("stderr = %q, want refresh status", stderr.String())
+	if !strings.Contains(stderr.String(), "Activating Agent Secret local service") {
+		t.Fatalf("stderr = %q, want activation status", stderr.String())
 	}
 	if manager.repairCalls != 1 || manager.connectCalls != 1 || client.requestExecCalls != 1 {
 		t.Fatalf("calls: repair=%d connect=%d request=%d", manager.repairCalls, manager.connectCalls, client.requestExecCalls)
@@ -1345,9 +1345,9 @@ func TestAppExecRefusesUnexpectedBackgroundHelperBeforeSecretRequest(t *testing.
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "unexpected background helper") ||
+	if !strings.Contains(stderr.String(), "unexpected local service") ||
 		!strings.Contains(stderr.String(), "Details: unexpected background helper: untrusted peer") ||
-		!strings.Contains(stderr.String(), "Run `agent-secret repair`") {
+		!strings.Contains(stderr.String(), "agent-secret install-cli --force") {
 		t.Fatalf("stderr = %q, want unexpected helper guidance", stderr.String())
 	}
 	if manager.connectCalls != 0 || client.requestExecCalls != 0 {
@@ -1557,7 +1557,7 @@ func TestAppDaemonStatusAndDoctor(t *testing.T) {
 		t.Fatalf("doctor exit=%d stderr=%q", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "audit log: writable") ||
-		!strings.Contains(stdout.String(), "Background helper: ok") ||
+		!strings.Contains(stdout.String(), "Agent Secret local service: ok") ||
 		!strings.Contains(stdout.String(), "socket directory: private") ||
 		!strings.Contains(stdout.String(), "native approver: ok") ||
 		!strings.Contains(stdout.String(), "1password desktop integration: ok") {
@@ -1691,7 +1691,8 @@ func TestAppDoctorReportsJSONDependencyFailures(t *testing.T) {
 	}
 	for _, name := range []string{
 		"audit_log",
-		"background_helper",
+		"command_symlink",
+		"local_service",
 		"socket_directory",
 		"native_approver",
 		"1password_desktop_integration",
@@ -1700,7 +1701,7 @@ func TestAppDoctorReportsJSONDependencyFailures(t *testing.T) {
 		if !found || check.Error == "" {
 			t.Fatalf("doctor check %s = %+v found=%t output=%+v", name, check, found, output)
 		}
-		if name == "background_helper" {
+		if name == "local_service" {
 			if check.Status != string(control.RepairStatusRepairRequired) {
 				t.Fatalf("doctor check %s = %+v, want repair required", name, check)
 			}
@@ -2220,7 +2221,7 @@ func TestAppInstallCLIWarnsWhenCommandDirIsNotOnPath(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
 	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
 		return install.CLIResult{
 			LinkPath:   filepath.Join(binDir, "agent-secret"),
@@ -2255,7 +2256,7 @@ func TestAppInstallCLIWarnsWhenEarlierPathEntryShadowsCommand(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
 	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
 		return install.CLIResult{
 			LinkPath:   filepath.Join(binDir, "agent-secret"),
@@ -2281,7 +2282,7 @@ func TestAppInstallCLIJSONReportsShadowedCommand(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
 	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
 		return install.CLIResult{
 			LinkPath:   filepath.Join(binDir, "agent-secret"),
@@ -2308,7 +2309,7 @@ func TestAppInstallCLISkipsPathWarningWhenCommandDirIsOnPath(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
 	app.InstallCLI = func(options install.CLIOptions) (install.CLIResult, error) {
 		return install.CLIResult{
 			LinkPath:   filepath.Join(binDir, "agent-secret"),
@@ -2386,12 +2387,12 @@ func TestAppInstallCLIAttemptsBackgroundHelperRepair(t *testing.T) {
 	if manager.repairCalls != 1 {
 		t.Fatalf("repair calls = %d, want 1", manager.repairCalls)
 	}
-	if !strings.Contains(stderr.String(), "Refreshing Agent Secret background helper") {
-		t.Fatalf("install-cli stderr = %q, want helper refresh status", stderr.String())
+	if !strings.Contains(stderr.String(), "Activating Agent Secret local service") {
+		t.Fatalf("install-cli stderr = %q, want local service activation status", stderr.String())
 	}
 }
 
-func TestAppInstallCLIWarnsWhenBackgroundHelperRepairFails(t *testing.T) {
+func TestAppInstallCLIFailsWhenLocalServiceActivationFails(t *testing.T) {
 	binDir := filepath.Join(t.TempDir(), "bin")
 	manager := &appFakeDaemonManager{
 		repairErr: fmt.Errorf("%w: untrusted peer", control.ErrUnexpectedHelper),
@@ -2407,23 +2408,23 @@ func TestAppInstallCLIWarnsWhenBackgroundHelperRepairFails(t *testing.T) {
 	}
 
 	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
-	if code != 0 {
-		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	if code != 1 {
+		t.Fatalf("install-cli exit=%d, want 1; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
 	if manager.repairCalls != 1 {
 		t.Fatalf("repair calls = %d, want 1", manager.repairCalls)
 	}
-	if !strings.Contains(stderr.String(), "unexpected background helper") ||
+	if !strings.Contains(stderr.String(), "unexpected local service") ||
 		!strings.Contains(stderr.String(), "Details: unexpected background helper: untrusted peer") ||
-		!strings.Contains(stderr.String(), "agent-secret repair") {
-		t.Fatalf("install-cli stderr = %q, want repair warning", stderr.String())
+		!strings.Contains(stderr.String(), "agent-secret install-cli --force") {
+		t.Fatalf("install-cli stderr = %q, want activation failure", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), filepath.Join(binDir, "agent-secret")) {
-		t.Fatalf("install-cli stdout = %q, want install success output", stdout.String())
+	if stdout.Len() != 0 {
+		t.Fatalf("install-cli stdout = %q, want empty on activation failure", stdout.String())
 	}
 }
 
-func TestAppInstallCLIWarnsWhenBackgroundHelperManagerCannotInitialize(t *testing.T) {
+func TestAppInstallCLIFailsWhenBackgroundHelperManagerCannotInitialize(t *testing.T) {
 	binDir := filepath.Join(t.TempDir(), "bin")
 	managerErr := errors.New("manager unavailable")
 	var stdout bytes.Buffer
@@ -2439,15 +2440,15 @@ func TestAppInstallCLIWarnsWhenBackgroundHelperManagerCannotInitialize(t *testin
 	}
 
 	code := app.Run(context.Background(), []string{"install-cli", "--bin-dir", binDir})
-	if code != 0 {
-		t.Fatalf("install-cli exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	if code != 1 {
+		t.Fatalf("install-cli exit=%d, want 1; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "background helper repair skipped") ||
+	if !strings.Contains(stderr.String(), "activate Agent Secret local service") ||
 		!strings.Contains(stderr.String(), managerErr.Error()) {
-		t.Fatalf("install-cli stderr = %q, want manager warning", stderr.String())
+		t.Fatalf("install-cli stderr = %q, want manager activation error", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), filepath.Join(binDir, "agent-secret")) {
-		t.Fatalf("install-cli stdout = %q, want install success output", stdout.String())
+	if stdout.Len() != 0 {
+		t.Fatalf("install-cli stdout = %q, want empty on activation failure", stdout.String())
 	}
 }
 
@@ -2456,7 +2457,7 @@ func runInstallCommandTest(t *testing.T, args []string, configure func(*App), st
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
 	configure(&app)
 
 	code := app.Run(context.Background(), args)
@@ -2473,7 +2474,7 @@ func runInstallCommandJSONTest(t *testing.T, args []string, configure func(*App)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	app := newTestApp(control.Manager{}, &stdout, &stderr)
+	app := newTestAppWithDaemonManager(&appFakeDaemonManager{}, &stdout, &stderr)
 	configure(&app)
 
 	if code := app.Run(context.Background(), args); code != 0 {
@@ -2537,7 +2538,8 @@ func TestAppDoctorUsesManagerWithoutSocket(t *testing.T) {
 		t.Fatalf("doctor exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
 	for _, want := range []string{
-		"Background helper: ok pid=5678",
+		"command symlink: not installed",
+		"Agent Secret local service: ok pid=5678",
 		"socket directory: private",
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -2572,11 +2574,55 @@ func TestAppDoctorReportsRefreshedBackgroundHelper(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doctor exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "Background helper: refreshed pid=5678") {
-		t.Fatalf("doctor output = %q, want refreshed background helper", stdout.String())
+	if !strings.Contains(stdout.String(), "Agent Secret local service: refreshed pid=5678") {
+		t.Fatalf("doctor output = %q, want refreshed local service", stdout.String())
 	}
 	if manager.repairCalls != 1 {
 		t.Fatalf("manager repair calls = %d, want 1", manager.repairCalls)
+	}
+}
+
+func TestAppDoctorReportsStaleCommandSymlink(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	staleHelper := "/Applications/Agent Secret.app/Contents/Library/Helpers/AgentSecretDaemon.app/Contents/MacOS/Agent Secret"
+	if err := os.Symlink(staleHelper, filepath.Join(binDir, "agent-secret")); err != nil {
+		t.Fatalf("create stale command symlink: %v", err)
+	}
+	socketDir := t.TempDir()
+	//nolint:gosec // G302: daemon socket directories must be private but executable by their owner.
+	if err := os.Chmod(socketDir, 0o700); err != nil {
+		t.Fatalf("chmod socket dir: %v", err)
+	}
+	manager := &appFakeDaemonManager{
+		socketPath: filepath.Join(socketDir, "d.sock"),
+		status:     protocol.StatusPayload{PID: 5678},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	app := newTestAppWithDaemonManager(manager, &stdout, &stderr)
+	app.DoctorApproverCheck = nil
+
+	code := app.Run(context.Background(), []string{"doctor", "--json"})
+	if code != 1 {
+		t.Fatalf("doctor exit=%d, want 1; stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var got doctorOutput
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode doctor json: %v; stdout=%q", err, stdout.String())
+	}
+	check, found := findDoctorCheck(got.Checks, "command_symlink")
+	if !found {
+		t.Fatalf("doctor checks missing command_symlink: %+v", got.Checks)
+	}
+	if check.Status != "failed" ||
+		!strings.Contains(check.Error, staleHelper) ||
+		!strings.Contains(check.Error, "agent-secret install-cli --force") {
+		t.Fatalf("command symlink check = %+v", check)
 	}
 }
 
@@ -2609,16 +2655,16 @@ func TestAppDoctorReportsRepairRequiredBackgroundHelper(t *testing.T) {
 	}
 	found := false
 	for _, check := range got.Checks {
-		if check.Name == "background_helper" {
+		if check.Name == "local_service" {
 			found = true
 			if check.Status != string(control.RepairStatusRepairRequired) ||
 				!strings.Contains(check.Error, "untrusted peer") {
-				t.Fatalf("background helper check = %+v", check)
+				t.Fatalf("local service check = %+v", check)
 			}
 		}
 	}
 	if !found {
-		t.Fatalf("doctor checks missing background helper: %+v", got.Checks)
+		t.Fatalf("doctor checks missing local service: %+v", got.Checks)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("doctor stderr = %q, want empty", stderr.String())
@@ -2646,8 +2692,8 @@ func TestAppDoctorReportsRepairRequiredBackgroundHelperText(t *testing.T) {
 		t.Fatalf("doctor exit=%d, want 1", code)
 	}
 	for _, want := range []string{
-		"Background helper: repair required",
-		"Run `agent-secret repair`",
+		"Agent Secret local service: activation required",
+		"Run `agent-secret install-cli --force`",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("doctor output = %q, want %q", stdout.String(), want)
@@ -2831,8 +2877,8 @@ func TestAppExecReportsBackgroundHelperFailureBeforeSpawn(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "prepare background helper") {
-		t.Fatalf("stderr = %q, want background helper failure", stderr.String())
+	if !strings.Contains(stderr.String(), "activate Agent Secret local service") {
+		t.Fatalf("stderr = %q, want local service activation failure", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want no child output", stdout.String())

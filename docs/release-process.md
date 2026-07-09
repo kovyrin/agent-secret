@@ -121,6 +121,7 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
    hdiutil attach -readonly -nobrowse \
      -mountpoint "$mount_dir" "$artifact"
    app="$mount_dir/Agent Secret.app"
+   cli="$app/Contents/Resources/bin/agent-secret"
    daemon="$app/Contents/Library/Helpers/AgentSecretDaemon.app"
    codesign --verify --deep --strict \
      --verbose=2 "$app"
@@ -134,6 +135,9 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
      -c 'Print :CFBundleIdentifier' \
      "$daemon/Contents/Info.plist" |
      grep '^com.kovyrin.agent-secret.daemon$'
+   test -x "$cli"
+   test ! -L "$cli"
+   codesign --verify --strict --verbose=2 "$cli"
    xcrun stapler validate "$app"
    spctl --assess --type execute \
      --verbose "$app"
@@ -187,6 +191,9 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
     brew upgrade --cask agent-secret
     brew list --cask --versions agent-secret | grep "$version"
     /opt/homebrew/bin/agent-secret --version | grep "$version"
+    /opt/homebrew/bin/agent-secret install-cli --force
+    test "$(readlink "$HOME/.local/bin/agent-secret")" = \
+      "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret"
     /opt/homebrew/bin/agent-secret doctor
     /opt/homebrew/bin/agent-secret skill-install --force
     ```

@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/install"
 	"github.com/kovyrin/agent-secret/internal/opaccount"
 	"github.com/kovyrin/agent-secret/internal/profileconfig"
 )
@@ -192,12 +194,14 @@ func (a App) runDoctor(ctx context.Context, command Command) int {
 	if !jsonOutput {
 		a.stdoutln("agent-secret doctor")
 		a.stdoutf("platform: %s\n", platform)
-		a.stdoutf("background helper socket: %s\n", manager.SocketPath())
+		a.stdoutf("local service socket: %s\n", manager.SocketPath())
 	}
 
 	var check doctorCheck
 	var checkOK bool
 	check, checkOK = a.auditLogDoctorCheck(ctx, jsonOutput)
+	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
+	check, checkOK = a.commandSymlinkDoctorCheck(jsonOutput)
 	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
 	check, checkOK = a.backgroundHelperDoctorCheck(ctx, manager, jsonOutput)
 	checks, healthy = appendDoctorCheck(checks, healthy, check, checkOK)
@@ -271,28 +275,92 @@ func (a App) auditLogDoctorCheck(ctx context.Context, jsonOutput bool) (doctorCh
 	return doctorCheck{Name: "audit_log", Status: "ok", Path: auditPath}, true
 }
 
+func (a App) commandSymlinkDoctorCheck(jsonOutput bool) (doctorCheck, bool) {
+	binDir, err := install.DefaultBinDir()
+	if err != nil {
+		if !jsonOutput {
+			a.stdoutf("command symlink: failed (%v)\n", err)
+		}
+		return doctorCheck{Name: "command_symlink", Status: "failed", Error: err.Error()}, false
+	}
+	linkPath := filepath.Join(binDir, install.CommandName)
+	target, err := os.Readlink(linkPath)
+	if errors.Is(err, os.ErrNotExist) {
+		if !jsonOutput {
+			a.stdoutf("command symlink: not installed %s\n", linkPath)
+		}
+		return doctorCheck{Name: "command_symlink", Status: "not_installed", Path: linkPath}, true
+	}
+	if err != nil {
+		if !jsonOutput {
+			a.stdoutf("command symlink: failed %s (%v)\n", linkPath, err)
+		}
+		return doctorCheck{Name: "command_symlink", Status: "failed", Path: linkPath, Error: err.Error()}, false
+	}
+	expectedTarget, err := install.ResolveCLIInstallTarget("")
+	if err != nil {
+		if !jsonOutput {
+			a.stdoutf("command symlink: failed %s (%v)\n", linkPath, err)
+		}
+		return doctorCheck{Name: "command_symlink", Status: "failed", Path: linkPath, Error: err.Error()}, false
+	}
+	if filepath.Clean(target) != expectedTarget {
+		err := fmt.Errorf(
+			"%s points to %s; expected %s; run agent-secret install-cli --force",
+			linkPath,
+			target,
+			expectedTarget,
+		)
+		if !jsonOutput {
+			a.stdoutf("command symlink: failed (%v)\n", err)
+		}
+		return doctorCheck{Name: "command_symlink", Status: "failed", Path: linkPath, Error: err.Error()}, false
+	}
+	if !jsonOutput {
+		a.stdoutf("command symlink: ok %s -> %s\n", linkPath, target)
+	}
+	return doctorCheck{Name: "command_symlink", Status: "ok", Path: linkPath}, true
+}
+
 func (a App) backgroundHelperDoctorCheck(ctx context.Context, manager daemonManager, jsonOutput bool) (doctorCheck, bool) {
 	result, err := manager.Repair(ctx)
 	if err != nil {
 		if !jsonOutput {
-			a.stdoutf("Background helper: repair required (%v)\n", err)
-			a.stdoutln("Run `agent-secret repair` to inspect and repair the local helper state.")
+			a.stdoutf("Agent Secret local service: activation required (%v)\n", err)
+			a.stdoutln("Run `agent-secret install-cli --force` to reactivate the local service.")
 		}
-		return doctorCheck{Name: "background_helper", Status: string(control.RepairStatusRepairRequired), Error: err.Error()}, false
+		return doctorCheck{Name: "local_service", Status: string(control.RepairStatusRepairRequired), Error: err.Error()}, false
+	}
+	if reason, ok := install.TransientAppLocation(result.Hello.Executable); ok {
+		err := fmt.Errorf(
+			"local service is running from %s (%s); run agent-secret install-cli --force from the installed Agent Secret app",
+			result.Hello.Executable,
+			reason,
+		)
+		if !jsonOutput {
+			a.stdoutf("Agent Secret local service: failed (%v)\n", err)
+		}
+		return doctorCheck{
+			Name:   "local_service",
+			Status: "failed",
+			Path:   result.Hello.Executable,
+			PID:    result.PID,
+			Error:  err.Error(),
+		}, false
 	}
 	if !jsonOutput {
 		switch result.Status {
 		case control.RepairStatusRefreshed:
-			a.stdoutf("Background helper: refreshed pid=%d\n", result.PID)
+			a.stdoutf("Agent Secret local service: refreshed pid=%d\n", result.PID)
 		case control.RepairStatusOK:
-			a.stdoutf("Background helper: ok pid=%d\n", result.PID)
+			a.stdoutf("Agent Secret local service: ok pid=%d\n", result.PID)
 		case control.RepairStatusRepairRequired:
-			a.stdoutln("Background helper: repair required")
+			a.stdoutln("Agent Secret local service: activation required")
 		default:
-			a.stdoutf("Background helper: %s pid=%d\n", result.Status, result.PID)
+			a.stdoutf("Agent Secret local service: %s pid=%d\n", result.Status, result.PID)
 		}
 	}
-	return doctorCheck{Name: "background_helper", Status: string(result.Status), PID: result.PID}, true
+	return doctorCheck{Name: "local_service", Status: string(result.Status), Path: result.Hello.Executable, PID: result.PID}, true
 }
 
 func (a App) socketDirectoryDoctorCheck(manager daemonManager, jsonOutput bool) (doctorCheck, bool) {

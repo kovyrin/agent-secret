@@ -1771,12 +1771,12 @@ func TestHelpIsDetailedAndValueFree(t *testing.T) {
 		{
 			name:  "daemon",
 			args:  []string{"daemon", "--help"},
-			wants: []string{"daemon status", "daemon start", "daemon stop", "agent-secret repair", "in-memory"},
+			wants: []string{"daemon status", "daemon start", "daemon stop", "install-cli --force", "in-memory"},
 		},
 		{
 			name:  "doctor",
 			args:  []string{"doctor", "--help"},
-			wants: []string{"non-secret local diagnostics", "background helper", "1Password", "--json"},
+			wants: []string{"non-secret local diagnostics", "local service", "command symlink", "1Password", "--json"},
 		},
 		{
 			name:  "repair",

@@ -36,6 +36,7 @@ app_bundle="$1"
 short_version="${2:-${AGENT_SECRET_VERSION:-}}"
 bundle_version="${3:-${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}}"
 daemon_bundle="$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
+bundled_cli="$app_bundle/Contents/Resources/bin/agent-secret"
 if [[ "$short_version" == "" ]]; then
   short_version="$(agent_secret_default_dev_version "$project_root/CHANGELOG.md")" || {
     echo "check-bundle-metadata: could not derive development version from changelog" >&2
@@ -85,6 +86,14 @@ if [[ ! -d "$app_bundle" ]]; then
 fi
 if [[ "$app_only" -eq 0 && ! -d "$daemon_bundle" ]]; then
   echo "check-bundle-metadata: daemon bundle not found: $daemon_bundle" >&2
+  exit 1
+fi
+if [[ ! -x "$bundled_cli" ]]; then
+  echo "check-bundle-metadata: bundled CLI not executable: $bundled_cli" >&2
+  exit 1
+fi
+if [[ -L "$bundled_cli" ]]; then
+  echo "check-bundle-metadata: bundled CLI must be a real executable, not a symlink: $bundled_cli" >&2
   exit 1
 fi
 

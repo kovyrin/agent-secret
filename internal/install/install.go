@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/pathresolve"
 )
@@ -15,6 +16,7 @@ const SkillName = "agent-secret"
 const appBundleName = "Agent Secret.app"
 
 var ErrRefuseOverwrite = errors.New("refusing to replace existing path")
+var ErrTransientAppLocation = errors.New("agent-secret app is in a temporary install location")
 
 type CLIOptions struct {
 	BinDir         string
@@ -65,19 +67,10 @@ func InstallCLI(options CLIOptions) (CLIResult, error) {
 		}
 	}
 
-	targetPath := options.ExecutablePath
-	if targetPath == "" {
-		executable, err := os.Executable()
-		if err != nil {
-			return CLIResult{}, fmt.Errorf("find current executable: %w", err)
-		}
-		targetPath = executable
-	}
-	resolvedTargetPath, err := cliInstallTargetPath(targetPath)
+	targetPath, err := ResolveCLIInstallTarget(options.ExecutablePath)
 	if err != nil {
 		return CLIResult{}, err
 	}
-	targetPath = resolvedTargetPath
 	if err := validateExecutable(targetPath); err != nil {
 		return CLIResult{}, err
 	}
@@ -92,8 +85,30 @@ func InstallCLI(options CLIOptions) (CLIResult, error) {
 	return CLIResult{LinkPath: linkPath, TargetPath: targetPath}, nil
 }
 
+func ResolveCLIInstallTarget(executablePath string) (string, error) {
+	targetPath := executablePath
+	if targetPath == "" {
+		executable, err := os.Executable()
+		if err != nil {
+			return "", fmt.Errorf("find current executable: %w", err)
+		}
+		targetPath = executable
+	}
+	resolvedTargetPath, err := cliInstallTargetPath(targetPath)
+	if err != nil {
+		return "", err
+	}
+	if err := rejectTransientAppInstallTarget(resolvedTargetPath); err != nil {
+		return "", err
+	}
+	return resolvedTargetPath, nil
+}
+
 func cliInstallTargetPath(path string) (string, error) {
 	if bundledPath, ok := bundledCLIInstallPath(path); ok {
+		if err := validateExecutable(bundledPath); err == nil {
+			return filepath.Clean(bundledPath), nil
+		}
 		resolvedBundledPath, bundledErr := canonicalInstallPath("bundled executable", bundledPath)
 		resolvedPath, pathErr := canonicalInstallPath("executable", path)
 		if bundledErr == nil && pathErr == nil && resolvedBundledPath == resolvedPath {
@@ -104,21 +119,31 @@ func cliInstallTargetPath(path string) (string, error) {
 }
 
 func bundledCLIInstallPath(path string) (string, bool) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", false
-	}
-	clean := filepath.Clean(abs)
-	if appRoot, ok := hostAppRoot(clean); ok {
-		bundledCLI := filepath.Join(appRoot, "Contents", "Resources", "bin", CommandName)
-		if clean == bundledCLI {
+	for _, clean := range installPathCandidates(path) {
+		if appRoot, ok := hostAppRoot(clean); ok {
+			bundledCLI := filepath.Join(appRoot, "Contents", "Resources", "bin", CommandName)
+			if clean == bundledCLI {
+				return bundledCLI, true
+			}
+		}
+		if bundledCLI, ok := bundledCLIPathForDaemonExecutable(clean); ok {
 			return bundledCLI, true
 		}
 	}
-	if bundledCLI, ok := bundledCLIPathForDaemonExecutable(clean); ok {
-		return bundledCLI, true
-	}
 	return "", false
+}
+
+func installPathCandidates(path string) []string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil
+	}
+	clean := filepath.Clean(abs)
+	candidates := []string{clean}
+	if resolved, err := canonicalInstallPath("executable", clean); err == nil && resolved != clean {
+		candidates = append(candidates, resolved)
+	}
+	return candidates
 }
 
 func bundledCLIPathForDaemonExecutable(path string) (string, bool) {
@@ -262,6 +287,49 @@ func containingAppBundlePath(path string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func rejectTransientAppInstallTarget(path string) error {
+	appRoot, ok := hostAppRoot(path)
+	if !ok {
+		return nil
+	}
+	if reason, ok := TransientAppLocation(appRoot); ok {
+		return fmt.Errorf(
+			"%w: %s (%s); move Agent Secret.app to /Applications, then run agent-secret install-cli --force",
+			ErrTransientAppLocation,
+			reason,
+			appRoot,
+		)
+	}
+	return nil
+}
+
+func TransientAppLocation(path string) (string, bool) {
+	candidates := []string{filepath.Clean(path)}
+	if resolved := pathresolve.BestEffort(path); resolved != "" && resolved != candidates[0] {
+		candidates = append(candidates, filepath.Clean(resolved))
+	}
+	for _, candidate := range candidates {
+		if reason, ok := transientAppLocation(candidate); ok {
+			return reason, true
+		}
+	}
+	return "", false
+}
+
+func transientAppLocation(path string) (string, bool) {
+	clean := filepath.Clean(path)
+	switch {
+	case strings.HasPrefix(clean, "/private/tmp/agent-secret-dmg."), strings.HasPrefix(clean, "/tmp/agent-secret-dmg."):
+		return "mounted release verification copy", true
+	case strings.HasPrefix(clean, "/Volumes/"):
+		return "mounted disk image", true
+	case strings.Contains(clean, "/AppTranslocation/"):
+		return "macOS app translocation", true
+	default:
+		return "", false
+	}
 }
 
 func validateSkillDir(path string) error {

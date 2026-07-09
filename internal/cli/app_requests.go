@@ -15,18 +15,18 @@ func (a App) ensureBackgroundHelper(ctx context.Context, manager daemonManager) 
 		return err
 	}
 	if result.Status == control.RepairStatusRefreshed {
-		a.stderrf("agent-secret: Refreshing Agent Secret background helper...\n")
+		a.stderrf("agent-secret: Activating Agent Secret local service...\n")
 	}
 	return nil
 }
 
 func backgroundHelperError(err error) string {
 	if errors.Is(err, control.ErrUnexpectedHelper) {
-		return "Agent Secret found an unexpected background helper and refused to send secrets to it.\n" +
+		return "Agent Secret found an unexpected local service and refused to send secrets to it.\n" +
 			"Details: " + err.Error() + "\n" +
-			"Run `agent-secret repair` to inspect and repair the local helper state."
+			"Run `agent-secret install-cli --force` from the installed Agent Secret app to reactivate the local service."
 	}
-	return fmt.Sprintf("prepare background helper: %v", err)
+	return fmt.Sprintf("activate Agent Secret local service: %v", err)
 }
 
 func requestDaemonPayload[T any](

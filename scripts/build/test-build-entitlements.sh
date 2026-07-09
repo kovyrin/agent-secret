@@ -30,4 +30,8 @@ if ! grep -F "sign_path \"\$app_bundle/Contents/Library/Helpers/AgentSecretDaemo
   fail "daemon helper app must be signed with daemon entitlements"
 fi
 
+if ! grep -F "sign_path \"\$app_bundle/Contents/Resources/bin/agent-secret\"" "$build_script" >/dev/null; then
+  fail "bundled CLI executable must be signed separately"
+fi
+
 echo "test-build-entitlements: ok"

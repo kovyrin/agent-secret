@@ -20,6 +20,25 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.29] - 2026-07-09
+
+### Fixed
+
+- Made the bundled `Contents/Resources/bin/agent-secret` a real signed CLI
+  executable instead of a symlink to the hosted local-service helper, so user
+  command symlinks and helper trust paths stay distinct after upgrades.
+- Made `install-cli --force` preserve the public app-bundle CLI path even when
+  launched through an older external symlink that resolves directly to the
+  helper executable.
+- Made `install-cli` fail setup when local-service activation fails, with a
+  direct `agent-secret install-cli --force` recovery hint instead of leaving the
+  next secret-backed command to fail later.
+- Made `install-cli` refuse release apps running from mounted disk images, DMG
+  verification temp directories, or app translocation before they can refresh
+  local service state.
+- Made `doctor` check the user command symlink and report stale helper-target
+  symlinks as a local activation problem before checking 1Password integration.
+
 ## [0.0.28] - 2026-07-09
 
 ### Fixed

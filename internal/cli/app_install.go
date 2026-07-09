@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,7 +38,13 @@ func (a App) runInstallCLI(ctx context.Context, command Command) int {
 		a.stderrf("agent-secret: install-cli: %v\n", err)
 		return 1
 	}
-	a.tryRepairBackgroundHelperAfterInstall(ctx)
+	if err := a.tryRepairBackgroundHelperAfterInstall(ctx); err != nil {
+		if command.OutputJSON {
+			return a.writeJSONError("install-cli", err)
+		}
+		a.stderrf("agent-secret: install-cli: %v\n", err)
+		return 1
+	}
 	if command.OutputJSON {
 		output := installOutput{
 			SchemaVersion: "1",
@@ -59,15 +66,15 @@ func (a App) runInstallCLI(ctx context.Context, command Command) int {
 	return 0
 }
 
-func (a App) tryRepairBackgroundHelperAfterInstall(ctx context.Context) {
+func (a App) tryRepairBackgroundHelperAfterInstall(ctx context.Context) error {
 	manager, err := a.daemonManager()
 	if err != nil {
-		a.stderrf("agent-secret: background helper repair skipped: %v\n", err)
-		return
+		return fmt.Errorf("activate Agent Secret local service: %w", err)
 	}
 	if err := a.ensureBackgroundHelper(ctx, manager); err != nil {
-		a.stderrf("agent-secret: %s\n", backgroundHelperError(err))
+		return errors.New(backgroundHelperError(err))
 	}
+	return nil
 }
 
 func (a App) runSkillInstall(command Command) int {

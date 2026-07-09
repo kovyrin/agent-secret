@@ -516,7 +516,7 @@ environment account overrides, then default desktop account detection.
 
 ## Other Commands
 
-Background helper repair:
+Low-level background helper diagnostics:
 
 ```bash
 agent-secret repair [--json]
@@ -536,8 +536,9 @@ Diagnostics:
 agent-secret doctor [--json]
 ```
 
-`doctor` prints non-secret setup diagnostics. It should not require or resolve
-real secret values.
+`doctor` prints non-secret setup diagnostics, including the command symlink and
+local service activation state. It should not require or resolve real secret
+values.
 
 CLI installation:
 
@@ -548,10 +549,13 @@ agent-secret install-cli --bin-dir "$HOME/.local/bin"
 agent-secret install-cli --force
 ```
 
-`install-cli` creates or repairs the user-level `agent-secret` command symlink.
-After a successful install, it also tries to refresh the local background
-helper. Helper repair failures are warnings; rerun `agent-secret repair` if the
-helper needs manual attention.
+`install-cli` creates or repairs the user-level `agent-secret` command symlink
+and activates the installed Agent Secret local service. Activation failures make
+the command fail so setup and upgrade scripts do not leave a stale local service
+for the next secret-backed command.
+When run from a release app, `install-cli` refuses temporary locations such as a
+mounted disk image or app translocation. Move `Agent Secret.app` to
+`/Applications`, then rerun `agent-secret install-cli --force`.
 It leaves an existing target symlink in place, refuses directories, and replaces
 an existing regular file or different symlink only when `--force` is passed.
 

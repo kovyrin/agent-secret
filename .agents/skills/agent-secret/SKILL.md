@@ -522,10 +522,10 @@ print(f"len={len(v)} sha256={digest}")
 ## Troubleshooting
 
 - `agent-secret doctor` shows non-secret local diagnostics.
-- `agent-secret repair` inspects and repairs Agent Secret background helper
-  state.
-- `agent-secret install-cli` repairs the command symlink and then tries to
-  refresh the local background helper.
+- `agent-secret install-cli --force` repairs the command symlink and activates
+  the installed Agent Secret local service.
+- `agent-secret repair` is a low-level diagnostic command for Agent Secret
+  background helper state.
 - `agent-secret daemon status|start|stop` is for low-level daemon diagnostics.
 - `agent-secret bitwarden secrets-manager token status --alias ALIAS` checks
   whether a Bitwarden token alias exists without printing the token.

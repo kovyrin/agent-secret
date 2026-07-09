@@ -372,7 +372,7 @@ fi
 "$tool_cp" -R "$skill_source" "$app_bundle/Contents/Resources/skills/agent-secret"
 "$tool_cp" "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
 "$tool_cp" -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
-"$tool_ln" -s "../../Library/Helpers/AgentSecretDaemon.app/Contents/MacOS/$AGENT_SECRET_APP_EXECUTABLE" "$app_bundle/Contents/Resources/bin/agent-secret"
+"$tool_install" -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
 
 cat >"$app_bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -422,6 +422,7 @@ else
   echo "Signing app bundle with $codesign_identity..."
 fi
 sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app" "$daemon_entitlements"
+sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
 sign_path "$app_bundle"
 "$project_root/scripts/build/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"
 
