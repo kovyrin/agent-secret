@@ -20,6 +20,11 @@ cask "agent-secret" do
   app "Agent Secret.app"
   binary "#{appdir}/Agent Secret.app/Contents/Resources/bin/agent-secret"
 
+  postflight do
+    system_command "#{appdir}/Agent Secret.app/Contents/Resources/bin/agent-secret",
+                   args: ["install-cli", "--force"]
+  end
+
   uninstall quit: [
     "com.kovyrin.agent-secret",
     "com.kovyrin.agent-secret.daemon",
