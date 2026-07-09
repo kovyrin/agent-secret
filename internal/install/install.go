@@ -73,7 +73,7 @@ func InstallCLI(options CLIOptions) (CLIResult, error) {
 		}
 		targetPath = executable
 	}
-	resolvedTargetPath, err := canonicalInstallPath("executable", targetPath)
+	resolvedTargetPath, err := cliInstallTargetPath(targetPath)
 	if err != nil {
 		return CLIResult{}, err
 	}
@@ -90,6 +90,59 @@ func InstallCLI(options CLIOptions) (CLIResult, error) {
 		return CLIResult{}, err
 	}
 	return CLIResult{LinkPath: linkPath, TargetPath: targetPath}, nil
+}
+
+func cliInstallTargetPath(path string) (string, error) {
+	if bundledPath, ok := bundledCLIInstallPath(path); ok {
+		resolvedBundledPath, bundledErr := canonicalInstallPath("bundled executable", bundledPath)
+		resolvedPath, pathErr := canonicalInstallPath("executable", path)
+		if bundledErr == nil && pathErr == nil && resolvedBundledPath == resolvedPath {
+			return filepath.Clean(bundledPath), nil
+		}
+	}
+	return canonicalInstallPath("executable", path)
+}
+
+func bundledCLIInstallPath(path string) (string, bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	clean := filepath.Clean(abs)
+	if appRoot, ok := hostAppRoot(clean); ok {
+		bundledCLI := filepath.Join(appRoot, "Contents", "Resources", "bin", CommandName)
+		if clean == bundledCLI {
+			return bundledCLI, true
+		}
+	}
+	if bundledCLI, ok := bundledCLIPathForDaemonExecutable(clean); ok {
+		return bundledCLI, true
+	}
+	return "", false
+}
+
+func bundledCLIPathForDaemonExecutable(path string) (string, bool) {
+	daemonBundle, ok := containingAppBundlePath(path)
+	if !ok || filepath.Base(daemonBundle) != "AgentSecretDaemon.app" {
+		return "", false
+	}
+	helpersDir := filepath.Dir(daemonBundle)
+	if filepath.Base(helpersDir) != "Helpers" {
+		return "", false
+	}
+	libraryDir := filepath.Dir(helpersDir)
+	if filepath.Base(libraryDir) != "Library" {
+		return "", false
+	}
+	contentsDir := filepath.Dir(libraryDir)
+	if filepath.Base(contentsDir) != "Contents" {
+		return "", false
+	}
+	hostApp := filepath.Dir(contentsDir)
+	if filepath.Base(hostApp) != appBundleName {
+		return "", false
+	}
+	return filepath.Join(hostApp, "Contents", "Resources", "bin", CommandName), true
 }
 
 func InstallSkill(options SkillOptions) (SkillResult, error) {
@@ -196,6 +249,15 @@ func bundledSkillCandidates(executablePaths []string) []string {
 func hostAppRoot(path string) (string, bool) {
 	for current := filepath.Clean(path); current != "." && current != string(filepath.Separator); current = filepath.Dir(current) {
 		if filepath.Base(current) == appBundleName {
+			return current, true
+		}
+	}
+	return "", false
+}
+
+func containingAppBundlePath(path string) (string, bool) {
+	for current := filepath.Clean(path); current != "." && current != string(filepath.Separator); current = filepath.Dir(current) {
+		if filepath.Ext(current) == ".app" {
 			return current, true
 		}
 	}

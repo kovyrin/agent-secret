@@ -20,6 +20,16 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.28] - 2026-07-09
+
+### Fixed
+
+- Made `install-cli --force` preserve the app bundle's
+  `Contents/Resources/bin/agent-secret` entry point instead of rewriting user
+  command symlinks directly to the hosted background helper executable.
+- Updated the pinned Go toolchain to `1.26.5` so release vulnerability checks
+  use the standard library fix for GO-2026-5856.
+
 ## [0.0.27] - 2026-06-30
 
 ### Fixed

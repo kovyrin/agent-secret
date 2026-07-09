@@ -53,6 +53,52 @@ func TestInstallCLIResolvesExecutableSymlink(t *testing.T) {
 	}
 }
 
+func TestInstallCLIPreservesBundledCLIPath(t *testing.T) {
+	t.Parallel()
+
+	bundledCLI, _ := writeInstallTestHostedDaemonBundle(t, t.TempDir())
+	binDir := filepath.Join(t.TempDir(), "bin")
+
+	result, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: bundledCLI})
+	if err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	wantTarget := filepath.Clean(bundledCLI)
+	if result.TargetPath != wantTarget {
+		t.Fatalf("target path = %q, want bundled CLI %q", result.TargetPath, wantTarget)
+	}
+	target, err := os.Readlink(result.LinkPath)
+	if err != nil {
+		t.Fatalf("read symlink: %v", err)
+	}
+	if target != wantTarget {
+		t.Fatalf("symlink target = %q, want bundled CLI %q", target, wantTarget)
+	}
+}
+
+func TestInstallCLIUsesBundledCLIPathForDaemonHelperExecutable(t *testing.T) {
+	t.Parallel()
+
+	bundledCLI, daemonExecutable := writeInstallTestHostedDaemonBundle(t, t.TempDir())
+	binDir := filepath.Join(t.TempDir(), "bin")
+
+	result, err := InstallCLI(CLIOptions{BinDir: binDir, ExecutablePath: daemonExecutable})
+	if err != nil {
+		t.Fatalf("InstallCLI returned error: %v", err)
+	}
+	wantTarget := filepath.Clean(bundledCLI)
+	if result.TargetPath != wantTarget {
+		t.Fatalf("target path = %q, want bundled CLI %q", result.TargetPath, wantTarget)
+	}
+	target, err := os.Readlink(result.LinkPath)
+	if err != nil {
+		t.Fatalf("read symlink: %v", err)
+	}
+	if target != wantTarget {
+		t.Fatalf("symlink target = %q, want bundled CLI %q", target, wantTarget)
+	}
+}
+
 func TestInstallCLIRefusesExistingRegularFileWithoutForce(t *testing.T) {
 	t.Parallel()
 
@@ -581,6 +627,40 @@ func writeInstallTestBundle(t *testing.T, dir string) string {
 	writeInstallTestExecutable(t, executableDir)
 	writeInstallTestSkill(t, skillsDir)
 	return bundle
+}
+
+func writeInstallTestHostedDaemonBundle(t *testing.T, dir string) (string, string) {
+	t.Helper()
+
+	bundle := filepath.Join(dir, "Agent Secret.app")
+	bundledCLIDir := filepath.Join(bundle, "Contents", "Resources", "bin")
+	daemonDir := filepath.Join(
+		bundle,
+		"Contents",
+		"Library",
+		"Helpers",
+		"AgentSecretDaemon.app",
+		"Contents",
+		"MacOS",
+	)
+	if err := os.MkdirAll(bundledCLIDir, 0o750); err != nil {
+		t.Fatalf("create bundled CLI dir: %v", err)
+	}
+	if err := os.MkdirAll(daemonDir, 0o750); err != nil {
+		t.Fatalf("create daemon dir: %v", err)
+	}
+	daemonExecutable := filepath.Join(daemonDir, "Agent Secret")
+	if err := os.WriteFile(daemonExecutable, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil { //nolint:gosec // G306: installer tests need a runnable fixture executable.
+		t.Fatalf("write daemon executable: %v", err)
+	}
+	bundledCLI := filepath.Join(bundledCLIDir, CommandName)
+	if err := os.Symlink(
+		filepath.Join("..", "..", "Library", "Helpers", "AgentSecretDaemon.app", "Contents", "MacOS", "Agent Secret"),
+		bundledCLI,
+	); err != nil {
+		t.Fatalf("create bundled CLI symlink: %v", err)
+	}
+	return bundledCLI, daemonExecutable
 }
 
 func writeInstallTestSkill(t *testing.T, dir string) string {
