@@ -324,18 +324,22 @@ install instructions.
 
 ## Toolchain Pin Maintenance
 
-The GitHub workflow pins both `jdx/mise-action` and the `mise` binary that the
-action downloads. When updating the CI toolchain, update these values together
-in `.github/workflows/ci.yml`:
+The GitHub workflow installs `mise` with
+`scripts/checks/install-ci-mise.sh`. The installer downloads the official
+release binary with retries, falls back to the GitHub release API if direct
+asset downloads keep failing, verifies its SHA-256 digest, and installs it at
+`$HOME/.local/share/mise/bin/mise`. When updating the CI toolchain, update these
+values together in `.github/workflows/ci.yml`:
 
 - `AGENT_SECRET_MISE_VERSION`
 - `AGENT_SECRET_MISE_SHA256_MACOS_ARM64`
-Resolve checksums from the official `jdx/mise` release archive for the GitHub
+Resolve checksums from the official `jdx/mise` release binary for the GitHub
 runner architecture:
 
 ```bash
 version=2026.4.28
-shasum -a 256 "mise-v${version}-macos-arm64.tar.gz"
+curl -fsSLO "https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-macos-arm64"
+shasum -a 256 "mise-v${version}-macos-arm64"
 ```
 
 Run the workflow pin smoke test after any workflow change:
@@ -344,12 +348,13 @@ Run the workflow pin smoke test after any workflow change:
 AGENT_SECRET_IN_MISE=1 scripts/checks/test-workflow-actions-pinned.sh
 ```
 
-That smoke test fails if a `jdx/mise-action` step does not set both `version`
-and `sha256`.
+That smoke test fails if third-party workflow actions are not pinned to full
+commit SHAs. It also fails if a future `jdx/mise-action` step does not set both
+`version` and `sha256`.
 
-Signed release builds run through the pinned CI `mise` action and fixed macOS
-system tools for signing, notarization, and DMG assembly. Keep the workflow
-tool action version and checksum pinned when changing release automation.
+Signed release builds run through the checksum-verified CI `mise` installer and
+fixed macOS system tools for signing, notarization, and DMG assembly. Keep the
+workflow tool version and checksum pinned when changing release automation.
 
 ## Failed Release Runs
 

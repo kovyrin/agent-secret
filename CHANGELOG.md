@@ -29,9 +29,9 @@ file before a release is published.
   command symlinks directly to the hosted background helper executable.
 - Updated the pinned Go toolchain to `1.26.5` so release vulnerability checks
   use the standard library fix for GO-2026-5856.
-- Updated the pinned CI `mise-action` to the Node 24-compatible v4.2.0
-  release while keeping the downloaded `mise` binary version and checksum
-  pinned.
+- Replaced the CI `mise` action with a checksum-verified installer that retries
+  transient GitHub release asset download failures and falls back to the GitHub
+  release API.
 
 ## [0.0.27] - 2026-06-30
 
