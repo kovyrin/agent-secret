@@ -25,12 +25,16 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install mise
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/checks/install-ci-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Run lints and tests
@@ -47,12 +51,16 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install mise
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/checks/install-ci-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Run non-secret smoke tests
@@ -81,12 +89,16 @@ jobs:
         run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
 
       - name: Install mise
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/checks/install-ci-mise.sh
 
       - name: Trust mise config
         run: mise trust --yes
 
       - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: mise run setup
 
       - name: Verify release signing configuration

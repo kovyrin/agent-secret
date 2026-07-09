@@ -333,6 +333,10 @@ values together in `.github/workflows/ci.yml`:
 
 - `AGENT_SECRET_MISE_VERSION`
 - `AGENT_SECRET_MISE_SHA256_MACOS_ARM64`
+
+The workflow passes the built-in Actions token to `mise run setup` so aqua and
+github tool resolution use authenticated GitHub API requests.
+
 Resolve checksums from the official `jdx/mise` release binary for the GitHub
 runner architecture:
 

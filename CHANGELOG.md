@@ -32,6 +32,8 @@ file before a release is published.
 - Replaced the CI `mise` action with a checksum-verified installer that retries
   transient GitHub release asset download failures and falls back to the GitHub
   release API.
+- Passed the built-in Actions token to CI tool setup so `mise` tool resolution
+  does not rely on unauthenticated GitHub API rate limits.
 
 ## [0.0.27] - 2026-06-30
 
