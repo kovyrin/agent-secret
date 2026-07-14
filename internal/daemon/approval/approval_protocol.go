@@ -178,7 +178,7 @@ func NewGCPExecPayload(correlation protocol.Correlation, req request.GCPExecRequ
 		Command:                slices.Clone(req.Command),
 		CWD:                    req.CWD,
 		ResolvedExecutable:     req.ResolvedExecutable,
-		AllowMutableExecutable: false,
+		AllowMutableExecutable: req.AllowMutableExecutable,
 		ExpiresAt:              req.ExpiresAt,
 		Resources: []ApprovalRequestedResource{
 			gcpApprovalResource(req.Access()),

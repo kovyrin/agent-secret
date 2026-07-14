@@ -222,6 +222,9 @@ agent-secret gcp with-session "$handle" -- \
 agent-secret gcp session destroy "$handle"
 ```
 
+For trusted repo-local wrappers, pass `--allow-mutable-executable` the same way
+you would with normal `agent-secret exec`.
+
 ## What You Approve
 
 ![Agent Secret approval prompt](docs/images/approval-request.png)

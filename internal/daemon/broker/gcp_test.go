@@ -185,6 +185,36 @@ func TestBrokerGCPExecDenialStopsBeforeMint(t *testing.T) {
 	}
 }
 
+func TestBrokerGCPSessionCreateDenialDoesNotCreateSession(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Now:                func() time.Time { return now },
+		Approver:           &mockApprover{decision: approval.Decision{Approved: false, DenialReason: "no"}},
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     &fakeGCPMinter{},
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              aud,
+	})
+	_, err := broker.CreateGCPSession(context.Background(), testCorrelation("req_create", "nonce_create"), testGCPSessionCreateRequest(now), "asess_test")
+	if !errors.Is(err, approval.ErrApprovalDenied) {
+		t.Fatalf("CreateGCPSession error = %v, want approval denied", err)
+	}
+	listed, err := broker.ListGCPSessions(context.Background(), "/tmp/project")
+	if err != nil {
+		t.Fatalf("ListGCPSessions returned error: %v", err)
+	}
+	if len(listed.Sessions) != 0 {
+		t.Fatalf("sessions = %+v, want none", listed.Sessions)
+	}
+	if !containsAuditEvent(aud.Events(), audit.EventApprovalDenied) ||
+		containsAuditEvent(aud.Events(), audit.EventGCPSessionCreated) {
+		t.Fatalf("unexpected session denial audit events: %+v", aud.Events())
+	}
+}
+
 func TestBrokerGCPExecReportsUnavailableMinterAndCleansActiveState(t *testing.T) {
 	t.Parallel()
 

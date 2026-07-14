@@ -38,7 +38,7 @@ extension ApprovalRequestViewModel {
         let timeRemaining: String
     }
 
-    private static func inspectionResourceSectionTitle(for operation: ApprovalOperation) -> String {
+    static func inspectionResourceSectionTitle(for operation: ApprovalOperation) -> String {
         switch operation {
         case .exec:
             "Secrets:"

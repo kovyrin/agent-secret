@@ -192,66 +192,7 @@ func agentContextCommands() map[string]commandContext {
 			Outputs: []string{"child passthrough", "dry-run text", "dry-run json"},
 			Notes:   []string{"the wrapped command must appear after -- as argv", "normal exec has no JSON mode because child output is passed through unchanged"},
 		},
-		"gcp": {
-			Summary: "Run commands with approved short-lived GCP access tokens and isolated Cloud SDK state.",
-			Subcommands: map[string]commandContext{
-				"exec": {
-					Summary: "Run one command with approved GCP access.",
-					Flags: []flagContext{
-						{Name: "--profile", Type: "string", Description: "Load a GCP profile from project config."},
-						{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
-						{Name: "--project", Type: "string", Description: "Intended GCP project."},
-						{Name: "--service-account", Type: "string", Description: "Service account to impersonate."},
-						{Name: "--scope", Type: "string", Repeatable: true, Description: "OAuth scope."},
-						{Name: "--reason", Type: "string", Description: "Human-readable reason shown to the approver."},
-						{Name: "--ttl", Type: "duration", Default: request.DefaultExecTTL.String(), Values: []string{request.MinRequestTTL.String() + ".." + request.MaxRequestTTL.String()}, Description: "Approval TTL."},
-						{Name: "--dry-run", Type: "bool", Description: "Validate without prompting, minting, or spawning."},
-						{Name: "--reuse-only", Type: "bool", Description: "Use an existing reusable approval or fail without prompting."},
-						{Name: "--json", Type: "bool", Description: "Only valid with --dry-run."},
-					},
-					Outputs: []string{"child passthrough", "dry-run text", "dry-run json"},
-				},
-				"session create": {
-					Summary: "Approve a config-backed multi-command GCP session.",
-					Flags: []flagContext{
-						{Name: "--profile", Type: "string", Description: "Load a GCP profile from project config."},
-						{Name: "--reason", Type: "string", Description: "Human-readable workflow reason."},
-						{Name: "--ttl", Type: "duration", Default: request.DefaultGCPSessionTTL.String(), Values: []string{request.MinRequestTTL.String() + ".." + request.MaxGCPSessionTTL.String()}, Description: "Session TTL."},
-						{Name: "--max-command-starts", Type: "int", Default: "20", Description: "Maximum approved with-session command starts."},
-						{Name: "--json", Type: "bool", Description: "Print JSON output."},
-					},
-					Outputs: []string{"text", "json"},
-				},
-				"with-session": {
-					Summary: "Run one command inside an approved GCP session.",
-					Outputs: []string{"child passthrough"},
-				},
-				"auth status": {
-					Summary: "Show app-owned Google bootstrap auth stored in Keychain.",
-					Flags: append([]flagContext{
-						{Name: "--google-account", Type: "string", Description: "Optional Google bootstrap identity alias filter."},
-					}, jsonFlag()...),
-					Outputs: []string{"text", "json"},
-				},
-				"auth login": {
-					Summary: "Start daemon-owned Google OAuth login with the bundled OAuth client and store bootstrap state in Keychain.",
-					Flags: []flagContext{
-						{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
-						{Name: "--expected-email", Type: "string", Description: "Refuse login unless Google reports this email."},
-						{Name: "--json", Type: "bool", Description: "Print JSON output."},
-					},
-					Outputs: []string{"text", "json"},
-				},
-				"auth logout": {
-					Summary: "Remove app-owned Google bootstrap auth from Keychain.",
-					Flags: []flagContext{
-						{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
-						{Name: "--json", Type: "bool", Description: "Print JSON output."},
-					},
-					Outputs: []string{"text", "json"},
-				},
-			},
-		},
+		"gcp": gcpCommandContext(),
 		"install-cli": {
 			Summary: "Install or repair the command symlink for this user.",
 			Flags: append([]flagContext{
@@ -384,6 +325,74 @@ func agentContextCommands() map[string]commandContext {
 			Summary: "Print the installed agent-secret version.",
 			Flags:   jsonFlag(),
 			Outputs: []string{"text", "json"},
+		},
+	}
+}
+
+func gcpCommandContext() commandContext {
+	return commandContext{
+		Summary: "Run commands with approved short-lived GCP access tokens and isolated Cloud SDK state.",
+		Subcommands: map[string]commandContext{
+			"exec": {
+				Summary: "Run one command with approved GCP access.",
+				Flags: []flagContext{
+					{Name: "--profile", Type: "string", Description: "Load a GCP profile from project config."},
+					{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
+					{Name: "--project", Type: "string", Description: "Intended GCP project."},
+					{Name: "--service-account", Type: "string", Description: "Service account to impersonate."},
+					{Name: "--scope", Type: "string", Repeatable: true, Description: "OAuth scope."},
+					{Name: "--reason", Type: "string", Description: "Human-readable reason shown to the approver."},
+					{Name: "--ttl", Type: "duration", Default: request.DefaultExecTTL.String(), Values: []string{request.MinRequestTTL.String() + ".." + request.MaxRequestTTL.String()}, Description: "Approval TTL."},
+					{Name: "--dry-run", Type: "bool", Description: "Validate without prompting, minting, or spawning."},
+					{Name: "--reuse-only", Type: "bool", Description: "Use an existing reusable approval or fail without prompting."},
+					{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path after surfacing the approval warning."},
+					{Name: "--json", Type: "bool", Description: "Only valid with --dry-run."},
+				},
+				Outputs: []string{"child passthrough", "dry-run text", "dry-run json"},
+			},
+			"session create": {
+				Summary: "Approve a config-backed multi-command GCP session.",
+				Flags: []flagContext{
+					{Name: "--profile", Type: "string", Description: "Load a GCP profile from project config."},
+					{Name: "--reason", Type: "string", Description: "Human-readable workflow reason."},
+					{Name: "--ttl", Type: "duration", Default: request.DefaultGCPSessionTTL.String(), Values: []string{request.MinRequestTTL.String() + ".." + request.MaxGCPSessionTTL.String()}, Description: "Session TTL."},
+					{Name: "--max-command-starts", Type: "int", Default: "20", Description: "Maximum approved with-session command starts."},
+					{Name: "--json", Type: "bool", Description: "Print JSON output."},
+				},
+				Outputs: []string{"text", "json"},
+			},
+			"with-session": {
+				Summary: "Run one command inside an approved GCP session.",
+				Flags: []flagContext{
+					{Name: "--cwd", Type: "path", Description: "Child working directory inside the approved project root."},
+					{Name: "--allow-mutable-executable", Type: "bool", Description: "Allow a user-owned or writable executable path."},
+				},
+				Outputs: []string{"child passthrough"},
+			},
+			"auth status": {
+				Summary: "Show app-owned Google bootstrap auth stored in Keychain.",
+				Flags: append([]flagContext{
+					{Name: "--google-account", Type: "string", Description: "Optional Google bootstrap identity alias filter."},
+				}, jsonFlag()...),
+				Outputs: []string{"text", "json"},
+			},
+			"auth login": {
+				Summary: "Start daemon-owned Google OAuth login with the bundled OAuth client and store bootstrap state in Keychain.",
+				Flags: []flagContext{
+					{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
+					{Name: "--expected-email", Type: "string", Description: "Refuse login unless Google reports this email."},
+					{Name: "--json", Type: "bool", Description: "Print JSON output."},
+				},
+				Outputs: []string{"text", "json"},
+			},
+			"auth logout": {
+				Summary: "Remove app-owned Google bootstrap auth from Keychain.",
+				Flags: []flagContext{
+					{Name: "--google-account", Type: "string", Description: "Google bootstrap identity alias."},
+					{Name: "--json", Type: "bool", Description: "Print JSON output."},
+				},
+				Outputs: []string{"text", "json"},
+			},
 		},
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/executabletrust"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 )
 
@@ -46,6 +47,7 @@ type GCPExecOptions struct {
 	Command                []string
 	ResolvedExecutable     string
 	ExecutableIdentity     fileidentity.Identity
+	AllowMutableExecutable bool
 	CWD                    string
 	EnvironmentFingerprint string
 	Access                 GCPAccess
@@ -61,6 +63,7 @@ type GCPExecRequest struct {
 	Command                []string              `json:"command"`
 	ResolvedExecutable     string                `json:"resolved_executable"`
 	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
+	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 	CWD                    string                `json:"cwd"`
 	EnvironmentFingerprint string                `json:"environment_fingerprint"`
 	GoogleAccount          string                `json:"google_account"`
@@ -108,6 +111,7 @@ type GCPSessionUseOptions struct {
 	Command                []string
 	ResolvedExecutable     string
 	ExecutableIdentity     fileidentity.Identity
+	AllowMutableExecutable bool
 	CWD                    string
 	EnvironmentFingerprint string
 }
@@ -117,6 +121,7 @@ type GCPSessionUseRequest struct {
 	Command                []string              `json:"command"`
 	ResolvedExecutable     string                `json:"resolved_executable"`
 	ExecutableIdentity     fileidentity.Identity `json:"executable_identity"`
+	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 	CWD                    string                `json:"cwd"`
 	EnvironmentFingerprint string                `json:"environment_fingerprint"`
 }
@@ -159,6 +164,7 @@ func NewGCPExec(opts GCPExecOptions) (GCPExecRequest, error) {
 		Command:                slices.Clone(opts.Command),
 		ResolvedExecutable:     opts.ResolvedExecutable,
 		ExecutableIdentity:     opts.ExecutableIdentity,
+		AllowMutableExecutable: opts.AllowMutableExecutable,
 		CWD:                    opts.CWD,
 		EnvironmentFingerprint: opts.EnvironmentFingerprint,
 		GoogleAccount:          access.GoogleAccount,
@@ -209,6 +215,9 @@ func (r GCPExecRequest) ValidateForDaemon() error {
 		return err
 	}
 	if err := validateCommandSnapshot(r.Command, r.CWD, r.ResolvedExecutable, r.ExecutableIdentity, r.EnvironmentFingerprint); err != nil {
+		return err
+	}
+	if err := validateExecutableSnapshotForDaemon(r.ResolvedExecutable, r.ExecutableIdentity, r.AllowMutableExecutable); err != nil {
 		return err
 	}
 	access, err := NormalizeGCPAccess(r.Access())
@@ -351,6 +360,7 @@ func NewGCPSessionUse(opts GCPSessionUseOptions) (GCPSessionUseRequest, error) {
 		Command:                slices.Clone(opts.Command),
 		ResolvedExecutable:     opts.ResolvedExecutable,
 		ExecutableIdentity:     opts.ExecutableIdentity,
+		AllowMutableExecutable: opts.AllowMutableExecutable,
 		CWD:                    opts.CWD,
 		EnvironmentFingerprint: opts.EnvironmentFingerprint,
 	}, nil
@@ -360,7 +370,10 @@ func (r GCPSessionUseRequest) ValidateForDaemon() error {
 	if strings.TrimSpace(r.SessionHandle) != r.SessionHandle || r.SessionHandle == "" {
 		return fmt.Errorf("%w: session handle must be pre-normalized", ErrInvalidGCPSession)
 	}
-	return validateCommandSnapshot(r.Command, r.CWD, r.ResolvedExecutable, r.ExecutableIdentity, r.EnvironmentFingerprint)
+	if err := validateCommandSnapshot(r.Command, r.CWD, r.ResolvedExecutable, r.ExecutableIdentity, r.EnvironmentFingerprint); err != nil {
+		return err
+	}
+	return validateExecutableSnapshotForDaemon(r.ResolvedExecutable, r.ExecutableIdentity, r.AllowMutableExecutable)
 }
 
 func NewGCPSessionDestroy(handle string, cwd string) (GCPSessionDestroyRequest, error) {
@@ -519,6 +532,22 @@ func validateCommandSnapshot(
 		return fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
 	}
 	return validateEnvironmentFingerprint(environmentFingerprint)
+}
+
+func validateExecutableSnapshotForDaemon(
+	resolvedExecutable string,
+	executableIdentity fileidentity.Identity,
+	allowMutableExecutable bool,
+) error {
+	if err := fileidentity.Verify(resolvedExecutable, executableIdentity); err != nil {
+		return fmt.Errorf("%w: executable identity changed: %w", ErrInvalidRequest, err)
+	}
+	if !allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+	}
+	return nil
 }
 
 func validateGCPSessionMaxCommandStarts(maxStarts int) error {

@@ -429,20 +429,17 @@ func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
 	}
 }
 
-func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
+type payloadOKResponseShapeCase struct {
+	name       string
+	frame      func(t *testing.T, env protocol.Envelope) []byte
+	call       func(context.Context, *Client) error
+	wantErrMsg string
+}
+
+func TestClientValidatesStatusOKResponseShape(t *testing.T) {
 	t.Parallel()
 
-	execReq := testExecRequest(t, []request.SecretSpec{
-		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
-	})
-	sessionCreateReq := testSessionCreateRequestAt(t, time.Now())
-	sessionResolveReq := testSessionResolveRequest(t)
-	tests := []struct {
-		name       string
-		frame      func(t *testing.T, env protocol.Envelope) []byte
-		call       func(context.Context, *Client) error
-		wantErrMsg string
-	}{
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "status pid",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -473,6 +470,16 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing executable",
 		},
+	})
+}
+
+func TestClientValidatesExecOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	execReq := testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+	})
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "exec aliases",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -520,6 +527,15 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing env",
 		},
+	})
+}
+
+func TestClientValidatesSessionOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	sessionCreateReq := testSessionCreateRequestAt(t, time.Now())
+	sessionResolveReq := testSessionResolveRequest(t)
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "session create id",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -627,6 +643,13 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing env",
 		},
+	})
+}
+
+func TestClientValidatesGCPOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "gcp missing token env",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -667,8 +690,11 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing delivery mode",
 		},
-	}
+	})
+}
 
+func runClientPayloadOKResponseShapeCases(t *testing.T, tests []payloadOKResponseShapeCase) {
+	t.Helper()
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

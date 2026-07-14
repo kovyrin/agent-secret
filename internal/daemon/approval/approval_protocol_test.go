@@ -141,6 +141,28 @@ func TestNewSessionCreatePayloadOmitsZeroBindingMetadata(t *testing.T) {
 	}
 }
 
+func TestNewGCPExecPayloadCopiesMutableExecutableFlag(t *testing.T) {
+	t.Parallel()
+
+	payload := NewGCPExecPayload(protocol.Correlation{RequestID: "req_gcp", Nonce: "nonce_gcp"}, request.GCPExecRequest{
+		Reason:                 "Inspect logs",
+		Command:                []string{"gcloud", "logging", "read"},
+		CWD:                    "/tmp/project",
+		ResolvedExecutable:     "/tmp/project/bin/gcloud",
+		AllowMutableExecutable: true,
+		GoogleAccount:          "work",
+		Project:                "fixture-beta",
+		ServiceAccount:         "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:                 []string{"https://www.googleapis.com/auth/cloud-platform"},
+	})
+	if !payload.AllowMutableExecutable {
+		t.Fatal("AllowMutableExecutable = false, want true")
+	}
+	if payload.Operation != ApprovalOperationGCPExec {
+		t.Fatalf("operation = %s, want gcp exec", payload.Operation)
+	}
+}
+
 func TestValidateDecisionReusableUses(t *testing.T) {
 	t.Parallel()
 

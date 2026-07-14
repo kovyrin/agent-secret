@@ -2,7 +2,7 @@
 
 Status: draft planning note.
 
-Last reviewed: 2026-05-21.
+Last reviewed: 2026-05-27.
 
 ## Decision
 
@@ -984,3 +984,240 @@ provider, but ship it in this order:
 This keeps Agent Secret's core promise intact: no broad ambient credentials, no
 unapproved fetches, no raw values in broker output, and no secret source
 specific shortcuts that bypass local human approval.
+
+## Google OAuth Verification Demo Script
+
+Use this script for the Google OAuth verification recording for the bundled
+Agent Secret Desktop OAuth client. The recording is for Google's reviewer, not
+for the public product launch. It should be recorded from a release-candidate
+build of the GCP branch before merging GCP support into the normal public
+release line.
+
+The video should prove four things:
+
+- Agent Secret has a real public homepage, privacy policy, and terms page.
+- The Google consent screen asks for only `openid`, `userinfo.email`, and
+  `https://www.googleapis.com/auth/iam`.
+- The scary IAM scope is used only so Agent Secret can call IAM Credentials and
+  mint short-lived service-account access tokens.
+- The approved child command runs with an impersonated service-account token,
+  not the human Google account's refresh credential or ambient Cloud SDK auth.
+
+### Recording Setup
+
+Before recording:
+
+1. Use the production Google Auth Platform app in the `agent-secret-release`
+   project.
+2. Confirm the OAuth app has these URLs:
+   - Homepage: `https://agent-secret.sh/`
+   - Privacy policy: `https://agent-secret.sh/privacy`
+   - Terms of service: `https://agent-secret.sh/terms`
+3. Confirm the OAuth app data-access scopes are exactly:
+   - `openid`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   - `https://www.googleapis.com/auth/iam`
+4. Use a least-privileged Google account for the demo when possible. That
+   account should have `roles/iam.serviceAccountTokenCreator` only on the demo
+   service account, not Owner, IAM Admin, or Service Account Admin.
+5. Use the dedicated integration project and read-only service account:
+   - Project: `agent-secret-integration`
+   - Service account:
+     `agent-secret-ro@agent-secret-integration.iam.gserviceaccount.com`
+6. Make sure the read-only service account has only safe read roles, such as
+   `roles/browser`, `roles/logging.viewer`, and
+   `roles/serviceusage.serviceUsageViewer`.
+7. Revoke any existing Google Account grant for Agent Secret if the recording
+   needs to show the full consent screen instead of silently reusing prior
+   consent.
+8. Close unrelated browser windows, terminals, and notification-heavy apps.
+9. Do not show OAuth client secrets, service-account keys, raw access tokens,
+   refresh tokens, 1Password item values, or `gcloud auth print-access-token`.
+
+Use a project-local profile like this for the recording:
+
+```yaml
+version: 1
+
+profiles:
+  gcp-oauth-verification:
+    reason: Google OAuth verification read-only GCP smoke
+    ttl: 5m
+    gcp:
+      google_account: verification
+      project: agent-secret-integration
+      service_account: agent-secret-ro@agent-secret-integration.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+```
+
+The profile uses `cloud-platform` for the impersonated service-account access
+token because many `gcloud` commands expect it. This is separate from the human
+OAuth login grant, which must stay limited to `openid`, `userinfo.email`, and
+`auth/iam`.
+
+### Recording Flow
+
+1. Start on the Agent Secret site.
+
+   Show `https://agent-secret.sh/`, then briefly open the privacy and terms
+   links.
+
+   Narration:
+
+   > This is Agent Secret, a local macOS approval broker for coding-agent
+   > secrets and short-lived cloud access. The OAuth app's homepage, privacy
+   > policy, and terms are published here.
+
+2. Show the local GCP profile.
+
+   In the terminal, show the profile file or `agent-secret profile show` output.
+   The important fields are the Google account alias, project, service account,
+   and service-account token scopes.
+
+   Narration:
+
+   > This profile contains only metadata. It names the local Google account
+   > alias, the intended project, the service account Agent Secret may
+   > impersonate, and the scopes for the short-lived service-account token. It
+   > does not contain a Google refresh token, access token, service-account key,
+   > or OAuth client secret.
+
+3. Start Google login from Agent Secret.
+
+   Run:
+
+   ```bash
+   agent-secret gcp auth login \
+     --google-account verification \
+     --expected-email DEMO_ACCOUNT_EMAIL
+   ```
+
+   Show the native Agent Secret preflight window before clicking Open Google.
+
+   Narration:
+
+   > Before opening Google OAuth, Agent Secret shows the exact consent items
+   > Google will ask for. The IAM item is required so the local daemon can call
+   > IAM Credentials. This grant does not create service accounts, assign IAM
+   > roles, or bypass Google IAM.
+
+4. Show the Google consent screen.
+
+   In the browser, show that Google asks for account identity, email address,
+   and the IAM policy scope. Approve the scopes.
+
+   Narration:
+
+   > Google labels this IAM scope as managing IAM policies. Agent Secret uses it
+   > only to call IAM Credentials `generateAccessToken` for service accounts the
+   > selected Google account is already allowed to impersonate. The user's IAM
+   > bindings still decide whether this succeeds.
+
+5. Show successful local login state.
+
+   After OAuth returns and the Agent Secret window closes, run:
+
+   ```bash
+   agent-secret gcp auth status --google-account verification
+   ```
+
+   Narration:
+
+   > The refresh-capable Google OAuth state is stored under Agent Secret's local
+   > macOS Keychain access. It is not written into `~/.config/gcloud`, not
+   > written into Application Default Credentials, and not passed to child
+   > commands.
+
+6. Show dry-run metadata before access.
+
+   Run:
+
+   ```bash
+   agent-secret gcp exec --dry-run --json \
+     --profile gcp-oauth-verification -- \
+     gcloud projects describe agent-secret-integration \
+       --format='value(projectId)'
+   ```
+
+   Narration:
+
+   > Dry run shows the command and GCP capability Agent Secret would request,
+   > without minting a token or contacting Google IAM Credentials.
+
+7. Run a safe read-only command through `gcp exec`.
+
+   Run:
+
+   ```bash
+   agent-secret gcp exec --profile gcp-oauth-verification -- \
+     gcloud projects describe agent-secret-integration \
+       --format='value(projectId)'
+   ```
+
+   Approve the native Agent Secret request.
+
+   Narration:
+
+   > This approval is for one command, one project, one service account, one
+   > scope set, and a short TTL. After approval, Agent Secret uses the stored
+   > Google login only to mint a short-lived access token for the service
+   > account shown here. The child `gcloud` command receives that service-account
+   > token through isolated Cloud SDK configuration.
+
+8. Show a nested `gcloud` command.
+
+   Run:
+
+   ```bash
+   agent-secret gcp exec --profile gcp-oauth-verification -- \
+     zsh -lc 'gcloud services list --enabled \
+       --project=agent-secret-integration \
+       --limit=3 \
+       --format="value(config.name)"'
+   ```
+
+   Narration:
+
+   > This command goes through a shell wrapper and calls `gcloud` inside the
+   > approved environment. Agent Secret does not rewrite `gcloud` arguments; it
+   > prepares the isolated environment and lets the approved command run.
+
+9. Optionally show value-free audit metadata.
+
+   If the recording needs stronger proof of the token-mint path, show only
+   metadata from the audit log:
+
+   ```bash
+   tail -n 50 ~/Library/Logs/agent-secret/audit.jsonl |
+     jq 'select(.type | test("^gcp_")) |
+       {type, google_account, project, service_account, oauth_scopes, delivery_mode}'
+   ```
+
+   Narration:
+
+   > Audit records include the Google account alias, project, service account,
+   > scopes, and delivery mode. They do not contain access tokens, refresh
+   > tokens, or secret payloads.
+
+10. Close with the permission boundary.
+
+    Narration:
+
+    > Agent Secret's Google OAuth grant is bootstrap authority for token
+    > minting, not broad cloud access by itself. The usable GCP permissions come
+    > from two Google IAM checks: the signed-in Google account must be allowed
+    > to impersonate the service account, and the service account must have the
+    > resource permissions needed by the approved command.
+
+### What To Avoid In The Demo
+
+- Do not use an Owner or IAM Admin Google account for the happy-path demo if a
+  least-privileged account is available.
+- Do not run mutating Compute Engine or IAM commands in the Google verification
+  video. Keep the verification command read-only.
+- Do not show service-account keys. Agent Secret should not use them.
+- Do not show `gcloud auth login`, `gcloud auth application-default login`, or
+  ADC setup. Those are the ambient-auth paths the feature avoids.
+- Do not imply that the OAuth scope alone limits GCP resources. Say that the
+  service account IAM policy is the real resource boundary.

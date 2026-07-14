@@ -438,6 +438,8 @@ Flags:
   --cwd DIR                Child working directory.
   --dry-run                Validate without prompting, minting, or spawning.
   --reuse-only             Use an existing reusable approval or fail without prompting.
+  --allow-mutable-executable
+                           Allow a user-owned or writable executable path after showing an approval warning.
   --json                   Print JSON output. Only valid with --dry-run.
 `)
 }
@@ -499,7 +501,13 @@ agent-secret gcp with-session runs one command inside an approved GCP session.
 
 Usage:
 
-  agent-secret gcp with-session SESSION_HANDLE -- COMMAND [ARG...]
+  agent-secret gcp with-session SESSION_HANDLE [--cwd DIR] [--allow-mutable-executable] -- COMMAND [ARG...]
+
+Flags:
+
+  --cwd DIR                Child working directory. Must stay inside the approved project root.
+  --allow-mutable-executable
+                           Allow a user-owned or writable executable path.
 `)
 }
 

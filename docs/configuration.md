@@ -249,13 +249,17 @@ GCP fields:
 
 Use `agent-secret gcp exec --profile NAME -- COMMAND [ARG...]` for one command.
 Use `agent-secret gcp session create --profile NAME` followed by
-`agent-secret gcp with-session HANDLE -- COMMAND [ARG...]` for multi-command
-workflows.
+`agent-secret gcp with-session HANDLE [--cwd DIR] -- COMMAND [ARG...]` for
+multi-command workflows.
 
 GCP sessions require config-backed profiles. `session create` binds the session
 to the directory containing the resolved config file, and `with-session` is
 usable only from that directory or a descendant. See
 [GCP Integration](gcp.md) for the full setup process.
+
+GCP `exec` and `with-session` use the same executable stability guard as normal
+secret execution. Add `--allow-mutable-executable` only for trusted repo-local
+wrappers or test helpers.
 
 ## Account Precedence
 

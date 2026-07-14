@@ -133,6 +133,7 @@ resolve_bundled_gcp_oauth_client() {
     --cwd "$project_root" \
     --profile bundled-gcp-oauth-client \
     --override-env \
+    --allow-mutable-executable \
     -- "${child_command[@]}"
 }
 

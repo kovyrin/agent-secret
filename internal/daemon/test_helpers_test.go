@@ -457,6 +457,7 @@ func testGCPExecRequest(t *testing.T, now time.Time) request.GCPExecRequest {
 		Command:                []string{"gcloud", "logging", "read", "severity>=ERROR"},
 		ResolvedExecutable:     executable,
 		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: true,
 		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=" + filepath.Dir(executable)}),
 		GoogleAccount:          "work",
@@ -501,6 +502,7 @@ func testGCPSessionUseRequest(t *testing.T, handle string, cwd string) request.G
 		Command:                []string{"gcloud", "compute", "instances", "list"},
 		ResolvedExecutable:     executable,
 		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: true,
 		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=" + filepath.Dir(executable)}),
 	}

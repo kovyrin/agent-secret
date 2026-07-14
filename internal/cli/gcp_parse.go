@@ -15,17 +15,18 @@ import (
 )
 
 type gcpExecFlags struct {
-	reason         string
-	cwd            string
-	ttl            time.Duration
-	profileName    string
-	configPath     string
-	googleAccount  string
-	project        string
-	serviceAccount string
-	dryRun         bool
-	reuseOnly      bool
-	scopes         repeatedStringFlags
+	reason                 string
+	cwd                    string
+	ttl                    time.Duration
+	profileName            string
+	configPath             string
+	googleAccount          string
+	project                string
+	serviceAccount         string
+	dryRun                 bool
+	reuseOnly              bool
+	allowMutableExecutable bool
+	scopes                 repeatedStringFlags
 }
 
 type gcpSessionCreateFlags struct {
@@ -38,6 +39,11 @@ type gcpSessionCreateFlags struct {
 
 type gcpSessionListFlags struct {
 	json bool
+}
+
+type gcpWithSessionFlags struct {
+	cwd                    string
+	allowMutableExecutable bool
 }
 
 type gcpAuthStatusFlags struct {
@@ -84,7 +90,7 @@ func (p Parser) parseGCPExec(args []string) (Command, error) {
 	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		return Command{Kind: KindHelp, HelpText: GCPExecHelp()}, ErrHelpRequested
 	}
-	boundary := indexOf(args, "--")
+	boundary := indexOfDoubleDash(args)
 	if boundary < 0 {
 		return Command{}, ErrShellStringCommand
 	}
@@ -108,6 +114,12 @@ func (p Parser) parseGCPExec(args []string) (Command, error) {
 	fs.Var(&flags.scopes, "scope", "OAuth scope")
 	fs.BoolVar(&flags.dryRun, "dry-run", false, "validate request without prompting or spawning")
 	fs.BoolVar(&flags.reuseOnly, "reuse-only", false, "use an existing reusable approval or fail without prompting")
+	fs.BoolVar(
+		&flags.allowMutableExecutable,
+		"allow-mutable-executable",
+		false,
+		"allow a user-owned or writable executable path after showing an approval warning",
+	)
 	jsonOutput := fs.Bool("json", false, "print JSON output")
 	if err := fs.Parse(args[:boundary]); err != nil {
 		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
@@ -125,15 +137,16 @@ func (p Parser) parseGCPExec(args []string) (Command, error) {
 	}
 	env := childEnvWithoutAmbientGCP(os.Environ())
 	req, err := buildGCPExecRequest(gcpRequestBuildOptions{
-		reason:      inputs.reason,
-		command:     command,
-		cwd:         flags.cwd,
-		env:         env,
-		access:      inputs.access,
-		profileName: inputs.profileName,
-		configRoot:  inputs.configRoot,
-		ttl:         inputs.ttl,
-		reuseOnly:   flags.reuseOnly,
+		reason:                 inputs.reason,
+		command:                command,
+		cwd:                    flags.cwd,
+		env:                    env,
+		access:                 inputs.access,
+		profileName:            inputs.profileName,
+		configRoot:             inputs.configRoot,
+		ttl:                    inputs.ttl,
+		reuseOnly:              flags.reuseOnly,
+		allowMutableExecutable: flags.allowMutableExecutable,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build gcp exec request: %w", err)
@@ -332,22 +345,40 @@ func (p Parser) parseGCPWithSession(args []string) (Command, error) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		return Command{Kind: KindHelp, HelpText: GCPWithSessionHelp()}, ErrHelpRequested
 	}
-	boundary := indexOf(args, "--")
+	boundary := indexOfDoubleDash(args)
 	if boundary < 0 {
 		return Command{}, ErrShellStringCommand
 	}
-	if boundary != 1 {
+	if boundary < 1 {
 		return Command{}, fmt.Errorf("%w: gcp with-session requires HANDLE -- COMMAND [ARG...]", ErrInvalidArguments)
 	}
 	command := args[boundary+1:]
 	if len(command) == 0 {
 		return Command{}, ErrShellStringCommand
 	}
+	var flags gcpWithSessionFlags
+	fs := flag.NewFlagSet("gcp with-session", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&flags.cwd, "cwd", "", "working directory")
+	fs.BoolVar(
+		&flags.allowMutableExecutable,
+		"allow-mutable-executable",
+		false,
+		"allow a user-owned or writable executable path",
+	)
+	if err := fs.Parse(args[1:boundary]); err != nil {
+		return Command{}, fmt.Errorf("%w: %w", ErrInvalidArguments, err)
+	}
+	if fs.NArg() != 0 {
+		return Command{}, fmt.Errorf("%w: gcp with-session flags must appear after the session handle and before --", ErrInvalidArguments)
+	}
 	env := childEnvWithoutAmbientGCP(os.Environ())
 	req, err := buildGCPSessionUseRequest(gcpSessionUseRequestBuildOptions{
-		sessionHandle: args[0],
-		command:       command,
-		env:           env,
+		sessionHandle:          args[0],
+		command:                command,
+		cwd:                    flags.cwd,
+		env:                    env,
+		allowMutableExecutable: flags.allowMutableExecutable,
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("build gcp with-session request: %w", err)

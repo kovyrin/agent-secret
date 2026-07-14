@@ -141,9 +141,9 @@ func (f *repeatedStringFlags) Set(value string) error {
 	return nil
 }
 
-func indexOf(values []string, target string) int {
+func indexOfDoubleDash(values []string) int {
 	for i, value := range values {
-		if value == target {
+		if value == "--" {
 			return i
 		}
 	}

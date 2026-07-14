@@ -184,22 +184,24 @@ func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request
 }
 
 type gcpRequestBuildOptions struct {
-	reason      string
-	command     []string
-	cwd         string
-	env         []string
-	access      request.GCPAccess
-	profileName string
-	configRoot  string
-	ttl         time.Duration
-	reuseOnly   bool
+	reason                 string
+	command                []string
+	cwd                    string
+	env                    []string
+	access                 request.GCPAccess
+	profileName            string
+	configRoot             string
+	ttl                    time.Duration
+	reuseOnly              bool
+	allowMutableExecutable bool
 }
 
 type gcpSessionUseRequestBuildOptions struct {
-	sessionHandle string
-	command       []string
-	cwd           string
-	env           []string
+	sessionHandle          string
+	command                []string
+	cwd                    string
+	env                    []string
+	allowMutableExecutable bool
 }
 
 func buildItemDescribeRequest(opts itemDescribeRequestBuildOptions) (request.ItemDescribeRequest, error) {
@@ -245,6 +247,14 @@ func buildGCPExecRequest(opts gcpRequestBuildOptions) (request.GCPExecRequest, e
 	if err != nil {
 		return request.GCPExecRequest{}, err
 	}
+	if !opts.allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return request.GCPExecRequest{}, fmt.Errorf(
+				"%w: rerun with --allow-mutable-executable only if you trust the executable path",
+				err,
+			)
+		}
+	}
 	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
 	if err != nil {
 		return request.GCPExecRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
@@ -254,6 +264,7 @@ func buildGCPExecRequest(opts gcpRequestBuildOptions) (request.GCPExecRequest, e
 		Command:                command,
 		ResolvedExecutable:     resolvedExecutable,
 		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: opts.allowMutableExecutable,
 		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint(env),
 		Access:                 opts.access,
@@ -274,6 +285,14 @@ func buildGCPSessionUseRequest(opts gcpSessionUseRequestBuildOptions) (request.G
 	if err != nil {
 		return request.GCPSessionUseRequest{}, err
 	}
+	if !opts.allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return request.GCPSessionUseRequest{}, fmt.Errorf(
+				"%w: rerun with --allow-mutable-executable only if you trust the executable path",
+				err,
+			)
+		}
+	}
 	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
 	if err != nil {
 		return request.GCPSessionUseRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
@@ -283,6 +302,7 @@ func buildGCPSessionUseRequest(opts gcpSessionUseRequestBuildOptions) (request.G
 		Command:                command,
 		ResolvedExecutable:     resolvedExecutable,
 		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: opts.allowMutableExecutable,
 		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint(env),
 	})

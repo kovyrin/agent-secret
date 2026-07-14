@@ -36,7 +36,8 @@ fi
 
 if ! grep -F "agent-secret exec" "$build_script" >/dev/null ||
   ! grep -F -- "--profile bundled-gcp-oauth-client" "$build_script" >/dev/null ||
-  ! grep -F -- "--override-env" "$build_script" >/dev/null; then
+  ! grep -F -- "--override-env" "$build_script" >/dev/null ||
+  ! grep -F -- "--allow-mutable-executable" "$build_script" >/dev/null; then
   fail "build script must use the bundled-gcp-oauth-client profile when OAuth client env vars are absent"
 fi
 

@@ -26,6 +26,7 @@ type gcpExecDryRunRequest struct {
 	Reason                 string   `json:"reason"`
 	Command                []string `json:"command"`
 	ResolvedExecutable     string   `json:"resolved_executable"`
+	AllowMutableExecutable bool     `json:"allow_mutable_executable"`
 	CWD                    string   `json:"cwd"`
 	TTL                    string   `json:"ttl"`
 	EnvironmentFingerprint string   `json:"environment_fingerprint"`
@@ -164,6 +165,7 @@ func (a App) runGCPExecDryRun(command Command) int {
 			Reason:                 req.Reason,
 			Command:                req.Command,
 			ResolvedExecutable:     req.ResolvedExecutable,
+			AllowMutableExecutable: req.AllowMutableExecutable,
 			CWD:                    req.CWD,
 			TTL:                    req.TTL.String(),
 			EnvironmentFingerprint: req.EnvironmentFingerprint,
@@ -197,6 +199,7 @@ func (a App) runGCPExecDryRun(command Command) int {
 	a.stdoutf("reason: %s\n", req.Reason)
 	a.stdoutf("cwd: %s\n", req.CWD)
 	a.stdoutf("command: %s\n", shellQuoteArgs(req.Command))
+	a.stdoutf("allow_mutable_executable: %t\n", req.AllowMutableExecutable)
 	a.stdoutf("ttl: %s\n", req.TTL)
 	a.stdoutf("google_account: %s\n", req.GoogleAccount)
 	a.stdoutf("project: %s\n", req.Project)

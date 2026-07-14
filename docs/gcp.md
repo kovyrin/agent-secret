@@ -352,6 +352,9 @@ project, Google account alias, service account, and scopes. After approval, the
 daemon mints a short-lived token for the service account and runs the child
 with isolated Cloud SDK state.
 
+If your `gcloud` binary is installed under a user-owned path such as Homebrew or
+`~/google-cloud-sdk`, add `--allow-mutable-executable` after reviewing that path.
+
 Ad hoc access is available when there is no profile yet:
 
 ```bash
@@ -387,6 +390,12 @@ agent-secret gcp with-session "$handle" -- \
 agent-secret gcp with-session "$handle" -- \
   gcloud services list --enabled --project fixture-beta --limit=10
 
+agent-secret gcp with-session "$handle" \
+  --cwd ./benchmarks \
+  --allow-mutable-executable \
+  -- \
+  mise run loadtest:beta
+
 agent-secret gcp session destroy "$handle"
 ```
 
@@ -405,6 +414,10 @@ The list shows all active same-user sessions, including whether each session is
 usable from the current directory. `with-session` is allowed only from the
 approved project root or a descendant directory. `session destroy` can be run
 from any directory by the same local user because it only reduces access.
+
+Like normal `agent-secret exec`, GCP command execution rejects user-owned or
+writable executable paths by default. Use `--allow-mutable-executable` only for
+repo-local wrappers or test helpers you already trust.
 
 ## What The Child Command Receives
 

@@ -229,7 +229,7 @@ func (p Parser) parseWithSession(args []string) (Command, error) {
 	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		return Command{Kind: KindHelp, HelpText: WithSessionHelp()}, ErrHelpRequested
 	}
-	boundary := indexOf(args, "--")
+	boundary := indexOfDoubleDash(args)
 	if boundary < 0 {
 		return Command{}, ErrShellStringCommand
 	}

@@ -292,7 +292,8 @@ func checksExecutableIdentity(messageType protocol.MessageType) bool {
 	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe,
 		protocol.TypeSessionCreate, protocol.TypeSessionResolve, protocol.TypeSessionDestroy, protocol.TypeSessionList,
 		protocol.TypeGCPAuthStatus, protocol.TypeGCPAuthLogin, protocol.TypeGCPAuthLogout,
-		protocol.TypeGCPExec, protocol.TypeGCPSessionCreate, protocol.TypeGCPWithSession:
+		protocol.TypeGCPExec, protocol.TypeGCPSessionCreate, protocol.TypeGCPSessionList, protocol.TypeGCPSessionDestroy,
+		protocol.TypeGCPWithSession:
 		return true
 	default:
 		return false
@@ -635,16 +636,16 @@ func (s *Server) handleSessionResolve(
 	}()
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(ctx); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	delivery.CommitDelivered()
@@ -658,25 +659,15 @@ func (s *Server) handleSessionDestroy(
 	encoder *json.Encoder,
 	env protocol.Envelope,
 ) {
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	req, err := protocol.DecodeRequiredPayload[request.SessionDestroyRequest](env)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
-		return
-	}
-	if err := req.ValidateForDaemon(); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
-		return
-	}
-	payload, err := s.broker.HandleSessionDestroy(ctx, req)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	_ = writeOK(encoder, env.Correlation(), payload)
+	handleTrustedDaemonRequest(
+		s,
+		ctx,
+		conn,
+		encoder,
+		env,
+		protocol.DecodeRequiredPayload[request.SessionDestroyRequest],
+		s.broker.HandleSessionDestroy,
+	)
 }
 
 func (s *Server) handleSessionList(
@@ -884,16 +875,16 @@ func (s *Server) handleRequestExec(
 	}
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	delivery.CommitDelivered()
@@ -943,12 +934,12 @@ func (s *Server) handleGCPExec(
 	}()
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	delivery.CommitDelivered()
@@ -1013,25 +1004,15 @@ func (s *Server) handleGCPSessionDestroy(
 	encoder *json.Encoder,
 	env protocol.Envelope,
 ) {
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	req, err := protocol.DecodeRequiredPayload[request.GCPSessionDestroyRequest](env)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
-		return
-	}
-	if err := req.ValidateForDaemon(); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
-		return
-	}
-	response, err := s.broker.DestroyGCPSession(ctx, req)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	_ = writeOK(encoder, env.Correlation(), response)
+	handleTrustedDaemonRequest(
+		s,
+		ctx,
+		conn,
+		encoder,
+		env,
+		protocol.DecodeRequiredPayload[request.GCPSessionDestroyRequest],
+		s.broker.DestroyGCPSession,
+	)
 }
 
 func (s *Server) handleGCPWithSession(
@@ -1066,12 +1047,12 @@ func (s *Server) handleGCPWithSession(
 	}()
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	delivery.CommitDelivered()
@@ -1194,6 +1175,22 @@ func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
 		return err
 	}
 	return s.clientValidator.ValidatePeer(peer)
+}
+
+type prePayloadDelivery interface {
+	AbortBeforePayload()
+}
+
+// writePrePayloadDeliveryError invalidates prepared credentials before the client
+// can observe an error response and attempt to reuse the delivery scope.
+func writePrePayloadDeliveryError(
+	encoder *json.Encoder,
+	correlation protocol.Correlation,
+	delivery prePayloadDelivery,
+	err error,
+) {
+	delivery.AbortBeforePayload()
+	_ = writeErrorEncoder(encoder, correlation, codeForError(err), err)
 }
 
 func writeOK(encoder *json.Encoder, correlation protocol.Correlation, payload any) error {

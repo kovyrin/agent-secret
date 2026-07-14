@@ -741,6 +741,7 @@ func TestAppGCPExecRunsChildWithIsolatedCloudSDKEnv(t *testing.T) {
 		"--project", "fixture-beta",
 		"--service-account", "agent-beta@fixture-beta.iam.gserviceaccount.com",
 		"--scope", "https://www.googleapis.com/auth/cloud-platform",
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppGCPExecRunsChildWithIsolatedCloudSDKEnv", "--", "child",
 	})
@@ -790,6 +791,7 @@ profiles:
 		"--profile", "beta-logs",
 		"--dry-run",
 		"--json",
+		"--allow-mutable-executable",
 		"--",
 		"gcloud", "logging", "read", "severity>=ERROR",
 	})
@@ -954,6 +956,7 @@ profiles:
 		"--profile", "beta-debug",
 		"--ttl", "5m",
 		"--dry-run",
+		"--allow-mutable-executable",
 		"--",
 		"gcloud", "logging", "read", "severity>=ERROR",
 	})
@@ -1080,6 +1083,7 @@ func TestAppGCPWithSessionRunsChildWithIsolatedCloudSDKEnv(t *testing.T) {
 
 	code := app.Run(context.Background(), []string{
 		"gcp", "with-session", "asess_123",
+		"--allow-mutable-executable",
 		"--",
 		os.Args[0], "-test.run=TestAppGCPWithSessionRunsChildWithIsolatedCloudSDKEnv", "--", "child",
 	})
@@ -1315,6 +1319,7 @@ profiles:
 			"--project", "fixture-beta",
 			"--service-account", "agent-beta-debug@fixture-beta.iam.gserviceaccount.com",
 			"--scope", "https://www.googleapis.com/auth/cloud-platform",
+			"--allow-mutable-executable",
 			"--",
 			"gcloud", "logging", "read", "severity>=ERROR",
 		},
@@ -1325,7 +1330,7 @@ profiles:
 		},
 		{"gcp", "session", "list"},
 		{"gcp", "session", "destroy", "asess_123"},
-		{"gcp", "with-session", "asess_123", "--", "gcloud", "compute", "instances", "list"},
+		{"gcp", "with-session", "asess_123", "--allow-mutable-executable", "--", "gcloud", "compute", "instances", "list"},
 		{"gcp", "auth", "status"},
 		{"gcp", "auth", "login", "--google-account", "personal"},
 		{"gcp", "auth", "logout", "--google-account", "personal"},

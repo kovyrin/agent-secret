@@ -126,6 +126,7 @@ profiles:
 		"--profile", "beta-logs",
 		"--dry-run",
 		"--json",
+		"--allow-mutable-executable",
 		"--",
 		"gcloud", "logging", "read", "severity>=ERROR",
 	})
@@ -141,7 +142,8 @@ profiles:
 		req.Project != "fixture-beta" ||
 		req.ServiceAccount != "agent-beta-logs@fixture-beta.iam.gserviceaccount.com" ||
 		req.ProfileName != "beta-logs" ||
-		req.ConfigRoot != root {
+		req.ConfigRoot != root ||
+		!req.AllowMutableExecutable {
 		t.Fatalf("unexpected GCP request: %+v", req)
 	}
 	if got := lookupTestEnv(command.GCPEnv, "CLOUDSDK_CONFIG"); got != "" {
@@ -152,6 +154,30 @@ profiles:
 	}
 	if got := lookupTestEnv(command.GCPEnv, "GOOGLE_APPLICATION_CREDENTIALS"); got != "" {
 		t.Fatalf("ambient ADC survived in child env: %q", got)
+	}
+}
+
+func TestParseGCPExecRejectsMutableExecutableWithoutOptIn(t *testing.T) {
+	root := t.TempDir()
+	writeExecutable(t, root, "gcloud")
+	t.Chdir(root)
+	t.Setenv("PATH", root)
+
+	_, err := NewParser().Parse([]string{
+		"gcp", "exec",
+		"--reason", "Inspect logs",
+		"--google-account", "work",
+		"--project", "fixture-beta",
+		"--service-account", "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		"--scope", "https://www.googleapis.com/auth/cloud-platform",
+		"--",
+		"gcloud", "logging", "read", "severity>=ERROR",
+	})
+	if err == nil {
+		t.Fatal("Parse returned nil error, want mutable executable rejection")
+	}
+	if !strings.Contains(err.Error(), "--allow-mutable-executable") {
+		t.Fatalf("error = %v, want opt-in guidance", err)
 	}
 }
 
@@ -167,6 +193,7 @@ func TestParseGCPExecAdHocRequiresExplicitAccess(t *testing.T) {
 		"--project", "fixture-beta",
 		"--service-account", "agent-beta@fixture-beta.iam.gserviceaccount.com",
 		"--scope", "https://www.googleapis.com/auth/cloud-platform",
+		"--allow-mutable-executable",
 		"--",
 		"gcloud", "logging", "read", "severity>=ERROR",
 	})
@@ -254,16 +281,9 @@ profiles:
 	}
 }
 
-func TestParseGCPSessionListDestroyWithSessionAndAuth(t *testing.T) {
+func TestParseGCPSessionListDestroyAndAuth(t *testing.T) {
 	root := t.TempDir()
-	binDir := filepath.Join(root, "bin")
-	if err := os.Mkdir(binDir, 0o750); err != nil {
-		t.Fatalf("create bin dir: %v", err)
-	}
-	writeExecutable(t, binDir, "gcloud")
 	t.Chdir(root)
-	t.Setenv("PATH", binDir)
-	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/ambient/adc.json")
 	normalizedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		t.Fatalf("EvalSymlinks returned error: %v", err)
@@ -285,20 +305,6 @@ func TestParseGCPSessionListDestroyWithSessionAndAuth(t *testing.T) {
 		destroy.GCPSessionDestroyRequest.SessionHandle != "asess_123" ||
 		destroy.GCPSessionDestroyRequest.CWD != normalizedRoot {
 		t.Fatalf("unexpected session destroy command: %+v", destroy)
-	}
-
-	withSession, err := NewParser().Parse([]string{"gcp", "with-session", "asess_123", "--", "gcloud", "compute", "instances", "list"})
-	if err != nil {
-		t.Fatalf("with-session Parse returned error: %v", err)
-	}
-	if withSession.Kind != KindGCPWithSession ||
-		withSession.GCPSessionUseRequest.SessionHandle != "asess_123" ||
-		withSession.GCPSessionUseRequest.Command[0] != "gcloud" ||
-		withSession.GCPSessionUseRequest.CWD != normalizedRoot {
-		t.Fatalf("unexpected with-session command: %+v", withSession)
-	}
-	if got := lookupTestEnv(withSession.GCPEnv, "GOOGLE_APPLICATION_CREDENTIALS"); got != "" {
-		t.Fatalf("ambient ADC survived in with-session env: %q", got)
 	}
 
 	status, err := NewParser().Parse([]string{"gcp", "auth", "status"})
@@ -323,6 +329,49 @@ func TestParseGCPSessionListDestroyWithSessionAndAuth(t *testing.T) {
 	}
 	if logout.Kind != KindGCPAuthLogout || logout.GCPAuthLogoutRequest.GoogleAccount != "personal" {
 		t.Fatalf("auth logout command = %+v", logout)
+	}
+}
+
+func TestParseGCPWithSessionBuildsRequestAndStripsAmbientGCPEnv(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	workDir := filepath.Join(root, "work")
+	if err := os.Mkdir(binDir, 0o750); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	if err := os.Mkdir(workDir, 0o750); err != nil {
+		t.Fatalf("create work dir: %v", err)
+	}
+	writeExecutable(t, binDir, "gcloud")
+	t.Chdir(root)
+	t.Setenv("PATH", binDir)
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/ambient/adc.json")
+
+	withSession, err := NewParser().Parse([]string{"gcp", "with-session", "asess_123", "--cwd", workDir, "--allow-mutable-executable", "--", "gcloud", "compute", "instances", "list"})
+	if err != nil {
+		t.Fatalf("with-session Parse returned error: %v", err)
+	}
+	normalizedWorkDir, err := filepath.EvalSymlinks(workDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks workDir returned error: %v", err)
+	}
+	if withSession.Kind != KindGCPWithSession ||
+		withSession.GCPSessionUseRequest.SessionHandle != "asess_123" ||
+		withSession.GCPSessionUseRequest.Command[0] != "gcloud" ||
+		withSession.GCPSessionUseRequest.CWD != normalizedWorkDir ||
+		!withSession.GCPSessionUseRequest.AllowMutableExecutable {
+		t.Fatalf("unexpected with-session command: %+v", withSession)
+	}
+	if got := lookupTestEnv(withSession.GCPEnv, "GOOGLE_APPLICATION_CREDENTIALS"); got != "" {
+		t.Fatalf("ambient ADC survived in with-session env: %q", got)
+	}
+
+	_, err = NewParser().Parse([]string{"gcp", "with-session", "asess_123", "--", "gcloud", "compute", "instances", "list"})
+	if err == nil {
+		t.Fatal("with-session Parse returned nil error, want mutable executable rejection")
+	}
+	if !strings.Contains(err.Error(), "--allow-mutable-executable") {
+		t.Fatalf("with-session error = %v, want opt-in guidance", err)
 	}
 }
 

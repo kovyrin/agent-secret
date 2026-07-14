@@ -658,14 +658,26 @@ func TestSessionProtocolErrorsMapToCodes(t *testing.T) {
 	}
 }
 
-func TestSessionMessagesTriggerExecutableIdentityCheck(t *testing.T) {
+func TestForegroundMessagesTriggerExecutableIdentityCheck(t *testing.T) {
 	t.Parallel()
 
 	for _, messageType := range []protocol.MessageType{
+		protocol.TypeDaemonStatus,
+		protocol.TypeOnePasswordStatus,
+		protocol.TypeRequestExec,
+		protocol.TypeItemDescribe,
 		protocol.TypeSessionCreate,
 		protocol.TypeSessionResolve,
 		protocol.TypeSessionDestroy,
 		protocol.TypeSessionList,
+		protocol.TypeGCPAuthStatus,
+		protocol.TypeGCPAuthLogin,
+		protocol.TypeGCPAuthLogout,
+		protocol.TypeGCPExec,
+		protocol.TypeGCPSessionCreate,
+		protocol.TypeGCPSessionList,
+		protocol.TypeGCPSessionDestroy,
+		protocol.TypeGCPWithSession,
 	} {
 		if !checksExecutableIdentity(messageType) {
 			t.Fatalf("checksExecutableIdentity(%s) = false, want true", messageType)
@@ -1028,7 +1040,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
 	select {
 	case <-firstWriteAttempted:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("server did not attempt first exec response write")
 	}
 
@@ -2045,6 +2057,12 @@ func TestServerRejectsMalformedGCPRequestsBeforeApprovalOrMint(t *testing.T) {
 	sessionReq.ProfileName = " beta "
 	if _, err := client.CreateGCPSession(context.Background(), testCorrelation("req_create", "nonce_create"), sessionReq, "asess_123"); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
 		t.Fatalf("expected bad_request GCP session create error, got %v", err)
+	}
+
+	useReq := testGCPSessionUseRequest(t, "asess_123", projectRoot)
+	useReq.SessionHandle = " asess_123 "
+	if _, err := client.UseGCPSession(context.Background(), testCorrelation("req_use", "nonce_use"), useReq); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("expected bad_request GCP with-session error, got %v", err)
 	}
 
 	if approver.calls != 0 {

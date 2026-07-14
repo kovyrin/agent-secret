@@ -200,6 +200,7 @@ func TestGCPExecValidateForDaemonRequiresPreNormalizedScopes(t *testing.T) {
 		Command:                []string{exe, "-test.run=none"},
 		ResolvedExecutable:     exe,
 		ExecutableIdentity:     identity,
+		AllowMutableExecutable: true,
 		CWD:                    "/tmp",
 		EnvironmentFingerprint: EnvironmentFingerprint(os.Environ()),
 		Access: GCPAccess{
@@ -235,6 +236,7 @@ func TestNewGCPExecBuildsDaemonValidatedSnapshot(t *testing.T) {
 		Command:                []string{exe, "-test.run=none"},
 		ResolvedExecutable:     exe,
 		ExecutableIdentity:     identity,
+		AllowMutableExecutable: true,
 		CWD:                    "/tmp",
 		EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin", "CLOUDSDK_CONFIG=/ambient"}),
 		Access: GCPAccess{
@@ -257,6 +259,9 @@ func TestNewGCPExecBuildsDaemonValidatedSnapshot(t *testing.T) {
 	}
 	if req.Reason != "Inspect beta logs" || req.ProfileName != "beta-logs" || !req.ReuseOnly {
 		t.Fatalf("unexpected request metadata: %+v", req)
+	}
+	if !req.AllowMutableExecutable {
+		t.Fatal("AllowMutableExecutable = false, want true")
 	}
 	if req.DeliveryMode != GCPDeliveryModeTokenFile {
 		t.Fatalf("delivery mode = %q", req.DeliveryMode)
@@ -283,6 +288,7 @@ func TestGCPExecWithReceiptTimeRestampsDaemonClock(t *testing.T) {
 		Command:                []string{exe},
 		ResolvedExecutable:     exe,
 		ExecutableIdentity:     identity,
+		AllowMutableExecutable: true,
 		CWD:                    "/tmp",
 		EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin"}),
 		Access:                 testGCPAccess(),
@@ -298,6 +304,43 @@ func TestGCPExecWithReceiptTimeRestampsDaemonClock(t *testing.T) {
 	}
 	if err := stamped.ValidateForDaemon(); err != nil {
 		t.Fatalf("ValidateForDaemon returned error: %v", err)
+	}
+}
+
+func TestGCPCommandRequestsRejectMutableExecutableByDefault(t *testing.T) {
+	t.Parallel()
+
+	exe, identity := testGCPExecutable(t)
+	execReq, err := NewGCPExec(GCPExecOptions{
+		Reason:                 "Inspect logs",
+		Command:                []string{exe},
+		ResolvedExecutable:     exe,
+		ExecutableIdentity:     identity,
+		CWD:                    "/tmp",
+		EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin"}),
+		Access:                 testGCPAccess(),
+		ReceivedAt:             time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("NewGCPExec returned error: %v", err)
+	}
+	if err := execReq.ValidateForDaemon(); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("GCP exec ValidateForDaemon error = %v, want ErrInvalidRequest", err)
+	}
+
+	useReq, err := NewGCPSessionUse(GCPSessionUseOptions{
+		SessionHandle:          "asess_123",
+		Command:                []string{exe},
+		ResolvedExecutable:     exe,
+		ExecutableIdentity:     identity,
+		CWD:                    "/tmp",
+		EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin"}),
+	})
+	if err != nil {
+		t.Fatalf("NewGCPSessionUse returned error: %v", err)
+	}
+	if err := useReq.ValidateForDaemon(); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("GCP session use ValidateForDaemon error = %v, want ErrInvalidRequest", err)
 	}
 }
 
@@ -367,6 +410,7 @@ func TestNewGCPSessionUseAndDestroyValidateForDaemon(t *testing.T) {
 		Command:                []string{exe, "-test.run=none"},
 		ResolvedExecutable:     exe,
 		ExecutableIdentity:     identity,
+		AllowMutableExecutable: true,
 		CWD:                    "/tmp",
 		EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin"}),
 	})
@@ -375,6 +419,9 @@ func TestNewGCPSessionUseAndDestroyValidateForDaemon(t *testing.T) {
 	}
 	if useReq.SessionHandle != "asess_123" {
 		t.Fatalf("session handle = %q", useReq.SessionHandle)
+	}
+	if !useReq.AllowMutableExecutable {
+		t.Fatal("AllowMutableExecutable = false, want true")
 	}
 	if err := useReq.ValidateForDaemon(); err != nil {
 		t.Fatalf("use ValidateForDaemon returned error: %v", err)
@@ -436,6 +483,7 @@ func TestGCPRequestRejectsInvalidFields(t *testing.T) {
 					Command:                []string{exe},
 					ResolvedExecutable:     exe,
 					ExecutableIdentity:     identity,
+					AllowMutableExecutable: true,
 					CWD:                    "/tmp",
 					EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin"}),
 					Access:                 testGCPAccess(),
@@ -453,6 +501,7 @@ func TestGCPRequestRejectsInvalidFields(t *testing.T) {
 					Command:                []string{exe},
 					ResolvedExecutable:     exe,
 					ExecutableIdentity:     identity,
+					AllowMutableExecutable: true,
 					CWD:                    "/tmp",
 					EnvironmentFingerprint: EnvironmentFingerprint([]string{"PATH=/tmp/bin"}),
 					Access:                 testGCPAccess(),
@@ -530,13 +579,5 @@ func testGCPAccess() GCPAccess {
 func testGCPExecutable(t *testing.T) (string, fileidentity.Identity) {
 	t.Helper()
 
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable returned error: %v", err)
-	}
-	identity, err := fileidentity.Capture(exe)
-	if err != nil {
-		t.Fatalf("Capture returned error: %v", err)
-	}
-	return exe, identity
+	return testExecutable(t, t.TempDir(), "gcloud")
 }
