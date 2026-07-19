@@ -165,6 +165,66 @@ agent-secret profile list --json
 agent-secret profile show --json terraform-cloudflare
 ```
 
+## GCP Quick Start
+
+Agent Secret can also broker short-lived Google Cloud access for approved
+`gcloud` commands without writing user credentials into `~/.config/gcloud` or
+Application Default Credentials.
+
+GCP support requires Google-side IAM setup first: a narrow service account and
+a Token Creator binding that lets a least-privileged Google account mint
+short-lived tokens for that service account. Agent Secret release builds use a
+bundled Google OAuth Desktop client for local login, so normal operators do not
+need to create, export, or share OAuth client JSON. Start with
+[GCP Integration](docs/gcp.md) before using these commands.
+
+Log in a local Google account alias:
+
+```bash
+agent-secret gcp auth login \
+  --google-account work \
+  --expected-email you@example.com
+```
+
+Then add a GCP profile to `agent-secret.yml`:
+
+```yaml
+version: 1
+
+profiles:
+  beta-logs:
+    reason: Inspect beta Cloud Run errors
+    ttl: 10m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+```
+
+Run one command:
+
+```bash
+agent-secret gcp exec --profile beta-logs -- \
+  gcloud logging read 'severity>=ERROR' --project fixture-beta --limit=5
+```
+
+Or approve a multi-command session:
+
+```bash
+handle="$(agent-secret gcp session create --profile beta-logs --json |
+  jq -r .session_handle)"
+
+agent-secret gcp with-session "$handle" -- \
+  gcloud services list --enabled --project fixture-beta --limit=10
+
+agent-secret gcp session destroy "$handle"
+```
+
+For trusted repo-local wrappers, pass `--allow-mutable-executable` the same way
+you would with normal `agent-secret exec`.
+
 ## What You Approve
 
 ![Agent Secret approval prompt](docs/images/approval-request.png)
@@ -217,6 +277,8 @@ precedence, env-file migration, and the full schema.
   with secrets from an approved session and requester process tree. Add
   `--only ALIAS[,ALIAS...]` to inject a per-command subset of the approved
   session bag.
+- `agent-secret gcp exec|session|with-session|auth`: run commands with approved
+  short-lived GCP access tokens.
 - `agent-secret item describe REF`: inspect 1Password item fields without
   values.
 - `agent-secret agent-context --json`: print a machine-readable command and
@@ -242,9 +304,11 @@ other process with that value.
 
 What Agent Secret does protect:
 
-- Project configs and command flags carry `op://` or `bws://` references, not
-  resolved values.
+- Project configs and command flags carry `op://` or `bws://` references and
+  GCP identity metadata, not resolved secret values or access tokens.
 - The background helper fetches only secrets approved for the current request.
+- GCP commands receive short-lived service-account tokens through broker-owned
+  token files and isolated Cloud SDK configuration.
 - Audit logs contain metadata only, not raw secret values.
 - Reusable approvals are bounded by command, cwd, secret references, account or
   token alias, TTL, and use count.
@@ -258,9 +322,10 @@ Out of scope:
   app or helper, or a malicious approved child process.
 - Hiding env vars from the operating-system APIs needed to launch the approved
   child process.
-- Cross-platform secret management, background updates, credential helpers,
-  file-descriptor delivery, arbitrary long-lived shells, or raw socket value
-  reads.
+- Creating or managing GCP IAM, policing `gcloud` arguments, hiding approved
+  GCP access from the approved child process, cross-platform secret management,
+  background updates, credential helpers, file-descriptor delivery, arbitrary
+  long-lived shells, or raw socket value reads.
 
 Read [Threat Model](docs/threat-model.md) for the detailed model and review
 ledger. Use the [Security Policy](SECURITY.md) for private vulnerability
@@ -337,6 +402,7 @@ scripts/release/build-release.sh v0.0.0-dev
 
 - [Configuration Reference](docs/configuration.md)
 - [Session E2E Validation](docs/session-e2e-validation.md)
+- [GCP Integration](docs/gcp.md)
 - [Threat Model](docs/threat-model.md)
 - [Release Process](docs/release-process.md)
 - [Security Policy](SECURITY.md)

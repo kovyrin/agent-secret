@@ -11,6 +11,12 @@ extension ApprovalRequestViewModel {
 
         case .sessionCreate:
             "Session Access Request"
+
+        case .gcpExec:
+            "GCP Access Request"
+
+        case .gcpSessionCreate:
+            "GCP Session Request"
         }
     }
 
@@ -20,6 +26,9 @@ extension ApprovalRequestViewModel {
         }
         if operation == .sessionCreate {
             return resourceCount == 1 ? "Session secret" : "Session secrets (\(resourceCount))"
+        }
+        if operation == .gcpExec || operation == .gcpSessionCreate {
+            return "Requested GCP access"
         }
         if resourceCount == 1 {
             return "Requested secret"

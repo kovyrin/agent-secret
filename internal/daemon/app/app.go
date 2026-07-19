@@ -5,15 +5,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
+	"github.com/kovyrin/agent-secret/internal/buildinfo"
 	"github.com/kovyrin/agent-secret/internal/bwsm"
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/gcpauth"
+	"github.com/kovyrin/agent-secret/internal/gcpcompat"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 	"github.com/kovyrin/agent-secret/internal/providerresolver"
@@ -38,14 +42,45 @@ func Run(args []string, stderr io.Writer) int {
 	}
 	defer func() { _ = auditWriter.Close() }()
 
+	appLauncher := approval.ProcessApproverLauncher{}
 	approver, err := approval.NewSocketApprover(
 		config.socketPath,
-		approval.ProcessApproverLauncher{},
+		appLauncher,
 		nil,
 	)
 	if err != nil {
 		stderrf(stderr, "agent-secretd: initialize approver: %v\n", err)
 		return 1
+	}
+	if err := gcpcompat.CleanupStale(gcpcompat.DefaultBaseDir()); err != nil {
+		stderrf(stderr, "agent-secretd: clean stale GCP token files: %v\n", err)
+		return 1
+	}
+	gcpStore := gcpauth.NewKeychainStore("")
+	gcpAuth, err := gcpauth.NewService(gcpauth.ServiceOptions{
+		Store: gcpStore,
+		OAuth: gcpauth.NewOAuthFlow(gcpauth.OAuthFlowOptions{
+			ClientID:      config.gcpOAuthClientID,
+			ClientSecret:  config.gcpOAuthClientSecret,
+			LoginPrompter: approval.GCPOAuthLoginPromptLauncher{AppLauncher: appLauncher},
+		}),
+	})
+	if err != nil {
+		stderrf(stderr, "agent-secretd: initialize GCP auth service: %v\n", err)
+		return 1
+	}
+	var gcpMinter daemonbroker.GCPTokenMinter
+	if config.gcpOAuthClientID != "" {
+		iamMinter, err := gcpauth.NewIAMCredentialsMinter(gcpauth.IAMCredentialsMinterOptions{
+			Store:        gcpStore,
+			ClientID:     config.gcpOAuthClientID,
+			ClientSecret: config.gcpOAuthClientSecret,
+		})
+		if err != nil {
+			stderrf(stderr, "agent-secretd: initialize GCP token minter: %v\n", err)
+			return 1
+		}
+		gcpMinter = daemonGCPMinter{minter: iamMinter}
 	}
 
 	broker, err := daemonbroker.New(daemonbroker.Options{
@@ -54,7 +89,8 @@ func Run(args []string, stderr io.Writer) int {
 			opresolver.NewDesktopPool(),
 			bwsm.NewResolver(bwsm.NewKeychainStore("")),
 		),
-		Audit: auditWriter,
+		GCPTokenMinter: gcpMinter,
+		Audit:          auditWriter,
 	})
 	if err != nil {
 		stderrf(stderr, "agent-secretd: initialize broker: %v\n", err)
@@ -75,6 +111,7 @@ func Run(args []string, stderr io.Writer) int {
 		Approvals:        approver,
 		ClientValidator:  peertrust.NewExecutableValidator(defaultClientPaths),
 		OnePasswordCheck: onePasswordDesktopIntegrationCheck(),
+		GCPAuth:          gcpAuth,
 		SelfCheck:        selfCheck,
 	})
 	if err != nil {
@@ -100,7 +137,24 @@ func onePasswordDesktopIntegrationCheck() func(context.Context, string) error {
 }
 
 type config struct {
-	socketPath string
+	socketPath           string
+	gcpOAuthClientID     string
+	gcpOAuthClientSecret string
+}
+
+type daemonGCPMinter struct {
+	minter *gcpauth.IAMCredentialsMinter
+}
+
+func (m daemonGCPMinter) MintAccessToken(ctx context.Context, req daemonbroker.GCPMintRequest) (gcpcompat.Token, error) {
+	return m.minter.MintAccessToken(ctx, gcpauth.MintRequest{
+		GoogleAccount:  req.GoogleAccount,
+		Project:        req.Project,
+		ServiceAccount: req.ServiceAccount,
+		Scopes:         req.Scopes,
+		Lifetime:       req.Lifetime,
+		Reason:         req.Reason,
+	})
 }
 
 func parseConfig(args []string) (config, error) {
@@ -113,6 +167,16 @@ func parseConfig(args []string) (config, error) {
 	flags := flag.NewFlagSet("agent-secretd", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&parsed.socketPath, "socket", socketPath, "daemon socket path")
+	defaultClientID := strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_ID"))
+	if defaultClientID == "" {
+		defaultClientID = strings.TrimSpace(buildinfo.GCPOAuthClientID)
+	}
+	defaultClientSecret := strings.TrimSpace(os.Getenv("AGENT_SECRET_GCP_OAUTH_CLIENT_SECRET"))
+	if defaultClientSecret == "" {
+		defaultClientSecret = strings.TrimSpace(buildinfo.GCPOAuthClientSecret)
+	}
+	flags.StringVar(&parsed.gcpOAuthClientID, "gcp-oauth-client-id", defaultClientID, "GCP OAuth desktop client ID")
+	parsed.gcpOAuthClientSecret = defaultClientSecret
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}

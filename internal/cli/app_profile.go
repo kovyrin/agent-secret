@@ -139,6 +139,11 @@ func (a App) runProfileShow(command Command) int {
 	if _, err := fmt.Fprintln(writer, "secrets:"); err != nil {
 		return a.profileWriteError(err)
 	}
+	if len(profile.Secrets) == 0 {
+		if _, err := fmt.Fprintln(writer, "  (none)"); err != nil {
+			return a.profileWriteError(err)
+		}
+	}
 	for _, secret := range profile.Secrets {
 		account := secret.Account
 		if account == "" {
@@ -148,7 +153,31 @@ func (a App) runProfileShow(command Command) int {
 			return a.profileWriteError(err)
 		}
 	}
+	if err := writeProfileGCP(writer, profile); err != nil {
+		return a.profileWriteError(err)
+	}
 	return a.profileWriteError(writer.Flush())
+}
+
+func writeProfileGCP(writer *tabwriter.Writer, profile profileconfig.ProfileInfo) error {
+	if profile.GCP == nil {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "gcp:"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"google_account", profile.GCP.GoogleAccount},
+		{"project", profile.GCP.Project},
+		{"service_account", profile.GCP.ServiceAccount},
+		{"scopes", joinComma(profile.GCP.Scopes)},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(writer, "  %s:\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func selectProfile(info profileconfig.ConfigInfo, name string) (profileconfig.ProfileInfo, error) {

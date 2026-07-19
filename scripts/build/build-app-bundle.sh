@@ -27,6 +27,7 @@ project_root="$(cd -- "$script_dir/../.." && pwd)"
 # shellcheck source=scripts/lib/bundle-metadata.sh
 # shellcheck disable=SC1091
 source "$project_root/scripts/lib/bundle-metadata.sh"
+original_args=("$@")
 
 production_toolchain_requested() {
   [[ "${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}" != "" && "${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}" != "-" ]] ||
@@ -69,6 +70,8 @@ output_dir="$project_root/_dist"
 version="${AGENT_SECRET_VERSION:-}"
 bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 build_revision="${AGENT_SECRET_BUILD_REVISION:-}"
+bundled_gcp_oauth_client_id="${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID:-}"
+bundled_gcp_oauth_client_secret="${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET:-}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
 approver_team_id="-"
 daemon_entitlements="$project_root/scripts/build/agent-secretd.entitlements"
@@ -103,6 +106,38 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+resolve_bundled_gcp_oauth_client() {
+  if [[ "$bundled_gcp_oauth_client_id" != "" && "$bundled_gcp_oauth_client_secret" != "" ]]; then
+    return
+  fi
+
+  if [[ "${AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_RESOLVED:-}" == "1" ]]; then
+    echo "build-app-bundle: bundled GCP OAuth client profile did not provide required values" >&2
+    exit 1
+  fi
+
+  if ! command -v agent-secret >/dev/null 2>&1; then
+    echo "build-app-bundle: missing bundled GCP OAuth client values" >&2
+    echo "build-app-bundle: set AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID and AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET, or install agent-secret so the bundled-gcp-oauth-client profile can resolve them" >&2
+    exit 1
+  fi
+
+  echo "build-app-bundle: resolving bundled GCP OAuth client through agent-secret profile bundled-gcp-oauth-client" >&2
+  export AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_RESOLVED=1
+  local child_command=("$project_root/scripts/build/build-app-bundle.sh")
+  if [[ "${#original_args[@]}" -gt 0 ]]; then
+    child_command+=("${original_args[@]}")
+  fi
+  exec agent-secret exec \
+    --cwd "$project_root" \
+    --profile bundled-gcp-oauth-client \
+    --override-env \
+    --allow-mutable-executable \
+    -- "${child_command[@]}"
+}
+
+resolve_bundled_gcp_oauth_client
 
 if [[ "$version" == "" ]]; then
   version="$(agent_secret_default_dev_version "$project_root/CHANGELOG.md")" || {
@@ -338,6 +373,12 @@ go_ldflags=(
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Version=$version"
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Revision=$build_revision"
 )
+if [[ "$bundled_gcp_oauth_client_id" != "" ]]; then
+  go_ldflags+=("-X github.com/kovyrin/agent-secret/internal/buildinfo.GCPOAuthClientID=$bundled_gcp_oauth_client_id")
+fi
+if [[ "$bundled_gcp_oauth_client_secret" != "" ]]; then
+  go_ldflags+=("-X github.com/kovyrin/agent-secret/internal/buildinfo.GCPOAuthClientSecret=$bundled_gcp_oauth_client_secret")
+fi
 go_build_flags+=(-ldflags "${go_ldflags[*]}")
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secret" ./cmd/agent-secret
 run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secretd

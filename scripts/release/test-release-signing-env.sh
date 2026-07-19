@@ -39,13 +39,18 @@ expect_failure() {
   fi
 }
 
-release_env=(
+release_signing_env=(
   AGENT_SECRET_CODESIGN_CERT_P12_BASE64=dummy-p12
   AGENT_SECRET_CODESIGN_CERT_PASSWORD=dummy-password
   "AGENT_SECRET_CODESIGN_IDENTITY=Developer ID Application: Oleksiy Kovyrin (B6L7QLWTZW)"
   AGENT_SECRET_NOTARY_KEY=dummy-key
   AGENT_SECRET_NOTARY_KEY_ID=dummy-key-id
   AGENT_SECRET_NOTARY_ISSUER_ID=dummy-issuer-id
+)
+release_env=(
+  "${release_signing_env[@]}"
+  AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID=dummy-client-id
+  AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET=dummy-client-secret
 )
 
 expect_failure "missing AGENT_SECRET_CODESIGN_CERT_P12_BASE64" \
@@ -59,6 +64,9 @@ expect_failure "AGENT_SECRET_CODESIGN_IDENTITY must use Developer ID Team ID B6L
   "AGENT_SECRET_CODESIGN_IDENTITY=Developer ID Application: Example (TEAMID)" \
   AGENT_SECRET_NOTARIZE=1 \
   "$check_script"
+
+expect_failure "missing AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID" \
+  env -i "PATH=$test_path" "${release_signing_env[@]}" AGENT_SECRET_NOTARIZE=1 "$check_script"
 
 env -i "PATH=$test_path" "${release_env[@]}" AGENT_SECRET_NOTARIZE=1 "$check_script"
 
@@ -81,6 +89,14 @@ expect_failure "production release requires AGENT_SECRET_CODESIGN_IDENTITY" \
   env -i \
   "PATH=$test_path" \
   AGENT_SECRET_IN_MISE=1 \
+  "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/out"
+
+expect_failure "production release requires AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID" \
+  env -i \
+  "PATH=$test_path" \
+  AGENT_SECRET_IN_MISE=1 \
+  "${release_signing_env[@]}" \
+  AGENT_SECRET_NOTARIZE=1 \
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/out"
 
 expect_failure "set AGENT_SECRET_CODESIGN_CERT_PASSWORD" \

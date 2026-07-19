@@ -73,7 +73,7 @@ func (p Parser) parseExec(args []string) (Command, error) {
 		return Command{Kind: KindHelp, HelpText: ExecHelp()}, ErrHelpRequested
 	}
 
-	boundary := indexOf(args, "--")
+	boundary := indexOfDoubleDash(args)
 	if boundary < 0 {
 		return Command{}, ErrShellStringCommand
 	}

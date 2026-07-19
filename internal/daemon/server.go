@@ -51,6 +51,7 @@ type Server struct {
 	validator               PeerValidator
 	clientValidator         peertrust.ClientValidator
 	onePasswordCheck        func(context.Context, string) error
+	gcpAuth                 GCPAuthService
 	selfCheck               func() error
 	maxFrameBytes           int64
 	readTimeout             time.Duration
@@ -70,6 +71,7 @@ type ServerOptions struct {
 	Validator               PeerValidator
 	ClientValidator         peertrust.ClientValidator
 	OnePasswordCheck        func(context.Context, string) error
+	GCPAuth                 GCPAuthService
 	SelfCheck               func() error
 	MaxFrameBytes           int64
 	ReadTimeout             time.Duration
@@ -83,8 +85,29 @@ const DefaultProtocolReadTimeout = 30 * time.Second
 var (
 	ErrRequestAlreadyActive        = errors.New("connection already has an active exec request")
 	ErrOnePasswordCheckUnavailable = errors.New("1Password desktop integration check unavailable")
+	ErrGCPAuthUnavailable          = errors.New("GCP auth service unavailable")
 	errClientValidatorRequired     = errors.New("client validator is required")
 )
+
+type GCPAuthService interface {
+	Status(ctx context.Context, req request.GCPAuthStatusRequest) (protocol.GCPAuthStatusResponsePayload, error)
+	Login(ctx context.Context, req request.GCPAuthLoginRequest) (protocol.GCPAuthLoginResponsePayload, error)
+	Logout(ctx context.Context, req request.GCPAuthLogoutRequest) (protocol.GCPAuthLogoutResponsePayload, error)
+}
+
+type unavailableGCPAuthService struct{}
+
+func (unavailableGCPAuthService) Status(context.Context, request.GCPAuthStatusRequest) (protocol.GCPAuthStatusResponsePayload, error) {
+	return protocol.GCPAuthStatusResponsePayload{}, ErrGCPAuthUnavailable
+}
+
+func (unavailableGCPAuthService) Login(context.Context, request.GCPAuthLoginRequest) (protocol.GCPAuthLoginResponsePayload, error) {
+	return protocol.GCPAuthLoginResponsePayload{}, ErrGCPAuthUnavailable
+}
+
+func (unavailableGCPAuthService) Logout(context.Context, request.GCPAuthLogoutRequest) (protocol.GCPAuthLogoutResponsePayload, error) {
+	return protocol.GCPAuthLogoutResponsePayload{}, ErrGCPAuthUnavailable
+}
 
 type connectionState struct {
 	defaultReadTimeout time.Duration
@@ -158,6 +181,10 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if onePasswordCheck == nil {
 		onePasswordCheck = func(context.Context, string) error { return ErrOnePasswordCheckUnavailable }
 	}
+	gcpAuth := opts.GCPAuth
+	if gcpAuth == nil {
+		gcpAuth = unavailableGCPAuthService{}
+	}
 	maxFrameBytes := opts.MaxFrameBytes
 	if maxFrameBytes <= 0 {
 		maxFrameBytes = protocol.DefaultMaxProtocolFrameBytes
@@ -176,6 +203,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		validator:               validator,
 		clientValidator:         clientValidator,
 		onePasswordCheck:        onePasswordCheck,
+		gcpAuth:                 gcpAuth,
 		selfCheck:               opts.SelfCheck,
 		maxFrameBytes:           maxFrameBytes,
 		readTimeout:             readTimeout,
@@ -261,7 +289,11 @@ func (s *Server) retireIfExecutableChanged(ctx context.Context, encoder *json.En
 func checksExecutableIdentity(messageType protocol.MessageType) bool {
 	//nolint:exhaustive // Only new foreground work should trigger daemon executable self-checks.
 	switch messageType {
-	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe, protocol.TypeSessionCreate, protocol.TypeSessionResolve, protocol.TypeSessionDestroy, protocol.TypeSessionList:
+	case protocol.TypeDaemonStatus, protocol.TypeOnePasswordStatus, protocol.TypeRequestExec, protocol.TypeItemDescribe,
+		protocol.TypeSessionCreate, protocol.TypeSessionResolve, protocol.TypeSessionDestroy, protocol.TypeSessionList,
+		protocol.TypeGCPAuthStatus, protocol.TypeGCPAuthLogin, protocol.TypeGCPAuthLogout,
+		protocol.TypeGCPExec, protocol.TypeGCPSessionCreate, protocol.TypeGCPSessionList, protocol.TypeGCPSessionDestroy,
+		protocol.TypeGCPWithSession:
 		return true
 	default:
 		return false
@@ -382,6 +414,15 @@ func (s *Server) dispatchClientEnvelope(
 	case protocol.TypeOnePasswordStatus:
 		s.handleOnePasswordStatus(ctx, conn, encoder, env)
 		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPAuthStatus:
+		s.handleGCPAuthStatus(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPAuthLogin:
+		s.handleGCPAuthLogin(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPAuthLogout:
+		s.handleGCPAuthLogout(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
 	case protocol.TypeDaemonStop:
 		return connectionDispatchAction{accepted: true, closeConnection: s.handleDaemonStop(ctx, conn, encoder, env)}
 	case protocol.TypeApprovalPending:
@@ -402,6 +443,29 @@ func (s *Server) dispatchClientEnvelope(
 			return connectionDispatchAction{}
 		}
 		requestID := s.handleRequestExec(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
+	case protocol.TypeGCPExec:
+		if state.hasActiveRequest() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+			return connectionDispatchAction{}
+		}
+		requestID := s.handleGCPExec(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
+	case protocol.TypeGCPSessionCreate:
+		s.handleGCPSessionCreate(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPSessionList:
+		s.handleGCPSessionList(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPSessionDestroy:
+		s.handleGCPSessionDestroy(ctx, conn, encoder, env)
+		return connectionDispatchAction{accepted: true}
+	case protocol.TypeGCPWithSession:
+		if state.hasActiveRequest() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(ErrRequestAlreadyActive), ErrRequestAlreadyActive)
+			return connectionDispatchAction{}
+		}
+		requestID := s.handleGCPWithSession(ctx, conn, encoder, env)
 		return connectionDispatchAction{accepted: requestID != "", beginExecRequestID: requestID}
 	case protocol.TypeItemDescribe:
 		s.handleItemDescribe(ctx, conn, encoder, env)
@@ -572,16 +636,16 @@ func (s *Server) handleSessionResolve(
 	}()
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(ctx); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	delivery.CommitDelivered()
@@ -595,25 +659,15 @@ func (s *Server) handleSessionDestroy(
 	encoder *json.Encoder,
 	env protocol.Envelope,
 ) {
-	if err := s.validateTrustedClientPeer(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	req, err := protocol.DecodeRequiredPayload[request.SessionDestroyRequest](env)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
-		return
-	}
-	if err := req.ValidateForDaemon(); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
-		return
-	}
-	payload, err := s.broker.HandleSessionDestroy(ctx, req)
-	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return
-	}
-	_ = writeOK(encoder, env.Correlation(), payload)
+	handleTrustedDaemonRequest(
+		s,
+		ctx,
+		conn,
+		encoder,
+		env,
+		protocol.DecodeRequiredPayload[request.SessionDestroyRequest],
+		s.broker.HandleSessionDestroy,
+	)
 }
 
 func (s *Server) handleSessionList(
@@ -662,6 +716,67 @@ func (s *Server) handleOnePasswordStatus(
 		return
 	}
 	_ = writeOK(encoder, env.Correlation(), nil)
+}
+
+func (s *Server) handleGCPAuthStatus(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	handleTrustedDaemonRequest(s, ctx, conn, encoder, env, protocol.DecodePayload[request.GCPAuthStatusRequest], s.gcpAuth.Status)
+}
+
+func (s *Server) handleGCPAuthLogin(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	handleTrustedDaemonRequest(s, ctx, conn, encoder, env, protocol.DecodeRequiredPayload[request.GCPAuthLoginRequest], s.gcpAuth.Login)
+}
+
+func (s *Server) handleGCPAuthLogout(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	handleTrustedDaemonRequest(s, ctx, conn, encoder, env, protocol.DecodeRequiredPayload[request.GCPAuthLogoutRequest], s.gcpAuth.Logout)
+}
+
+type daemonRequestWithValidation interface {
+	ValidateForDaemon() error
+}
+
+func handleTrustedDaemonRequest[Req daemonRequestWithValidation, Resp any](
+	s *Server,
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+	decode func(protocol.Envelope) (Req, error),
+	handle func(context.Context, Req) (Resp, error),
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	req, err := decode(env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	response, err := handle(ctx, req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), response)
 }
 
 func (s *Server) lifecycleRequestMatchesConnection(
@@ -760,16 +875,184 @@ func (s *Server) handleRequestExec(
 	}
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
+		return ""
+	}
+	delivery.CommitDelivered()
+	committed = true
+	return env.RequestID
+}
+
+type gcpSessionCreateServerPayload struct {
+	Request request.GCPSessionCreateRequest `json:"request"`
+	Handle  string                          `json:"handle"`
+}
+
+type gcpSessionListServerPayload struct {
+	CWD string `json:"cwd"`
+}
+
+func (s *Server) handleGCPExec(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) string {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	req, err := protocol.DecodeRequiredPayload[request.GCPExecRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	req = req.WithReceiptTime(s.broker.Now())
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	delivery, err := s.broker.PrepareGCPExecDelivery(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
+	if err != nil {
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
+		return ""
+	}
+	defer clearWriteDeadline()
+	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
+		return ""
+	}
+	delivery.CommitDelivered()
+	committed = true
+	return env.RequestID
+}
+
+func (s *Server) handleGCPSessionCreate(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	payload, err := protocol.DecodeRequiredPayload[gcpSessionCreateServerPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	req := payload.Request.WithReceiptTime(s.broker.Now())
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	response, err := s.broker.CreateGCPSession(ctx, env.Correlation(), req, strings.TrimSpace(payload.Handle))
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), response)
+}
+
+func (s *Server) handleGCPSessionList(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	payload, err := protocol.DecodePayload[gcpSessionListServerPayload](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return
+	}
+	response, err := s.broker.ListGCPSessions(ctx, strings.TrimSpace(payload.CWD))
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return
+	}
+	_ = writeOK(encoder, env.Correlation(), response)
+}
+
+func (s *Server) handleGCPSessionDestroy(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) {
+	handleTrustedDaemonRequest(
+		s,
+		ctx,
+		conn,
+		encoder,
+		env,
+		protocol.DecodeRequiredPayload[request.GCPSessionDestroyRequest],
+		s.broker.DestroyGCPSession,
+	)
+}
+
+func (s *Server) handleGCPWithSession(
+	ctx context.Context,
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+) string {
+	if err := s.validateTrustedClientPeer(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	req, err := protocol.DecodeRequiredPayload[request.GCPSessionUseRequest](env)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	if err := req.ValidateForDaemon(); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadRequest, err)
+		return ""
+	}
+	delivery, err := s.broker.PrepareGCPSessionCommandDelivery(ctx, env.Correlation(), req)
+	if err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			delivery.AbortBeforePayload()
+		}
+	}()
+	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
+	if err != nil {
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
+		return ""
+	}
+	defer clearWriteDeadline()
+	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
+		writePrePayloadDeliveryError(encoder, env.Correlation(), delivery, err)
 		return ""
 	}
 	delivery.CommitDelivered()
@@ -894,6 +1177,22 @@ func (s *Server) validateTrustedClientPeer(conn *net.UnixConn) error {
 	return s.clientValidator.ValidatePeer(peer)
 }
 
+type prePayloadDelivery interface {
+	AbortBeforePayload()
+}
+
+// writePrePayloadDeliveryError invalidates prepared credentials before the client
+// can observe an error response and attempt to reuse the delivery scope.
+func writePrePayloadDeliveryError(
+	encoder *json.Encoder,
+	correlation protocol.Correlation,
+	delivery prePayloadDelivery,
+	err error,
+) {
+	delivery.AbortBeforePayload()
+	_ = writeErrorEncoder(encoder, correlation, codeForError(err), err)
+}
+
 func writeOK(encoder *json.Encoder, correlation protocol.Correlation, payload any) error {
 	env, err := protocol.NewEnvelope(protocol.TypeOK, correlation, payload)
 	if err != nil {
@@ -943,6 +1242,12 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeRequestActive
 	case errors.Is(err, daemonbroker.ErrDaemonStopped):
 		return protocol.ErrorCodeDaemonStopped
+	case errors.Is(err, daemonbroker.ErrUnknownGCPSession):
+		return protocol.ErrorCodeBadRequest
+	case errors.Is(err, daemonbroker.ErrGCPSessionExpired):
+		return protocol.ErrorCodeRequestExpired
+	case errors.Is(err, daemonbroker.ErrGCPSessionNotUsableFromCWD), errors.Is(err, daemonbroker.ErrGCPSessionExhausted):
+		return protocol.ErrorCodeBadRequest
 	case errors.Is(err, approval.ErrRequestExpired):
 		return protocol.ErrorCodeRequestExpired
 	case errors.Is(err, approval.ErrStaleApproval):
@@ -953,7 +1258,7 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeContextCanceled
 	case errors.Is(err, context.DeadlineExceeded):
 		return protocol.ErrorCodeContextDeadlineExceeded
-	case errors.Is(err, daemonbroker.ErrSecretResolveFailed), errors.Is(err, daemonbroker.ErrItemMetadataResolveFailed):
+	case errors.Is(err, daemonbroker.ErrSecretResolveFailed), errors.Is(err, daemonbroker.ErrItemMetadataResolveFailed), errors.Is(err, daemonbroker.ErrNoGCPTokenMinter), errors.Is(err, ErrGCPAuthUnavailable):
 		return protocol.ErrorCodeResolveFailed
 	default:
 		return protocol.ErrorCodeRequestFailed

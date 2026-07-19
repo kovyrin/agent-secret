@@ -119,9 +119,31 @@ func (e *envFileFlags) Set(value string) error {
 	return nil
 }
 
-func indexOf(values []string, target string) int {
+type repeatedStringFlags struct {
+	values []string
+	name   string
+}
+
+func (f *repeatedStringFlags) String() string {
+	return strings.Join(f.values, ",")
+}
+
+func (f *repeatedStringFlags) Set(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		name := f.name
+		if name == "" {
+			name = "value"
+		}
+		return fmt.Errorf("%w: --%s requires a non-empty value", ErrInvalidArguments, name)
+	}
+	f.values = append(f.values, trimmed)
+	return nil
+}
+
+func indexOfDoubleDash(values []string) int {
 	for i, value := range values {
-		if value == target {
+		if value == "--" {
 			return i
 		}
 	}

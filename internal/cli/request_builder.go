@@ -183,6 +183,27 @@ func buildSessionResolveRequest(opts sessionResolveRequestBuildOptions) (request
 	return req.WithRequestedAliases(opts.requestedAliases)
 }
 
+type gcpRequestBuildOptions struct {
+	reason                 string
+	command                []string
+	cwd                    string
+	env                    []string
+	access                 request.GCPAccess
+	profileName            string
+	configRoot             string
+	ttl                    time.Duration
+	reuseOnly              bool
+	allowMutableExecutable bool
+}
+
+type gcpSessionUseRequestBuildOptions struct {
+	sessionHandle          string
+	command                []string
+	cwd                    string
+	env                    []string
+	allowMutableExecutable bool
+}
+
 func buildItemDescribeRequest(opts itemDescribeRequestBuildOptions) (request.ItemDescribeRequest, error) {
 	cwd, err := normalizeCWD(opts.cwd)
 	if err != nil {
@@ -213,6 +234,77 @@ func buildItemDescribeRequest(opts itemDescribeRequestBuildOptions) (request.Ite
 		Ref:                opts.ref,
 		Account:            opts.account,
 		TTL:                opts.ttl,
+	})
+}
+
+func buildGCPExecRequest(opts gcpRequestBuildOptions) (request.GCPExecRequest, error) {
+	cwd, err := normalizeCWD(opts.cwd)
+	if err != nil {
+		return request.GCPExecRequest{}, err
+	}
+	env := slices.Clone(opts.env)
+	command, resolvedExecutable, err := resolveCommand(cwd, env, opts.command)
+	if err != nil {
+		return request.GCPExecRequest{}, err
+	}
+	if !opts.allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return request.GCPExecRequest{}, fmt.Errorf(
+				"%w: rerun with --allow-mutable-executable only if you trust the executable path",
+				err,
+			)
+		}
+	}
+	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
+	if err != nil {
+		return request.GCPExecRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
+	}
+	return request.NewGCPExec(request.GCPExecOptions{
+		Reason:                 opts.reason,
+		Command:                command,
+		ResolvedExecutable:     resolvedExecutable,
+		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: opts.allowMutableExecutable,
+		CWD:                    cwd,
+		EnvironmentFingerprint: request.EnvironmentFingerprint(env),
+		Access:                 opts.access,
+		ProfileName:            opts.profileName,
+		ConfigRoot:             opts.configRoot,
+		TTL:                    opts.ttl,
+		ReuseOnly:              opts.reuseOnly,
+	})
+}
+
+func buildGCPSessionUseRequest(opts gcpSessionUseRequestBuildOptions) (request.GCPSessionUseRequest, error) {
+	cwd, err := normalizeCWD(opts.cwd)
+	if err != nil {
+		return request.GCPSessionUseRequest{}, err
+	}
+	env := slices.Clone(opts.env)
+	command, resolvedExecutable, err := resolveCommand(cwd, env, opts.command)
+	if err != nil {
+		return request.GCPSessionUseRequest{}, err
+	}
+	if !opts.allowMutableExecutable {
+		if err := executabletrust.ValidateStableExecutable(resolvedExecutable); err != nil {
+			return request.GCPSessionUseRequest{}, fmt.Errorf(
+				"%w: rerun with --allow-mutable-executable only if you trust the executable path",
+				err,
+			)
+		}
+	}
+	executableIdentity, err := fileidentity.Capture(resolvedExecutable)
+	if err != nil {
+		return request.GCPSessionUseRequest{}, fmt.Errorf("%w: capture executable identity: %w", request.ErrInvalidCommand, err)
+	}
+	return request.NewGCPSessionUse(request.GCPSessionUseOptions{
+		SessionHandle:          opts.sessionHandle,
+		Command:                command,
+		ResolvedExecutable:     resolvedExecutable,
+		ExecutableIdentity:     executableIdentity,
+		AllowMutableExecutable: opts.allowMutableExecutable,
+		CWD:                    cwd,
+		EnvironmentFingerprint: request.EnvironmentFingerprint(env),
 	})
 }
 
@@ -330,4 +422,29 @@ func lookupEnv(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func childEnvWithoutAmbientGCP(env []string) []string {
+	removed := map[string]struct{}{
+		"CLOUDSDK_ACTIVE_CONFIG_NAME":            {},
+		"CLOUDSDK_AUTH_ACCESS_TOKEN":             {},
+		"CLOUDSDK_AUTH_ACCESS_TOKEN_FILE":        {},
+		"CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE": {},
+		"CLOUDSDK_CONFIG":                        {},
+		"CLOUDSDK_CORE_ACCOUNT":                  {},
+		"CLOUDSDK_CORE_PROJECT":                  {},
+		"GOOGLE_APPLICATION_CREDENTIALS":         {},
+		"GOOGLE_OAUTH_ACCESS_TOKEN":              {},
+	}
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			if _, drop := removed[key]; drop {
+				continue
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
 }

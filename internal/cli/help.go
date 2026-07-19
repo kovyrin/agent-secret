@@ -17,10 +17,11 @@ Secrets are never printed by agent-secret and are never written to disk. The nor
 Commands:
 
   agent-context Print a machine-readable command and config discovery schema.
-	  exec       Run a command with approved secrets injected as environment variables.
-	  session    Create, list, and destroy bounded background-helper secret sessions.
-	  with-session Run a command with secrets from an approved session.
-	  item       Inspect 1Password item metadata without revealing secret values.
+  exec       Run a command with approved secrets injected as environment variables.
+  session    Create, list, and destroy bounded background-helper secret sessions.
+  with-session Run a command with secrets from an approved session.
+  gcp        Run commands with approved short-lived GCP access tokens.
+  item       Inspect 1Password item metadata without revealing secret values.
   profile    Inspect project profiles without resolving secret values.
   bitwarden  Manage local Bitwarden Secrets Manager token aliases.
   install-cli Install or repair the agent-secret command symlink for this user.
@@ -400,6 +401,162 @@ func WithSessionHelp() string {
 	The caller must be in the approved requester process tree selected when the
 	session was created.
 	`)
+}
+
+func GCPHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp brokers short-lived Google Cloud access for approved commands and sessions.
+
+Commands:
+
+  exec          Run one command with isolated Cloud SDK state and an approved access token.
+  session       Create, list, or destroy approved multi-command GCP sessions.
+  with-session  Run one command inside an approved GCP session.
+  auth          Show local GCP bootstrap auth status.
+`)
+}
+
+func GCPExecHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp exec validates a GCP capability request, asks for approval, prepares isolated Cloud SDK state, and runs the wrapped command.
+
+Usage:
+
+  agent-secret gcp exec --profile NAME -- COMMAND [ARG...]
+  agent-secret gcp exec --google-account ALIAS --project PROJECT --service-account EMAIL --scope SCOPE --reason TEXT -- COMMAND [ARG...]
+
+Flags:
+
+  --profile NAME           Load a GCP profile from agent-secret.yml or .agent-secret.yml.
+  --google-account ALIAS   Google bootstrap identity alias for ad hoc access.
+  --project PROJECT        Intended GCP project.
+  --service-account EMAIL  Service account to impersonate.
+  --scope URL              OAuth scope. Repeat for multiple scopes.
+  --reason TEXT            Human-readable reason shown to the approver.
+  --ttl DURATION           Approval TTL. Defaults to profile ttl or 2m. Allowed range: 10s through 10m.
+  --config PATH            Profile config path.
+  --cwd DIR                Child working directory.
+  --dry-run                Validate without prompting, minting, or spawning.
+  --reuse-only             Use an existing reusable approval or fail without prompting.
+  --allow-mutable-executable
+                           Allow a user-owned or writable executable path after showing an approval warning.
+  --json                   Print JSON output. Only valid with --dry-run.
+`)
+}
+
+func GCPSessionHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session manages approved multi-command GCP sessions.
+
+Commands:
+
+  create   Approve a config-backed GCP profile session.
+  list     List active same-user GCP sessions.
+  destroy  Destroy an active GCP session.
+`)
+}
+
+func GCPSessionCreateHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session create asks for approval to use a config-backed GCP profile across multiple with-session commands.
+
+Usage:
+
+  agent-secret gcp session create --profile NAME --reason TEXT
+
+Flags:
+
+  --profile NAME             Load a GCP profile from project config.
+  --reason TEXT              Human-readable workflow reason. Defaults to profile reason.
+  --ttl DURATION             Session TTL. Defaults to profile ttl or 30m. Allowed range: 10s through 1h.
+  --max-command-starts N     Maximum approved with-session command starts. Defaults to 20.
+  --config PATH              Profile config path.
+  --json                     Print JSON output.
+`)
+}
+
+func GCPSessionListHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session list lists active GCP sessions owned by the same local user.
+
+Usage:
+
+  agent-secret gcp session list [--json]
+`)
+}
+
+func GCPSessionDestroyHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp session destroy deletes an active GCP session and clears cached token material.
+
+Usage:
+
+  agent-secret gcp session destroy [--json] SESSION_HANDLE
+`)
+}
+
+func GCPWithSessionHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp with-session runs one command inside an approved GCP session.
+
+Usage:
+
+  agent-secret gcp with-session SESSION_HANDLE [--cwd DIR] [--allow-mutable-executable] -- COMMAND [ARG...]
+
+Flags:
+
+  --cwd DIR                Child working directory. Must stay inside the approved project root.
+  --allow-mutable-executable
+                           Allow a user-owned or writable executable path.
+`)
+}
+
+func GCPAuthHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth manages app-owned Google bootstrap auth.
+
+Commands:
+
+  status  Show local setup status.
+  login   Start app-owned Google login and store bootstrap state in Keychain.
+  logout  Remove app-owned Google login state from Keychain.
+`)
+}
+
+func GCPAuthStatusHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth status shows app-owned Google bootstrap auth stored in Keychain.
+
+Usage:
+
+  agent-secret gcp auth status [--google-account ALIAS] [--json]
+`)
+}
+
+func GCPAuthLoginHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth login shows a native Google Cloud login warning, opens Google OAuth from the daemon after local confirmation, completes OAuth with PKCE through the bundled Agent Secret OAuth client, and stores refresh-capable bootstrap state in Keychain.
+
+Usage:
+
+  agent-secret gcp auth login --google-account ALIAS [--expected-email EMAIL] [--json]
+
+Flags:
+
+  --google-account ALIAS  Local bootstrap identity alias used by GCP profiles.
+  --expected-email EMAIL  Refuse login unless Google reports this email.
+  --json                  Print JSON output.
+`)
+}
+
+func GCPAuthLogoutHelp() string {
+	return strings.TrimSpace(`
+agent-secret gcp auth logout removes app-owned Google bootstrap auth from Keychain.
+
+Usage:
+
+  agent-secret gcp auth logout --google-account ALIAS [--json]
+`)
 }
 
 func DaemonHelp() string {

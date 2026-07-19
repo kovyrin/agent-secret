@@ -182,13 +182,7 @@ struct ApprovalRequestViewModel: Equatable {
         }
         lines.append("Resolved binary: \(viewModel.resolvedExecutable)")
         lines.append("Mutable executable allowed: \(viewModel.allowMutableExecutable ? "yes" : "no")")
-        if operation == .itemDescribe {
-            lines.append("Item metadata:")
-        } else if operation == .sessionCreate {
-            lines.append("Session secrets:")
-        } else {
-            lines.append("Secrets:")
-        }
+        lines.append(Self.inspectionResourceSectionTitle(for: operation))
         lines.append(contentsOf: viewModel.resourceRows)
         lines.append("Time remaining: \(viewModel.timeRemaining)")
         if allowsReusableApproval {

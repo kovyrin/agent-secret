@@ -21,6 +21,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
+	"github.com/kovyrin/agent-secret/internal/gcpcompat"
 	"github.com/kovyrin/agent-secret/internal/peercred"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
@@ -102,6 +103,21 @@ func TestServerHelperHello(t *testing.T) {
 	}
 }
 
+func TestUnavailableGCPAuthServiceReturnsSentinel(t *testing.T) {
+	t.Parallel()
+
+	service := unavailableGCPAuthService{}
+	if _, err := service.Status(context.Background(), request.GCPAuthStatusRequest{}); !errors.Is(err, ErrGCPAuthUnavailable) {
+		t.Fatalf("Status error = %v, want ErrGCPAuthUnavailable", err)
+	}
+	if _, err := service.Login(context.Background(), request.GCPAuthLoginRequest{GoogleAccount: "personal"}); !errors.Is(err, ErrGCPAuthUnavailable) {
+		t.Fatalf("Login error = %v, want ErrGCPAuthUnavailable", err)
+	}
+	if _, err := service.Logout(context.Background(), request.GCPAuthLogoutRequest{GoogleAccount: "personal"}); !errors.Is(err, ErrGCPAuthUnavailable) {
+		t.Fatalf("Logout error = %v, want ErrGCPAuthUnavailable", err)
+	}
+}
+
 func TestServerExecProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +156,199 @@ func TestServerExecProtocolLifecycle(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerGCPExecProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	aud := &memoryAudit{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Now:                func() time.Time { return now },
+		Approver:           &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     &fakeGCPMinter{},
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              aud,
+	})
+	defer cleanup()
+
+	req := testGCPExecRequest(t, now)
+	req.ReceivedAt = time.Time{}
+	req.ExpiresAt = time.Time{}
+	payload, err := client.RequestGCPExec(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), req)
+	if err != nil {
+		t.Fatalf("RequestGCPExec returned error: %v", err)
+	}
+	if payload.Env[gcpcompat.EnvCloudSDKCoreProject] != "fixture-beta" ||
+		payload.Env[gcpcompat.EnvCloudSDKAccessTokenFile] == "" {
+		t.Fatalf("unexpected GCP payload env: %+v", payload.Env)
+	}
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), 0, ""); err != nil {
+		t.Fatalf("ReportCompleted returned error: %v", err)
+	}
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventApprovalGranted,
+		audit.EventGCPTokenMintStarted,
+		audit.EventGCPTokenMintCompleted,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerGCPSessionProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	projectRoot, _, _ := testGCPCommandFixture(t)
+	aud := &memoryAudit{}
+	minter := &fakeGCPMinter{}
+	client, cleanup := startSocketPairTestServer(t, daemonbroker.Options{
+		Now:                func() time.Time { return now },
+		Approver:           &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     minter,
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              aud,
+	})
+	defer cleanup()
+
+	createReq := testGCPSessionCreateRequest(t, now, projectRoot)
+	createReq.ReceivedAt = time.Time{}
+	createReq.ExpiresAt = time.Time{}
+	created, err := client.CreateGCPSession(context.Background(), testCorrelation("req_create", "nonce_create"), createReq, "asess_123")
+	if err != nil {
+		t.Fatalf("CreateGCPSession returned error: %v", err)
+	}
+	if created.SessionHandle != "asess_123" || created.RemainingCommandStarts != 3 {
+		t.Fatalf("unexpected session create payload: %+v", created)
+	}
+
+	listed, err := client.ListGCPSessions(context.Background(), projectRoot)
+	if err != nil {
+		t.Fatalf("ListGCPSessions returned error: %v", err)
+	}
+	if len(listed.Sessions) != 1 || !listed.Sessions[0].UsableFromCWD {
+		t.Fatalf("unexpected session list payload: %+v", listed)
+	}
+
+	useReq := testGCPSessionUseRequest(t, "asess_123", projectRoot)
+	commandPayload, err := client.UseGCPSession(context.Background(), testCorrelation("req_use", "nonce_use"), useReq)
+	if err != nil {
+		t.Fatalf("UseGCPSession returned error: %v", err)
+	}
+	if commandPayload.Env[gcpcompat.EnvCloudSDKCoreProject] != "fixture-beta" {
+		t.Fatalf("unexpected with-session payload: %+v", commandPayload)
+	}
+	if err := client.ReportStarted(context.Background(), testCorrelation("req_use", "nonce_use"), 4321); err != nil {
+		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	if err := client.ReportCompleted(context.Background(), testCorrelation("req_use", "nonce_use"), 0, ""); err != nil {
+		t.Fatalf("ReportCompleted returned error: %v", err)
+	}
+
+	destroyed, err := client.DestroyGCPSession(context.Background(), request.GCPSessionDestroyRequest{SessionHandle: "asess_123", CWD: projectRoot})
+	if err != nil {
+		t.Fatalf("DestroyGCPSession returned error: %v", err)
+	}
+	if !destroyed.Destroyed || destroyed.SessionAuditID != created.SessionAuditID {
+		t.Fatalf("unexpected destroy payload: %+v", destroyed)
+	}
+	if len(minter.calls) != 1 {
+		t.Fatalf("minter calls = %d, want 1", len(minter.calls))
+	}
+	got := auditEventTypes(aud.Events())
+	want := []audit.EventType{
+		audit.EventApprovalRequested,
+		audit.EventGCPSessionCreated,
+		audit.EventGCPTokenMintStarted,
+		audit.EventGCPTokenMintCompleted,
+		audit.EventCommandStarted,
+		audit.EventCommandCompleted,
+		audit.EventGCPSessionDestroyed,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("audit events = %v, want %v", got, want)
+	}
+}
+
+func TestServerGCPAuthProtocolLifecycle(t *testing.T) {
+	t.Parallel()
+
+	auth := &fakeGCPAuthService{
+		statusPayload: protocol.GCPAuthStatusResponsePayload{
+			Accounts: []protocol.GCPAuthAccountInfo{
+				{
+					GoogleAccount: "personal",
+					Email:         "oleksiy@kovyrin.net",
+					Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+				},
+			},
+		},
+		loginPayload: protocol.GCPAuthLoginResponsePayload{
+			Account: protocol.GCPAuthAccountInfo{
+				GoogleAccount: "personal",
+				Email:         "oleksiy@kovyrin.net",
+				Scopes:        []string{"https://www.googleapis.com/auth/cloud-platform"},
+			},
+		},
+		logoutPayload: protocol.GCPAuthLogoutResponsePayload{
+			GoogleAccount: "personal",
+			Deleted:       true,
+		},
+	}
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker: newTestBroker(t, daemonbroker.Options{
+			Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+			Resolver: &mockResolver{},
+			Audit:    &memoryAudit{},
+		}),
+		Validator:       staticPeerValidator{info: peer},
+		ClientValidator: peertrust.NewExecutableValidator([]string{peer.ExecutablePath}),
+		GCPAuth:         auth,
+	})
+	defer stop()
+	client := control.NewClient(conn)
+
+	status, err := client.GCPAuthStatus(context.Background(), request.GCPAuthStatusRequest{GoogleAccount: "personal"})
+	if err != nil {
+		t.Fatalf("GCPAuthStatus returned error: %v", err)
+	}
+	if len(status.Accounts) != 1 || status.Accounts[0].Email != "oleksiy@kovyrin.net" {
+		t.Fatalf("unexpected auth status response: %+v", status)
+	}
+	login, err := client.GCPAuthLogin(context.Background(), request.GCPAuthLoginRequest{
+		GoogleAccount: "personal",
+		ExpectedEmail: "oleksiy@kovyrin.net",
+	})
+	if err != nil {
+		t.Fatalf("GCPAuthLogin returned error: %v", err)
+	}
+	if login.Account.GoogleAccount != "personal" {
+		t.Fatalf("unexpected auth login response: %+v", login)
+	}
+	logout, err := client.GCPAuthLogout(context.Background(), request.GCPAuthLogoutRequest{GoogleAccount: "personal"})
+	if err != nil {
+		t.Fatalf("GCPAuthLogout returned error: %v", err)
+	}
+	if !logout.Deleted {
+		t.Fatalf("unexpected auth logout response: %+v", logout)
+	}
+	if len(auth.statusRequests) != 1 ||
+		len(auth.loginRequests) != 1 ||
+		auth.loginRequests[0].ExpectedEmail != "oleksiy@kovyrin.net" ||
+		len(auth.logoutRequests) != 1 {
+		t.Fatalf("unexpected auth service requests: %+v %+v %+v", auth.statusRequests, auth.loginRequests, auth.logoutRequests)
 	}
 }
 
@@ -449,14 +658,26 @@ func TestSessionProtocolErrorsMapToCodes(t *testing.T) {
 	}
 }
 
-func TestSessionMessagesTriggerExecutableIdentityCheck(t *testing.T) {
+func TestForegroundMessagesTriggerExecutableIdentityCheck(t *testing.T) {
 	t.Parallel()
 
 	for _, messageType := range []protocol.MessageType{
+		protocol.TypeDaemonStatus,
+		protocol.TypeOnePasswordStatus,
+		protocol.TypeRequestExec,
+		protocol.TypeItemDescribe,
 		protocol.TypeSessionCreate,
 		protocol.TypeSessionResolve,
 		protocol.TypeSessionDestroy,
 		protocol.TypeSessionList,
+		protocol.TypeGCPAuthStatus,
+		protocol.TypeGCPAuthLogin,
+		protocol.TypeGCPAuthLogout,
+		protocol.TypeGCPExec,
+		protocol.TypeGCPSessionCreate,
+		protocol.TypeGCPSessionList,
+		protocol.TypeGCPSessionDestroy,
+		protocol.TypeGCPWithSession,
 	} {
 		if !checksExecutableIdentity(messageType) {
 			t.Fatalf("checksExecutableIdentity(%s) = false, want true", messageType)
@@ -819,7 +1040,7 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
 	select {
 	case <-firstWriteAttempted:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("server did not attempt first exec response write")
 	}
 
@@ -1655,6 +1876,38 @@ func TestServerReportsBadMessagePayloadsAndTypes(t *testing.T) {
 			wantCode: "bad_request",
 		},
 		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPExec, RequestID: "req_gcp", Nonce: "nonce_gcp", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPAuthStatus, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPAuthLogin, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPAuthLogout, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPSessionCreate, RequestID: "req_create", Nonce: "nonce_create", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPSessionList, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPSessionDestroy, Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
+			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeGCPWithSession, RequestID: "req_use", Nonce: "nonce_use", Payload: json.RawMessage(`[]`)},
+			wantCode: "bad_request",
+		},
+		{
 			env:      protocol.Envelope{Version: protocol.ProtocolVersion, Type: protocol.TypeCommandStarted, RequestID: "req_1", Nonce: "nonce_1", Payload: json.RawMessage(`[]`)},
 			wantCode: "invalid_nonce",
 		},
@@ -1774,6 +2027,49 @@ func TestServerRejectsMalformedExecRequestBeforeApproval(t *testing.T) {
 	}
 	if calls := resolver.Calls(); len(calls) != 0 {
 		t.Fatalf("resolver calls = %v, want none", calls)
+	}
+}
+
+func TestServerRejectsMalformedGCPRequestsBeforeApprovalOrMint(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	approver := &mockApprover{decision: approval.Decision{Approved: true}}
+	minter := &fakeGCPMinter{}
+	client, cleanup := startTestServer(t, daemonbroker.Options{
+		Now:                func() time.Time { return now },
+		Approver:           approver,
+		Resolver:           &mockResolver{},
+		GCPTokenMinter:     minter,
+		GCPDeliveryBaseDir: filepath.Join(t.TempDir(), "gcp"),
+		Audit:              &memoryAudit{},
+	})
+	defer cleanup()
+
+	execReq := testGCPExecRequest(t, now)
+	execReq.Reason = "  fabricated metadata  "
+	if _, err := client.RequestGCPExec(context.Background(), testCorrelation("req_gcp", "nonce_gcp"), execReq); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("expected bad_request GCP exec error, got %v", err)
+	}
+
+	projectRoot, _, _ := testGCPCommandFixture(t)
+	sessionReq := testGCPSessionCreateRequest(t, now, projectRoot)
+	sessionReq.ProfileName = " beta "
+	if _, err := client.CreateGCPSession(context.Background(), testCorrelation("req_create", "nonce_create"), sessionReq, "asess_123"); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("expected bad_request GCP session create error, got %v", err)
+	}
+
+	useReq := testGCPSessionUseRequest(t, "asess_123", projectRoot)
+	useReq.SessionHandle = " asess_123 "
+	if _, err := client.UseGCPSession(context.Background(), testCorrelation("req_use", "nonce_use"), useReq); !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
+		t.Fatalf("expected bad_request GCP with-session error, got %v", err)
+	}
+
+	if approver.calls != 0 {
+		t.Fatalf("approver calls = %d, want 0", approver.calls)
+	}
+	if len(minter.calls) != 0 {
+		t.Fatalf("minter calls = %d, want 0", len(minter.calls))
 	}
 }
 

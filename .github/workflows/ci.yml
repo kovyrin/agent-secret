@@ -22,7 +22,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Install mise
         env:
@@ -41,6 +48,9 @@ jobs:
         run: mise run lint
 
       - name: Build commands and app bundle
+        env:
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
         run: mise run build
 
   smoke-tests:
@@ -48,7 +58,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Install mise
         env:
@@ -79,13 +96,22 @@ jobs:
           ref: main
           path: _trusted-main
           fetch-depth: 0
+          token: ""
+          persist-credentials: false
 
       - name: Verify release tag ancestry
         working-directory: _trusted-main
         run: scripts/release/check-release-ancestry.sh "$GITHUB_REF_NAME"
 
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Verify changelog release notes
         run: scripts/release/extract-release-notes.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
@@ -108,6 +134,8 @@ jobs:
           AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
           AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
           AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
           AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
@@ -123,6 +151,8 @@ jobs:
       - name: Build release artifacts
         env:
           AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_ID }}
+          AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET: ${{ secrets.AGENT_SECRET_BUNDLED_GCP_OAUTH_CLIENT_SECRET }}
           AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
           AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
@@ -165,7 +195,14 @@ jobs:
       contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        run: |
+          set -euo pipefail
+          git init "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -c protocol.version=2 fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/ci-ref"
+          git checkout --force refs/remotes/origin/ci-ref
 
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093

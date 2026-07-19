@@ -114,6 +114,54 @@ func testSessionResolveRequest(t *testing.T) request.SessionResolveRequest {
 	return req
 }
 
+func testGCPExecRequestAt(now time.Time) request.GCPExecRequest {
+	return request.GCPExecRequest{
+		Reason:                 "Inspect logs",
+		Command:                []string{"gcloud", "logging", "read", "severity>=ERROR"},
+		ResolvedExecutable:     "/opt/homebrew/bin/gcloud",
+		ExecutableIdentity:     fileidentity.Identity{Device: 1, Inode: 2, Mode: 0o755},
+		CWD:                    "/tmp/project",
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=/opt/homebrew/bin"}),
+		GoogleAccount:          "work",
+		Project:                "fixture-beta",
+		ServiceAccount:         "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:                 []string{"https://www.googleapis.com/auth/cloud-platform"},
+		DeliveryMode:           request.GCPDeliveryModeTokenFile,
+		TTL:                    2 * time.Minute,
+		ReceivedAt:             now,
+		ExpiresAt:              now.Add(2 * time.Minute),
+	}
+}
+
+func testGCPSessionCreateRequestAt(now time.Time) request.GCPSessionCreateRequest {
+	return request.GCPSessionCreateRequest{
+		Reason:           "Run benchmark",
+		GoogleAccount:    "work",
+		Project:          "fixture-beta",
+		ServiceAccount:   "agent-beta@fixture-beta.iam.gserviceaccount.com",
+		Scopes:           []string{"https://www.googleapis.com/auth/cloud-platform"},
+		ProfileName:      "beta-benchmark",
+		ConfigSourcePath: "/tmp/project/agent-secret.yml",
+		ProjectRoot:      "/tmp/project",
+		DeliveryMode:     request.GCPDeliveryModeTokenFile,
+		TTL:              30 * time.Minute,
+		ReceivedAt:       now,
+		ExpiresAt:        now.Add(30 * time.Minute),
+		MaxCommandStarts: 12,
+	}
+}
+
+func testGCPSessionUseRequest() request.GCPSessionUseRequest {
+	return request.GCPSessionUseRequest{
+		SessionHandle:          "asess_123",
+		Command:                []string{"gcloud", "compute", "instances", "list"},
+		ResolvedExecutable:     "/opt/homebrew/bin/gcloud",
+		ExecutableIdentity:     fileidentity.Identity{Device: 1, Inode: 2, Mode: 0o755},
+		CWD:                    "/tmp/project",
+		EnvironmentFingerprint: request.EnvironmentFingerprint([]string{"PATH=/opt/homebrew/bin"}),
+	}
+}
+
 func TestClientProtocolErrorsAndCloseNil(t *testing.T) {
 	t.Parallel()
 
@@ -287,6 +335,35 @@ func TestClientRequestItemDescribeDefaultDeadlineUsesRequestExpiry(t *testing.T)
 	}
 }
 
+func TestClientGCPDefaultDeadlinesUseRequestExpiry(t *testing.T) {
+	t.Parallel()
+
+	defaultTimeout := 25 * time.Millisecond
+	client := &Client{DefaultTimeout: defaultTimeout}
+	now := time.Now()
+	execReq := testGCPExecRequestAt(now)
+	ctx, cancel := client.contextWithDefaultDeadline(context.Background(), protocol.TypeGCPExec, execReq)
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("GCP exec context did not receive a deadline")
+	}
+	if want := execReq.ExpiresAt.Add(defaultTimeout); !deadline.Equal(want) {
+		t.Fatalf("GCP exec deadline = %s, want %s", deadline, want)
+	}
+
+	sessionReq := testGCPSessionCreateRequestAt(now)
+	ctx, cancel = client.contextWithDefaultDeadline(context.Background(), protocol.TypeGCPSessionCreate, gcpSessionCreateClientPayload{Request: sessionReq, Handle: "asess_123"})
+	defer cancel()
+	deadline, ok = ctx.Deadline()
+	if !ok {
+		t.Fatal("GCP session create context did not receive a deadline")
+	}
+	if want := sessionReq.ExpiresAt.Add(defaultTimeout); !deadline.Equal(want) {
+		t.Fatalf("GCP session create deadline = %s, want %s", deadline, want)
+	}
+}
+
 func TestClientRequestExecDefaultDeadlineUsesRequestTTL(t *testing.T) {
 	t.Parallel()
 
@@ -352,20 +429,17 @@ func TestClientRejectsMissingPayloadForPayloadOKResponses(t *testing.T) {
 	}
 }
 
-func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
+type payloadOKResponseShapeCase struct {
+	name       string
+	frame      func(t *testing.T, env protocol.Envelope) []byte
+	call       func(context.Context, *Client) error
+	wantErrMsg string
+}
+
+func TestClientValidatesStatusOKResponseShape(t *testing.T) {
 	t.Parallel()
 
-	execReq := testExecRequest(t, []request.SecretSpec{
-		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
-	})
-	sessionCreateReq := testSessionCreateRequestAt(t, time.Now())
-	sessionResolveReq := testSessionResolveRequest(t)
-	tests := []struct {
-		name       string
-		frame      func(t *testing.T, env protocol.Envelope) []byte
-		call       func(context.Context, *Client) error
-		wantErrMsg string
-	}{
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "status pid",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -396,6 +470,16 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing executable",
 		},
+	})
+}
+
+func TestClientValidatesExecOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	execReq := testExecRequest(t, []request.SecretSpec{
+		{Alias: "TOKEN", Ref: "op://Example/Item/token", Account: "Work"},
+	})
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "exec aliases",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -443,6 +527,15 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing env",
 		},
+	})
+}
+
+func TestClientValidatesSessionOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	sessionCreateReq := testSessionCreateRequestAt(t, time.Now())
+	sessionResolveReq := testSessionResolveRequest(t)
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
 		{
 			name: "session create id",
 			frame: func(t *testing.T, env protocol.Envelope) []byte {
@@ -550,8 +643,58 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			},
 			wantErrMsg: "missing env",
 		},
-	}
+	})
+}
 
+func TestClientValidatesGCPOKResponseShape(t *testing.T) {
+	t.Parallel()
+
+	runClientPayloadOKResponseShapeCases(t, []payloadOKResponseShapeCase{
+		{
+			name: "gcp missing token env",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.GCPCommandResponsePayload{
+					Env: map[string]string{
+						"CLOUDSDK_CONFIG":       "/tmp/cloudsdk",
+						"CLOUDSDK_CORE_PROJECT": "fixture-beta",
+					},
+					DeliveryMode: request.GCPDeliveryModeTokenFile,
+					ExpiresAt:    time.Now().Add(time.Minute),
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.RequestGCPExec(ctx, testCorrelation("req_gcp", "nonce_gcp"), testGCPExecRequestAt(time.Now()))
+				return err
+			},
+			wantErrMsg: "missing CLOUDSDK_AUTH_ACCESS_TOKEN_FILE",
+		},
+		{
+			name: "gcp missing delivery mode",
+			frame: func(t *testing.T, env protocol.Envelope) []byte {
+				t.Helper()
+
+				return okResponseFrame(t, env, protocol.GCPCommandResponsePayload{
+					Env: map[string]string{
+						"CLOUDSDK_CONFIG":                 "/tmp/cloudsdk",
+						"CLOUDSDK_AUTH_ACCESS_TOKEN_FILE": "/tmp/token",
+						"CLOUDSDK_CORE_PROJECT":           "fixture-beta",
+					},
+					ExpiresAt: time.Now().Add(time.Minute),
+				})
+			},
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UseGCPSession(ctx, testCorrelation("req_gcp", "nonce_gcp"), testGCPSessionUseRequest())
+				return err
+			},
+			wantErrMsg: "missing delivery mode",
+		},
+	})
+}
+
+func runClientPayloadOKResponseShapeCases(t *testing.T, tests []payloadOKResponseShapeCase) {
+	t.Helper()
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -567,6 +710,140 @@ func TestClientValidatesPayloadOKResponseShape(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.wantErrMsg) {
 				t.Fatalf("error %q does not contain %q", err, tc.wantErrMsg)
+			}
+		})
+	}
+}
+
+func TestClientGCPRoundTripsPayloads(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	commandPayload := protocol.GCPCommandResponsePayload{
+		Env: map[string]string{
+			"CLOUDSDK_CONFIG":                 "/tmp/cloudsdk",
+			"CLOUDSDK_AUTH_ACCESS_TOKEN_FILE": "/tmp/token",
+			"CLOUDSDK_CORE_PROJECT":           "fixture-beta",
+		},
+		DeliveryMode: request.GCPDeliveryModeTokenFile,
+		ExpiresAt:    now.Add(time.Minute),
+	}
+	tests := []struct {
+		name string
+		call func(context.Context, *Client) error
+		want protocol.MessageType
+	}{
+		{
+			name: "gcp exec",
+			want: protocol.TypeGCPExec,
+			call: func(ctx context.Context, client *Client) error {
+				payload, err := client.RequestGCPExec(ctx, testCorrelation("req_gcp", "nonce_gcp"), testGCPExecRequestAt(now))
+				if err != nil {
+					return err
+				}
+				if payload.Env["CLOUDSDK_CORE_PROJECT"] != "fixture-beta" {
+					return errors.New("missing project env")
+				}
+				return nil
+			},
+		},
+		{
+			name: "gcp session create",
+			want: protocol.TypeGCPSessionCreate,
+			call: func(ctx context.Context, client *Client) error {
+				payload, err := client.CreateGCPSession(ctx, testCorrelation("req_create", "nonce_create"), testGCPSessionCreateRequestAt(now), "asess_123")
+				if err != nil {
+					return err
+				}
+				if payload.SessionHandle != "asess_123" {
+					return errors.New("missing session handle")
+				}
+				return nil
+			},
+		},
+		{
+			name: "gcp session list",
+			want: protocol.TypeGCPSessionList,
+			call: func(ctx context.Context, client *Client) error {
+				payload, err := client.ListGCPSessions(ctx, "/tmp/project")
+				if err != nil {
+					return err
+				}
+				if len(payload.Sessions) != 1 {
+					return errors.New("missing session list")
+				}
+				return nil
+			},
+		},
+		{
+			name: "gcp session destroy",
+			want: protocol.TypeGCPSessionDestroy,
+			call: func(ctx context.Context, client *Client) error {
+				payload, err := client.DestroyGCPSession(ctx, request.GCPSessionDestroyRequest{SessionHandle: "asess_123", CWD: "/tmp/project"})
+				if err != nil {
+					return err
+				}
+				if !payload.Destroyed {
+					return errors.New("destroy response not marked destroyed")
+				}
+				return nil
+			},
+		},
+		{
+			name: "gcp with session",
+			want: protocol.TypeGCPWithSession,
+			call: func(ctx context.Context, client *Client) error {
+				payload, err := client.UseGCPSession(ctx, testCorrelation("req_use", "nonce_use"), testGCPSessionUseRequest())
+				if err != nil {
+					return err
+				}
+				if payload.DeliveryMode != request.GCPDeliveryModeTokenFile {
+					return errors.New("missing delivery mode")
+				}
+				return nil
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			requests := make(chan protocol.Envelope, 1)
+			client, cleanup := startRespondingDaemonClient(t, func(env protocol.Envelope) []byte {
+				requests <- env
+				//nolint:exhaustive // This test table covers only GCP client request types.
+				switch env.Type {
+				case protocol.TypeGCPExec, protocol.TypeGCPWithSession:
+					return okResponseFrame(t, env, commandPayload)
+				case protocol.TypeGCPSessionCreate:
+					return okResponseFrame(t, env, protocol.GCPSessionCreateResponsePayload{
+						SessionHandle:          "asess_123",
+						SessionAuditID:         "asess_123:deadbeef",
+						ExpiresAt:              now.Add(30 * time.Minute),
+						RemainingCommandStarts: 12,
+					})
+				case protocol.TypeGCPSessionList:
+					return okResponseFrame(t, env, protocol.GCPSessionListResponsePayload{
+						Sessions: []protocol.GCPSessionInfo{{SessionAuditID: "asess_123:deadbeef"}},
+					})
+				case protocol.TypeGCPSessionDestroy:
+					return okResponseFrame(t, env, protocol.GCPSessionDestroyResponsePayload{
+						Destroyed:      true,
+						SessionAuditID: "asess_123:deadbeef",
+					})
+				default:
+					t.Fatalf("unexpected request type %s", env.Type)
+				}
+				return nil
+			})
+			defer cleanup()
+
+			if err := tc.call(context.Background(), client); err != nil {
+				t.Fatalf("%s returned error: %v", tc.name, err)
+			}
+			env := receiveStalledRequest(t, requests)
+			if env.Type != tc.want {
+				t.Fatalf("request type = %s, want %s", env.Type, tc.want)
 			}
 		})
 	}

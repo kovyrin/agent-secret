@@ -4,6 +4,9 @@ Agent Secret can run from explicit CLI flags or from a project-local config
 file. The config file stores secret references, source metadata, and policy
 metadata. It must never contain resolved secret values or provider access
 tokens.
+GCP profile blocks store identity metadata only. Config files must never contain
+resolved secret values, provider access tokens, refresh tokens, OAuth client
+secrets, or service account keys.
 
 ## Config File Discovery
 
@@ -90,7 +93,10 @@ Profile fields:
 - `session`: optional session-specific policy. Currently supports
   `bind: auto`, `bind: parent`, or `bind: { ancestor: N }`.
 - `secrets`: map of environment aliases to secret references. Required
-  unless `include` contributes at least one secret.
+  unless `include` contributes at least one secret or the profile defines a
+  `gcp` block.
+- `gcp`: optional Google Cloud access block for `agent-secret gcp` commands.
+  Required for config-backed GCP profiles.
 
 ## Profile Includes
 
@@ -123,6 +129,10 @@ included value is used unless the selected profile sets its own value.
 Each included secret keeps the account chosen by the profile that defined it.
 If the selected profile needs a different account or reference for a secret,
 redeclare that alias in its own `secrets` map.
+
+GCP blocks are inherited through profile includes in the same way. A selected
+profile can override the included `service_account` or `scopes` while reusing
+the included `google_account`, `project`, `reason`, and `ttl`.
 
 Secret entries can be scalar references:
 
@@ -206,6 +216,50 @@ source-qualified ref.
 The source alias and token alias are part of the secret identity used for
 approval matching and in-memory caching. The access token itself is never sent
 to the child process.
+
+## GCP Profile Blocks
+
+GCP profiles configure approved short-lived Google Cloud access. They do not
+store Google refresh tokens, access tokens, OAuth client secrets, or service
+account keys.
+
+```yaml
+version: 1
+
+profiles:
+  beta-logs:
+    reason: Inspect beta Cloud Run errors
+    ttl: 10m
+    gcp:
+      google_account: work
+      project: fixture-beta
+      service_account: agent-beta-logs@fixture-beta.iam.gserviceaccount.com
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+```
+
+GCP fields:
+
+- `google_account`: local alias created with
+  `agent-secret gcp auth login --google-account ALIAS`.
+- `project`: intended Google Cloud project. Agent Secret sets this as the
+  isolated Cloud SDK default project for approved commands.
+- `service_account`: service account email to impersonate.
+- `scopes`: non-empty list of OAuth scopes for the short-lived access token.
+
+Use `agent-secret gcp exec --profile NAME -- COMMAND [ARG...]` for one command.
+Use `agent-secret gcp session create --profile NAME` followed by
+`agent-secret gcp with-session HANDLE [--cwd DIR] -- COMMAND [ARG...]` for
+multi-command workflows.
+
+GCP sessions require config-backed profiles. `session create` binds the session
+to the directory containing the resolved config file, and `with-session` is
+usable only from that directory or a descendant. See
+[GCP Integration](gcp.md) for the full setup process.
+
+GCP `exec` and `with-session` use the same executable stability guard as normal
+secret execution. Add `--allow-mutable-executable` only for trusted repo-local
+wrappers or test helpers.
 
 ## Account Precedence
 
