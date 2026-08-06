@@ -6,34 +6,28 @@ import Foundation
 
     struct ApprovalRequestPanelView: View {
         private typealias Metric = ApprovalPanelStyle.Metric
-        private typealias Palette = ApprovalPanelStyle.Palette
 
         let request: ApprovalRequest
         let maxScrollableContentHeight: CGFloat
+        let contentHeightDidChange: ((CGFloat) -> Void)?
         let decide: (ApprovalDecisionKind) -> Void
-
-        private let resourceScrollTopID = "resource-scroll-top"
 
         @State private var detailsExpanded = false
         @State private var didDecide = false
         @State private var now: Date
-        @State private var textInspection: ApprovalPanelTextInspection?
+        @State private var scrollContentHeight: CGFloat = 0
 
         var body: some View {
             VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                fixedRequestSummary
-                scrollableResourceSection
-                fixedDecisionSection
-                footer
+                scrollableRequestSection
+                pinnedDecisionSection
             }
             .padding(.horizontal, Metric.cardHorizontalPadding)
             .padding(.vertical, Metric.cardVerticalPadding)
             .frame(width: Metric.cardWidth)
             .background(cardBackground)
             .padding(Metric.outerPadding)
-            .sheet(item: $textInspection) { inspection in
-                ApprovalPanelTextInspector(inspection: inspection)
-            }
+            .onPreferenceChange(ApprovalPanelMeasurements.Key.self, perform: handleMeasurements)
             .onAppear {
                 handleClockTick(Date())
             }
@@ -45,167 +39,90 @@ import Foundation
             }
         }
 
-        private var fixedRequestSummary: some View {
-            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                header
-                prompt
-                if viewModel.highScopeWarning {
-                    ApprovalPanelHighScopeWarning(
-                        printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
-                        resourceCount: viewModel.resourceCount
-                    )
+        private var scrollableRequestSection: some View {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
+                    requestSummary
+                    resourceSection
+                    if !viewModel.cautionMessages.isEmpty {
+                        caution
+                    }
+                    details
                 }
-                reasonCard
-                requestContext
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-
-        private var scrollableResourceSection: some View {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: Metric.zeroOffset) {
-                        Color.clear
-                            .frame(height: Metric.zeroOffset)
-                            .id(resourceScrollTopID)
-                        resourceSection
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: ApprovalPanelMeasurements.Key.self,
+                            value: ApprovalPanelMeasurements.Value(scrollContentHeight: proxy.size.height)
+                        )
                     }
                 }
-                .onAppear {
-                    proxy.scrollTo(resourceScrollTopID, anchor: .top)
-                }
             }
-            .frame(maxHeight: maxScrollableContentHeight)
+            .frame(height: scrollViewportHeight)
             .scrollIndicators(.automatic)
         }
 
-        private var fixedDecisionSection: some View {
+        private var pinnedDecisionSection: some View {
             VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                if !viewModel.cautionMessages.isEmpty {
-                    caution
-                }
-                details
                 decisionButtons
+                footer
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: ApprovalPanelMeasurements.Key.self,
+                        value: ApprovalPanelMeasurements.Value(pinnedContentHeight: proxy.size.height)
+                    )
+                }
+            }
+        }
+
+        private var scrollViewportHeight: CGFloat? {
+            guard scrollContentHeight > Metric.zeroOffset else {
+                return nil
+            }
+            return min(scrollContentHeight, maxScrollableContentHeight)
         }
 
         var viewModel: ApprovalRequestViewModel {
             ApprovalRequestViewModel(request: request, now: now)
         }
 
-        private var cardBackground: some View {
-            RoundedRectangle(cornerRadius: Metric.cardCornerRadius, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(Metric.cardOpacity))
-                .shadow(
-                    color: .black.opacity(Metric.cardShadowOpacity),
-                    radius: Metric.cardShadowRadius,
-                    x: Metric.zeroOffset,
-                    y: Metric.cardShadowYOffset
-                )
-        }
-
-        private var header: some View {
-            HStack(alignment: .center, spacing: Metric.headerSpacing) {
-                ApprovalPanelShieldKeyIcon()
-                    .frame(width: Metric.headerIconSize, height: Metric.headerIconSize)
-                Text(viewModel.title)
-                    .font(.system(size: Metric.titleFontSize, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-            }
-        }
-
-        private var prompt: some View {
-            VStack(alignment: .leading, spacing: Metric.promptSpacing) {
-                Text(viewModel.promptQuestion)
-                    .font(.system(size: Metric.promptFontSize, weight: .bold, design: .rounded))
-                promptAccessLine
-            }
-        }
-
-        private var promptAccessLine: some View {
-            HStack(spacing: Metric.inlineSpacing) {
-                ApprovalPanelPillText(text: viewModel.executable)
-                Text(viewModel.accessSummary)
-            }
-            .font(.system(size: Metric.inlineFontSize))
-            .fixedSize(horizontal: false, vertical: true)
-        }
-
-        private var requestContext: some View {
-            ApprovalRequestContextSection(viewModel: viewModel, textInspection: $textInspection)
-        }
-
-        private var reasonCard: some View {
-            ApprovalPanelReasonCard(reason: viewModel.reason)
-        }
-
-        private var caution: some View {
-            HStack(alignment: .top, spacing: Metric.cautionSpacing) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: Metric.cautionIconSize, weight: .semibold))
-                    .foregroundStyle(Color.orange)
-                    .accessibilityHidden(true)
-                Text("Caution: ")
-                    .fontWeight(.semibold) +
-                    Text(viewModel.cautionMessages.joined(separator: "\n"))
-            }
-            .font(.system(size: Metric.bodyFontSize))
-            .foregroundStyle(Palette.cautionText)
-            .padding(Metric.cautionPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .background(cautionBackground)
-            .overlay(cautionBorder)
-        }
-
-        private var cautionBackground: some View {
-            RoundedRectangle(cornerRadius: Metric.cautionCornerRadius, style: .continuous)
-                .fill(Color.orange.opacity(Metric.cautionPanelOpacity))
-        }
-
-        private var cautionBorder: some View {
-            RoundedRectangle(cornerRadius: Metric.cautionCornerRadius, style: .continuous)
-                .stroke(Color.orange.opacity(Metric.cautionBorderOpacity), lineWidth: Metric.borderWidth)
-        }
-
         private var details: some View {
             DisclosureGroup(isExpanded: $detailsExpanded) {
                 VStack(alignment: .leading, spacing: Metric.detailSpacing) {
+                    ApprovalPanelDetailLine(
+                        label: "Command arguments",
+                        value: viewModel.commandInspectionText
+                    )
                     ApprovalPanelDetailLine(
                         label: "Resolved binary",
                         value: viewModel.resolvedExecutable
                     )
                     ApprovalPanelDetailLine(label: "Working directory", value: viewModel.cwd)
+                    ApprovalPanelDetailLine(label: "Scope", value: reusableDetail)
+                    ApprovalPanelDetailLine(label: "Request timeout", value: viewModel.timeRemaining)
+                    if let sessionBinding = viewModel.sessionBindingInspectionText {
+                        ApprovalPanelDetailLine(label: "Session binding", value: sessionBinding)
+                    }
                     if let overrideWarning: String = viewModel.overrideWarning {
                         ApprovalPanelDetailLine(label: "Overrides", value: overrideWarning)
                     }
-                    ApprovalPanelDetailLine(label: approvalBehaviorLabel, value: reusableDetail)
                 }
                 .padding(.top, Metric.detailTopPadding)
                 .padding(.leading, Metric.detailLeadingPadding)
             } label: {
                 VStack(alignment: .leading, spacing: Metric.detailLabelSpacing) {
-                    Text("Show details")
+                    Text("Show request details")
                         .font(.system(size: Metric.detailTitleFontSize, weight: .semibold))
-                    Text("Resolved binary, working directory, and approval behavior")
+                    Text("Complete command, paths, scope, and security metadata")
                         .font(.system(size: Metric.detailSubtitleFontSize))
                         .foregroundStyle(.secondary)
                 }
             }
             .font(.system(size: Metric.bodyFontSize))
             .tint(.primary)
-        }
-
-        private var reusableDetail: String {
-            if viewModel.allowsReusableApproval {
-                return viewModel.allowReusableTitle.replacingOccurrences(of: "\n", with: " • ")
-            }
-            return viewModel.scopeSummary.replacingOccurrences(of: "\n", with: " • ")
-        }
-
-        private var approvalBehaviorLabel: String {
-            viewModel.allowsReusableApproval ? "Reusable approval" : "Approval behavior"
         }
 
         private var decisionButtons: some View {
@@ -233,32 +150,33 @@ import Foundation
             ApprovalPromptExpiration(expiresAt: request.expiresAt)
         }
 
-        private var footer: some View {
-            HStack(alignment: .top, spacing: Metric.footerSpacing) {
-                Image(systemName: "lock")
-                    .font(.system(size: Metric.footerIconSize, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text(viewModel.footerMessage)
-                    .font(.system(size: Metric.bodyFontSize))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(Metric.twoLineLimit)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
-
         init(
             request: ApprovalRequest,
             now: Date = Date(),
             maxScrollableContentHeight: CGFloat = Metric.scrollableApprovalContentMaxHeight,
+            contentHeightDidChange: ((CGFloat) -> Void)? = nil,
             decide: @escaping (ApprovalDecisionKind) -> Void
         ) {
             self.request = request
             self.maxScrollableContentHeight = maxScrollableContentHeight
+            self.contentHeightDidChange = contentHeightDidChange
             self.decide = decide
             _now = State(initialValue: now)
+        }
+
+        private func handleMeasurements(_ measurements: ApprovalPanelMeasurements.Value) {
+            let hasCompleteMeasurement = measurements.scrollContentHeight > Metric.zeroOffset &&
+                measurements.pinnedContentHeight > Metric.zeroOffset
+            guard hasCompleteMeasurement else {
+                return
+            }
+            scrollContentHeight = measurements.scrollContentHeight
+            contentHeightDidChange?(
+                AppKitApprovalPresenter.idealPanelHeight(
+                    scrollContentHeight: min(measurements.scrollContentHeight, maxScrollableContentHeight),
+                    pinnedContentHeight: measurements.pinnedContentHeight
+                )
+            )
         }
 
         private func handleClockTick(_ date: Date) {

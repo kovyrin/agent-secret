@@ -159,13 +159,13 @@ func (b *Broker) HandleSessionCreate(
 	if req.Expired(b.now()) {
 		return protocol.SessionCreateResponsePayload{}, approval.ErrRequestExpired
 	}
-	sessionCtx, cancelSession := b.requestContext(ctx, req.ExpiresAt)
-	defer cancelSession()
+	approvalCtx, cancelApproval := b.requestContext(ctx, req.ExpiresAt)
+	defer cancelApproval()
 
-	if err := recordRequiredAudit(sessionCtx, b.audit, audit.FromSessionCreateRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
+	if err := recordRequiredAudit(approvalCtx, b.audit, audit.FromSessionCreateRequest(audit.EventApprovalRequested, correlation.RequestID, req)); err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	decision, err := b.approver.Approve(sessionCtx, approval.NewSessionCreatePayload(correlation, req, peerBinding.Info()))
+	decision, err := b.approver.Approve(approvalCtx, approval.NewSessionCreatePayload(correlation, req, peerBinding.Info()))
 	if err != nil {
 		if auditErr := b.recordSessionCreateApprovalError(ctx, correlation.RequestID, req, err); auditErr != nil {
 			return protocol.SessionCreateResponsePayload{}, auditErr
@@ -178,25 +178,32 @@ func (b *Broker) HandleSessionCreate(
 		}
 		return protocol.SessionCreateResponsePayload{}, approval.DenialError(decision.DenialReason)
 	}
-	if err := b.ensureSessionCreateActive(sessionCtx, req); err != nil {
+	if err := b.ensureSessionCreateActive(approvalCtx, req); err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	if err := recordRequiredAudit(sessionCtx, b.audit, audit.FromSessionCreateRequest(audit.EventApprovalGranted, correlation.RequestID, req)); err != nil {
+
+	approvedReq := req.WithReceiptTime(b.now())
+	cancelApproval()
+	sessionCtx, cancelSession := b.requestContext(ctx, approvedReq.ExpiresAt)
+	defer cancelSession()
+
+	if err := recordRequiredAudit(sessionCtx, b.audit, audit.FromSessionCreateRequest(audit.EventApprovalGranted, correlation.RequestID, approvedReq)); err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	refValues, err := b.grants.resolveUniqueRefs(sessionCtx, correlation.RequestID, execRequestFromSessionCreate(req))
+	execReq := execRequestFromSessionCreate(approvedReq)
+	refValues, err := b.grants.resolveUniqueRefs(sessionCtx, correlation.RequestID, execReq)
 	if err != nil {
-		return protocol.SessionCreateResponsePayload{}, b.grants.requestError(sessionCtx, execRequestFromSessionCreate(req), err)
+		return protocol.SessionCreateResponsePayload{}, b.grants.requestError(sessionCtx, execReq, err)
 	}
-	if err := b.ensureSessionCreateActive(sessionCtx, req); err != nil {
+	if err := b.ensureSessionCreateActive(sessionCtx, approvedReq); err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	values := fanoutValues(req.Secrets, refValues)
-	summary, err := b.sessions.create(req, values, peerBinding)
+	values := fanoutValues(approvedReq.Secrets, refValues)
+	summary, err := b.sessions.create(approvedReq, values, peerBinding)
 	if err != nil {
 		return protocol.SessionCreateResponsePayload{}, err
 	}
-	event := audit.FromSessionCreateRequest(audit.EventSessionCreated, correlation.RequestID, req)
+	event := audit.FromSessionCreateRequest(audit.EventSessionCreated, correlation.RequestID, approvedReq)
 	event.SessionID = summary.SessionID
 	event.RemainingReads = &summary.RemainingReads
 	event.MaxReads = &summary.MaxReads
@@ -609,11 +616,12 @@ func (b *Broker) requestContext(ctx context.Context, expiresAt time.Time) (conte
 		}
 	}()
 
-	return reqCtx, func() {
+	cancel := sync.OnceFunc(func() {
 		close(watcherDone)
 		cancelReq(context.Canceled)
 		cancelDeadline()
-	}
+	})
+	return reqCtx, cancel
 }
 
 func (b *Broker) activateExec(correlation protocol.Correlation, req request.ExecRequest) error {

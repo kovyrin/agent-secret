@@ -38,6 +38,7 @@ import Foundation
             static let compactResourceLimit: Int = 5
             static let commandPreviewLineLimit: Int = 4
             static let contextColumnSpacing: CGFloat = 16
+            static let contextColumnCount: Int = 2
             static let contextRowSpacing: CGFloat = 10
             static let contextSectionSpacing: CGFloat = 8
             static let contextTitleFontSize: CGFloat = 13
@@ -95,7 +96,7 @@ import Foundation
             static let minimumScaleFactor: CGFloat = 0.80
             static let outerPadding: CGFloat = 14
             static let panelCornerRadius: CGFloat = 12
-            static let panelFixedVerticalContentHeight: CGFloat = 660
+            static let panelPinnedVerticalContentHeight: CGFloat = 200
             static let panelMinimumHeight: CGFloat = 720
             static let panelVisibleFrameVerticalMargin: CGFloat = 32
             static let pillCornerRadius: CGFloat = 8
@@ -103,7 +104,7 @@ import Foundation
             static let pillHorizontalPadding: CGFloat = 8
             static let pillVerticalPadding: CGFloat = 4
             static let primaryBorderOpacity: Double = 0.45
-            static let promptFontSize: CGFloat = 21
+            static let promptFontSize: CGFloat = 18
             static let promptSpacing: CGFloat = 8
             static let refLayoutPriority: Double = 1
             static let reasonCardPadding: CGFloat = 18
@@ -112,17 +113,18 @@ import Foundation
             static let reasonIconCircleSize: CGFloat = 56
             static let reasonIconFillOpacity: Double = 0.10
             static let reasonIconSize: CGFloat = 26
-            static let reasonLineLimit: Int = 2
-            static let reasonMinimumScaleFactor: CGFloat = 0.88
+            static let reasonLineLimit: Int = 3
             static let reasonAccentBlue: Double = 0.00
             static let reasonAccentGreen: Double = 0.48
             static let reasonAccentRed: Double = 0.95
             static let reasonBorderOpacity: Double = 0.42
+            static let reasonExpansionAnimationDuration: TimeInterval = 0.16
             static let reasonPanelOpacity: Double = 0.08
             static let reasonTextBlue: Double = 0.16
             static let reasonTextGreen: Double = 0.08
             static let reasonTextRed: Double = 0.03
             static let reasonTextSpacing: CGFloat = 4
+            static let resizeTolerance: CGFloat = 0.5
             static let rowTextSpacing: CGFloat = 3
             static let rowSpacing: CGFloat = 12
             static let secondaryBorderOpacity: Double = 0.25
@@ -149,6 +151,8 @@ import Foundation
             static let subtleFillOpacity: Double = 0.06
             static let titleFontSize: CGFloat = 23
             static let twoLineLimit: Int = 2
+            static let truncationTolerance: CGFloat = 1
+            static let verticalEdgeCount: CGFloat = 2
             static let zeroOffset: CGFloat = 0
         }
 

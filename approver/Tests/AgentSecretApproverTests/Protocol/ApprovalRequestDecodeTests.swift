@@ -83,4 +83,21 @@ final class ApprovalRequestDecodeTests: XCTestCase {
             "null resource account should fail decoding"
         )
     }
+
+    func testApprovalRequestDecodesAccessDurationWhenPresent() throws {
+        let fixture: Data = try ApprovalProtocolFixture.data("approval_request")
+        let object: Any = try JSONSerialization.jsonObject(with: fixture)
+        guard var fixtureFields = object as? [String: Any] else {
+            XCTFail("approval request fixture must be a JSON object")
+            return
+        }
+        fixtureFields["access_duration_seconds"] = 300
+        let payload: Data = try JSONSerialization.data(withJSONObject: fixtureFields)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let request = try decoder.decode(ApprovalRequest.self, from: payload)
+
+        XCTAssertEqual(request.accessDurationSeconds, 300)
+    }
 }

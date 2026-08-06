@@ -86,7 +86,7 @@ final class ApprovalRequestInspectionTests: XCTestCase {
         )
         let inspection: String = viewModel.requestInspectionText
 
-        XCTAssertEqual(viewModel.sessionBindingSummary, "zsh pid=501")
+        XCTAssertEqual(viewModel.sessionBindingSummary, "zsh (pid 501)")
         XCTAssertTrue(inspection.contains("Session binding:"))
         XCTAssertTrue(inspection.contains("Mode: ancestor_name"))
         XCTAssertTrue(inspection.contains("Ancestor names: Codex, zsh"))

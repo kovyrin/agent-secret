@@ -87,6 +87,7 @@ func TestNewSessionCreatePayloadIncludesBindingMetadata(t *testing.T) {
 		Command:            []string{"agent-secret", "session", "create"},
 		CWD:                "/tmp/project",
 		ResolvedExecutable: "/Applications/Agent Secret.app/Contents/Resources/bin/agent-secret",
+		TTL:                5 * time.Minute,
 		ExpiresAt:          expiresAt,
 		Secrets: []request.Secret{
 			{
@@ -124,6 +125,9 @@ func TestNewSessionCreatePayloadIncludesBindingMetadata(t *testing.T) {
 	}
 	if payload.Operation != ApprovalOperationSessionCreate || payload.AllowsReusable {
 		t.Fatalf("operation/reuse = %s/%v", payload.Operation, payload.AllowsReusable)
+	}
+	if payload.AccessDurationSeconds != 300 {
+		t.Fatalf("access duration seconds = %d, want 300", payload.AccessDurationSeconds)
 	}
 }
 

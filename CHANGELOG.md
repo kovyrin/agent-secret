@@ -20,6 +20,17 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.30] - Pending
+
+### Changed
+
+- Reworked the native approval prompt to show a verified session requester,
+  aligned request metadata, expandable reasons and technical details, and an
+  adaptive window that grows before introducing scrolling.
+- Session prompts now show the approved access duration instead of counting
+  down the request timeout, and approved sessions receive their full duration
+  starting when approval succeeds.
+
 ## [0.0.29] - 2026-07-09
 
 ### Fixed

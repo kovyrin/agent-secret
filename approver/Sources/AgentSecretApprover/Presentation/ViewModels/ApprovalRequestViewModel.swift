@@ -4,7 +4,6 @@ import Foundation
 struct ApprovalRequestViewModel: Equatable {
     private static let highScopeResourceThreshold: Int = 6
     private static let commandInspectorThreshold: Int = 96
-    private static let secondsPerMinute: Int = 60
 
     let title: String
     let operation: ApprovalOperation
@@ -90,15 +89,20 @@ struct ApprovalRequestViewModel: Equatable {
         resourceCount = resourcePresentation.count
         vaultGroups = resourcePresentation.vaultGroups
         vaultCount = resourcePresentation.vaultCount
-        let copy: CopyPresentation = Self.copyPresentation(for: request, count: resourcePresentation.count, now: now)
+        sessionBindingSummary = Self.sessionBindingSummary(request.sessionBinding)
+        sessionBindingInspectionText = Self.sessionBindingInspectionText(request.sessionBinding)
+        let copy: CopyPresentation = Self.copyPresentation(
+            for: request,
+            count: resourcePresentation.count,
+            requester: sessionBindingSummary,
+            now: now
+        )
         (isExpired, timeRemaining, compactTimeRemaining) = (copy.isExpired, copy.timeRemaining, copy.timeRemaining)
         (promptQuestion, accessSummary) = (copy.promptQuestion, copy.accessSummary)
         highScopeWarning = request.operation != .itemDescribe &&
             resourcePresentation.count >= Self.highScopeResourceThreshold
         (reusableUses, allowsReusableApproval) = (request.reusableUses, request.allowsReusable)
         (scopeSummary, allowReusableTitle) = (copy.scopeSummary, copy.allowReusableTitle)
-        sessionBindingSummary = Self.sessionBindingSummary(request.sessionBinding)
-        sessionBindingInspectionText = Self.sessionBindingInspectionText(request.sessionBinding)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
         (printsEnvironmentWarning, overrideWarning, cautionMessages) = (
             warnings.printsEnvironment,
@@ -247,22 +251,5 @@ struct ApprovalRequestViewModel: Equatable {
 
     static func sanitizedDisplayText(_ value: String) -> String {
         ApprovalDisplayTextSanitizer.sanitize(value)
-    }
-
-    static func formatRemaining(_ interval: TimeInterval) -> String {
-        let seconds: Int = Self.visibleRemainingSeconds(interval)
-        if seconds >= secondsPerMinute {
-            let minutes: Int = seconds / secondsPerMinute
-            let remainingSeconds: Int = seconds % secondsPerMinute
-            if remainingSeconds == 0 {
-                return minutes == 1 ? "1 minute" : "\(minutes) minutes"
-            }
-            return "\(minutes) min \(remainingSeconds) sec"
-        }
-        return seconds == 1 ? "1 second" : "\(seconds) sec"
-    }
-
-    private static func visibleRemainingSeconds(_ interval: TimeInterval) -> Int {
-        max(0, Int(interval.rounded(.up)))
     }
 }

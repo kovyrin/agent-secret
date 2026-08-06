@@ -15,6 +15,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case requestID = "request_id"
         case resolvedExecutable = "resolved_executable"
         case allowMutableExecutable = "allow_mutable_executable"
+        case accessDurationSeconds = "access_duration_seconds"
         case reusableUses = "reusable_uses"
         case resources
         case sessionBinding = "session_binding"
@@ -33,6 +34,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var resolvedExecutable: String
     public var allowMutableExecutable: Bool
     public var expiresAt: Date
+    public var accessDurationSeconds: Int?
     public var operation: ApprovalOperation
     public var allowsReusable: Bool
     public var resources: [RequestedResource]
@@ -53,6 +55,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         allowMutableExecutable: Bool = false,
         operation: ApprovalOperation = .exec,
         allowsReusable: Bool = true,
+        accessDurationSeconds: Int? = nil,
         overrideEnv: Bool = false,
         overriddenAliases: [String] = [],
         reusableUses: Int = Self.defaultReusableUses,
@@ -66,6 +69,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.resolvedExecutable = resolvedExecutable
         self.allowMutableExecutable = allowMutableExecutable
         self.expiresAt = expiresAt
+        self.accessDurationSeconds = Self.normalizedAccessDurationSeconds(accessDurationSeconds)
         self.operation = operation
         self.allowsReusable = allowsReusable
         self.resources = resources
@@ -86,6 +90,9 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         resolvedExecutable = try container.decode(String.self, forKey: .resolvedExecutable)
         allowMutableExecutable = try container.decode(Bool.self, forKey: .allowMutableExecutable)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
+        accessDurationSeconds = try Self.normalizedAccessDurationSeconds(
+            container.decodeIfPresent(Int.self, forKey: .accessDurationSeconds)
+        )
         operation = try container.decode(ApprovalOperation.self, forKey: .operation)
         allowsReusable = try container.decode(Bool.self, forKey: .allowsReusable)
         resources = try container.decode([RequestedResource].self, forKey: .resources)
@@ -104,5 +111,12 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
             return defaultReusableUses
         }
         return uses
+    }
+
+    private static func normalizedAccessDurationSeconds(_ seconds: Int?) -> Int? {
+        guard let seconds, seconds > 0 else {
+            return nil
+        }
+        return seconds
     }
 }

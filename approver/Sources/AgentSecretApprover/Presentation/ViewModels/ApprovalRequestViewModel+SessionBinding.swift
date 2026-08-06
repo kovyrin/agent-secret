@@ -31,7 +31,7 @@ extension ApprovalRequestViewModel {
     }
 
     private static func processSummary(_ process: SessionBindingProcess) -> String {
-        "\(sanitizedDisplayText(process.name)) pid=\(process.pid)"
+        "\(sanitizedDisplayText(process.name)) (pid \(process.pid))"
     }
 
     private static func processInspectionLine(_ process: SessionBindingProcess) -> String {

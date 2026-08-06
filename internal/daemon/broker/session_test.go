@@ -78,6 +78,100 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 	}
 }
 
+func TestBrokerSessionLifetimeStartsWhenApprovalSucceeds(t *testing.T) {
+	t.Parallel()
+
+	requestReceivedAt := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
+	now := requestReceivedAt
+	ref := "op://Example/Item/token"
+	approver := &afterApprovalApprover{
+		after: func() {
+			now = requestReceivedAt.Add(3 * time.Minute)
+		},
+		decision: approval.Decision{Approved: true},
+	}
+	broker := newTestBroker(t, Options{
+		Now:      func() time.Time { return now },
+		Approver: approver,
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+
+	createReq := testSessionCreateRequest(
+		t,
+		requestReceivedAt,
+		[]request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		1,
+	)
+	peer := testSessionPeer(t, createReq.CWD)
+	created, err := broker.HandleSessionCreate(
+		context.Background(),
+		testCorrelation("req_create", "nonce_create"),
+		createReq,
+		peer,
+	)
+	if err != nil {
+		t.Fatalf("HandleSessionCreate returned error: %v", err)
+	}
+
+	wantExpiresAt := requestReceivedAt.Add(3*time.Minute + createReq.TTL)
+	if !created.ExpiresAt.Equal(wantExpiresAt) {
+		t.Fatalf("session expires at = %s, want %s", created.ExpiresAt, wantExpiresAt)
+	}
+}
+
+func TestBrokerSessionRejectsApprovalAfterPromptExpiry(t *testing.T) {
+	t.Parallel()
+
+	requestReceivedAt := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
+	now := requestReceivedAt
+	ref := "op://Example/Item/token"
+	createReq := testSessionCreateRequest(
+		t,
+		requestReceivedAt,
+		[]request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}},
+		1,
+	)
+	approver := &afterApprovalApprover{
+		after: func() {
+			now = createReq.ExpiresAt.Add(time.Second)
+		},
+		decision: approval.Decision{Approved: true},
+	}
+	resolver := &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}}
+	aud := &memoryAudit{}
+	broker := newTestBroker(t, Options{
+		Now:      func() time.Time { return now },
+		Approver: approver,
+		Resolver: resolver,
+		Audit:    aud,
+	})
+
+	peer := testSessionPeer(t, createReq.CWD)
+	_, err := broker.HandleSessionCreate(
+		context.Background(),
+		testCorrelation("req_expired_approval", "nonce_expired_approval"),
+		createReq,
+		peer,
+	)
+	if !errors.Is(err, approval.ErrRequestExpired) {
+		t.Fatalf("HandleSessionCreate error = %v, want ErrRequestExpired", err)
+	}
+	if calls := resolver.Calls(); len(calls) != 0 {
+		t.Fatalf("resolver was called after approval crossed prompt deadline: %v", calls)
+	}
+	if containsAuditEvent(aud.Events(), audit.EventApprovalGranted) {
+		t.Fatal("approval_granted was audited after approval crossed prompt deadline")
+	}
+	listed, listErr := broker.HandleSessionList(context.Background())
+	if listErr != nil {
+		t.Fatalf("HandleSessionList returned error: %v", listErr)
+	}
+	if len(listed.Sessions) != 0 {
+		t.Fatalf("listed sessions = %+v, want none", listed.Sessions)
+	}
+}
+
 func TestBrokerSessionResolveFiltersRequestedAliases(t *testing.T) {
 	t.Parallel()
 
