@@ -7,72 +7,37 @@ import Foundation
         private typealias Metric = ApprovalPanelStyle.Metric
 
         let viewModel: ApprovalRequestViewModel
-        @Binding var textInspection: ApprovalPanelTextInspection?
-
         var body: some View {
-            VStack(alignment: .leading, spacing: Metric.contextSectionSpacing) {
-                ApprovalPanelContextRow(
-                    icon: "terminal",
-                    title: "Command",
-                    value: viewModel.command,
-                    valueLineLimit: Metric.commandPreviewLineLimit,
-                    inspectAction: commandInspectionAction
-                )
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+            Grid(
+                alignment: .topLeading,
+                horizontalSpacing: Metric.contextColumnSpacing,
+                verticalSpacing: Metric.contextSectionSpacing
+            ) {
+                GridRow {
+                    ApprovalPanelContextRow(
+                        icon: "terminal",
+                        title: "Command",
+                        value: viewModel.command,
+                        valueLineLimit: Metric.commandPreviewLineLimit
+                    )
+                    .gridCellColumns(Metric.contextColumnCount)
+                }
 
-                HStack(alignment: .top, spacing: Metric.contextColumnSpacing) {
+                GridRow {
                     ApprovalPanelContextRow(
                         icon: "folder",
                         title: "Project folder",
-                        value: viewModel.projectFolder,
-                        inspectAction: requestScopeInspectionAction
+                        value: viewModel.projectFolder
                     )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-
                     ApprovalPanelContextRow(
                         icon: "scope",
                         title: "Scope",
                         value: viewModel.scopeSummary,
-                        valueLineLimit: Metric.scopePreviewLineLimit,
-                        inspectAction: requestScopeInspectionAction
+                        valueLineLimit: Metric.scopePreviewLineLimit
                     )
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                sessionBindingRow
             }
-        }
-
-        @ViewBuilder private var sessionBindingRow: some View {
-            if let sessionBindingSummary = viewModel.sessionBindingSummary {
-                ApprovalPanelContextRow(
-                    icon: "link",
-                    title: "Session binding",
-                    value: sessionBindingSummary,
-                    inspectAction: requestScopeInspectionAction
-                )
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-        }
-
-        private var commandInspectionAction: (() -> Void)? {
-            guard viewModel.commandNeedsInspector else {
-                return nil
-            }
-            return {
-                textInspection = ApprovalPanelTextInspection(
-                    title: "Command arguments",
-                    text: viewModel.commandInspectionText
-                )
-            }
-        }
-
-        private var requestScopeInspectionAction: () -> Void {
-            {
-                textInspection = ApprovalPanelTextInspection(
-                    title: "Full request scope",
-                    text: viewModel.requestInspectionText
-                )
-            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 #endif

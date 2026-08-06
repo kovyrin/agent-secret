@@ -10,15 +10,16 @@ import Foundation
         let value: String
 
         var body: some View {
-            HStack(alignment: .firstTextBaseline, spacing: Metric.inlineSpacing) {
+            VStack(alignment: .leading, spacing: Metric.rowTextSpacing) {
                 Text(label)
                     .fontWeight(.semibold)
                 Text(value)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: Metric.contextValueFontSize, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .lineLimit(Metric.twoLineLimit)
-                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 #endif

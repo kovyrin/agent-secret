@@ -20,6 +20,7 @@ type ApprovalRequestPayload struct {
 	ResolvedExecutable     string                      `json:"resolved_executable"`
 	AllowMutableExecutable bool                        `json:"allow_mutable_executable"`
 	ExpiresAt              time.Time                   `json:"expires_at"`
+	AccessDurationSeconds  int64                       `json:"access_duration_seconds,omitempty"`
 	Resources              []ApprovalRequestedResource `json:"resources"`
 	OverrideEnv            bool                        `json:"override_env"`
 	OverriddenAliases      []string                    `json:"overridden_aliases"`
@@ -147,12 +148,20 @@ func NewSessionCreatePayload(
 		ResolvedExecutable:     req.ResolvedExecutable,
 		AllowMutableExecutable: false,
 		ExpiresAt:              req.ExpiresAt,
+		AccessDurationSeconds:  durationSeconds(req.TTL),
 		Resources:              resources,
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      []string{},
 		ReusableUses:           1,
 		SessionBinding:         sessionBindingPointer(binding),
 	}
+}
+
+func durationSeconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	return int64((duration + time.Second - 1) / time.Second)
 }
 
 func sessionBindingPointer(binding request.SessionBindingInfo) *request.SessionBindingInfo {

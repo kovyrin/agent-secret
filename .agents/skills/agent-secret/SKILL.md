@@ -137,7 +137,8 @@ count, explicit destroy, or helper stop clears them. `session list` shows active
 session IDs and metadata, but never session tokens. `with-session` injects every
 approved alias by default; add `--only ALIAS[,ALIAS...]` to deliver only the
 aliases needed by that child command. Unknown aliases fail before the child
-process starts. Use `session destroy SESSION_ID` for one session or
+process starts. The session TTL starts only after the approval succeeds. Use
+`session destroy SESSION_ID` for one session or
 `session destroy --all` to clear every active session.
 
 Treat `session_token` as a short-lived secret capability bound to the requester
