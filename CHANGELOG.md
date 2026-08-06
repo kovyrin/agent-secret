@@ -30,6 +30,8 @@ file before a release is published.
 - Session prompts now show the approved access duration instead of counting
   down the request timeout, and approved sessions receive their full duration
   starting when approval succeeds.
+- Release CI can now be dispatched directly when GitHub webhook delivery is
+  unavailable.
 
 ## [0.0.29] - 2026-07-09
 
