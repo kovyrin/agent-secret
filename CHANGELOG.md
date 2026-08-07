@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.31] - 2026-08-06
+
+### Fixed
+
+- Stabilized approval prompt geometry so the dialog no longer jumps after
+  opening or shows a clipped shadow while SwiftUI finishes layout.
+
 ## [0.0.30] - 2026-08-06
 
 ### Changed

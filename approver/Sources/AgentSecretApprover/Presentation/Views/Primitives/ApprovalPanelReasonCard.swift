@@ -38,9 +38,7 @@ import Foundation
 
         private var reasonContent: some View {
             VStack(alignment: .leading, spacing: Metric.reasonTextSpacing) {
-                Text("Reason")
-                    .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
-                    .foregroundStyle(Palette.reasonAccent)
+                reasonHeader
                 Text(reason)
                     .font(.system(size: Metric.reasonFontSize, weight: .medium, design: .rounded))
                     .foregroundStyle(Palette.reasonText)
@@ -48,9 +46,19 @@ import Foundation
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .background(reasonMeasurementViews)
-                expansionButton
             }
             .layoutPriority(Metric.refLayoutPriority)
+        }
+
+        private var reasonHeader: some View {
+            HStack(alignment: .firstTextBaseline, spacing: Metric.reasonTextSpacing) {
+                Text("Reason")
+                    .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
+                    .foregroundStyle(Palette.reasonAccent)
+                Spacer(minLength: Metric.reasonTextSpacing)
+                expansionButton
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         @ViewBuilder private var expansionButton: some View {

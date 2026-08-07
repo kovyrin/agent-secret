@@ -63,6 +63,38 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             return min(preferredHeight, maximumPanelHeight(visibleScreenHeight: visibleScreenHeight))
         }
 
+        @MainActor
+        static func initialPanelHeight(
+            for request: ApprovalRequest,
+            visibleScreenHeight: CGFloat?
+        ) -> CGFloat {
+            let maximumPanelHeight = maximumPanelHeight(visibleScreenHeight: visibleScreenHeight)
+            let maximumScrollableContentHeight = scrollableContentHeight(
+                forPanelHeight: maximumPanelHeight
+            )
+            let hostingView = NSHostingView(
+                rootView: ApprovalRequestPanelView(
+                    request: request,
+                    maxScrollableContentHeight: maximumScrollableContentHeight
+                ) { _ in
+                    // This view is measured before presentation and cannot submit a decision.
+                }
+            )
+            hostingView.layoutSubtreeIfNeeded()
+            return panelHeight(
+                idealContentHeight: hostingView.fittingSize.height,
+                visibleScreenHeight: visibleScreenHeight
+            )
+        }
+
+        @MainActor
+        static func prepareWindowHostingView(
+            _ hostingView: NSHostingView<some View>
+        ) {
+            // The presenter owns panel geometry; intrinsic-size propagation can resize a visible window.
+            hostingView.sizingOptions = []
+        }
+
         static func scrollableContentHeight(forPanelHeight panelHeight: CGFloat) -> CGFloat {
             max(
                 Metric.zeroOffset,
@@ -127,8 +159,9 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.setFrame(targetFrame, display: true, animate: true)
         }
 
+        @MainActor
         private static func makePanelWindow(height: CGFloat) -> ApprovalPanelWindow {
-            ApprovalPanelWindow(
+            let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: panelOrigin,
                     y: panelOrigin,
@@ -139,6 +172,11 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
                 backing: .buffered,
                 defer: false
             )
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.isMovableByWindowBackground = true
+            return window
         }
 
         @MainActor
@@ -174,13 +212,12 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             let visibleScreenHeight = visibleFrame?.height
             let maximumPanelHeight = Self.maximumPanelHeight(visibleScreenHeight: visibleScreenHeight)
-            let panelHeight = Self.panelHeight(visibleScreenHeight: visibleScreenHeight)
+            let panelHeight = Self.initialPanelHeight(
+                for: request,
+                visibleScreenHeight: visibleScreenHeight
+            )
             let window = Self.makePanelWindow(height: panelHeight)
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.hasShadow = false
-            window.isMovableByWindowBackground = true
-            window.contentView = NSHostingView(
+            let hostingView = NSHostingView(
                 rootView: ApprovalRequestPanelView(
                     request: request,
                     maxScrollableContentHeight: Self.scrollableContentHeight(forPanelHeight: maximumPanelHeight),
@@ -200,6 +237,8 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
                     }
                 )
             )
+            Self.prepareWindowHostingView(hostingView)
+            window.contentView = hostingView
             activeWindow = window
 
             Self.bringForward(window)
