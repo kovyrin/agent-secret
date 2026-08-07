@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.32] - 2026-08-06
+
+### Fixed
+
+- Prevented clicks on a truncated approval reason from painting the full text
+  outside its card; text selection is now enabled only after explicitly
+  expanding the reason.
+
 ## [0.0.31] - 2026-08-06
 
 ### Fixed

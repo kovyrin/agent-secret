@@ -39,15 +39,31 @@ import Foundation
         private var reasonContent: some View {
             VStack(alignment: .leading, spacing: Metric.reasonTextSpacing) {
                 reasonHeader
-                Text(reason)
-                    .font(.system(size: Metric.reasonFontSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(Palette.reasonText)
-                    .lineLimit(isExpanded ? nil : Metric.reasonLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .background(reasonMeasurementViews)
+                reasonText
             }
             .layoutPriority(Metric.refLayoutPriority)
+        }
+
+        @ViewBuilder private var reasonText: some View {
+            if reasonTextMode.allowsSelection {
+                styledReasonText
+                    .textSelection(.enabled)
+            } else {
+                styledReasonText
+            }
+        }
+
+        private var styledReasonText: some View {
+            Text(reason)
+                .font(.system(size: Metric.reasonFontSize, weight: .medium, design: .rounded))
+                .foregroundStyle(Palette.reasonText)
+                .lineLimit(reasonTextMode.lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(reasonMeasurementViews)
+        }
+
+        private var reasonTextMode: ApprovalPanelReasonTextMode {
+            ApprovalPanelReasonTextMode(isExpanded: isExpanded)
         }
 
         private var reasonHeader: some View {
