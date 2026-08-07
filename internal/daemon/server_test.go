@@ -22,6 +22,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
 	"github.com/kovyrin/agent-secret/internal/fileidentity"
 	"github.com/kovyrin/agent-secret/internal/peercred"
+	"github.com/kovyrin/agent-secret/internal/policy"
 	"github.com/kovyrin/agent-secret/internal/request"
 	"github.com/kovyrin/agent-secret/internal/secretcache"
 	"github.com/kovyrin/agent-secret/internal/testsupport/unixsocket"
@@ -786,12 +787,16 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	t.Parallel()
 
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 	ref := "op://Example/Item/token"
-	req := testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
+	req := testExecRequestAt(t, now, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}})
 	req.ReusableUses = 1
 	approver := &mockApprover{decision: approval.Decision{Approved: true, Reusable: true, ReusableUses: 1}}
 	aud := &callbackAudit{}
+	store := policy.NewStore(func() time.Time { return now })
 	broker := newTestBroker(t, daemonbroker.Options{
+		Now:      func() time.Time { return now },
+		Store:    store,
 		Approver: approver,
 		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
 		Audit:    aud,
@@ -819,8 +824,19 @@ func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
 	writeRawExecRequest(t, json.NewEncoder(conn), "req_1", "nonce_1", req)
 	select {
 	case <-firstWriteAttempted:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("server did not attempt first exec response write")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		approvalSnapshot, _, matchErr := store.MatchReusable(req)
+		if matchErr == nil && approvalSnapshot.ReservedUses == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("server did not release failed delivery reservation: approval=%+v err=%v", approvalSnapshot, matchErr)
+		}
+		time.Sleep(time.Millisecond)
 	}
 
 	secondConn, err := socket.Dial(context.Background(), path)
