@@ -5,188 +5,165 @@ import Foundation
     import SwiftUI
 
     struct ApprovalRequestPanelView: View {
-        private typealias Metric = ApprovalPanelStyle.Metric
+        private typealias Layout = ApprovalPanelLayout
 
         let request: ApprovalRequest
-        let maxScrollableContentHeight: CGFloat
-        let contentHeightDidChange: ((CGFloat) -> Void)?
+        let size: CGSize
+        let measuring: Bool
         let decide: (ApprovalDecisionKind) -> Void
 
+        @State private var selectedScope = ApprovalScope.once
         @State private var detailsExpanded = false
+        @State private var showsInspector = false
         @State private var didDecide = false
         @State private var now: Date
-        @State private var scrollContentHeight: CGFloat = 0
 
-        var body: some View {
-            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                scrollableRequestSection
-                pinnedDecisionSection
-            }
-            .padding(.horizontal, Metric.cardHorizontalPadding)
-            .padding(.vertical, Metric.cardVerticalPadding)
-            .frame(width: Metric.cardWidth)
-            .background(cardBackground)
-            .padding(Metric.outerPadding)
-            .onPreferenceChange(ApprovalPanelMeasurements.Key.self, perform: handleMeasurements)
-            .onAppear {
-                handleClockTick(Date())
-            }
-            .onReceive(
-                Timer.publish(every: Metric.countdownTickInterval, on: .main, in: .common)
-                    .autoconnect()
-            ) { date in
-                handleClockTick(date)
-            }
+        var scope: ApprovalScope {
+            selectedScope
         }
 
-        private var scrollableRequestSection: some View {
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                    requestSummary
-                    resourceSection
-                    if !viewModel.cautionMessages.isEmpty {
-                        caution
-                    }
-                    details
-                }
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: ApprovalPanelMeasurements.Key.self,
-                            value: ApprovalPanelMeasurements.Value(scrollContentHeight: proxy.size.height)
-                        )
-                    }
-                }
-            }
-            .frame(height: scrollViewportHeight)
-            .scrollIndicators(.automatic)
+        var scopeBinding: Binding<ApprovalScope> {
+            $selectedScope
         }
 
-        private var pinnedDecisionSection: some View {
-            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                decisionButtons
-                footer
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: ApprovalPanelMeasurements.Key.self,
-                        value: ApprovalPanelMeasurements.Value(pinnedContentHeight: proxy.size.height)
-                    )
-                }
-            }
+        var detailsBinding: Binding<Bool> {
+            $detailsExpanded
         }
 
-        private var scrollViewportHeight: CGFloat? {
-            guard scrollContentHeight > Metric.zeroOffset else {
-                return nil
-            }
-            return min(scrollContentHeight, maxScrollableContentHeight)
+        var inspectorBinding: Binding<Bool> {
+            $showsInspector
         }
 
         var viewModel: ApprovalRequestViewModel {
             ApprovalRequestViewModel(request: request, now: now)
         }
 
-        private var details: some View {
-            DisclosureGroup(isExpanded: $detailsExpanded) {
-                VStack(alignment: .leading, spacing: Metric.detailSpacing) {
-                    ApprovalPanelDetailLine(
-                        label: "Command arguments",
-                        value: viewModel.commandInspectionText
-                    )
-                    ApprovalPanelDetailLine(
-                        label: "Resolved binary",
-                        value: viewModel.resolvedExecutable
-                    )
-                    ApprovalPanelDetailLine(label: "Working directory", value: viewModel.cwd)
-                    ApprovalPanelDetailLine(label: "Scope", value: reusableDetail)
-                    ApprovalPanelDetailLine(label: "Request timeout", value: viewModel.timeRemaining)
-                    if let sessionBinding = viewModel.sessionBindingInspectionText {
-                        ApprovalPanelDetailLine(label: "Session binding", value: sessionBinding)
-                    }
-                    if let overrideWarning: String = viewModel.overrideWarning {
-                        ApprovalPanelDetailLine(label: "Overrides", value: overrideWarning)
-                    }
-                }
-                .padding(.top, Metric.detailTopPadding)
-                .padding(.leading, Metric.detailLeadingPadding)
-            } label: {
-                VStack(alignment: .leading, spacing: Metric.detailLabelSpacing) {
-                    Text("Show request details")
-                        .font(.system(size: Metric.detailTitleFontSize, weight: .semibold))
-                    Text("Complete command, paths, scope, and security metadata")
-                        .font(.system(size: Metric.detailSubtitleFontSize))
-                        .foregroundStyle(.secondary)
+        var countdown: ApprovalCountdown {
+            ApprovalCountdown(request: request, now: now)
+        }
+
+        var consequences: ApprovalConsequences {
+            ApprovalConsequences(request: request, scope: scope)
+        }
+
+        var cardWidth: CGFloat {
+            size.width - Layout.outerPadding * Layout.tightSpacing
+        }
+
+        var isWide: Bool {
+            cardWidth >= Layout.twoColumnMinimumWidth
+        }
+
+        var body: some View {
+            VStack(spacing: 0) {
+                header
+                Divider()
+                if measuring {
+                    naturalContent
+                } else if isWide {
+                    columns
+                } else {
+                    stacked
                 }
             }
-            .font(.system(size: Metric.bodyFontSize))
-            .tint(.primary)
-        }
-
-        private var decisionButtons: some View {
-            HStack(spacing: Metric.buttonSpacing) {
-                ForEach(decisionButtonSpecs, id: \.decision) { spec in
-                    ApprovalPanelDecisionButton(spec: spec) {
-                        complete(with: expiration.guardDecision(spec.decision, at: Date()))
-                    }
-                    .frame(width: Metric.decisionButtonWidth)
-                }
+            .frame(width: cardWidth, height: measuring ? nil : size.height - Layout.outerPadding * Layout.tightSpacing)
+            .background(ApprovalPanelTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Layout.cornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: Layout.cornerRadius)
+                    .stroke(ApprovalPanelTheme.border, lineWidth: 1)
             }
-            .frame(
-                maxWidth: .infinity,
-                minHeight: Metric.buttonHeight,
-                maxHeight: Metric.buttonHeight,
-                alignment: .center
-            )
+            .padding(Layout.outerPadding)
+            .onAppear { handleClockTick(Date()) }
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { handleClockTick($0) }
+            .id(request.requestID)
+            .id(request.nonce)
         }
 
-        private var decisionButtonSpecs: [ApprovalPanelDecisionButtonSpec] {
-            ApprovalPanelDecisionButtonSpec.makeAll(viewModel: viewModel)
+        private var columns: some View {
+            HStack(alignment: .top, spacing: 0) {
+                ScrollView { requestSummary.padding(Layout.contextPadding) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                VStack(spacing: 0) {
+                    ScrollView { consequenceContent.padding(Layout.sidebarPadding) }
+                    decisionSection.padding(Layout.sidebarPadding)
+                }
+                .frame(width: Layout.sidebarWidth)
+                .background(ApprovalPanelTheme.sunken)
+            }
         }
 
-        private var expiration: ApprovalPromptExpiration {
-            ApprovalPromptExpiration(expiresAt: request.expiresAt)
+        private var stacked: some View {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+                        requestSummary
+                        Divider()
+                        consequenceContent
+                    }
+                    .padding(Layout.contextPadding)
+                }
+                Divider()
+                decisionSection.padding(Layout.sidebarPadding)
+                    .background(ApprovalPanelTheme.sunken)
+            }
+        }
+
+        @ViewBuilder private var naturalContent: some View {
+            if isWide {
+                HStack(alignment: .top, spacing: 0) {
+                    requestSummary.padding(Layout.contextPadding).frame(maxWidth: .infinity)
+                    VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+                        consequenceContent
+                        decisionSection
+                    }
+                    .padding(Layout.sidebarPadding)
+                    .frame(width: Layout.sidebarWidth)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
+                    requestSummary
+                    consequenceContent
+                    decisionSection
+                }
+                .padding(Layout.contextPadding)
+            }
         }
 
         init(
             request: ApprovalRequest,
             now: Date = Date(),
-            maxScrollableContentHeight: CGFloat = Metric.scrollableApprovalContentMaxHeight,
-            contentHeightDidChange: ((CGFloat) -> Void)? = nil,
+            size: CGSize = Layout.preferredSize,
+            measuring: Bool = false,
             decide: @escaping (ApprovalDecisionKind) -> Void
         ) {
             self.request = request
-            self.maxScrollableContentHeight = maxScrollableContentHeight
-            self.contentHeightDidChange = contentHeightDidChange
+            self.size = size
+            self.measuring = measuring
             self.decide = decide
             _now = State(initialValue: now)
         }
 
-        private func handleMeasurements(_ measurements: ApprovalPanelMeasurements.Value) {
-            let hasCompleteMeasurement = measurements.scrollContentHeight > Metric.zeroOffset &&
-                measurements.pinnedContentHeight > Metric.zeroOffset
-            guard hasCompleteMeasurement else {
-                return
-            }
-            scrollContentHeight = measurements.scrollContentHeight
-            contentHeightDidChange?(
-                AppKitApprovalPresenter.idealPanelHeight(
-                    scrollContentHeight: min(measurements.scrollContentHeight, maxScrollableContentHeight),
-                    pinnedContentHeight: measurements.pinnedContentHeight
-                )
-            )
+        func showInspector() {
+            showsInspector = true
+        }
+
+        func submit(_ decision: ApprovalDecisionKind) {
+            complete(ApprovalPromptExpiration(expiresAt: request.expiresAt).guardDecision(decision, at: Date()))
         }
 
         private func handleClockTick(_ date: Date) {
+            guard !measuring else {
+                return
+            }
             now = date
-            if let timeoutDecision: ApprovalDecisionKind = expiration.timeoutDecision(at: date) {
-                complete(with: timeoutDecision)
+            if let decision = ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: date) {
+                complete(decision)
             }
         }
 
-        private func complete(with decision: ApprovalDecisionKind) {
+        private func complete(_ decision: ApprovalDecisionKind) {
             guard !didDecide else {
                 return
             }

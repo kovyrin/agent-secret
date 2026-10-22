@@ -109,7 +109,7 @@ import Foundation
             static let refLayoutPriority: Double = 1
             static let reasonCardPadding: CGFloat = 18
             static let reasonCardSpacing: CGFloat = 20
-            static let reasonFontSize: CGFloat = 19
+            static let reasonFontSize: CGFloat = 15
             static let reasonIconCircleSize: CGFloat = 56
             static let reasonIconFillOpacity: Double = 0.10
             static let reasonIconSize: CGFloat = 26

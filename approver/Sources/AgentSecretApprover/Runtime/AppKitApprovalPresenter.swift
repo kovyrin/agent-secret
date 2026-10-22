@@ -10,10 +10,8 @@ import Foundation
 /// AppKit-backed presenter that surfaces prompts on the main actor and fails closed outside AppKit.
 public final class AppKitApprovalPresenter: ApprovalPresenter {
     #if canImport(AppKit)
-        private typealias Metric = ApprovalPanelStyle.Metric
 
         private static let panelOrigin: CGFloat = 0
-        private static let panelWidth: CGFloat = 912
 
         private let screenLockState: ScreenLockStateChecking
         @MainActor private var activeWindow: NSWindow?
@@ -47,126 +45,48 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
 
-        static func panelHeight(visibleScreenHeight: CGFloat?) -> CGFloat {
-            panelHeight(
-                idealContentHeight: Metric.panelMinimumHeight,
-                visibleScreenHeight: visibleScreenHeight
-            )
-        }
-
-        static func panelHeight(idealContentHeight: CGFloat, visibleScreenHeight: CGFloat?) -> CGFloat {
-            guard let visibleScreenHeight else {
-                return Metric.panelMinimumHeight
+        static func fittedPanelSize(ideal: CGSize, visibleFrame: NSRect?) -> CGSize {
+            guard let visibleFrame else {
+                return ideal
             }
-
-            let preferredHeight = max(Metric.panelMinimumHeight, idealContentHeight)
-            return min(preferredHeight, maximumPanelHeight(visibleScreenHeight: visibleScreenHeight))
+            let margin = ApprovalPanelLayout.screenMargin
+            return CGSize(
+                width: min(ideal.width, max(0, visibleFrame.width - margin)),
+                height: min(ideal.height, max(0, visibleFrame.height - margin))
+            )
         }
 
         @MainActor
-        static func initialPanelHeight(
-            for request: ApprovalRequest,
-            visibleScreenHeight: CGFloat?
-        ) -> CGFloat {
-            let maximumPanelHeight = maximumPanelHeight(visibleScreenHeight: visibleScreenHeight)
-            let maximumScrollableContentHeight = scrollableContentHeight(
-                forPanelHeight: maximumPanelHeight
-            )
-            let hostingView = NSHostingView(
-                rootView: ApprovalRequestPanelView(
-                    request: request,
-                    maxScrollableContentHeight: maximumScrollableContentHeight
-                ) { _ in
-                    // This view is measured before presentation and cannot submit a decision.
-                }
-            )
+        static func initialPanelSize(for request: ApprovalRequest, visibleFrame: NSRect?) -> CGSize {
+            let available = fittedPanelSize(ideal: ApprovalPanelLayout.preferredSize, visibleFrame: visibleFrame)
+            let hostingView = NSHostingView(rootView: ApprovalRequestPanelView(
+                request: request,
+                size: available,
+                measuring: true
+            ) { _ in
+                // Measurement cannot submit a decision.
+            })
             hostingView.layoutSubtreeIfNeeded()
-            return panelHeight(
-                idealContentHeight: hostingView.fittingSize.height,
-                visibleScreenHeight: visibleScreenHeight
+            return fittedPanelSize(
+                ideal: CGSize(width: available.width, height: hostingView.fittingSize.height),
+                visibleFrame: visibleFrame
             )
         }
 
         @MainActor
-        static func prepareWindowHostingView(
-            _ hostingView: NSHostingView<some View>
-        ) {
-            // The presenter owns panel geometry; intrinsic-size propagation can resize a visible window.
+        static func prepareWindowHostingView(_ hostingView: NSHostingView<some View>) {
+            // Only the presenter may change geometry; disclosures and clock ticks scroll in place.
             hostingView.sizingOptions = []
         }
 
-        static func scrollableContentHeight(forPanelHeight panelHeight: CGFloat) -> CGFloat {
-            max(
-                Metric.zeroOffset,
-                panelHeight - Metric.panelPinnedVerticalContentHeight
-            )
-        }
-
-        static func idealPanelHeight(
-            scrollContentHeight: CGFloat,
-            pinnedContentHeight: CGFloat
-        ) -> CGFloat {
-            scrollContentHeight +
-                pinnedContentHeight +
-                Metric.sectionSpacing +
-                (Metric.cardVerticalPadding * Metric.verticalEdgeCount) +
-                (Metric.outerPadding * Metric.verticalEdgeCount)
-        }
-
-        static func resizedPanelFrame(
-            currentFrame: NSRect,
-            targetHeight: CGFloat,
-            visibleFrame: NSRect
-        ) -> NSRect {
-            let height = min(targetHeight, visibleFrame.height)
-            let centeredY = currentFrame.midY - (height / Metric.verticalEdgeCount)
-            let minimumY = visibleFrame.minY
-            let maximumY = visibleFrame.maxY - height
-            let originY = min(max(centeredY, minimumY), maximumY)
-            return NSRect(
-                x: currentFrame.origin.x,
-                y: originY,
-                width: currentFrame.width,
-                height: height
-            )
-        }
-
-        private static func maximumPanelHeight(visibleScreenHeight: CGFloat?) -> CGFloat {
-            guard let visibleScreenHeight else {
-                return Metric.panelMinimumHeight
-            }
-
-            if visibleScreenHeight <= Metric.panelVisibleFrameVerticalMargin {
-                return visibleScreenHeight
-            }
-            return visibleScreenHeight - Metric.panelVisibleFrameVerticalMargin
-        }
-
         @MainActor
-        private static func resize(
-            _ window: NSWindow,
-            to targetHeight: CGFloat,
-            within visibleFrame: NSRect
-        ) {
-            let targetFrame = resizedPanelFrame(
-                currentFrame: window.frame,
-                targetHeight: targetHeight,
-                visibleFrame: visibleFrame
-            )
-            guard abs(targetFrame.height - window.frame.height) > Metric.resizeTolerance else {
-                return
-            }
-            window.setFrame(targetFrame, display: true, animate: true)
-        }
-
-        @MainActor
-        private static func makePanelWindow(height: CGFloat) -> ApprovalPanelWindow {
+        private static func makePanelWindow(size: CGSize) -> ApprovalPanelWindow {
             let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: panelOrigin,
                     y: panelOrigin,
-                    width: panelWidth,
-                    height: height
+                    width: size.width,
+                    height: size.height
                 ),
                 styleMask: [.borderless],
                 backing: .buffered,
@@ -210,32 +130,16 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             Self.activate(app)
             let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
-            let visibleScreenHeight = visibleFrame?.height
-            let maximumPanelHeight = Self.maximumPanelHeight(visibleScreenHeight: visibleScreenHeight)
-            let panelHeight = Self.initialPanelHeight(
-                for: request,
-                visibleScreenHeight: visibleScreenHeight
-            )
-            let window = Self.makePanelWindow(height: panelHeight)
+            let size = Self.initialPanelSize(for: request, visibleFrame: visibleFrame)
+            let window = Self.makePanelWindow(size: size)
             let hostingView = NSHostingView(
                 rootView: ApprovalRequestPanelView(
                     request: request,
-                    maxScrollableContentHeight: Self.scrollableContentHeight(forPanelHeight: maximumPanelHeight),
-                    contentHeightDidChange: { [weak window] idealContentHeight in
-                        guard let window, let visibleFrame else {
-                            return
-                        }
-                        let targetHeight = Self.panelHeight(
-                            idealContentHeight: idealContentHeight,
-                            visibleScreenHeight: visibleScreenHeight
-                        )
-                        Self.resize(window, to: targetHeight, within: visibleFrame)
-                    },
-                    decide: { selectedDecision in
-                        logger.record("approval_modal_decision_selected", requestID: request.requestID)
-                        coordinator.complete(with: selectedDecision)
-                    }
-                )
+                    size: size
+                ) { selectedDecision in
+                    logger.record("approval_modal_decision_selected", requestID: request.requestID)
+                    coordinator.complete(with: selectedDecision)
+                }
             )
             Self.prepareWindowHostingView(hostingView)
             window.contentView = hostingView
