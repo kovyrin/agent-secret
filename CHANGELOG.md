@@ -51,6 +51,11 @@ file before a release is published.
   executable cautions visible together. Clarified that processes can retain
   values already delivered after access ends.
 
+### Security
+
+- Updated the pinned Go toolchain to 1.26.10 to include standard-library
+  security fixes.
+
 ## [0.0.32] - 2026-08-06
 
 ### Fixed

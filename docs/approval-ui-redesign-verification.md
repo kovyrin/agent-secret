@@ -82,6 +82,18 @@ and preserves its original TTL. Presenter tests cover screen bounds, actual
 width measurement, and stable geometry across ticks. Decision specifications
 used by the visible buttons verify Escape on Deny and no default Return action.
 
+A separate native disclosure fixture uses the production disclosure style and
+presenter hosting policy in a constrained 400 × 240 window. It repeatedly
+expands and collapses long content, verifies the content's appearance and
+disappearance, and checks that the host and window frames remain unchanged.
+The clock test is named separately to reflect what it exercises. This proof
+drives a SwiftUI binding; it does not simulate pointer or accessibility input.
+
+Operation-specific copy tests verify that metadata lookups describe returned
+item names and field metadata, with an `Item` disclosure label. Command and
+session prompts retain their environment-delivery notes and `Injected as`
+labels. The refreshed light/dark metadata captures show the corrected footer.
+
 Focused Go approval, Swift protocol/presentation/geometry tests passed during
 their implementation slices. The synthetic nonvisual smoke passed with
 `approver-smoke-ok`:
@@ -96,21 +108,23 @@ Repository-wide checks:
 | --- | --- |
 | Go formatting, vet, golangci-lint | Passed, zero issues |
 | All Go tests and race tests | Passed |
-| Go coverage gate | Passed: 81.0% total; approval package 87.6% |
-| SwiftFormat and strict SwiftLint | Passed: 130 files, zero violations |
-| Full Swift suite | Passed: 116 tests, five opt-in tests skipped |
+| Go coverage gate | Passed: 81.1% total; approval package 87.6% |
+| SwiftFormat and strict SwiftLint | Passed: 132 files, zero violations |
+| Full Swift suite | Passed: 119 tests, five opt-in tests skipped |
 | Synthetic nonvisual smoke | Passed |
 | Native capture tests | Passed: three capture tests, 21 PNGs |
 | `mise run build` | Passed: local ad-hoc signed app bundle |
 | Secret scan | Passed, no leaks |
 | Shell, TOML, Markdown, workflow checks | Passed |
+| `mise run lint` | Passed, including the vulnerability scan |
 
-`mise run lint` exited at `govulncheck`: it reported 11 standard-library
-advisories against the repository's existing Go 1.26.5 pin. The same pin is
-present at planning baseline `80ce745`; this change does not modify the Go
-toolchain or dependencies. Remaining lint stages were run separately and passed
-as listed above. A Go security patch upgrade is separate follow-up work; the
-full lint command is not green.
+The initial contributor review found 11 standard-library advisories against
+the existing Go 1.26.5 pin. The [official Go release history](https://go.dev/doc/devel/release#go1.26.0)
+lists Go 1.26.10 (2026-10-19) as the latest patch on the same release line,
+including the latest `crypto/x509` security fix. The follow-up upgrades the
+toolchain pin to that patch without changing the module's Go language version
+or dependencies. The complete `mise run lint` now passes, and `govulncheck`
+reports no vulnerabilities.
 
 ## OS validation limits
 
@@ -153,6 +167,10 @@ The local build is `_dist/Agent Secret.app`. Implementation commits are:
 - `8534e5e`: visible decision wiring, pinned limits, and button contrast.
 - `76b532a`: removal of superseded presentation views.
 - `1b3f557`: synthetic native capture harness and relative smoke deadlines.
+- `e3784dc`: native captures and implementation verification.
+- `564d054`: README light/dark captures and daemon-consistent fixtures.
+- `26023bf`: actual disclosure expansion/collapse geometry proof.
+- `bb1f0d8`: operation-specific metadata copy, tests, and refreshed captures.
 
-This verification record, release notes, and screenshots are delivered in the
-following documentation commit.
+The Go security patch, release notes, and updated verification record are
+delivered in the following follow-up commit.
