@@ -5,6 +5,7 @@
         private typealias Layout = ApprovalPanelLayout
 
         let group: ResourceAccountGroupViewModel
+        let resourceAliasLabel: String
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
@@ -25,7 +26,7 @@
                 .background(ApprovalPanelTheme.sunken)
                 ForEach(Array(group.resources.enumerated()), id: \.offset) { _, resource in
                     Divider()
-                    ApprovalPanelExpandableResource(resource: resource)
+                    ApprovalPanelExpandableResource(resource: resource, resourceAliasLabel: resourceAliasLabel)
                 }
             }
         }

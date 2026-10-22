@@ -5,6 +5,7 @@
         private typealias Layout = ApprovalPanelLayout
 
         let resource: RequestedResourceRowViewModel
+        let resourceAliasLabel: String
         @State private var expanded = false
 
         var body: some View {
@@ -14,7 +15,7 @@
                     if !resource.account.isEmpty { detail("Account", resource.account) }
                     if !resource.source.isEmpty { detail("Source", resource.source) }
                     if !resource.bitwardenTokenAlias.isEmpty { detail("Token alias", resource.bitwardenTokenAlias) }
-                    detail("Injected as", resource.alias)
+                    detail(resourceAliasLabel, resource.alias)
                 }
                 .padding(.top, Layout.compactSpacing)
             } label: {

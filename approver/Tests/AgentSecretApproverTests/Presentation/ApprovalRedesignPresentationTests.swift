@@ -116,6 +116,31 @@ final class ApprovalRedesignPresentationTests: XCTestCase {
         XCTAssertEqual(groups[3].identity.tokenAlias, "TWO")
     }
 
+    func testMetadataCopyDescribesLookupWithoutEnvironmentDelivery() throws {
+        var request = try request()
+        request.operation = .itemDescribe
+        let consequences = ApprovalConsequences(request: request, scope: .once)
+        XCTAssertEqual(consequences.resourceAliasLabel, "Item")
+        XCTAssertEqual(
+            consequences.deliveryNote,
+            "This lookup returns item names and field metadata. Secret values are not returned."
+        )
+    }
+
+    func testValueDeliveryCopyRetainsEnvironmentAndInjectionLabels() throws {
+        var request = try request()
+        for operation in [ApprovalOperation.exec, .sessionCreate] {
+            request.operation = operation
+            let consequences = ApprovalConsequences(request: request, scope: .once)
+            XCTAssertEqual(consequences.resourceAliasLabel, "Injected as")
+            XCTAssertEqual(
+                consequences.deliveryNote,
+                "Agent Secret doesn't write secret values to disk. " +
+                    "Approved processes can use them as environment variables."
+            )
+        }
+    }
+
     func testWarningsComposeAtHighScopeThreshold() throws {
         var request = try request()
         request.resolvedExecutable = "/usr/bin/env"

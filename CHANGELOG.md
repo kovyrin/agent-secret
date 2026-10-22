@@ -45,6 +45,8 @@ file before a release is published.
 
 - Made resource and request-detail disclosure rows clickable across the full
   label area, with hover feedback and an expanded/collapsed accessibility value.
+- Corrected metadata approval footers and item details to describe a metadata
+  lookup without implying environment injection.
 - Kept simultaneous broad-scope, environment-printing, override, and mutable
   executable cautions visible together. Clarified that processes can retain
   values already delivered after access ends.

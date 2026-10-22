@@ -10,7 +10,7 @@
                     .font(.system(size: Layout.rowSpacing, weight: .semibold)).foregroundStyle(.secondary)
                 VStack(spacing: 0) {
                     ForEach(Array(viewModel.accountGroups.enumerated()), id: \.offset) { _, group in
-                        ApprovalPanelAccountGroup(group: group)
+                        ApprovalPanelAccountGroup(group: group, resourceAliasLabel: consequences.resourceAliasLabel)
                     }
                 }
                 .background(ApprovalPanelTheme.raised)

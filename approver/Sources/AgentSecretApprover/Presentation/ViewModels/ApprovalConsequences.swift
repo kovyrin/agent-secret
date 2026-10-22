@@ -7,12 +7,19 @@ struct ApprovalConsequences: Equatable {
     let limit: String
     let accessDuration: String?
     let readLimit: String?
+    let deliveryNote: String
+    let resourceAliasLabel: String
 
     init(request: ApprovalRequest, scope: ApprovalScope) {
         let duration = request.accessDurationSeconds.map { ApprovalRequestViewModel.formatRemaining(Double($0)) }
         accessDuration = request.operation == .sessionCreate ? duration ?? "Duration unavailable" : nil
         readLimit = request.operation == .sessionCreate ? request.sessionMaxReads.map { "\($0) total reads" }
             ?? "Read limit unavailable" : nil
+        resourceAliasLabel = request.operation == .itemDescribe ? "Item" : "Injected as"
+        deliveryNote = request.operation == .itemDescribe
+            ? "This lookup returns item names and field metadata. Secret values are not returned."
+            : "Agent Secret doesn't write secret values to disk. " +
+            "Approved processes can use them as environment variables."
         switch request.operation {
         case .itemDescribe:
             heading = "One metadata lookup"

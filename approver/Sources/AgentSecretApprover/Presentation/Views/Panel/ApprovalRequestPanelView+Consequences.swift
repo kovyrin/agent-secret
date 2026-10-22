@@ -51,14 +51,10 @@
         }
 
         private var deliveryNote: some View {
-            Label(
-                "Agent Secret doesn't write secret values to disk. " +
-                    "Approved processes can use them as environment variables.",
-                systemImage: "lock"
-            )
-            .font(.system(size: Layout.captionFontSize))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+            Label(consequences.deliveryNote, systemImage: "lock")
+                .font(.system(size: Layout.captionFontSize))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
 
         private var timeline: some View {
