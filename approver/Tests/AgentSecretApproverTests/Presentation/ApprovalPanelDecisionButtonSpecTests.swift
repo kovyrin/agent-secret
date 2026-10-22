@@ -6,88 +6,53 @@ import XCTest
     import SwiftUI
 
     final class ApprovalPanelDecisionButtonSpecTests: XCTestCase {
-        private static let sampleExpiration: TimeInterval = 1_800_000_000
-        private static let viewModelNow: TimeInterval = 1_799_999_880
+        private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-        private static func sampleButtonSpecs(now: TimeInterval = viewModelNow) -> [ApprovalPanelDecisionButtonSpec] {
-            let request = ApprovalRequest(
-                requestID: "req_buttons",
-                nonce: "nonce_buttons",
-                reason: "Run deploy",
-                command: ["/usr/bin/env", "deploy"],
-                cwd: "/tmp/project",
-                expiresAt: Date(timeIntervalSince1970: sampleExpiration),
-                resources: [
-                    RequestedResource(alias: "DEPLOY_TOKEN", ref: "op://Shared/Deploy/token", account: "Work")
-                ],
-                resolvedExecutable: "/usr/bin/env"
+        private func request() throws -> ApprovalRequest {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            var request = try decoder.decode(
+                ApprovalRequest.self,
+                from: ApprovalProtocolFixture.data("approval_request")
             )
-            let viewModel = ApprovalRequestViewModel(
+            request.expiresAt = now.addingTimeInterval(120)
+            return request
+        }
+
+        func testOnlyDenyHasShortcutAndVisiblePrimaryMatchesSelectedScope() throws {
+            let request = try request()
+            for scope in ApprovalScope.allCases {
+                let specs = ApprovalPanelDecisionButtonSpec.makeAll(request: request, scope: scope, now: now)
+                XCTAssertEqual(specs.count, 2)
+                XCTAssertEqual(specs[0].decision, scope.decision(for: request))
+                XCTAssertEqual(specs[0].title, scope == .once ? "Allow this run" : "Allow reuse")
+                XCTAssertNil(specs[0].keyboardShortcut)
+                XCTAssertTrue(specs[0].isEnabled)
+                XCTAssertEqual(specs[1].decision, .deny)
+                XCTAssertEqual(specs[1].keyboardShortcut, .cancelAction)
+                XCTAssertTrue(specs.allSatisfy { $0.keyboardShortcut != .defaultAction })
+            }
+        }
+
+        func testLookupAndSessionCannotSubmitReuseEvenWithStaleSelection() throws {
+            var request = try request()
+            for operation in [ApprovalOperation.itemDescribe, .sessionCreate] {
+                request.operation = operation
+                let specs = ApprovalPanelDecisionButtonSpec.makeAll(request: request, scope: .reusable, now: now)
+                XCTAssertEqual(specs[0].decision, .approveOnce)
+                XCTAssertEqual(specs[0].title, operation == .itemDescribe ? "Allow lookup" : "Start session")
+            }
+        }
+
+        func testExactDeadlineDisablesAllowAndKeepsDenyAvailable() throws {
+            let request = try request()
+            let specs = ApprovalPanelDecisionButtonSpec.makeAll(
                 request: request,
-                now: Date(timeIntervalSince1970: now)
+                scope: .reusable,
+                now: request.expiresAt
             )
-            return ApprovalPanelDecisionButtonSpec.makeAll(viewModel: viewModel)
-        }
-
-        func testNoApprovalPanelActionUsesDefaultKeyboardShortcut() {
-            let specs = Self.sampleButtonSpecs()
-
-            XCTAssertEqual(specs.map(\.decision), [.deny, .approveOnce, .approveReusable])
-            XCTAssertEqual(
-                specs.filter { spec in spec.keyboardShortcut == .defaultAction }.map(\.decision),
-                []
-            )
-        }
-
-        func testDenyIsTheOnlyCancelApprovalPanelAction() {
-            let specs = Self.sampleButtonSpecs()
-
-            XCTAssertEqual(
-                specs.filter { spec in spec.keyboardShortcut == .cancelAction }.map(\.decision),
-                [.deny]
-            )
-        }
-
-        func testReusableApprovalRequiresPointerSelection() throws {
-            let specs = Self.sampleButtonSpecs()
-            let approveOnce: ApprovalPanelDecisionButtonSpec = try XCTUnwrap(
-                specs.first { spec in spec.decision == .approveOnce }
-            )
-            let approveReusable: ApprovalPanelDecisionButtonSpec = try XCTUnwrap(
-                specs.first { spec in spec.decision == .approveReusable }
-            )
-
-            XCTAssertNil(approveOnce.keyboardShortcut)
-            XCTAssertNil(approveReusable.keyboardShortcut)
-            XCTAssertTrue(approveOnce.isEnabled)
-            XCTAssertTrue(approveReusable.isEnabled)
-            XCTAssertEqual(approveOnce.subtitle, "Click to approve")
-            XCTAssertFalse(approveReusable.subtitle.localizedCaseInsensitiveContains("default"))
-        }
-
-        func testDenyCopyDescribesEscapeKey() throws {
-            let deny: ApprovalPanelDecisionButtonSpec = try XCTUnwrap(
-                Self.sampleButtonSpecs().first { spec in spec.decision == .deny }
-            )
-
-            XCTAssertEqual(deny.title, "Deny")
-            XCTAssertEqual(deny.subtitle, "Esc")
-            XCTAssertEqual(deny.keyboardShortcut, .cancelAction)
-        }
-
-        func testExpiredRequestsDisableApprovalActions() throws {
-            let specs = Self.sampleButtonSpecs(now: Self.sampleExpiration)
-            let deny: ApprovalPanelDecisionButtonSpec = try XCTUnwrap(
-                specs.first { spec in spec.decision == ApprovalDecisionKind.deny }
-            )
-            let approvalSpecs: [ApprovalPanelDecisionButtonSpec] = specs.filter(
-                \ApprovalPanelDecisionButtonSpec.decision.requiresUnexpiredRequest
-            )
-
-            XCTAssertTrue(deny.isEnabled)
-            XCTAssertEqual(deny.keyboardShortcut, .cancelAction)
-            XCTAssertEqual(approvalSpecs.map(\.isEnabled), [false, false])
-            XCTAssertTrue(approvalSpecs.allSatisfy { spec in spec.subtitle == "Request expired" })
+            XCTAssertFalse(specs[0].isEnabled)
+            XCTAssertTrue(specs[1].isEnabled)
         }
     }
 #endif

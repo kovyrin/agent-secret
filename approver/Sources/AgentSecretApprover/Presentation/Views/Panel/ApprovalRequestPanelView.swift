@@ -17,6 +17,10 @@ import Foundation
         @State private var showsInspector = false
         @State private var now: Date
 
+        var panelDate: Date {
+            now
+        }
+
         var scope: ApprovalScope {
             interaction.scope
         }

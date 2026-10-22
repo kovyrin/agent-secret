@@ -73,7 +73,9 @@ import Foundation
                 fact("Command", viewModel.command)
                 fact("Folder", viewModel.projectFolder)
                 fact("Binary", viewModel.resolvedExecutable)
-                if let binding = viewModel.sessionBindingSummary { fact("Bound to", binding) }
+                if request.operation == .sessionCreate {
+                    fact("Bound to", viewModel.sessionBindingSummary ?? "Binding metadata unavailable")
+                }
             }
         }
 
@@ -82,7 +84,9 @@ import Foundation
                 VStack(alignment: .leading, spacing: Layout.standardSpacing) {
                     fact("Exact argv", viewModel.commandInspectionText)
                     fact("Folder", viewModel.cwd)
-                    fact("Deadline", request.expiresAt.formatted(.iso8601))
+                    fact("Deadline", request.expiresAt.formatted(
+                        .dateTime.year().month().day().hour().minute().second().timeZone()
+                    ))
                     if let binding = viewModel.sessionBindingInspectionText { fact("Binding", binding) }
                     Button("Inspect full request") {
                         showInspector()

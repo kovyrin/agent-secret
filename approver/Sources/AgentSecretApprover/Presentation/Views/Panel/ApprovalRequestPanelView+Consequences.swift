@@ -25,9 +25,6 @@
                 }
                 Text(consequences.heading).font(.system(size: Layout.bodyFontSize, weight: .semibold))
                 timeline
-                Text(consequences.limit)
-                    .font(.system(size: Layout.rowSpacing, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
                 Text(consequences.retention)
                     .font(.system(size: Layout.rowSpacing))
                     .foregroundStyle(.secondary)
@@ -38,31 +35,19 @@
 
         var decisionSection: some View {
             VStack(spacing: Layout.compactSpacing) {
-                Button { submit(scope.decision(for: request)) } label: {
-                    Text(scope.primaryTitle(for: request))
-                        .font(.system(size: Layout.labelFontSize, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: Layout.primaryButtonHeight)
+                Text(consequences.limit)
+                    .font(.system(size: Layout.captionFontSize, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(decisionSpecs, id: \.decision) { spec in
+                    ApprovalPanelDecisionButton(spec: spec) { submit(spec.decision) }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .background(Color(nsColor: .systemGreen), in: RoundedRectangle(cornerRadius: Layout.standardSpacing))
-                .disabled(viewModel.isExpired)
-                .accessibilityHint(consequences.limit)
-                Button { submit(.deny) } label: {
-                    HStack(spacing: Layout.compactSpacing) {
-                        Text("Deny")
-                        Text("esc").font(.system(size: Layout.captionFontSize))
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.system(size: Layout.labelFontSize, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: Layout.clockWidth)
-                    .background(ApprovalPanelTheme.raised, in: RoundedRectangle(cornerRadius: Layout.standardSpacing))
-                    .overlay(RoundedRectangle(cornerRadius: Layout.standardSpacing).stroke(ApprovalPanelTheme.border))
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
                 deliveryNote
             }
+        }
+
+        private var decisionSpecs: [ApprovalPanelDecisionButtonSpec] {
+            ApprovalPanelDecisionButtonSpec.makeAll(request: request, scope: scope, now: panelDate)
         }
 
         private var deliveryNote: some View {
