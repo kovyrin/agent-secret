@@ -12,6 +12,8 @@ enum ApprovalPanelLayout {
     static let sectionSpacing: CGFloat = 18
     static let sidebarWidth: CGFloat = 340
     static let twoColumnMinimumWidth: CGFloat = 800
+    static let disclosureHoverOpacity: Double = 0.06
+    static let disclosureHoverContrastOpacity: Double = 0.16
     static let barAnimationDuration: TimeInterval = 0.2
     static let screenMargin: CGFloat = 32
     static let tightSpacing: CGFloat = 2

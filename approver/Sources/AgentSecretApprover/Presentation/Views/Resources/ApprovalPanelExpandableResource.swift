@@ -31,7 +31,6 @@
                 .font(.system(size: Layout.rowSpacing, design: .monospaced))
             }
             .tint(.secondary)
-            .padding(Layout.rowSpacing)
             .accessibilityHint("Expand to inspect the complete reference and source scope")
         }
 

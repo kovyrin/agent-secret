@@ -67,6 +67,7 @@ import Foundation
                 }
             }
             .frame(width: cardWidth, height: measuring ? nil : size.height - Layout.outerPadding * Layout.tightSpacing)
+            .disclosureGroupStyle(ApprovalPanelDisclosureStyle())
             .background(ApprovalPanelTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: Layout.cornerRadius))
             .overlay {
