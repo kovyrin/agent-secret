@@ -19,12 +19,16 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case reusableUses = "reusable_uses"
         case resources
         case sessionBinding = "session_binding"
+        case requestTTLSeconds = "request_ttl_seconds"
+        case sessionMaxReads = "session_max_reads"
     }
 
     /// Default reusable approval count for programmatic requests and out-of-range daemon values.
     public static let defaultReusableUses: Int = 3
     /// Maximum reusable approval count accepted from daemon payloads.
     public static let maxReusableUses: Int = 20
+    private static let requestTTLRange: ClosedRange<TimeInterval> = 10 ... 600
+    private static let sessionReadRange: ClosedRange<Int> = 1 ... 100
 
     public var requestID: String
     public var nonce: String
@@ -42,6 +46,8 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var overriddenAliases: [String]
     public var reusableUses: Int
     public var sessionBinding: SessionBindingInfo?
+    public var requestTTLSeconds: TimeInterval?
+    public var sessionMaxReads: Int?
 
     init(
         requestID: String,
@@ -59,7 +65,9 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         overrideEnv: Bool = false,
         overriddenAliases: [String] = [],
         reusableUses: Int = Self.defaultReusableUses,
-        sessionBinding: SessionBindingInfo? = nil
+        sessionBinding: SessionBindingInfo? = nil,
+        requestTTLSeconds: TimeInterval? = nil,
+        sessionMaxReads: Int? = nil
     ) {
         self.requestID = requestID
         self.nonce = nonce
@@ -77,6 +85,10 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.overriddenAliases = overriddenAliases
         self.reusableUses = Self.boundedReusableUses(reusableUses)
         self.sessionBinding = sessionBinding
+        self.requestTTLSeconds = requestTTLSeconds.flatMap { seconds in
+            seconds.isFinite && Self.requestTTLRange.contains(seconds) ? seconds : nil
+        }
+        self.sessionMaxReads = sessionMaxReads.flatMap { Self.sessionReadRange.contains($0) ? $0 : nil }
     }
 
     /// Decodes current daemon protocol payloads.
@@ -104,6 +116,22 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         )
         reusableUses = Self.boundedReusableUses(decodedReusableUses)
         sessionBinding = try container.decodeIfPresent(SessionBindingInfo.self, forKey: .sessionBinding)
+        requestTTLSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .requestTTLSeconds)
+        sessionMaxReads = try container.decodeIfPresent(Int.self, forKey: .sessionMaxReads)
+        if let ttl = requestTTLSeconds, !ttl.isFinite || !Self.requestTTLRange.contains(ttl) {
+            throw DecodingError.dataCorruptedError(
+                forKey: .requestTTLSeconds,
+                in: container,
+                debugDescription: "Request TTL must be finite and within 10...600 seconds"
+            )
+        }
+        if let reads = sessionMaxReads, !Self.sessionReadRange.contains(reads) {
+            throw DecodingError.dataCorruptedError(
+                forKey: .sessionMaxReads,
+                in: container,
+                debugDescription: "Session read limit must be within 1...100"
+            )
+        }
     }
 
     static func boundedReusableUses(_ uses: Int) -> Int {

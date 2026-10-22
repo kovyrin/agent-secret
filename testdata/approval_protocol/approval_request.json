@@ -5,6 +5,7 @@
   ],
   "allows_reusable": true,
   "cwd": "/tmp/project",
+  "request_ttl_seconds": 120.5,
   "expires_at": "2027-01-15T08:00:00Z",
   "nonce": "nonce_456",
   "operation": "exec",

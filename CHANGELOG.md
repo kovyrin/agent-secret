@@ -20,6 +20,13 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.33] - Pending
+
+### Added
+
+- Added optional approval metadata for the original request duration and
+  session read limit, with compatibility for older approval clients and daemons.
+
 ## [0.0.32] - 2026-08-06
 
 ### Fixed
