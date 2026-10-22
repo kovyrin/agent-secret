@@ -2,6 +2,11 @@ import Foundation
 
 /// Sanitized text prepared for the approval UI.
 struct ApprovalRequestViewModel: Equatable {
+    private struct VaultIdentity: Hashable {
+        let scope: ResourceScopeIdentity
+        let vault: String
+    }
+
     private static let highScopeResourceThreshold: Int = 6
     private static let commandInspectorThreshold: Int = 96
 
@@ -22,6 +27,7 @@ struct ApprovalRequestViewModel: Equatable {
     let resourceRows: [String]
     let resourceCount: Int
     let vaultGroups: [ResourceVaultGroupViewModel]
+    let accountGroups: [ResourceAccountGroupViewModel]
     let vaultCount: Int
     let promptQuestion: String
     let accessSummary: String
@@ -88,6 +94,7 @@ struct ApprovalRequestViewModel: Equatable {
         resourceRows = resourcePresentation.rowText
         resourceCount = resourcePresentation.count
         vaultGroups = resourcePresentation.vaultGroups
+        accountGroups = ResourceAccountGroupViewModel.groups(request.resources)
         vaultCount = resourcePresentation.vaultCount
         sessionBindingSummary = Self.sessionBindingSummary(request.sessionBinding)
         sessionBindingInspectionText = Self.sessionBindingInspectionText(request.sessionBinding)
@@ -101,7 +108,7 @@ struct ApprovalRequestViewModel: Equatable {
         (promptQuestion, accessSummary) = (copy.promptQuestion, copy.accessSummary)
         highScopeWarning = request.operation != .itemDescribe &&
             resourcePresentation.count >= Self.highScopeResourceThreshold
-        (reusableUses, allowsReusableApproval) = (request.reusableUses, request.allowsReusable)
+        (reusableUses, allowsReusableApproval) = (request.reusableUses, ApprovalScope.allowsReuse(request))
         (scopeSummary, allowReusableTitle) = (copy.scopeSummary, copy.allowReusableTitle)
         let warnings: WarningPresentation = Self.warningPresentation(for: request, highScopeWarning: highScopeWarning)
         (printsEnvironmentWarning, overrideWarning, cautionMessages) = (
@@ -131,7 +138,7 @@ struct ApprovalRequestViewModel: Equatable {
         let rowText: [String] = rows.map { resource -> String in
             Self.resourceRowText(resource)
         }
-        let vaultGroups: [ResourceVaultGroupViewModel] = Self.vaultGroups(for: rows)
+        let vaultGroups: [ResourceVaultGroupViewModel] = Self.vaultGroups(for: rows, resources: resources)
         return ResourcePresentation(
             rows: rows,
             rowText: rowText,
@@ -141,16 +148,23 @@ struct ApprovalRequestViewModel: Equatable {
         )
     }
 
-    private static func vaultGroups(for rows: [RequestedResourceRowViewModel]) -> [ResourceVaultGroupViewModel] {
+    private static func vaultGroups(
+        for rows: [RequestedResourceRowViewModel],
+        resources: [RequestedResource]
+    ) -> [ResourceVaultGroupViewModel] {
         var groups: [ResourceVaultGroupViewModel] = []
-        var groupIndexesByScope: [String: Int] = [:]
-        for row in rows {
-            if let index: Int = groupIndexesByScope[row.vaultScopeName] {
+        var groupIndexesByScope: [VaultIdentity: Int] = [:]
+        for (row, resource) in zip(rows, resources) {
+            let identity = VaultIdentity(
+                scope: ResourceScopeIdentity(resource),
+                vault: String(resource.ref.dropFirst("op://".count).split(separator: "/").first ?? "")
+            )
+            if let index: Int = groupIndexesByScope[identity] {
                 var group: ResourceVaultGroupViewModel = groups[index]
                 group = ResourceVaultGroupViewModel(vaultName: group.vaultName, resources: group.resources + [row])
                 groups[index] = group
             } else {
-                groupIndexesByScope[row.vaultScopeName] = groups.count
+                groupIndexesByScope[identity] = groups.count
                 groups.append(ResourceVaultGroupViewModel(vaultName: row.vaultScopeName, resources: [row]))
             }
         }
