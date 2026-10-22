@@ -42,6 +42,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.center()
             window.makeKeyAndOrderFront(nil)
             window.orderFrontRegardless()
+            window.invalidateShadow()
             NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
 
@@ -80,7 +81,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
         }
 
         @MainActor
-        private static func makePanelWindow(size: CGSize) -> ApprovalPanelWindow {
+        static func makePanelWindow(size: CGSize) -> ApprovalPanelWindow {
             let window = ApprovalPanelWindow(
                 contentRect: NSRect(
                     x: panelOrigin,
@@ -94,7 +95,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             )
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.hasShadow = false
+            window.hasShadow = true
             window.isMovableByWindowBackground = true
             return window
         }

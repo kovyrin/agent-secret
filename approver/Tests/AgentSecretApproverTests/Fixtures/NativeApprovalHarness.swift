@@ -30,12 +30,7 @@ import XCTest
                 }
                 .environment(\.colorScheme, dark ? .dark : .light)
             ))
-            window = ApprovalPanelWindow(
-                contentRect: NSRect(origin: .zero, size: size),
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
+            window = AppKitApprovalPresenter.makePanelWindow(size: size)
             window.isReleasedWhenClosed = false
             window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             window.alphaValue = 0

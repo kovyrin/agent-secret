@@ -43,6 +43,10 @@ file before a release is published.
 
 ### Fixed
 
+- Removed the repeated approval countdown from the session consequence panel;
+  the header retains the countdown beside the session's separate access limits.
+- Restored the native shadow around approval windows and bright, opaque
+  light-mode panels instead of OS-dependent gray sidebar and account fills.
 - Made resource and request-detail disclosure rows clickable across the full
   label area, with hover feedback and an expanded/collapsed accessibility value.
 - Corrected metadata approval footers and item details to describe a metadata

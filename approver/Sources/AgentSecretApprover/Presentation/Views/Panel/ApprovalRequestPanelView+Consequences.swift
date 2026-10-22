@@ -18,7 +18,6 @@
                 }
                 if request.operation == .sessionCreate {
                     VStack(spacing: Layout.compactSpacing) {
-                        statistic("Approve within", countdown.clock)
                         statistic("Access after approval", consequences.accessDuration ?? "Duration unavailable")
                         statistic("Read limit", consequences.readLimit ?? "Read limit unavailable")
                     }

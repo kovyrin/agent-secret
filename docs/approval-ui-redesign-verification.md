@@ -17,6 +17,56 @@ Legacy requests omit the proportional bar and identify an unavailable read
 limit. Expiration still completes timeout and closes; no persistent expired
 screen was added. The broker's access policy is unchanged.
 
+## Local appearance investigation, 2026-10-22
+
+Running the capture command below on macOS 26.6.2 reproduced the dark gray
+sidebar and account headers from the installed prompt. In Aqua appearance,
+AppKit's `underPageBackgroundColor` resolved to gray 0.588 with alpha 0.898;
+the saved PR captures showed a much lighter background. The system color is
+therefore unsuitable as a stable, opaque sidebar surface. Apple's
+[color documentation](https://developer.apple.com/documentation/appkit/nscolor/underpagebackgroundcolor)
+describes it as the backdrop beneath a window's views, rather than a card fill.
+
+The production presenter also explicitly set `hasShadow = false`. The bitmap
+capture harness drew only the hosting view and constructed its own window, so
+the captures did not verify production window configuration or compositor
+shadows. Apple's
+[shadow documentation](https://developer.apple.com/documentation/appkit/nswindow/invalidateshadow())
+provides the native mechanism for recomputing the shadow from the window shape.
+
+The focused regression command is:
+
+```bash
+mise exec -- swift test --package-path approver \
+  --filter ApprovalPanelAppearanceTests
+```
+
+Before the fix, it failed on the disabled production shadow, the gray light-mode
+sidebar, its non-opaque alpha, and the excessive surface contrast. Dark-mode
+surface checks passed. These checks do not prove a WindowServer shadow is
+visible on the desktop; that still requires inspecting the installed prompt.
+
+The fix enables and invalidates the native window shadow, uses the opaque
+control background for the main surface, and supplies opaque sidebar shades
+for light and dark appearances. The capture harness now uses the production
+window factory. The focused regressions pass, including high-contrast color
+appearances. A new local capture run passed all three rendering tests and
+produced 21 PNGs; the light rendering again matches the bright saved PR palette.
+
+`mise run lint` passed, including 122 Swift tests with five opt-in skips and no
+failures. The development app was rebuilt and installed into `/Applications`;
+signature verification and `agent-secret doctor --json` passed. A single-secret
+child presence check returned `smoke-read-ok` with exit 0 without printing the
+value. The user inspected the installed prompt and confirmed that both the
+native shadow and brighter sidebar look fixed. Automated native UI inspection
+timed out, so this desktop appearance confirmation is human verification.
+
+The session sidebar now shows only access duration and read limit. The approval
+countdown remains in the header, avoiding a second copy of the same deadline.
+After this removal, the full Swift suite and Swift/Markdown lints passed, and
+the native capture run produced 21 PNGs. A live session presence check returned
+`session-smoke-read-ok`; the session was then explicitly destroyed.
+
 ## Native capture matrix
 
 These PNGs are AppKit bitmap captures of the production `ApprovalRequestPanelView`

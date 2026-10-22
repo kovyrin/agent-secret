@@ -2,11 +2,16 @@
     import AppKit
     import SwiftUI
 
-    /// Semantic colors adapt to appearance and the system's accessibility contrast.
+    /// Opaque surfaces adapt to appearance; semantic text and borders retain system contrast.
     enum ApprovalPanelTheme {
-        static let surface = Color(nsColor: .windowBackgroundColor)
+        static let surface = Color(nsColor: .controlBackgroundColor)
         static let raised = Color(nsColor: .controlBackgroundColor)
-        static let sunken = Color(nsColor: .underPageBackgroundColor)
+        private static let lightSunkenWhite: CGFloat = 0.965
+        private static let darkSunkenWhite: CGFloat = 0.16
+        static let sunken = Color(nsColor: NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(white: dark ? darkSunkenWhite : lightSunkenWhite, alpha: 1)
+        })
         static let border = Color(nsColor: .separatorColor)
         private static let lightRed: CGFloat = 0.094
         private static let lightGreen: CGFloat = 0.514
