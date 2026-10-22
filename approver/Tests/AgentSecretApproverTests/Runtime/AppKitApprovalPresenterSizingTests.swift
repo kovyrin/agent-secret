@@ -40,7 +40,7 @@ import XCTest
         }
 
         @MainActor
-        func testDisclosuresAndClockCannotChangeWindowFrame() throws {
+        func testClockTicksCannotChangeWindowFrame() throws {
             let request = try request()
             let size = AppKitApprovalPresenter.initialPanelSize(
                 for: request, visibleFrame: NSRect(x: 0, y: 0, width: 720 * 2, height: 900)
@@ -68,6 +68,37 @@ import XCTest
             }
             XCTAssertEqual(window.frame, frame)
             XCTAssertTrue(hostingView.sizingOptions.isEmpty)
+        }
+
+        @MainActor
+        func testDisclosureExpansionAndCollapseCannotChangeConstrainedWindowFrame() {
+            let state = DisclosureGeometryState()
+            let host = NSHostingView(rootView: DisclosureGeometryFixture(state: state))
+            let window = ApprovalPanelWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 400, height: 240),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.isReleasedWhenClosed = false
+            window.alphaValue = 0
+            AppKitApprovalPresenter.prepareWindowHostingView(host)
+            window.contentView = host
+            window.orderFront(nil)
+            defer {
+                window.orderOut(nil)
+                window.close()
+            }
+            let frame = window.frame
+            for expanded in [false, true, false, true, false] {
+                state.isExpanded = expanded
+                host.layoutSubtreeIfNeeded()
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                XCTAssertEqual(state.contentVisible, expanded)
+                XCTAssertEqual(window.frame, frame)
+                XCTAssertEqual(host.frame.size, frame.size)
+                XCTAssertTrue(host.sizingOptions.isEmpty)
+            }
         }
     }
 #endif
