@@ -1,6 +1,8 @@
 import AgentSecretApprover
 import Foundation
 
+private let kSmokeRequestSeconds: TimeInterval = 120
+
 try await runSmoke()
 
 @MainActor
@@ -62,7 +64,8 @@ private func sampleRequestData() -> Data {
         "reason": "Run Terraform plan for staging",
         "command": ["/opt/homebrew/bin/terraform", "plan"],
         "cwd": "/tmp/project",
-        "expires_at": "2027-01-15T08:00:00Z",
+        "expires_at": "\(Date().addingTimeInterval(kSmokeRequestSeconds).formatted(.iso8601))",
+        "request_ttl_seconds": 120,
         "operation": "exec",
         "allows_reusable": true,
         "allow_mutable_executable": false,
@@ -90,7 +93,9 @@ private func visualSampleRequestData() -> Data {
         "reason": "\(visualSmokeReason())",
         "command": ["agent-secret", "session", "create"],
         "cwd": "/Users/example/projects/sample-service",
-        "expires_at": "2099-01-15T08:00:00Z",
+        "expires_at": "\(Date().addingTimeInterval(kSmokeRequestSeconds).formatted(.iso8601))",
+        "request_ttl_seconds": 120,
+        "session_max_reads": 2,
         "access_duration_seconds": 300,
         "operation": "session_create",
         "allows_reusable": false,
