@@ -1,6 +1,8 @@
 # Approval UI redesign plan
 
-Status: planned; application implementation has not started.
+Status: implemented in focused local commits. See the
+[verification record](approval-ui-redesign-verification.md) for native captures,
+check results, and OS validation limits.
 
 Planning baseline: commit `80ce745`, reviewed on 2026-10-21.
 

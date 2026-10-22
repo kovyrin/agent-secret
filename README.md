@@ -169,10 +169,21 @@ agent-secret profile show --json terraform-cloudflare
 
 ![Agent Secret approval prompt](docs/images/approval-request.png)
 
-The approval UI emphasizes the reason for the request, the command, the working
-directory, the approval scope, the requested aliases, and the exact secret
-references. Secret values are not shown in the UI and are not returned to the
-agent.
+The approval UI shows the agent's stated reason, verified executable, command,
+working directory, and requested provider/account scope. Click anywhere on a
+resource row or the Request details label to expand it; a hover background
+identifies the clickable area. Complete references and exact arguments remain
+inspectable.
+
+Commands default to This run. Selecting Reuse updates the consequences and
+Allow button before submission; the deadline and total run limit stay beside
+the actions. Sessions show approval time, access duration after approval, and
+the read limit separately. The countdown bar tracks the original approval
+window, including time spent queued. Older daemons without duration metadata
+show the countdown without a proportional bar. Expired requests close.
+
+Secret values are never displayed in this UI. Approved processes receive values
+as environment variables and may retain them after the approval or session ends.
 
 Metadata inspection has its own approval prompt:
 

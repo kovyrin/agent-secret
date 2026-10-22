@@ -27,6 +27,26 @@ file before a release is published.
 - Added optional approval metadata for the original request duration and
   session read limit, with compatibility for older approval clients and daemons.
 
+### Changed
+
+- Rebuilt native approval prompts with provider/account resource groups,
+  expandable references, operation-specific consequences, and pinned decisions.
+  Narrow screens use a stacked layout with scrollable request content.
+- Commands default to one delivery; selecting reuse updates the Allow action
+  and displays the original deadline and total run limit. Session prompts
+  distinguish approval time from access duration and the session read limit.
+- Added a deadline-based countdown progress bar with urgency text and colors.
+  Queued requests retain their original lifetime; expired requests still close.
+  Legacy daemons without timing metadata show the countdown without the bar.
+
+### Fixed
+
+- Made resource and request-detail disclosure rows clickable across the full
+  label area, with hover feedback and an expanded/collapsed accessibility value.
+- Kept simultaneous broad-scope, environment-printing, override, and mutable
+  executable cautions visible together. Clarified that processes can retain
+  values already delivered after access ends.
+
 ## [0.0.32] - 2026-08-06
 
 ### Fixed
