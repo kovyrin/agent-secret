@@ -167,7 +167,18 @@ agent-secret profile show --json terraform-cloudflare
 
 ## What You Approve
 
-![Agent Secret approval prompt](docs/images/approval-request.png)
+The screenshots below show the native macOS UI with synthetic example data.
+They follow your light or dark appearance.
+
+### Command Approval
+
+<!-- markdownlint-disable MD033 -->
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/approval-redesign/v1-dark.png">
+  <img src="docs/images/approval-request.png" width="880"
+    alt="Command approval with scope selector, countdown, and Allow/Deny">
+</picture>
 
 The approval UI shows the agent's stated reason, verified executable, command,
 working directory, and requested provider/account scope. Click anywhere on a
@@ -175,19 +186,42 @@ resource row or the Request details label to expand it; a hover background
 identifies the clickable area. Complete references and exact arguments remain
 inspectable.
 
-Commands default to This run. Selecting Reuse updates the consequences and
-Allow button before submission; the deadline and total run limit stay beside
-the actions. Sessions show approval time, access duration after approval, and
-the read limit separately. The countdown bar tracks the original approval
-window, including time spent queued. Older daemons without duration metadata
-show the countdown without a proportional bar. Expired requests close.
+Commands default to **This run**. When reuse is available, selecting **Reuse**
+updates the consequences and Allow button before submission. Reuse covers the
+same command, folder, and secret scope until the deadline or total run limit;
+both limits stay beside the actions.
+
+The countdown and progress bar track the time left to approve, including time
+already spent queued. Expired requests close automatically.
 
 Secret values are never displayed in this UI. Approved processes receive values
 as environment variables and may retain them after the approval or session ends.
 
-Metadata inspection has its own approval prompt:
+### Session Approval
 
-![Agent Secret item metadata request prompt](docs/images/item-metadata-request.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/approval-redesign/v5-dark.png">
+  <img src="docs/images/approval-redesign/v5-light.png" width="880"
+    alt="Bound session approval with access duration and read limit">
+</picture>
+
+Sessions show the bound requester, time left to approve, access duration after
+approval, and total read limit separately. Each read delivers the approved
+environment once. Access ends when the duration or read limit is reached,
+whichever comes first.
+
+### Metadata Inspection
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/approval-redesign/v4-dark.png">
+  <img src="docs/images/item-metadata-request.png" width="880"
+    alt="Metadata approval for one item lookup, with no secret values returned">
+</picture>
+
+Metadata inspection has its own **Allow lookup** action. It returns item names
+and field metadata without returning secret values.
+
+<!-- markdownlint-enable MD033 -->
 
 ## Project Profiles
 

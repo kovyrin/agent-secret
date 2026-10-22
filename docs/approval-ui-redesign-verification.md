@@ -52,10 +52,15 @@ The capture harness uses the presenter's actual initial sizing and production
 view. Review found and corrected primary-button contrast and duplicated limit
 text. The selected limit now remains beside the actions when content scrolls.
 
+The README uses fresh command, session, and metadata captures with automatic
+light/dark selection. Its synthetic metadata fixture matches the daemon's
+item-level reference and item-name alias; its session fixture uses the same
+original TTL for approval and subsequent access, matching the current payload.
+
 Reproduce from the repository root:
 
 ```bash
-mise exec -- env AGENT_SECRET_UI_CAPTURE_DIR=/tmp/agent-secret-ui-captures \
+AGENT_SECRET_UI_CAPTURE_DIR=/tmp/agent-secret-ui-captures mise exec -- \
   swift test --package-path approver --filter ApprovalPanelVisualTests
 ```
 
@@ -113,7 +118,7 @@ Native rendering and automated state/geometry checks do not establish every
 operating-system interaction. Native accessibility tests can be attempted with:
 
 ```bash
-mise exec -- env AGENT_SECRET_NATIVE_UI_TESTS=1 \
+AGENT_SECRET_NATIVE_UI_TESTS=1 mise exec -- \
   swift test --package-path approver \
   --filter 'ApprovalPanelDisclosureTests|ApprovalPanelVisualTests'
 ```

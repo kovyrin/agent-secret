@@ -53,15 +53,16 @@ enum ApprovalVisualFixture {
             ]
 
         case .metadata:
-            request.operation = .itemDescribe
-            request.allowsReusable = false
-            request.command = ["agent-secret", "item", "describe", "op://Shared/Deploy"]
-            request.resolvedExecutable = "/usr/local/bin/agent-secret"
+            configureMetadata(&request)
 
         case .session:
             request.operation = .sessionCreate
             request.allowsReusable = false
+            request.reusableUses = 1
+            request.reason = "Run two commands for the example service using a bounded session."
             request.accessDurationSeconds = accessSeconds
+            request.requestTTLSeconds = TimeInterval(accessSeconds)
+            request.expiresAt = Date().addingTimeInterval(TimeInterval(accessSeconds))
             request.sessionMaxReads = sessionReads
             request.command = ["agent-secret", "session", "create"]
             request.resolvedExecutable = "/usr/local/bin/agent-secret"
@@ -86,6 +87,16 @@ enum ApprovalVisualFixture {
         case .single:
             break
         }
+    }
+
+    private static func configureMetadata(_ request: inout ApprovalRequest) {
+        request.operation = .itemDescribe
+        request.allowsReusable = false
+        request.reusableUses = 1
+        request.reason = "Inspect names and field metadata for the example deployment item."
+        request.command = ["agent-secret", "item", "describe", "op://Shared/Deploy"]
+        request.resources = [RequestedResource(alias: "Deploy", ref: "op://Shared/Deploy", account: "Work")]
+        request.resolvedExecutable = "/usr/local/bin/agent-secret"
     }
 
     private static func sessionBinding() -> SessionBindingInfo {

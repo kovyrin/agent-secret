@@ -38,6 +38,8 @@ file before a release is published.
 - Added a deadline-based countdown progress bar with urgency text and colors.
   Queued requests retain their original lifetime; expired requests still close.
   Legacy daemons without timing metadata show the countdown without the bar.
+- Updated README screenshots for command, session, and metadata approvals, with
+  light/dark appearance and explanations of scope and access limits.
 
 ### Fixed
 
