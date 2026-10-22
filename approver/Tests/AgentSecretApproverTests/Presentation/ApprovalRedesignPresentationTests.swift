@@ -58,6 +58,30 @@ final class ApprovalRedesignPresentationTests: XCTestCase {
         }
     }
 
+    func testSelectionDoesNotSubmitAndTerminalDecisionWinsRaces() throws {
+        let request = try request()
+        var state = ApprovalPanelInteraction()
+        XCTAssertEqual(state.scope, .once)
+        state.select(.reusable)
+        XCTAssertNil(state.decision)
+        _ = ApprovalCountdown(request: request, now: now.addingTimeInterval(20))
+        XCTAssertEqual(state.scope, .reusable)
+        XCTAssertEqual(state.complete(state.scope.decision(for: request), request: request, at: now), .approveReusable)
+        XCTAssertNil(state.complete(.timeout, request: request, at: request.expiresAt))
+        XCTAssertEqual(state.decision, .approveReusable)
+        XCTAssertEqual(ApprovalPanelInteraction().scope, .once)
+    }
+
+    func testExactDeadlineAndDelayedWakeCannotApproveOrCompleteTwice() throws {
+        let request = try request()
+        for delay in [0.0, 90.0] {
+            var state = ApprovalPanelInteraction()
+            let instant = request.expiresAt.addingTimeInterval(delay)
+            XCTAssertEqual(state.complete(.approveReusable, request: request, at: instant), .timeout)
+            XCTAssertNil(state.complete(.approveOnce, request: request, at: instant))
+        }
+    }
+
     func testSessionLimitsAreIndependentOfApprovalClockAndMissingLimitsAreHonest() throws {
         var request = try request()
         request.operation = .sessionCreate

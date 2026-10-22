@@ -132,19 +132,38 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             let size = Self.initialPanelSize(for: request, visibleFrame: visibleFrame)
             let window = Self.makePanelWindow(size: size)
+            let complete: (ApprovalDecisionKind) -> Void = { selectedDecision in
+                logger.record("approval_modal_decision_selected", requestID: request.requestID)
+                coordinator.complete(with: selectedDecision)
+            }
             let hostingView = NSHostingView(
-                rootView: ApprovalRequestPanelView(
-                    request: request,
-                    size: size
-                ) { selectedDecision in
-                    logger.record("approval_modal_decision_selected", requestID: request.requestID)
-                    coordinator.complete(with: selectedDecision)
-                }
+                rootView: ApprovalRequestPanelView(request: request, size: size, decide: complete)
             )
             Self.prepareWindowHostingView(hostingView)
             window.contentView = hostingView
             activeWindow = window
 
+            let screenObserver = ApprovalPanelScreenObserver(window: window) { [weak window, weak hostingView] frame in
+                guard let window, let hostingView else {
+                    return
+                }
+                let newSize = Self.initialPanelSize(for: request, visibleFrame: frame)
+                hostingView.rootView = ApprovalRequestPanelView(request: request, size: newSize, decide: complete)
+                window.setFrame(
+                    NSRect(
+                        x: frame.midX - newSize.width / ApprovalPanelStyle.Metric.horizontalEdgeCount,
+                        y: frame.midY - newSize.height / ApprovalPanelStyle.Metric.verticalEdgeCount,
+                        width: newSize.width,
+                        height: newSize.height
+                    ),
+                    display: true
+                )
+            }
+            defer {
+                withExtendedLifetime(screenObserver) {
+                    // Keep the weak window delegate alive for the entire modal session.
+                }
+            }
             Self.bringForward(window)
             logger.record("approval_modal_presented", requestID: request.requestID)
             _ = app.runModal(for: window)

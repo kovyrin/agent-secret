@@ -14,9 +14,7 @@ import Foundation
                 Text("/").foregroundStyle(.tertiary)
                 Label(operationLabel, systemImage: operationIcon)
                 Spacer(minLength: 0)
-                Label("Answer within", systemImage: "timer")
-                    .foregroundStyle(.secondary)
-                Text(countdown.clock).monospacedDigit().frame(minWidth: Layout.clockWidth, alignment: .trailing)
+                ApprovalPanelCountdownView(countdown: countdown)
             }
             .font(.system(size: Layout.rowSpacing, weight: .semibold))
             .padding(.horizontal, Layout.sidebarPadding)

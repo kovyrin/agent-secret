@@ -12,18 +12,17 @@ import Foundation
         let measuring: Bool
         let decide: (ApprovalDecisionKind) -> Void
 
-        @State private var selectedScope = ApprovalScope.once
+        @State private var interaction = ApprovalPanelInteraction()
         @State private var detailsExpanded = false
         @State private var showsInspector = false
-        @State private var didDecide = false
         @State private var now: Date
 
         var scope: ApprovalScope {
-            selectedScope
+            interaction.scope
         }
 
         var scopeBinding: Binding<ApprovalScope> {
-            $selectedScope
+            Binding(get: { interaction.scope }, set: { interaction.select($0) })
         }
 
         var detailsBinding: Binding<Bool> {
@@ -57,6 +56,7 @@ import Foundation
         var body: some View {
             VStack(spacing: 0) {
                 header
+                ApprovalPanelCountdownView(countdown: countdown).progress
                 Divider()
                 if measuring {
                     naturalContent
@@ -76,6 +76,25 @@ import Foundation
             .padding(Layout.outerPadding)
             .onAppear { handleClockTick(Date()) }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { handleClockTick($0) }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                handleClockTick(Date())
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+                handleClockTick(Date())
+            }
+            .onChange(of: countdown.phase) { previous, current in
+                guard previous != current, !measuring else {
+                    return
+                }
+                NSAccessibility.post(
+                    element: NSApplication.shared,
+                    notification: .announcementRequested,
+                    userInfo: [
+                        .announcement: countdown.announcement,
+                        .priority: NSAccessibilityPriorityLevel.medium.rawValue
+                    ]
+                )
+            }
             .id(request.requestID)
             .id(request.nonce)
         }
@@ -150,7 +169,7 @@ import Foundation
         }
 
         func submit(_ decision: ApprovalDecisionKind) {
-            complete(ApprovalPromptExpiration(expiresAt: request.expiresAt).guardDecision(decision, at: Date()))
+            complete(decision, at: Date())
         }
 
         private func handleClockTick(_ date: Date) {
@@ -159,16 +178,14 @@ import Foundation
             }
             now = date
             if let decision = ApprovalPromptExpiration(expiresAt: request.expiresAt).timeoutDecision(at: date) {
-                complete(decision)
+                complete(decision, at: date)
             }
         }
 
-        private func complete(_ decision: ApprovalDecisionKind) {
-            guard !didDecide else {
-                return
+        private func complete(_ decision: ApprovalDecisionKind, at date: Date) {
+            if let result = interaction.complete(decision, request: request, at: date) {
+                decide(result)
             }
-            didDecide = true
-            decide(decision)
         }
     }
 #endif

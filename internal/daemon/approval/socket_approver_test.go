@@ -740,6 +740,45 @@ func TestSocketApproverExpiresActiveRequestWithoutDecision(t *testing.T) {
 	}
 }
 
+func TestSocketApproverTimeoutPromotesQueuedRequestWithoutUIDismissal(t *testing.T) {
+	t.Parallel()
+
+	exe := currentExecutable(t)
+	now := time.Now()
+	launcher := &recordingLauncher{expected: approval.ExpectedApprover{PID: os.Getpid(), ExecutablePath: exe}}
+	approver := newSocketApproverForTest(t, launcher, func() time.Time { return now })
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	first := approvalTestRequest(t, now.Add(100*time.Millisecond))
+	second := approvalTestRequest(t, now.Add(30*time.Second))
+	firstErr := make(chan error, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		_, err := approver.Approve(ctx, testApprovalPayload(testCorrelation("req_1", "nonce_1"), first))
+		firstErr <- err
+	}()
+	_ = fetchPendingForTest(t, launcher, 1, approver, peerInfoForTest(t, os.Getpid(), exe))
+	go func() {
+		_, err := approver.Approve(ctx, testApprovalPayload(testCorrelation("req_2", "nonce_2"), second))
+		secondErr <- err
+	}()
+	if err := <-firstErr; !errors.Is(err, approval.ErrRequestExpired) {
+		t.Fatalf("first request = %v, want timeout without a UI decision", err)
+	}
+	payload := fetchPendingForTest(t, launcher, 2, approver, peerInfoForTest(t, os.Getpid(), exe))
+	if payload.RequestID != "req_2" || !payload.ExpiresAt.Equal(second.ExpiresAt) || payload.RequestTTLSeconds != second.TTL.Seconds() {
+		t.Fatalf("queued request lost original timing: %+v", payload)
+	}
+	if err := approver.SubmitDecision(ctx, peerInfoForTest(t, os.Getpid(), exe), approval.ApprovalDecisionPayload{
+		RequestID: "req_2", Nonce: "nonce_2", Decision: approval.ApprovalDecisionDeny,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondErr; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSocketApproverFailsWhenExpectedApproverExitsBeforeFetch(t *testing.T) {
 	t.Parallel()
 
