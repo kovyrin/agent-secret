@@ -116,8 +116,8 @@ func CurrentExpected() (Expected, error) {
 }
 
 // ProcessAncestry returns the process identities observed while walking from
-// pid toward its ancestors. If an ancestor exits mid-walk, the returned slice
-// may be partial and still useful for callers that only need a known anchor.
+// pid toward its ancestors. If an ancestor cannot be inspected, the returned
+// slice may be partial and still useful for callers that only need a known anchor.
 func ProcessAncestry(pid int) ([]ProcessIdentity, error) {
 	if pid <= 0 {
 		return nil, fmt.Errorf("%w: invalid pid %d", ErrMissingMetadata, pid)

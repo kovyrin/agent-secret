@@ -80,12 +80,12 @@ func (a processTreeSessionPeerAuthorizer) BindSessionPeer(
 	if err != nil {
 		return SessionPeerBinding{}, err
 	}
-	ancestry, err := a.processAncestry(peer.PID)
-	if err != nil {
-		return SessionPeerBinding{}, fmt.Errorf("%w: inspect session creator process tree: %w", ErrSessionPeerMismatch, err)
-	}
+	ancestry, inspectErr := a.processAncestry(peer.PID)
 	anchor, policy, err := sessionPeerAnchor(peer, ancestry, policy)
 	if err != nil {
+		if inspectErr != nil {
+			return SessionPeerBinding{}, fmt.Errorf("%w: inspect session creator process tree: %w", ErrSessionPeerMismatch, inspectErr)
+		}
 		return SessionPeerBinding{}, err
 	}
 	return SessionPeerBinding{

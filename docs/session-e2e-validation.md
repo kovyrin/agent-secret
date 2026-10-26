@@ -422,3 +422,45 @@ This E2E run proves:
 - `session destroy` prevents further resolution.
 - Read exhaustion prevents further resolution.
 - Session and command lifecycle audit metadata is written.
+
+## Terminal ancestry permission checks
+
+Terminal-launched agents can have a root-owned `login` ancestor above the
+requested session binding. The process walk returns identities observed before
+an inaccessible ancestor together with the inspection error. Session creation
+must use an eligible binding already present in that observed prefix, as session
+resolution already does. A missing or ineligible binding still rejects the
+request before approval or secret resolution.
+
+The creator-binding regression covers automatic, parent, explicit-depth, and
+name-based policies, including a denied ancestor above the intended agent:
+
+```bash
+mise exec -- go test ./internal/daemon/broker \
+  -run 'ObservedAncestorBeforeInspectionFailure|PartialCreatorAncestry' \
+  -count=1 -v
+```
+
+A value-free libproc probe on macOS 26.6.2 on 2026-10-26 returned
+`PROC_PIDTBSDINFO pid=1 bytes=0 errno=1`, confirming that process inspection can
+fail with `EPERM` at a protected ancestor. PID 1 is used only for this probe;
+the production ancestry walker already stops before inspecting it. This probe
+does not reproduce a particular terminal's full process tree or read a secret.
+
+```bash
+probe_path="$(mktemp "${TMPDIR:-/tmp}/agent-secret-process-probe.XXXXXX")"
+mise exec -- /usr/bin/clang -x c - -o "$probe_path" <<'C'
+#include <errno.h>
+#include <libproc.h>
+#include <stdio.h>
+int main(void) {
+    struct proc_bsdinfo info = {0};
+    errno = 0;
+    int count = proc_pidinfo(1, PROC_PIDTBSDINFO, 0, &info, sizeof(info));
+    printf("PROC_PIDTBSDINFO pid=1 bytes=%d errno=%d\n", count, errno);
+    return 0;
+}
+C
+"$probe_path"
+rm -f "$probe_path"
+```
