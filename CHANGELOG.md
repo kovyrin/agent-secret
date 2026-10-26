@@ -20,6 +20,46 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.33] - Pending
+
+### Added
+
+- Added optional approval metadata for the original request duration and
+  session read limit, with compatibility for older approval clients and daemons.
+
+### Changed
+
+- Rebuilt native approval prompts with provider/account resource groups,
+  expandable references, operation-specific consequences, and pinned decisions.
+  Narrow screens use a stacked layout with scrollable request content.
+- Commands default to one delivery; selecting reuse updates the Allow action
+  and displays the original deadline and total run limit. Session prompts
+  distinguish approval time from access duration and the session read limit.
+- Added a deadline-based countdown progress bar with urgency text and colors.
+  Queued requests retain their original lifetime; expired requests still close.
+  Legacy daemons without timing metadata show the countdown without the bar.
+- Updated README screenshots for command, session, and metadata approvals, with
+  light/dark appearance and explanations of scope and access limits.
+
+### Fixed
+
+- Removed the repeated approval countdown from the session consequence panel;
+  the header retains the countdown beside the session's separate access limits.
+- Restored the native shadow around approval windows and bright, opaque
+  light-mode panels instead of OS-dependent gray sidebar and account fills.
+- Made resource and request-detail disclosure rows clickable across the full
+  label area, with hover feedback and an expanded/collapsed accessibility value.
+- Corrected metadata approval footers and item details to describe a metadata
+  lookup without implying environment injection.
+- Kept simultaneous broad-scope, environment-printing, override, and mutable
+  executable cautions visible together. Clarified that processes can retain
+  values already delivered after access ends.
+
+### Security
+
+- Updated the pinned Go toolchain to 1.26.10 to include standard-library
+  security fixes.
+
 ## [0.0.32] - 2026-08-06
 
 ### Fixed

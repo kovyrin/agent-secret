@@ -44,12 +44,12 @@ extension ApprovalRequestViewModel {
 
     private static func cautionMessages(
         printsEnvironmentWarning: Bool,
-        highScopeWarning: Bool,
+        highScopeWarning _: Bool,
         overrideWarning: String?,
         allowMutableExecutable: Bool
     ) -> [String] {
         var messages: [String] = []
-        if printsEnvironmentWarning, !highScopeWarning {
+        if printsEnvironmentWarning {
             messages.append(environmentWarningText)
         }
         if allowMutableExecutable {

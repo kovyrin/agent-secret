@@ -5,116 +5,128 @@ import Foundation
     import SwiftUI
 
     extension ApprovalRequestPanelView {
-        private typealias Metric = ApprovalPanelStyle.Metric
-        private typealias Palette = ApprovalPanelStyle.Palette
+        private typealias Layout = ApprovalPanelLayout
+
+        var header: some View {
+            HStack(spacing: Layout.standardSpacing) {
+                Image(systemName: "checkmark.shield").foregroundStyle(ApprovalPanelTheme.accent)
+                Text("Agent Secret").foregroundStyle(.secondary)
+                Text("/").foregroundStyle(.tertiary)
+                Label(operationLabel, systemImage: operationIcon)
+                Spacer(minLength: 0)
+                ApprovalPanelCountdownView(countdown: countdown)
+            }
+            .font(.system(size: Layout.rowSpacing, weight: .semibold))
+            .padding(.horizontal, Layout.sidebarPadding)
+            .padding(.vertical, Layout.labelFontSize)
+        }
 
         var requestSummary: some View {
-            VStack(alignment: .leading, spacing: Metric.sectionSpacing) {
-                header
-                prompt
+            VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
                 if viewModel.highScopeWarning {
-                    ApprovalPanelHighScopeWarning(
-                        printsEnvironmentWarning: viewModel.printsEnvironmentWarning,
-                        resourceCount: viewModel.resourceCount
-                    )
+                    warning("Broad access: \(viewModel.resourceCount) secrets requested. Review the full scope below.")
                 }
-                ApprovalPanelReasonCard(reason: viewModel.reason)
-                ApprovalRequestContextSection(viewModel: viewModel)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-
-        var cardBackground: some View {
-            RoundedRectangle(cornerRadius: Metric.cardCornerRadius, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(Metric.cardOpacity))
-                .shadow(
-                    color: .black.opacity(Metric.cardShadowOpacity),
-                    radius: Metric.cardShadowRadius,
-                    x: Metric.zeroOffset,
-                    y: Metric.cardShadowYOffset
-                )
-        }
-
-        var caution: some View {
-            HStack(alignment: .top, spacing: Metric.cautionSpacing) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: Metric.cautionIconSize, weight: .semibold))
-                    .foregroundStyle(Color.orange)
-                    .accessibilityHidden(true)
-                Text("Caution: ")
-                    .fontWeight(.semibold) +
-                    Text(viewModel.cautionMessages.joined(separator: "\n"))
-            }
-            .font(.system(size: Metric.bodyFontSize))
-            .foregroundStyle(Palette.cautionText)
-            .padding(Metric.cautionPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .background(cautionBackground)
-            .overlay(cautionBorder)
-        }
-
-        var reusableDetail: String {
-            if viewModel.allowsReusableApproval {
-                return viewModel.allowReusableTitle.replacingOccurrences(of: "\n", with: " • ")
-            }
-            return viewModel.scopeSummary.replacingOccurrences(of: "\n", with: " • ")
-        }
-
-        var footer: some View {
-            HStack(alignment: .top, spacing: Metric.footerSpacing) {
-                Image(systemName: "lock")
-                    .font(.system(size: Metric.footerIconSize, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                Text(viewModel.footerMessage)
-                    .font(.system(size: Metric.bodyFontSize))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(Metric.twoLineLimit)
-                    .multilineTextAlignment(.leading)
+                ForEach(Array(viewModel.cautionMessages.enumerated()), id: \.offset) { _, message in
+                    warning(message)
+                }
+                Text(headline)
+                    .font(.system(size: Layout.titleFontSize, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
+                ApprovalPanelReasonCard(reason: viewModel.reason)
+                resourceSection
+                contextFacts
+                requestDetails
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        private var header: some View {
-            HStack(alignment: .center, spacing: Metric.headerSpacing) {
-                ApprovalPanelShieldKeyIcon()
-                    .frame(width: Metric.headerIconSize, height: Metric.headerIconSize)
-                Text(viewModel.title)
-                    .font(.system(size: Metric.titleFontSize, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+        private var operationLabel: String {
+            switch request.operation {
+            case .exec:
+                "Command request"
+
+            case .itemDescribe:
+                "Metadata request"
+
+            case .sessionCreate:
+                "Session request"
             }
         }
 
-        private var prompt: some View {
-            VStack(alignment: .leading, spacing: Metric.promptSpacing) {
-                Text(viewModel.promptQuestion)
-                    .font(.system(size: Metric.promptFontSize, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                if viewModel.operation != .sessionCreate {
-                    promptAccessLine
+        private var operationIcon: String {
+            request.operation == .itemDescribe ? "doc.text.magnifyingglass" : "terminal"
+        }
+
+        private var headline: String {
+            if request.operation == .itemDescribe {
+                return "Inspect item metadata"
+            }
+            let subject = request.operation == .sessionCreate ? viewModel.sessionBindingSummary ?? "This session"
+                : viewModel.executable
+            let resource = viewModel.resourceCount == 1 ? viewModel.requestedResources.first?.alias ?? "one secret"
+                : "\(viewModel.resourceCount) secrets"
+            return "\(subject) wants \(resource)"
+        }
+
+        private var contextFacts: some View {
+            VStack(alignment: .leading, spacing: Layout.standardSpacing) {
+                fact("Command", viewModel.command)
+                fact("Folder", viewModel.projectFolder)
+                fact("Binary", viewModel.resolvedExecutable)
+                if request.operation == .sessionCreate {
+                    fact("Bound to", viewModel.sessionBindingSummary ?? "Binding metadata unavailable")
                 }
             }
         }
 
-        private var promptAccessLine: some View {
-            HStack(spacing: Metric.inlineSpacing) {
-                ApprovalPanelPillText(text: viewModel.executable)
-                Text(viewModel.accessSummary)
+        private var requestDetails: some View {
+            DisclosureGroup("Request details", isExpanded: detailsBinding) {
+                VStack(alignment: .leading, spacing: Layout.standardSpacing) {
+                    fact("Exact argv", viewModel.commandInspectionText)
+                    fact("Folder", viewModel.cwd)
+                    fact("Deadline", request.expiresAt.formatted(
+                        .dateTime.year().month().day().hour().minute().second().timeZone()
+                    ))
+                    if let binding = viewModel.sessionBindingInspectionText { fact("Binding", binding) }
+                    Button("Inspect full request") {
+                        showInspector()
+                    }
+                    .popover(isPresented: inspectorBinding) {
+                        ApprovalPanelTextInspector(inspection: ApprovalPanelTextInspection(
+                            title: "Complete request", text: viewModel.requestInspectionText
+                        ))
+                    }
+                }
+                .padding(.top, Layout.standardSpacing)
             }
-            .font(.system(size: Metric.inlineFontSize))
-            .fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: Layout.rowSpacing))
         }
 
-        private var cautionBackground: some View {
-            RoundedRectangle(cornerRadius: Metric.cautionCornerRadius, style: .continuous)
-                .fill(Color.orange.opacity(Metric.cautionPanelOpacity))
+        private func fact(_ label: String, _ value: String) -> some View {
+            HStack(alignment: .top, spacing: Layout.labelFontSize) {
+                Text(label).foregroundStyle(.secondary).frame(width: Layout.factLabelWidth, alignment: .leading)
+                Text(value).font(.system(size: Layout.rowSpacing, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .font(.system(size: Layout.rowSpacing))
         }
 
-        private var cautionBorder: some View {
-            RoundedRectangle(cornerRadius: Metric.cautionCornerRadius, style: .continuous)
-                .stroke(Color.orange.opacity(Metric.cautionBorderOpacity), lineWidth: Metric.borderWidth)
+        private func warning(_ message: String) -> some View {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.system(size: Layout.rowSpacing))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(Layout.standardSpacing)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Color.orange.opacity(Layout.warningFillOpacity),
+                    in: RoundedRectangle(cornerRadius: Layout.warningCornerRadius)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Layout.warningCornerRadius)
+                        .stroke(Color.orange.opacity(Layout.warningBorderOpacity))
+                )
         }
     }
 #endif

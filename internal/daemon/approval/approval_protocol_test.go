@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -10,6 +11,39 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/request"
 )
+
+func TestApprovalTimingMetadata(t *testing.T) {
+	t.Parallel()
+
+	ttl := 120*time.Second + 500*time.Millisecond
+	payloads := []ApprovalRequestPayload{
+		NewExecPayload(protocol.Correlation{}, request.ExecRequest{TTL: ttl}),
+		NewItemDescribePayload(protocol.Correlation{}, request.ItemDescribeRequest{TTL: ttl}),
+		NewSessionCreatePayload(protocol.Correlation{}, request.SessionCreateRequest{TTL: ttl, MaxReads: 2}, request.SessionBindingInfo{}),
+	}
+	for _, payload := range payloads {
+		t.Run(string(payload.Operation), func(t *testing.T) {
+			if payload.RequestTTLSeconds != 120.5 {
+				t.Fatalf("request TTL = %v, want original fractional duration 120.5", payload.RequestTTLSeconds)
+			}
+			data, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Operation == ApprovalOperationSessionCreate {
+				if string(fields["session_max_reads"]) != "2" || payload.AccessDurationSeconds != 121 {
+					t.Fatalf("session metadata = %s", data)
+				}
+			} else if _, exists := fields["session_max_reads"]; exists {
+				t.Fatal("non-session request must omit session read limit")
+			}
+		})
+	}
+}
 
 func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 	t.Parallel()

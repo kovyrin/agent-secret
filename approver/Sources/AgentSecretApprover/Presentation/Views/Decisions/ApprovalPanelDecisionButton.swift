@@ -1,99 +1,38 @@
-import Foundation
-
 #if canImport(SwiftUI)
     import SwiftUI
 
     struct ApprovalPanelDecisionButton: View {
-        private typealias Metric = ApprovalPanelStyle.Metric
+        private typealias Layout = ApprovalPanelLayout
 
         let spec: ApprovalPanelDecisionButtonSpec
         let action: () -> Void
 
         var body: some View {
             let button = Button(action: action) {
-                HStack(spacing: Metric.cautionSpacing) {
-                    Image(systemName: spec.icon)
-                        .font(.system(size: Metric.buttonIconSize, weight: .semibold))
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: Metric.detailLabelSpacing) {
-                        Text(spec.title)
-                            .font(.system(size: Metric.buttonTitleFontSize, weight: .bold))
-                            .lineLimit(titleLineLimit)
-                            .minimumScaleFactor(Metric.minimumScaleFactor)
-                        Text(spec.subtitle)
-                            .font(.system(size: Metric.buttonSubtitleFontSize, weight: .medium))
-                            .lineLimit(Metric.singleLineLimit)
-                            .minimumScaleFactor(Metric.minimumScaleFactor)
+                HStack(spacing: Layout.compactSpacing) {
+                    Text(spec.title)
+                    if spec.decision == .deny {
+                        Text("esc").font(.system(size: Layout.captionFontSize)).foregroundStyle(.secondary)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, Metric.buttonHorizontalPadding)
-                .foregroundStyle(foregroundColor)
-                .background(background)
+                .font(.system(size: Layout.labelFontSize, weight: .semibold))
+                .foregroundStyle(spec.decision == .deny ? Color.primary : ApprovalPanelTheme.allowForeground)
+                .frame(maxWidth: .infinity, minHeight: Layout.primaryButtonHeight)
+                .background(
+                    spec.decision == .deny ? ApprovalPanelTheme.raised : ApprovalPanelTheme.allowBackground,
+                    in: RoundedRectangle(cornerRadius: Layout.standardSpacing)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: Layout.standardSpacing)
+                        .stroke(spec.decision == .deny ? ApprovalPanelTheme.border : .clear)
+                }
             }
             .buttonStyle(.plain)
             .disabled(!spec.isEnabled)
-            .opacity(spec.isEnabled ? Metric.enabledButtonOpacity : Metric.disabledButtonOpacity)
-
-            if let keyboardShortcut = spec.keyboardShortcut {
-                button.keyboardShortcut(keyboardShortcut)
+            if let shortcut = spec.keyboardShortcut {
+                button.keyboardShortcut(shortcut)
             } else {
                 button
-            }
-        }
-
-        private var foregroundColor: Color {
-            switch spec.role {
-            case .primary:
-                .white
-
-            case .secondary:
-                .primary
-            }
-        }
-
-        private var titleLineLimit: Int {
-            switch spec.role {
-            case .primary:
-                Metric.buttonTitleLineLimit
-
-            case .secondary:
-                Metric.singleLineLimit
-            }
-        }
-
-        private var background: some View {
-            RoundedRectangle(cornerRadius: Metric.inlineSpacing, style: .continuous)
-                .fill(backgroundFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Metric.inlineSpacing, style: .continuous)
-                        .stroke(borderColor, lineWidth: Metric.borderWidth)
-                )
-                .shadow(
-                    color: .black.opacity(Metric.buttonShadowOpacity),
-                    radius: Metric.buttonShadowRadius,
-                    x: Metric.zeroOffset,
-                    y: Metric.buttonShadowYOffset
-                )
-        }
-
-        private var backgroundFill: Color {
-            switch spec.role {
-            case .primary:
-                Color.green
-
-            case .secondary:
-                Color.white.opacity(Metric.cardOpacity - Metric.cautionPanelOpacity)
-            }
-        }
-
-        private var borderColor: Color {
-            switch spec.role {
-            case .primary:
-                Color.green.opacity(Metric.primaryBorderOpacity)
-
-            case .secondary:
-                Color.gray.opacity(Metric.secondaryBorderOpacity)
             }
         }
     }

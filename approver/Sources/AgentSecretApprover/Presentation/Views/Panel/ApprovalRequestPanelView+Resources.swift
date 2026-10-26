@@ -1,51 +1,22 @@
-import Foundation
-
-#if canImport(AppKit) && canImport(SwiftUI)
-    import AppKit
+#if canImport(SwiftUI)
     import SwiftUI
 
     extension ApprovalRequestPanelView {
-        private typealias Metric = ApprovalPanelStyle.Metric
+        private typealias Layout = ApprovalPanelLayout
 
         var resourceSection: some View {
-            Group {
-                if viewModel.resourceCount == Metric.singleResourceCount {
-                    singleResourceSection
-                } else if viewModel.resourceCount <= Metric.compactResourceLimit {
-                    ApprovalPanelResourceList(heading: resourceCardHeading, resources: viewModel.requestedResources)
-                } else {
-                    ApprovalPanelResourceGroupList(heading: resourceCardHeading, groups: viewModel.vaultGroups)
+            VStack(alignment: .leading, spacing: Layout.compactSpacing) {
+                Text(viewModel.requestedResourcesHeading)
+                    .font(.system(size: Layout.rowSpacing, weight: .semibold)).foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.accountGroups.enumerated()), id: \.offset) { _, group in
+                        ApprovalPanelAccountGroup(group: group, resourceAliasLabel: consequences.resourceAliasLabel)
+                    }
                 }
+                .background(ApprovalPanelTheme.raised)
+                .clipShape(RoundedRectangle(cornerRadius: Layout.standardSpacing))
+                .overlay(RoundedRectangle(cornerRadius: Layout.standardSpacing).stroke(ApprovalPanelTheme.border))
             }
-        }
-
-        var singleResourceSection: some View {
-            VStack(alignment: .leading, spacing: Metric.resourceCardSpacing) {
-                Text(resourceCardHeading)
-                    .font(.system(size: Metric.sectionLabelFontSize, weight: .semibold))
-                    .foregroundStyle(Color.green)
-                ForEach(viewModel.requestedResources, id: \.alias) { resource in
-                    ApprovalPanelResourceCard(resource: resource)
-                }
-            }
-            .padding(Metric.resourcePanelPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(resourcePanelBackground)
-            .overlay(resourcePanelBorder)
-        }
-
-        var resourceCardHeading: String {
-            viewModel.requestedResourcesHeading
-        }
-
-        var resourcePanelBackground: some View {
-            RoundedRectangle(cornerRadius: Metric.panelCornerRadius, style: .continuous)
-                .fill(Color.green.opacity(Metric.greenPanelOpacity))
-        }
-
-        var resourcePanelBorder: some View {
-            RoundedRectangle(cornerRadius: Metric.panelCornerRadius, style: .continuous)
-                .stroke(Color.green.opacity(Metric.greenBorderOpacity), lineWidth: Metric.borderWidth)
         }
     }
 #endif

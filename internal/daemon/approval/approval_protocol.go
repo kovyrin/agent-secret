@@ -20,6 +20,8 @@ type ApprovalRequestPayload struct {
 	ResolvedExecutable     string                      `json:"resolved_executable"`
 	AllowMutableExecutable bool                        `json:"allow_mutable_executable"`
 	ExpiresAt              time.Time                   `json:"expires_at"`
+	RequestTTLSeconds      float64                     `json:"request_ttl_seconds"`
+	SessionMaxReads        int                         `json:"session_max_reads,omitempty"`
 	AccessDurationSeconds  int64                       `json:"access_duration_seconds,omitempty"`
 	Resources              []ApprovalRequestedResource `json:"resources"`
 	OverrideEnv            bool                        `json:"override_env"`
@@ -87,6 +89,7 @@ func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) A
 		ResolvedExecutable:     req.ResolvedExecutable,
 		AllowMutableExecutable: req.AllowMutableExecutable,
 		ExpiresAt:              req.ExpiresAt,
+		RequestTTLSeconds:      req.TTL.Seconds(),
 		Resources:              resources,
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,
@@ -109,6 +112,7 @@ func NewItemDescribePayload(
 		ResolvedExecutable:     req.ResolvedExecutable,
 		AllowMutableExecutable: false,
 		ExpiresAt:              req.ExpiresAt,
+		RequestTTLSeconds:      req.TTL.Seconds(),
 		Resources: []ApprovalRequestedResource{
 			{
 				Alias:   req.Ref.Item,
@@ -148,6 +152,8 @@ func NewSessionCreatePayload(
 		ResolvedExecutable:     req.ResolvedExecutable,
 		AllowMutableExecutable: false,
 		ExpiresAt:              req.ExpiresAt,
+		RequestTTLSeconds:      req.TTL.Seconds(),
+		SessionMaxReads:        req.MaxReads,
 		AccessDurationSeconds:  durationSeconds(req.TTL),
 		Resources:              resources,
 		OverrideEnv:            req.OverrideEnv,

@@ -3,6 +3,57 @@ import Foundation
 import XCTest
 
 final class ApprovalRequestDecodeTests: XCTestCase {
+    func testSharedCurrentAndLegacyFixtures() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let current = try decoder.decode(ApprovalRequest.self, from: ApprovalProtocolFixture.data("approval_request"))
+        let legacy = try decoder.decode(
+            ApprovalRequest.self,
+            from: ApprovalProtocolFixture.data("approval_request_legacy")
+        )
+        XCTAssertEqual(current.requestTTLSeconds, 120.5)
+        XCTAssertNil(legacy.requestTTLSeconds)
+        XCTAssertNil(legacy.sessionMaxReads)
+        XCTAssertEqual(current.resources, legacy.resources)
+    }
+
+    func testOptionalLimitsPreserveLegacyAndNullFallbacks() throws {
+        for value in [nil, NSNull()] as [Any?] {
+            let request = try decodeLimits(ttl: value, reads: value)
+            XCTAssertNil(request.requestTTLSeconds)
+            XCTAssertNil(request.sessionMaxReads)
+        }
+    }
+
+    func testOptionalLimitsAcceptValidatedBoundsAndFractionalTTL() throws {
+        for ttl in [10.0, 120.5, 600.0] {
+            for reads in [1, 2, 100] {
+                let request = try decodeLimits(ttl: ttl, reads: reads)
+                XCTAssertEqual(request.requestTTLSeconds, ttl)
+                XCTAssertEqual(request.sessionMaxReads, reads)
+            }
+        }
+    }
+
+    func testOptionalLimitsRejectInvalidNumbersAndTypes() {
+        for ttl in [0, 9.99, 600.01, "120", true] as [Any] {
+            XCTAssertThrowsError(try decodeLimits(ttl: ttl, reads: 2))
+        }
+        for reads in [0, 101, 1.5, "2", true] as [Any] {
+            XCTAssertThrowsError(try decodeLimits(ttl: 120, reads: reads))
+        }
+    }
+
+    private func decodeLimits(ttl: Any?, reads: Any?) throws -> ApprovalRequest {
+        let fixture = try ApprovalProtocolFixture.data("approval_request")
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture) as? [String: Any])
+        fields["request_ttl_seconds"] = ttl
+        fields["session_max_reads"] = reads
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(ApprovalRequest.self, from: JSONSerialization.data(withJSONObject: fields))
+    }
+
     func testApprovalRequestDecodeRequiresCurrentProtocolFields() throws {
         let fixture: Data = try ApprovalProtocolFixture.data("approval_request")
         let object: Any = try JSONSerialization.jsonObject(with: fixture)

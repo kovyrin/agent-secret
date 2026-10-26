@@ -99,20 +99,19 @@ extension ApprovalRequestViewModel {
         if operation == .itemDescribe {
             return """
             Only item metadata is returned.
-            Secret values are never shown to the agent or stored on disk.
+            Secret values are not returned by this lookup.
             """
         }
         if operation == .sessionCreate {
             return """
             The session keeps approved values in daemon memory only.
-            Values are injected only by with-session and are never printed.
+            Processes may retain values delivered by with-session.
             """
         }
         let noun: String = resourceCount == 1 ? "secret is" : "secrets are"
-        let pronoun: String = resourceCount == 1 ? "It is" : "They are"
         return """
         The \(noun) injected into the approved process only.
-        \(pronoun) never shown to the agent or stored on disk.
+        The process may retain delivered values.
         """
     }
 
