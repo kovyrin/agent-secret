@@ -2,6 +2,8 @@ package broker
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -424,6 +426,128 @@ func TestProcessTreeSessionPeerAuthorizerRejectsIneligibleExplicitAncestor(t *te
 
 	if _, err := authorizer.BindSessionPeer(creator, policy); !errors.Is(err, ErrSessionPeerMismatch) {
 		t.Fatalf("BindSessionPeer error = %v, want ErrSessionPeerMismatch", err)
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerBindsObservedAncestorBeforeInspectionFailure(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	caller := testPeerInfo(1002)
+	wrapper := testProcessIdentity(502, 501, "/bin/bash")
+	shell := testProcessIdentity(501, 500, "/bin/zsh")
+	agent := testProcessIdentity(500, 400, "/usr/local/bin/claude")
+	inspectErr := fmt.Errorf("PROC_PIDTBSDINFO pid 400: %w", os.ErrPermission)
+	authorizer := processTreeSessionPeerAuthorizer{processAncestry: func(pid int) ([]peercred.ProcessIdentity, error) {
+		return []peercred.ProcessIdentity{
+			testProcessIdentity(pid, wrapper.PID, creator.ExecutablePath),
+			wrapper,
+			shell,
+			agent,
+		}, inspectErr
+	}}
+	tests := []struct {
+		name    string
+		policy  request.SessionBindingPolicy
+		wantPID int
+	}{
+		{name: "automatic", policy: request.DefaultSessionBindingPolicy(), wantPID: wrapper.PID},
+		{
+			name: "parent", wantPID: wrapper.PID,
+			policy: request.SessionBindingPolicy{Mode: request.SessionBindingModeAncestor, AncestorDepth: 1},
+		},
+		{
+			name: "explicit ancestor", wantPID: shell.PID,
+			policy: request.SessionBindingPolicy{Mode: request.SessionBindingModeAncestor, AncestorDepth: 2},
+		},
+		{
+			name: "third ancestor", wantPID: agent.PID,
+			policy: request.SessionBindingPolicy{Mode: request.SessionBindingModeAncestor, AncestorDepth: 3},
+		},
+		{
+			name: "named ancestor", wantPID: agent.PID,
+			policy: request.SessionBindingPolicy{Mode: request.SessionBindingModeAncestorName, AncestorName: "claude"},
+		},
+		{
+			name: "ancestor name allowlist", wantPID: agent.PID,
+			policy: request.SessionBindingPolicy{Mode: request.SessionBindingModeAncestorName, AncestorNames: []string{"amp", "claude"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			binding, err := authorizer.BindSessionPeer(creator, test.policy)
+			if err != nil {
+				t.Fatalf("BindSessionPeer rejected an observed eligible ancestor: %v", err)
+			}
+			if binding.Anchor.PID != test.wantPID {
+				t.Fatalf("binding anchor pid = %d, want %d", binding.Anchor.PID, test.wantPID)
+			}
+			if err := authorizer.ValidateSessionPeer(binding, caller); err != nil {
+				t.Fatalf("ValidateSessionPeer rejected the approved requester tree: %v", err)
+			}
+		})
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerRejectsPartialCreatorAncestryWithoutEligibleAnchor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	rootParent := testProcessIdentity(500, 400, "/usr/local/bin/claude")
+	rootParent.UID = 0
+	rootParent.GID = 0
+	inspectErr := fmt.Errorf("PROC_PIDTBSDINFO pid 400: %w", os.ErrPermission)
+	policies := []request.SessionBindingPolicy{
+		request.DefaultSessionBindingPolicy(),
+		{Mode: request.SessionBindingModeAncestor, AncestorDepth: 1},
+		{Mode: request.SessionBindingModeAncestor, AncestorDepth: 3},
+		{Mode: request.SessionBindingModeAncestorName, AncestorName: "claude"},
+	}
+	for _, ancestry := range [][]peercred.ProcessIdentity{
+		nil,
+		{testProcessIdentity(creator.PID, rootParent.PID, creator.ExecutablePath)},
+		{testProcessIdentity(creator.PID, rootParent.PID, creator.ExecutablePath), rootParent},
+	} {
+		for _, policy := range policies {
+			authorizer := processTreeSessionPeerAuthorizer{processAncestry: func(int) ([]peercred.ProcessIdentity, error) {
+				return ancestry, inspectErr
+			}}
+			_, err := authorizer.BindSessionPeer(creator, policy)
+			if !errors.Is(err, ErrSessionPeerMismatch) || !errors.Is(err, os.ErrPermission) {
+				t.Fatalf("BindSessionPeer with %d observed processes and policy %+v returned %v, want peer mismatch and inspection failure", len(ancestry), policy, err)
+			}
+		}
+	}
+}
+
+func TestProcessTreeSessionPeerAuthorizerDoesNotFallBackToObservedLowerAncestor(t *testing.T) {
+	t.Parallel()
+
+	creator := testPeerInfo(1001)
+	shell := testProcessIdentity(501, 500, "/bin/zsh")
+	rootAgent := testProcessIdentity(500, 400, "/usr/local/bin/claude")
+	rootAgent.UID = 0
+	rootAgent.GID = 0
+	inspectErr := fmt.Errorf("PROC_PIDTBSDINFO pid 400: %w", os.ErrPermission)
+	policies := []request.SessionBindingPolicy{
+		{Mode: request.SessionBindingModeAncestor, AncestorDepth: 2},
+		{Mode: request.SessionBindingModeAncestorName, AncestorName: "claude"},
+		{Mode: request.SessionBindingModeAncestorName, AncestorNames: []string{"amp", "claude"}},
+	}
+	for _, ancestry := range [][]peercred.ProcessIdentity{
+		{testProcessIdentity(creator.PID, shell.PID, creator.ExecutablePath), shell},
+		{testProcessIdentity(creator.PID, shell.PID, creator.ExecutablePath), shell, rootAgent},
+	} {
+		for _, policy := range policies {
+			authorizer := processTreeSessionPeerAuthorizer{processAncestry: func(int) ([]peercred.ProcessIdentity, error) {
+				return ancestry, inspectErr
+			}}
+			_, err := authorizer.BindSessionPeer(creator, policy)
+			if !errors.Is(err, ErrSessionPeerMismatch) || !errors.Is(err, os.ErrPermission) {
+				t.Fatalf("BindSessionPeer with %d observed processes and policy %+v returned %v, want rejection without fallback to lower shell", len(ancestry), policy, err)
+			}
+		}
 	}
 }
 

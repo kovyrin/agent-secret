@@ -43,6 +43,9 @@ file before a release is published.
 
 ### Fixed
 
+- Fixed session creation from terminal-launched agents when process inspection
+  fails above an already verified binding ancestor, such as a root-owned login.
+  Missing or ineligible binding targets still fail before approval.
 - Removed the repeated approval countdown from the session consequence panel;
   the header retains the countdown beside the session's separate access limits.
 - Restored the native shadow around approval windows and bright, opaque
