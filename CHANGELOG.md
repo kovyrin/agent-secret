@@ -20,6 +20,18 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.0.34] - Pending
+
+### Changed
+
+- Replaced the macOS app and website icons with the new terminal prompt and
+  asterisk design.
+
+### Security
+
+- Updated the pinned Go toolchain to 1.26.11 for standard-library security
+  fixes, including [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859).
+
 ## [0.0.33] - 2026-10-26
 
 ### Added

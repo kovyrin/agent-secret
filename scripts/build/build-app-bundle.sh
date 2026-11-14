@@ -244,7 +244,11 @@ make_icon() {
   for spec in "${icon_specs[@]}"; do
     local size="${spec%%:*}"
     local name="${spec#*:}"
-    "$tool_sips" -z "$size" "$size" "$icon_source" --out "$iconset_dir/$name" >/dev/null
+    if [[ "$size" == 16 || "$size" == 32 ]]; then
+      "$tool_cp" "${icon_source%.png}-$size.png" "$iconset_dir/$name"
+    else
+      "$tool_sips" -z "$size" "$size" "$icon_source" --out "$iconset_dir/$name" >/dev/null
+    fi
   done
   "$tool_iconutil" -c icns "$iconset_dir" -o "$out"
 }
