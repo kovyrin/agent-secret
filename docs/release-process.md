@@ -251,6 +251,10 @@ AGENT_SECRET_IN_MISE=1 scripts/release/test-homebrew-cask-audit.sh
 cd approver && swift run agent-secret-app-smoke
 ```
 
+Homebrew 6 and later require explicit trust for third-party casks. The cask
+audit smoke test uses a temporary Homebrew configuration and trusts only its
+test cask. See [Homebrew tap trust](https://docs.brew.sh/Tap-Trust).
+
 The live bounded-session product E2E is documented in
 `docs/session-e2e-validation.md`. Run it manually before release tags because
 it requires the real native approver, test-only 1Password refs, and a macOS

@@ -32,6 +32,10 @@ file before a release is published.
 - Updated the pinned Go toolchain to 1.26.11 for standard-library security
   fixes, including [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859).
 
+### Internal
+
+- Updated the Homebrew cask audit smoke test for Homebrew's tap trust checks.
+
 ## [0.0.33] - 2026-10-26
 
 ### Added

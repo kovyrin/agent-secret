@@ -29,14 +29,22 @@ if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
   export HOMEBREW_GITHUB_API_TOKEN="$GITHUB_TOKEN"
 fi
 
+audit_config_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-brew-audit.XXXXXX")"
+export XDG_CONFIG_HOME="$audit_config_dir"
+export HOMEBREW_NO_AUTO_UPDATE=1
+
 cleanup() {
   brew untap "$tap_name" >/dev/null 2>&1 || true
+  rm -rf -- "$audit_config_dir"
 }
 trap cleanup EXIT
 
-cleanup
-HOMEBREW_NO_AUTO_UPDATE=1 brew tap "$tap_name" "$project_root" >/dev/null
+brew untap "$tap_name" >/dev/null 2>&1 || true
+brew tap "$tap_name" "$project_root" >/dev/null
 cp "$cask" "$tap_dir/Casks/agent-secret.rb"
-HOMEBREW_NO_AUTO_UPDATE=1 brew audit --cask --strict --online --tap="$tap_name" agent-secret
+if brew command trust >/dev/null 2>&1; then
+  brew trust --cask "$tap_name/agent-secret" >/dev/null
+fi
+brew audit --cask --strict --online --tap="$tap_name" agent-secret
 
 echo "test-homebrew-cask-audit: ok"
