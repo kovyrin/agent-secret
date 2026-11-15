@@ -22,6 +22,11 @@ file before a release is published.
 
 ## [0.0.34] - Pending
 
+### Added
+
+- Use Left and Right to select approval scope and Command-Return to approve
+  the selected scope.
+
 ### Changed
 
 - Replaced the macOS app and website icons with the new terminal prompt and

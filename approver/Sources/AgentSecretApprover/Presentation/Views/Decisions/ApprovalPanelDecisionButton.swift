@@ -8,12 +8,12 @@
         let action: () -> Void
 
         var body: some View {
-            let button = Button(action: action) {
+            Button(action: action) {
                 HStack(spacing: Layout.compactSpacing) {
                     Text(spec.title)
-                    if spec.decision == .deny {
-                        Text("esc").font(.system(size: Layout.captionFontSize)).foregroundStyle(.secondary)
-                    }
+                    Text(spec.decision == .deny ? "esc" : "⌘↩")
+                        .font(.system(size: Layout.captionFontSize))
+                        .foregroundStyle(spec.decision == .deny ? Color.secondary : ApprovalPanelTheme.allowForeground)
                 }
                 .font(.system(size: Layout.labelFontSize, weight: .semibold))
                 .foregroundStyle(spec.decision == .deny ? Color.primary : ApprovalPanelTheme.allowForeground)
@@ -28,12 +28,18 @@
                 }
             }
             .buttonStyle(.plain)
-            .disabled(!spec.isEnabled)
-            if let shortcut = spec.keyboardShortcut {
-                button.keyboardShortcut(shortcut)
-            } else {
-                button
+            .keyboardShortcut(spec.keyboardShortcut)
+            .background {
+                if spec.decision != .deny {
+                    // Numeric keypad Enter is U+0003. Return has its own key equivalent.
+                    Button(spec.title, action: action)
+                        .keyboardShortcut("\u{3}", modifiers: .command)
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
+            .disabled(!spec.isEnabled)
         }
     }
 #endif

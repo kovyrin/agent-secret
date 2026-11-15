@@ -19,14 +19,14 @@ import XCTest
             return request
         }
 
-        func testOnlyDenyHasShortcutAndVisiblePrimaryMatchesSelectedScope() throws {
+        func testCommandReturnUsesSelectedScopeAndEscapeDenies() throws {
             let request = try request()
             for scope in ApprovalScope.allCases {
                 let specs = ApprovalPanelDecisionButtonSpec.makeAll(request: request, scope: scope, now: now)
                 XCTAssertEqual(specs.count, 2)
                 XCTAssertEqual(specs[0].decision, scope.decision(for: request))
                 XCTAssertEqual(specs[0].title, scope == .once ? "Allow this run" : "Allow reuse")
-                XCTAssertNil(specs[0].keyboardShortcut)
+                XCTAssertEqual(specs[0].keyboardShortcut, KeyboardShortcut(.return, modifiers: .command))
                 XCTAssertTrue(specs[0].isEnabled)
                 XCTAssertEqual(specs[1].decision, .deny)
                 XCTAssertEqual(specs[1].keyboardShortcut, .cancelAction)

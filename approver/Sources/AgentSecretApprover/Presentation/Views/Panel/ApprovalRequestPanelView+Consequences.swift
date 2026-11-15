@@ -15,6 +15,10 @@
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .accessibilityLabel("Approval scope")
+                    .help("Left Arrow selects This run. Right Arrow selects Reuse.")
+                    .background {
+                        scopeShortcuts
+                    }
                 }
                 if request.operation == .sessionCreate {
                     VStack(spacing: Layout.compactSpacing) {
@@ -30,6 +34,18 @@
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        private var scopeShortcuts: some View {
+            Group {
+                Button("This run") { scopeBinding.wrappedValue = .once }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                Button("Reuse") { scopeBinding.wrappedValue = .reusable }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+            }
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
 
         var decisionSection: some View {

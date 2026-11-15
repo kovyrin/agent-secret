@@ -7,7 +7,7 @@ import Foundation
     struct ApprovalPanelDecisionButtonSpec: Equatable {
         let decision: ApprovalDecisionKind
         let title: String
-        let keyboardShortcut: KeyboardShortcut?
+        let keyboardShortcut: KeyboardShortcut
         let isEnabled: Bool
 
         static func makeAll(request: ApprovalRequest, scope: ApprovalScope, now: Date) -> [Self] {
@@ -15,7 +15,7 @@ import Foundation
                 Self(
                     decision: scope.decision(for: request),
                     title: scope.primaryTitle(for: request),
-                    keyboardShortcut: nil,
+                    keyboardShortcut: KeyboardShortcut(.return, modifiers: .command),
                     isEnabled: now < request.expiresAt
                 ),
                 Self(decision: .deny, title: "Deny", keyboardShortcut: .cancelAction, isEnabled: true)
