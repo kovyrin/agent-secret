@@ -25,10 +25,9 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
 
     #if canImport(AppKit)
         @MainActor
-        private static func activate(_ app: NSApplication) {
+        private static func prepareApplication(_ app: NSApplication) {
             app.setActivationPolicy(.regular)
-            app.unhide(nil)
-            NSRunningApplication.current.activate(options: [.activateAllWindows])
+            app.unhideWithoutActivation()
             app.requestUserAttention(.criticalRequest)
         }
 
@@ -40,10 +39,9 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
                 .fullScreenAuxiliary
             ]
             window.center()
-            window.makeKeyAndOrderFront(nil)
             window.orderFrontRegardless()
+            window.makeKey()
             window.invalidateShadow()
-            NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
 
         static func fittedPanelSize(ideal: CGSize, visibleFrame: NSRect?) -> CGSize {
@@ -89,7 +87,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
                     width: size.width,
                     height: size.height
                 ),
-                styleMask: [.borderless],
+                styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
             )
@@ -97,6 +95,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
             window.backgroundColor = .clear
             window.hasShadow = true
             window.isMovableByWindowBackground = true
+            window.hidesOnDeactivate = false
             return window
         }
 
@@ -128,7 +127,7 @@ public final class AppKitApprovalPresenter: ApprovalPresenter {
 
             let app = NSApplication.shared
             let logger = UnifiedApprovalLogger(category: "decisions")
-            Self.activate(app)
+            Self.prepareApplication(app)
             let coordinator = AppKitModalDecisionCoordinator(stopper: AppKitApplicationModalStopper())
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             let size = Self.initialPanelSize(for: request, visibleFrame: visibleFrame)

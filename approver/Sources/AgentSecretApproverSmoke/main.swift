@@ -153,7 +153,7 @@ private func assert(_ condition: @autoclosure () -> Bool, _ message: String) thr
 
 private func options(from arguments: [String]) throws -> SmokeOptions {
     var requestPath: String?
-    var decision: ApprovalDecisionKind = .approveReusable
+    var decision: ApprovalDecisionKind?
     var visual = false
     var index: [String].Index = arguments.startIndex
     while index < arguments.endIndex {
@@ -179,7 +179,7 @@ private func options(from arguments: [String]) throws -> SmokeOptions {
     }
     return SmokeOptions(
         requestPath: requestPath,
-        expectedDecision: visual ? nil : decision,
+        expectedDecision: visual ? decision : decision ?? .approveReusable,
         visual: visual
     )
 }

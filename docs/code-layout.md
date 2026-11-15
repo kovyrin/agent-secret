@@ -158,6 +158,20 @@ a non-secret smoke executable. The approver receives approval metadata from the
 daemon socket, renders a native prompt, logs value-free lifecycle events, and
 submits a decision containing the request ID and nonce.
 
+Window order and keyboard focus are separate in AppKit. A nonactivating panel
+can become the key window while another app is active, allowing the approval
+prompt to receive Escape when it appears. See
+[AppKit panel style masks](https://developer.apple.com/documentation/appkit/style-masks).
+
+To test keyboard focus in a logged-in macOS session, run the command below and
+switch to another app during the delay. Press Escape when the prompt appears.
+The smoke executable checks that its mock daemon receives Deny.
+
+```bash
+sleep 3 && mise exec -- swift run --package-path approver \
+  agent-secret-app-smoke --visual --mock-decision deny
+```
+
 The `AgentSecretApprover` target is organized by runtime boundary: `Models`,
 `Protocol`, `DaemonClient`, `Trust`, `Presentation`, and `Runtime`. SwiftPM
 keeps those folders in one module; the folders are ownership boundaries, not

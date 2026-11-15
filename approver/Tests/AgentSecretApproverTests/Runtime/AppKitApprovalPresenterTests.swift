@@ -93,11 +93,13 @@ import XCTest
         }
 
         @MainActor
-        func testApprovalPanelWindowCanBecomeKeyAndMain() {
-            let window = ApprovalPanelWindow()
+        func testApprovalPanelCanTakeKeyboardFocusWhileItsAppIsInactive() {
+            let window = AppKitApprovalPresenter.makePanelWindow(size: CGSize(width: 400, height: 300))
 
             XCTAssertTrue(window.canBecomeKey)
             XCTAssertTrue(window.canBecomeMain)
+            XCTAssertTrue(window.styleMask.contains(.nonactivatingPanel))
+            XCTAssertFalse(window.becomesKeyOnlyIfNeeded)
         }
     }
 

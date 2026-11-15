@@ -27,6 +27,11 @@ file before a release is published.
 - Replaced the macOS app and website icons with the new terminal prompt and
   asterisk design.
 
+### Fixed
+
+- Approval prompts take keyboard focus when they appear, so Escape denies the
+  request without a click.
+
 ### Security
 
 - Updated the pinned Go toolchain to 1.26.11 for standard-library security
