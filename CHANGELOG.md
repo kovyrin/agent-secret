@@ -30,8 +30,9 @@ file before a release is published.
   would otherwise match a reusable approval.
 - Keep the accepted peer identity pinned through secret delivery and reject
   changes after audit writes.
-- Show inherited environment variable names that can load code in the approval
-  warning, without displaying their values.
+- Show the exact values of inherited environment variables that can load code
+  in the approval warning. Reject requests whose code-loading values exceed
+  the prompt's display bound.
 
 ### Internal
 

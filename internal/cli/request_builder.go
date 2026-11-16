@@ -70,7 +70,7 @@ func buildExecRequest(opts execRequestBuildOptions) (request.ExecRequest, error)
 		AllowMutableExecutable: opts.allowMutableExecutable,
 		CWD:                    cwd,
 		EnvironmentFingerprint: request.EnvironmentFingerprint(env),
-		CodeLoadingEnvironment: request.CodeLoadingEnvironmentNames(env),
+		CodeLoadingEnvironment: request.CodeLoadingEnvironmentEntries(env),
 		Secrets:                opts.secrets,
 		TTL:                    opts.ttl,
 		OverrideEnv:            opts.overrideEnv,

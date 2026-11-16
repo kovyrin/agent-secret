@@ -6,18 +6,25 @@ import (
 	"strings"
 )
 
-// CodeLoadingEnvironmentNames identifies inherited variables that can cause a
-// child or a tool it launches to load code not visible in argv.
-func CodeLoadingEnvironmentNames(env []string) []string {
-	names := make([]string, 0)
+const maxCodeLoadingEnvironmentBytes = 8 * 1024
+
+// CodeLoadingEnvironmentEntries selects inherited variables that can cause a
+// child or a tool it launches to load code not visible in argv. Duplicate
+// names use the final value, matching os/exec's environment behavior.
+func CodeLoadingEnvironmentEntries(env []string) []string {
+	byName := make(map[string]string)
 	for _, entry := range env {
 		name, _, ok := strings.Cut(entry, "=")
-		if ok && isCodeLoadingEnvironmentName(name) && !slices.Contains(names, name) {
-			names = append(names, name)
+		if ok && isCodeLoadingEnvironmentName(name) {
+			byName[name] = entry
 		}
 	}
-	slices.Sort(names)
-	return names
+	entries := make([]string, 0, len(byName))
+	for _, entry := range byName {
+		entries = append(entries, entry)
+	}
+	slices.Sort(entries)
+	return entries
 }
 
 func isCodeLoadingEnvironmentName(name string) bool {
@@ -32,14 +39,22 @@ func isCodeLoadingEnvironmentName(name string) bool {
 	}
 }
 
-func validateCodeLoadingEnvironmentNames(names []string) error {
-	if len(names) > 128 || !slices.IsSorted(names) {
-		return fmt.Errorf("%w: code-loading environment names are not bounded and sorted", ErrInvalidRequest)
+func validateCodeLoadingEnvironmentEntries(entries []string) error {
+	if len(entries) > 128 || !slices.IsSorted(entries) {
+		return fmt.Errorf("%w: code-loading environment entries are not bounded and sorted", ErrInvalidRequest)
 	}
-	for i, name := range names {
-		if !isCodeLoadingEnvironmentName(name) || (i > 0 && names[i-1] == name) {
-			return fmt.Errorf("%w: invalid code-loading environment name", ErrInvalidRequest)
+	totalBytes := 0
+	previousName := ""
+	for _, entry := range entries {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || !isCodeLoadingEnvironmentName(name) || name == previousName {
+			return fmt.Errorf("%w: invalid code-loading environment entry", ErrInvalidRequest)
 		}
+		totalBytes += len(entry)
+		if totalBytes > maxCodeLoadingEnvironmentBytes {
+			return fmt.Errorf("%w: code-loading environment is too large to display; remove or shorten these variables", ErrInvalidRequest)
+		}
+		previousName = name
 	}
 	return nil
 }

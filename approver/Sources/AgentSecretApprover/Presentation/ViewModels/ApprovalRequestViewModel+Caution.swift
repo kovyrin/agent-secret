@@ -58,9 +58,10 @@ extension ApprovalRequestViewModel {
             messages.append(mutableExecutableWarningText)
         }
         if !codeLoadingEnvironment.isEmpty {
-            let names = codeLoadingEnvironment.map(sanitizedDisplayText).joined(separator: ", ")
+            let entries = codeLoadingEnvironment.map(sanitizedDisplayText).joined(separator: "\n")
             messages.append(
-                "Inherited environment may load code through: \(names). Review these variables before approving."
+                "Inherited environment can load code outside the shown command:\n\(entries)\n" +
+                    "Only approve if you expect these exact values."
             )
         }
         if let overrideWarning {

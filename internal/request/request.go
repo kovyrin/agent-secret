@@ -144,7 +144,7 @@ func (r ExecRequest) ValidateForDaemon() error {
 	if err := validateEnvironmentFingerprint(r.EnvironmentFingerprint); err != nil {
 		return err
 	}
-	if err := validateCodeLoadingEnvironmentNames(r.CodeLoadingEnvironment); err != nil {
+	if err := validateCodeLoadingEnvironmentEntries(r.CodeLoadingEnvironment); err != nil {
 		return err
 	}
 	if err := validateDaemonPreparedPath("cwd", r.CWD, false); err != nil {
@@ -261,7 +261,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	if err := validateEnvironmentFingerprint(opts.EnvironmentFingerprint); err != nil {
 		return ExecRequest{}, err
 	}
-	if err := validateCodeLoadingEnvironmentNames(opts.CodeLoadingEnvironment); err != nil {
+	if err := validateCodeLoadingEnvironmentEntries(opts.CodeLoadingEnvironment); err != nil {
 		return ExecRequest{}, err
 	}
 	secrets, err := ParseSecrets(opts.Secrets)

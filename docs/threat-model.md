@@ -105,9 +105,9 @@ Agent Secret must meet these goals:
 - Approval is bound to the displayed reason, command argv, resolved executable,
   executable identity, cwd, secret references, account scope, TTL, and override
   behavior.
-- Approval warnings show inherited environment variable names known to load
-  code. Their values remain out of the prompt and are bound to reuse by the
-  environment fingerprint.
+- Approval warnings show exact inherited environment values known to load
+  code. Requests with more code-loading text than the prompt can display are
+  rejected. The environment fingerprint also binds those values to reuse.
 - Reusable approvals expire at their TTL, consume uses correctly, and clear
   cached raw values when exhausted, expired, or rolled back.
 - Bounded session tokens are returned only at `session create` time, are not

@@ -67,7 +67,7 @@ func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 		},
 		OverrideEnv:            true,
 		OverriddenAliases:      []string{"TOKEN"},
-		CodeLoadingEnvironment: []string{"NODE_OPTIONS"},
+		CodeLoadingEnvironment: []string{"NODE_OPTIONS=--require /tmp/example.js"},
 	}
 
 	payload := NewExecPayload(protocol.Correlation{RequestID: "req_1", Nonce: "nonce_1"}, req)
@@ -84,8 +84,8 @@ func TestNewExecPayloadCopiesProtocolFields(t *testing.T) {
 	if !slices.Equal(payload.OverriddenAliases, []string{"TOKEN"}) {
 		t.Fatalf("overridden aliases = %q, want cloned aliases", payload.OverriddenAliases)
 	}
-	if !slices.Equal(payload.CodeLoadingEnvironment, []string{"NODE_OPTIONS"}) {
-		t.Fatalf("code-loading environment = %v, want cloned name", payload.CodeLoadingEnvironment)
+	if !slices.Equal(payload.CodeLoadingEnvironment, []string{"NODE_OPTIONS=--require /tmp/example.js"}) {
+		t.Fatalf("code-loading environment = %v, want cloned entry", payload.CodeLoadingEnvironment)
 	}
 	if payload.ReusableUses != request.DefaultReusableUses {
 		t.Fatalf("reusable uses = %d, want default %d", payload.ReusableUses, request.DefaultReusableUses)

@@ -50,8 +50,8 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
 		t.Fatalf("client request times = received %s expires %s, want daemon-owned zero values", req.ReceivedAt, req.ExpiresAt)
 	}
-	if !slices.Contains(req.CodeLoadingEnvironment, "NODE_OPTIONS") {
-		t.Fatalf("code-loading environment = %v, want NODE_OPTIONS", req.CodeLoadingEnvironment)
+	if !slices.Contains(req.CodeLoadingEnvironment, "NODE_OPTIONS=--require /tmp/example.js") {
+		t.Fatalf("code-loading environment = %v, want displayed NODE_OPTIONS value", req.CodeLoadingEnvironment)
 	}
 }
 
