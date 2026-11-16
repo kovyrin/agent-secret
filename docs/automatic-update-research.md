@@ -260,6 +260,32 @@ Recover by publishing a higher-version corrective release. Signed metadata is
 not a complete TUF-style defense against withholding/replaying older valid
 feeds; do not claim otherwise.
 
+## Default checks and registration migration
+
+The `0.1.1` change makes an absent preference request automatic checks.
+An explicit false value still disables them. Registering the login item is
+also necessary: the `0.1.0` installation can have no saved preference and no
+registered updater.
+
+Apple's [SMAppService documentation][smappservice] says registering a login
+item launches it immediately and at subsequent logins. Its
+[status documentation](https://developer.apple.com/documentation/servicemanagement/smappservice/status-swift.enum)
+distinguishes an unregistered item from `requiresApproval`. Ordinary bootstrap
+must leave `requiresApproval` alone. Registration failure must preserve the
+requested preference so a later launch can retry.
+
+The Homebrew source inspected in the validation VM runs the installed cask's
+uninstall callbacks before the new cask's install callbacks. Its first
+callback can therefore own the shared transaction's exit handler. The new
+postflight must request activation through that existing transaction, after
+link repair succeeds. Activation must run after the directory lease closes.
+The shell installer's successful and rollback paths need the same ordering.
+
+Sparkle's [configuration documentation][settings] separates automatic checks
+from automatic installation. Set `SUEnableAutomaticChecks` to true while
+keeping `SUAllowsAutomaticUpdates` and `SUAutomaticallyUpdate` false.
+The native consent and installation barrier still govern every installation.
+
 ## Homebrew compatibility and remaining proof
 
 Homebrew's [cask cookbook][cask-cookbook] requires `auto_updates true` for an

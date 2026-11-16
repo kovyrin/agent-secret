@@ -137,6 +137,9 @@ cask "agent-secret" do
       unless system(cli, "__agent-secret-cask-postflight", 3 => transaction.fetch(:lease))
         raise "Could not install the Agent Secret CLI link."
       end
+      # The installed old cask may own at_exit. Activate through its shared
+      # transaction only after it removes the marker and releases the lease.
+      transaction[:restore_updater] = true
     else
       system_command cli, args: ["install-cli", "--force"]
     end

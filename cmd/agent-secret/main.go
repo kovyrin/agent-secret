@@ -56,7 +56,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	app := cli.NewApp(newDaemonManager, stdout, stderr)
+	app := cli.NewApp(func() (control.Manager, error) {
+		if executable, err := os.Executable(); err == nil {
+			if err := bootstrapUpdater(context.Background(), executable); err != nil {
+				writeErrorf(stderr, "agent-secret: could not start background update checks; open Agent Secret to retry: %v\n", err)
+			}
+		}
+		return newDaemonManager()
+	}, stdout, stderr)
 	app.DoctorApproverCheck = checkApproverHealth
 	return app.Run(context.Background(), args)
 }
