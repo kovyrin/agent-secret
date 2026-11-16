@@ -135,6 +135,35 @@ commands and close sessions in every account using that app before upgrading.
   of both app bundles and DMGs. The VM accepted the quarantined baseline,
   started a broker from the shared app, and showed build `1.0.35` from the
   signed localhost feed while build `1.0.34` was installed.
+- The refreshed CI pilot at `68ca7a0` passed the signed feed, exact archive
+  checksum, Developer ID, and stapled notarization checks. Its quarantined
+  baseline was installed through a VM-only Homebrew cask using the shipping
+  lifecycle hooks. Both normal CLI symlinks reported build `1.0.34`.
+  After the user clicked Install Update, Sparkle installed `1.0.35`.
+  The installed code directory hash matched the verified candidate DMG,
+  Gatekeeper accepted the app, and the transaction marker cleared.
+  The app and updater health checks passed, the CLI started the new broker,
+  and both CLI links and the skill link reached the installed bundle.
+- On that refreshed candidate, enabling background checks registered the
+  login item. The outer app and nested updater both reported `enabled`.
+  Homebrew then reinstalled the original baseline over the self-updated
+  bundle and restored registration, using its existing cask receipt.
+  Uninstall removed the app, receipt, marker, and owned CLI and skill links.
+  The verified candidate was installed again through the VM-only cask.
+  These pilot builds share display version `0.0.35` and differ in bundle
+  version. The earlier public `0.0.13` to `0.0.34` drill covered a cask
+  version upgrade.
+- Before and after the refreshed update, diagnostics passed the audit log,
+  command link, local service, socket directory, and native approver checks.
+  The 1Password desktop integration check timed out with
+  `context deadline exceeded` on both builds. Its outstanding diagnostic
+  kept the update gate busy until the test broker was stopped. After the
+  maintainer signed in to 1Password in the VM, a fresh diagnostic run passed
+  all six checks, including desktop integration. An end-to-end
+  secret-delivery smoke test remains unverified.
+  At cleanup, the candidate and a working broker remained in the VM.
+  Background checks for the disposable localhost feed were disabled and
+  its server stopped.
 - On that notarized baseline, a broker started over SSH as the standard
   user (UID 502) prevented the installer account (UID 501) from taking the
   writer lease. After the broker stopped, UID 501 acquired the lease and
@@ -176,16 +205,12 @@ commands and close sessions in every account using that app before upgrading.
   stale ETag was refused. The fixture was removed and the public appcast still
   returned HTTP 404. See [production update setup](production-update-setup.md).
 
-## Checks still due before release
+## Remaining release validation
 
-- **Notarized lifecycle.** Run a quarantined, stapled candidate through
-  Gatekeeper and install with explicit approval. Verify the CLI, skill,
-  helper, and background registration. The Developer ID pilot covered
-  replacement.
-- **Homebrew lifecycle.** Install a notarized updater-enabled cask, run its
-  in-app update, then verify upgrade, reinstall, and uninstall against its
-  original receipt. The VM drill staged the signed candidate over the real
-  `0.0.34` receipt.
+The ordinary single-user notarized update and Homebrew lifecycle passed.
+The following checks remain for release validation. They were kept outside
+the final ordinary update drill.
+
 - **Install and reminder behavior.** Exercise Later, Skip Version, a real
   busy approval or session, a deferred scheduled reminder, and a read-only
   location in the native UI. Reminder deferral and broker admission have
@@ -195,7 +220,8 @@ commands and close sessions in every account using that app before upgrading.
   Sparkle run after the guard arms, then verify restart and recovery. The
   existing reboot drill used a signed probe.
 - **Test-only provider request.** Verify one supervised command can receive
-  a test-only secret after updating, without logging its value.
+  a test-only secret after updating, without logging its value. The
+  post-update 1Password integration diagnostic passed.
 - **First stable promotion.** Verify the signing key's recovery backup, then
   confirm the cask and hosted appcast agree after the maintainer approves and
   publishes the first updater-enabled release.
