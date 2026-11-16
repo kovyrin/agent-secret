@@ -32,6 +32,11 @@ file before a release is published.
   same process, and have that program served as the original client. The check
   also covers approval and approver-decision messages on the same socket.
 
+### Internal
+
+- Derive the latest release version consistently in the release signing smoke
+  test so a `Pending` changelog section does not break the check.
+
 ## [0.1.0] - 2026-11-16
 
 ### Added

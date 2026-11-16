@@ -7,10 +7,10 @@ check_script="$project_root/scripts/release/check-release-signing-env.sh"
 build_release="$project_root/scripts/release/build-release.sh"
 import_certificate="$project_root/scripts/release/import-codesign-certificate.sh"
 test_path="${PATH:-/usr/bin:/bin}"
-latest_version="$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' "$project_root/CHANGELOG.md" | head -n 1)"
-if [[ "$latest_version" == "" ]]; then
-  latest_version="$(sed -n 's/^## \([^ ]*\) .*/\1/p' "$project_root/CHANGELOG.md" | head -n 1)"
-fi
+# shellcheck source=../lib/bundle-metadata.sh
+# shellcheck disable=SC1091
+source "$project_root/scripts/lib/bundle-metadata.sh"
+latest_version="$(agent_secret_latest_changelog_version "$project_root/CHANGELOG.md")"
 if [[ "$latest_version" == "" ]]; then
   echo "test-release-signing-env: could not derive latest changelog version" >&2
   exit 1
