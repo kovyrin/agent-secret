@@ -996,9 +996,11 @@ func TestManagerInspectConnectedHelperClassifiesLegacyHello(t *testing.T) {
 		socketPath: path,
 		DaemonPath: executable,
 	}
-	client, err := manager.connectTrustedHelper(context.Background())
+	client, err := manager.connectForInspection(
+		context.Background(), peertrust.NewDaemonProductValidator([]string{executable}),
+	)
 	if err != nil {
-		t.Fatalf("connectTrustedHelper returned error: %v", err)
+		t.Fatalf("connectForInspection returned error: %v", err)
 	}
 	defer func() { _ = client.Close() }()
 
@@ -1705,6 +1707,17 @@ func serveFakeStatusError(conn *net.UnixConn, code protocol.ErrorCode) {
 	if err := decoder.Decode(&env); err != nil {
 		return
 	}
+	if env.Type == protocol.TypeAuthHello {
+		port, err := messageauth.NewPort()
+		if err != nil {
+			return
+		}
+		defer port.Close()
+		env, err = serveFakeAuthenticatedRequest(decoder, encoder, port, env)
+		if err != nil {
+			return
+		}
+	}
 	resp, err := protocol.NewEnvelope(protocol.TypeError, env.Correlation(), protocol.ErrorPayload{
 		Code:    code,
 		Message: "daemon stopped",
@@ -1715,6 +1728,27 @@ func serveFakeStatusError(conn *net.UnixConn, code protocol.ErrorCode) {
 	if err := encoder.Encode(resp); err != nil {
 		return
 	}
+}
+
+func serveFakeAuthenticatedRequest(
+	decoder *json.Decoder,
+	encoder *json.Encoder,
+	port *messageauth.Port,
+	hello protocol.Envelope,
+) (protocol.Envelope, error) {
+	if !writeFakeHelperResponse(encoder, hello.Correlation(), protocol.AuthHelloPayload{Port: port.Name()}) {
+		return protocol.Envelope{}, errors.New("send fake authentication hello")
+	}
+	var env protocol.Envelope
+	if err := decoder.Decode(&env); err != nil {
+		return protocol.Envelope{}, err
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		return protocol.Envelope{}, err
+	}
+	_, err = port.Receive(frame, 5*time.Second)
+	return env, err
 }
 
 func serveFakeExecPayload(conn *net.UnixConn) {

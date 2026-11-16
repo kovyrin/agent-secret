@@ -7,8 +7,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/messageauth"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -17,6 +20,9 @@ import (
 )
 
 func TestConnectWithPeerValidatorAcceptsTrustedDaemonPeer(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("request attestation requires macOS")
+	}
 	t.Parallel()
 
 	path, stop := startStatusDaemon(t)
@@ -137,8 +143,33 @@ func serveStatusPayload(conn *net.UnixConn) error {
 	if err := decoder.Decode(&env); err != nil {
 		return err
 	}
+	if env.Type != protocol.TypeAuthHello {
+		return errors.New("expected auth.hello request")
+	}
+	port, err := messageauth.NewPort()
+	if err != nil {
+		return err
+	}
+	defer port.Close()
+	response, err := protocol.NewEnvelope(protocol.TypeOK, env.Correlation(), protocol.AuthHelloPayload{Port: port.Name()})
+	if err != nil {
+		return err
+	}
+	if err := encoder.Encode(response); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&env); err != nil {
+		return err
+	}
 	if env.Type != protocol.TypeDaemonStatus {
 		return errors.New("expected daemon.status request")
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	if _, err := port.Receive(frame, 5*time.Second); err != nil {
+		return err
 	}
 	resp, err := protocol.NewEnvelope(protocol.TypeOK, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
 	if err != nil {

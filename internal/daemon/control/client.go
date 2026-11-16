@@ -66,6 +66,11 @@ func ConnectWithPeerValidator(ctx context.Context, path string, validator peertr
 }
 
 func (c *Client) beginMessageAuth(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("daemon authentication canceled: %w", err)
+	}
+	stopCancelWatch := c.closeOnContextCancel(ctx)
+	defer stopCancelWatch()
 	deadline := time.Now().Add(5 * time.Second)
 	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
 		deadline = ctxDeadline
@@ -83,6 +88,9 @@ func (c *Client) beginMessageAuth(ctx context.Context) error {
 	}
 	response, err := c.readEnvelope()
 	if err != nil {
+		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
+			return fmt.Errorf("daemon authentication canceled: %w", ctxErr)
+		}
 		return fmt.Errorf("read daemon authentication hello: %w", err)
 	}
 	if err := protocol.ValidateEnvelope(response); err != nil {
