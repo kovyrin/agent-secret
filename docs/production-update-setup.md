@@ -1,8 +1,22 @@
 # Production update setup
 
-This records the provisioning state observed on 2026-11-16. Recheck the live
-configuration before release. No release or stable appcast has been published
-as part of this setup.
+The first production release, `v0.1.0`, was published on 2026-11-16.
+Recheck the live configuration before future releases.
+
+## Production activation
+
+- [Release v0.1.0](https://github.com/kovyrin/agent-secret/releases/tag/v0.1.0)
+  contains the signed and notarized app, build `1.1.0`, and signed appcast.
+- The repository variable `AGENT_SECRET_UPDATES_ENABLED` is now `true`.
+- Stable promotion succeeded: the public Homebrew cask points to `0.1.0`,
+  and the hosted appcast matches the verified release asset byte for byte.
+  HTTPS delivery returned `Cache-Control: no-store` and a dynamic cache status.
+- The public Homebrew upgrade was verified in the disposable validation VM.
+  Its installed app uses the production feed and public key below.
+- The temporary feature-branch allowance was removed from the candidate
+  signing environment. Candidate signing now allows only `main`.
+
+The remaining sections record the initial provisioning before activation.
 
 ## GitHub
 
