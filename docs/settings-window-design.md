@@ -46,15 +46,17 @@ Version, installation-approval helper, update notice, and activity are regular
 
 The main window normally uses 500 × 350 pt of content, with native title,
 close, and minimize controls. A notice increases its height to 380 pt so the
-message stays readable. A single column contains the identity header, CLI
-row, Updates section, and bottom Diagnostics action. Two native separators divide
-the header, CLI, and update areas; there is no sidebar or card grid.
+message stays readable. A single column contains the identity header, CLI row,
+Updates section, and named Diagnostics section. Three full-width native
+separators divide these areas; there is no sidebar or card grid.
 
 Content insets are 26 pt horizontally, 22 pt at the top, and 18 pt at the bottom.
 The main stack uses 16 pt gaps. The icon is 44 pt square; its text sits 12 pt away.
 CLI status stays beneath its label, with Install or Repair aligned to the right.
-Update actions remain below the checkbox and approval explanation. Flexible space
-keeps Diagnostics at the bottom, alongside optional progress and activity.
+Check for Updates remains within Updates, below the checkbox and approval
+explanation. Diagnostics follows the third separator, with its heading on the
+left and Run Diagnostics on the right. Optional progress and activity sit between
+the heading and button.
 
 Details use a separate resizable window (initial content 500 × 320 pt; minimum
 window size 420 × 260 pt), with a summary, scrollable output, and trailing Done
@@ -80,10 +82,12 @@ and focus treatment to AppKit.
 - **Updates:** A native automatic-check checkbox, the explanation “You approve
   every installation.”, and Check for Updates. When updates are not configured,
   update controls are disabled and a short notice explains why.
-- **Secondary actions:** Repair remains beside CLI status; Diagnostics stays in
-  the footer. Their output does not become the main window's default content.
+- **Secondary actions:** Repair remains beside CLI status; Run Diagnostics stays
+  in its own named section. Their output does not become the main window's
+  default content.
 - **Activity:** Busy state disables action controls and shows a small spinner
-  (16 pt). Footer activity truncates at the tail; update notices allow two lines.
+  (16 pt). Diagnostics-section activity truncates at the tail; update notices
+  allow two lines.
 - **Details:** Output is read-only, selectable, and vertically scrollable. Done
   is the default Return-key action. These presentation rules do not establish
   whether an installation or diagnostic operation succeeded.

@@ -25,7 +25,8 @@ file before a release is published.
 ### Changed
 
 - Replace the setup alert with a compact native Settings window showing the
-  app version, command-line tool status, and update preferences.
+  app version, command-line tool status, and update preferences, with diagnostics
+  in a separate labeled section.
 - Run diagnostics and installation actions asynchronously with time limits.
   Show their output in selectable, scrollable details.
 

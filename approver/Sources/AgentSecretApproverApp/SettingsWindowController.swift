@@ -35,7 +35,7 @@ final class SettingsWindowController: NSWindowController {
     )
     private let updateNotice = NSTextField(wrappingLabelWithString: "")
     private let check = NSButton(title: "Check for Updates…", target: nil, action: nil)
-    private let diagnostics = NSButton(title: "Diagnostics…", target: nil, action: nil)
+    private let diagnostics = NSButton(title: "Run Diagnostics…", target: nil, action: nil)
     private let activity = NSTextField(labelWithString: "")
     private let progress = NSProgressIndicator()
 
@@ -88,11 +88,12 @@ final class SettingsWindowController: NSWindowController {
         }
         let firstLine = separator()
         let secondLine = separator()
+        let thirdLine = separator()
         let cli = cliRow()
         let updates = updatesSection()
         let footer = footerRow()
         let body = stack(
-            [header(version: version, icon: icon), firstLine, cli, secondLine, updates, NSView(), footer],
+            [header(version: version, icon: icon), firstLine, cli, secondLine, updates, thirdLine, footer],
             spacing: Metric.sectionGap
         )
         body.translatesAutoresizingMaskIntoConstraints = false
@@ -103,7 +104,7 @@ final class SettingsWindowController: NSWindowController {
             body.topAnchor.constraint(equalTo: content.topAnchor, constant: Metric.top),
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -Metric.bottom)
         ])
-        for row in [firstLine, cli, secondLine, updates, footer] {
+        for row in [firstLine, cli, secondLine, updates, thirdLine, footer] {
             row.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
     }
@@ -158,7 +159,11 @@ final class SettingsWindowController: NSWindowController {
         activity.font = .systemFont(ofSize: Metric.captionSize)
         activity.textColor = .secondaryLabelColor
         activity.lineBreakMode = .byTruncatingTail
-        return stack([diagnostics, NSView(), progress, activity], spacing: Metric.footerGap, axis: .horizontal)
+        return stack(
+            [label("Diagnostics", weight: .semibold), NSView(), progress, activity, diagnostics],
+            spacing: Metric.footerGap,
+            axis: .horizontal
+        )
     }
 
     private func connectActions() {
