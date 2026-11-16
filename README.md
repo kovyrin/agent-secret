@@ -291,6 +291,8 @@ precedence, env-file migration, and the full schema.
 - `agent-secret repair`: inspect and repair Agent Secret background helper
   state.
 - `agent-secret daemon status|start|stop`: run low-level daemon diagnostics.
+- `agent-secret update status|check`: inspect the installed build or open the
+  native update window.
 - `agent-secret install-cli`: repair the command symlink for the current user
   and try to refresh the local background helper.
 - `agent-secret skill-install`: repair the bundled coding-agent skill symlink.
@@ -322,7 +324,7 @@ Out of scope:
   app or helper, or a malicious approved child process.
 - Hiding env vars from the operating-system APIs needed to launch the approved
   child process.
-- Cross-platform secret management, background updates, credential helpers,
+- Cross-platform secret management, silent update installation, credential helpers,
   file-descriptor delivery, arbitrary long-lived shells, or raw socket value
   reads.
 
