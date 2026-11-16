@@ -25,15 +25,19 @@ remain available to the appropriate jobs.
 Both production environments contain:
 
 - `AGENT_SECRET_UPDATE_FEED_URL=https://updates.agent-secret.sh/appcast.xml`
-- `AGENT_SECRET_UPDATE_PUBLIC_KEY=nbLYHrJHmHN0mBtkdzBNb0WnsAFfsLkfmTH6wQkMr9E=`
+- `AGENT_SECRET_UPDATE_PUBLIC_KEY=f2Xzw8ZVth+sxNLqmpPXdsN6cWo/l45KLQ29n4DD9qw=`
 
 The release-signing environment contains `AGENT_SECRET_UPDATE_SIGNING_KEY`.
 The pinned Sparkle tool generated this key in macOS Keychain under account
-`com.kovyrin.agent-secret.production-updates`, service
+`com.kovyrin.agent-secret.production-updates.v1`, service
 `https://sparkle-project.org`. Its private seed was transferred directly to
 GitHub through stdin. It was not printed or written to a plaintext file.
-The public key above is safe to commit. A separate protected recovery backup
-has not yet been verified; complete that before enabling production updates.
+The public key above is safe to commit. The maintainer selected a protected
+1Password recovery copy. It is stored as `Agent Secret production update
+signing key` in the personal account's `Private` vault. The backup was read
+back in memory and verified against the public key before configuring GitHub.
+Always select the personal account and vault explicitly when retrieving it.
+This key replaced the initial, unused setup key before the first release.
 
 The promotion environment also has the R2 bucket and endpoint variables and
 the bucket-scoped R2 publishing secrets:

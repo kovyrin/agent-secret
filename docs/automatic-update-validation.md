@@ -244,9 +244,9 @@ the final ordinary update drill.
   pilot archive and verify Sparkle rejects it. Interrupt a separate approved
   Sparkle run after the guard arms, then verify restart and recovery. The
   existing reboot drill used a signed probe.
-- **First stable promotion.** Verify the signing key's recovery backup, then
-  confirm the cask and hosted appcast agree after the maintainer approves and
-  publishes the first updater-enabled release.
+- **First stable promotion.** Confirm the cask and hosted appcast agree after
+  the maintainer approves and publishes the first updater-enabled release.
+  The signing key's recovery backup is verified in the production setup record.
 
 ## Accepted validation gap
 
