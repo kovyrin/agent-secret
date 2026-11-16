@@ -189,6 +189,19 @@ BIN
 esac
 APP
   chmod 755 "$cli"
+  if [ "${AGENT_SECRET_INSTALL_TEST_HAS_UPDATER:-0}" = 1 ]; then
+    app="$mount_dir/Agent Secret.app"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Library/LoginItems/AgentSecretUpdater.app"
+    cat >"$app/Contents/MacOS/Agent Secret" <<'APP'
+#!/bin/sh
+if [ "$1" = --restore-background-updater ]; then
+  parent="${0%/Agent Secret.app/Contents/MacOS/Agent Secret}"
+  /usr/bin/ruby -e 'f = File.open(ARGV.fetch(0)); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 1)' "$parent" || exit 1
+  echo "bootstrapped new updater after lease release" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+fi
+APP
+    chmod 755 "$app/Contents/MacOS/Agent Secret"
+  fi
   exit 0
 fi
 
@@ -590,6 +603,8 @@ test_failed_replacement_restores_original_and_updater() {
 case "$1" in
   --suspend-background-updater) echo enabled ;;
   --restore-background-updater)
+    parent="${0%/Agent Secret.app/Contents/MacOS/Agent Secret}"
+    /usr/bin/ruby -e 'f = File.open(ARGV.fetch(0)); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 1)' "$parent" || exit 1
     echo "restored background updater" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
     ;;
 esac
@@ -601,6 +616,12 @@ APP
   fi
   [[ -f "$app/original" ]] || fail "the original app was not restored"
   assert_log_contains "$tmp_dir/$name/tools.log" "restored background updater"
+}
+
+test_fresh_install_bootstraps_updater_after_lease_release() {
+  local name="default-update-checks"
+  run_installer "$name" AGENT_SECRET_INSTALL_TEST_HAS_UPDATER=1
+  assert_log_contains "$tmp_dir/$name/tools.log" "bootstrapped new updater after lease release"
 }
 
 test_identity_checks_run
@@ -623,5 +644,6 @@ test_install_cli_receives_original_path_before_sanitization
 test_diagnostics_failure_does_not_fail_install
 test_competing_installer_blocks_replacement
 test_failed_replacement_restores_original_and_updater
+test_fresh_install_bootstraps_updater_after_lease_release
 
 echo "test-install: ok"

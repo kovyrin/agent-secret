@@ -67,10 +67,12 @@ curl --fail --silent --show-error --cacert tls/localhost.crt \
    and notarization, then run `agent-secret update status --json`. Record the
    installed build, the CLI and skill symlinks, and the Homebrew receipt if
    applicable.
-2. Open Agent Secret. Enable background checks, confirm the login item in
+2. With no saved preference, confirm background checks start by default.
+   Open Agent Secret and confirm the login item in
    System Settings, and log out and back in. Compare the outer app and
    nested updater's `--background-updater-status` diagnostics. Turn background
-   checks off in System Settings and verify that manual checks still work.
+   checks off in the app, upgrade, and confirm the explicit opt-out stays off.
+   Turn the item off in System Settings and verify that manual checks still work.
 3. Choose Check for Updates. Confirm that Later and Skip Version never
    replace the app. Reopen the UI and click Install Update while a test-only
    approval, provider request, supervised command, or reusable session is

@@ -405,7 +405,7 @@ configure_updates() {
     -c "Add :SUVerifyUpdateBeforeExtraction bool true" \
     -c "Add :SUAllowsAutomaticUpdates bool false" \
     -c "Add :SUAutomaticallyUpdate bool false" \
-    -c "Add :SUEnableAutomaticChecks bool false" \
+    -c "Add :SUEnableAutomaticChecks bool true" \
     -c "Add :SUEnableJavaScript bool false" \
     -c "Add :SUEnableSystemProfiling bool false" \
     "$plist"

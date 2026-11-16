@@ -48,6 +48,7 @@ expect_value SUSignedFeedFailureExpirationInterval 0
 expect_value SUVerifyUpdateBeforeExtraction true
 expect_value SUAllowsAutomaticUpdates false
 expect_value SUAutomaticallyUpdate false
+expect_value SUEnableAutomaticChecks true
 expect_value SUEnableSystemProfiling false
 for helper in Library/LoginItems/AgentSecretUpdater.app Library/Helpers/AgentSecretDaemon.app; do
   plist="$app/Contents/$helper/Contents/Info.plist"

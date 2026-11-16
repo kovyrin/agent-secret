@@ -33,6 +33,7 @@ final class UpdatePreferencesView: NSStackView {
             try UpdaterSettings.setAutomaticChecks(automaticChecks.state == .on)
             refresh()
         } catch {
+            refresh()
             status.stringValue = "Could not change the background item. Try again in System Settings."
         }
     }
@@ -48,8 +49,13 @@ final class UpdatePreferencesView: NSStackView {
 
     private func refresh() {
         automaticChecks.state = UpdaterSettings.checksRequested ? .on : .off
-        if UpdaterSettings.checksRequested, UpdaterSettings.registrationStatus == .requiresApproval {
+        automaticChecks.isEnabled = UpdaterSettings.isConfigured
+        if !UpdaterSettings.isConfigured {
+            status.stringValue = "In-app updates are unavailable for this build."
+        } else if UpdaterSettings.checksRequested, UpdaterSettings.registrationStatus == .requiresApproval {
             status.stringValue = "Allow Agent Secret in System Settings → General → Login Items."
+        } else if UpdaterSettings.checksRequested, UpdaterSettings.registrationStatus != .enabled {
+            status.stringValue = "Background checks could not start. Open Agent Secret again to retry."
         } else {
             status.stringValue = "Agent Secret asks before installing each update."
         }

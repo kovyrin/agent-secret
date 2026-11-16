@@ -19,17 +19,23 @@ private enum AgentSecretApproverMain {
             }
             if arguments == ["--suspend-background-updater"] {
                 let wasEnabled = UpdaterSettings.registrationStatus == .enabled
-                try UpdaterSettings.unregister()
+                if wasEnabled {
+                    try UpdaterSettings.unregister()
+                }
                 print(wasEnabled ? "enabled" : "inactive")
                 exit(0)
             }
             if arguments == ["--restore-background-updater"] {
-                if UpdaterSettings.checksRequested {
-                    try UpdaterSettings.setAutomaticChecks(true)
-                }
+                try UpdaterSettings.bootstrapAutomaticChecks()
                 exit(0)
             }
             guard let socketPath: String = try socketPath(from: arguments) else {
+                do {
+                    try UpdaterSettings.bootstrapAutomaticChecks()
+                } catch {
+                    let message = "Agent Secret: could not start background update checks: \(error)\n"
+                    FileHandle.standardError.write(Data(message.utf8))
+                }
                 runSetupDialog()
                 exit(0)
             }
