@@ -60,10 +60,11 @@ func TestAuthenticatedServerBindsExactFrame(t *testing.T) {
 	if err != nil || response.Type != protocol.TypeOK {
 		t.Fatalf("attested status response: %+v, %v", response, err)
 	}
-	if err := messageauth.Send(auth.Port, []byte(`{"version":1,"type":"daemon.stop"}`)); err != nil {
+	if err := messageauth.Send(auth.Port, frame); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := clientConn.Write(append(frame, '\n')); err != nil {
+	forged := []byte(`{"version":1,"type":"request.exec"}`)
+	if _, err := clientConn.Write(append(forged, '\n')); err != nil {
 		t.Fatal(err)
 	}
 	response, err = protocol.ReadEnvelopeFrame(reader, protocol.DefaultMaxProtocolFrameBytes)
