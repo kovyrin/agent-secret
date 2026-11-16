@@ -29,14 +29,12 @@ private enum AgentSecretApproverMain {
                 try UpdaterSettings.bootstrapAutomaticChecks()
                 exit(0)
             }
+            if arguments == ["--enable-automatic-update-checks"] || arguments == ["--disable-automatic-update-checks"] {
+                try UpdaterSettings.setAutomaticChecks(arguments == ["--enable-automatic-update-checks"])
+                exit(0)
+            }
             guard let socketPath: String = try socketPath(from: arguments) else {
-                do {
-                    try UpdaterSettings.bootstrapAutomaticChecks()
-                } catch {
-                    let message = "Agent Secret: could not start background update checks: \(error)\n"
-                    FileHandle.standardError.write(Data(message.utf8))
-                }
-                runSetupDialog()
+                SettingsApplication.run()
                 exit(0)
             }
             let presenter: ApprovalPresenter = AppKitApprovalPresenter()

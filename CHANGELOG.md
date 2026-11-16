@@ -20,6 +20,22 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.1.3] - Pending
+
+### Changed
+
+- Replace the setup alert with a compact native Settings window showing the
+  app version, command-line tool status, and update preferences.
+- Run diagnostics and installation actions asynchronously with time limits.
+  Show their output in selectable, scrollable details.
+
+### Fixed
+
+- Keep Settings closed during login, service, and restored launches while
+  preserving deliberate opens. Closing Settings leaves the broker and updater
+  running independently.
+- Keep background-update startup failures inline instead of opening an alert.
+
 ## [0.1.2] - 2026-11-16
 
 ### Security
