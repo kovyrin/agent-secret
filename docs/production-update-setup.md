@@ -35,8 +35,8 @@ GitHub through stdin. It was not printed or written to a plaintext file.
 The public key above is safe to commit. A separate protected recovery backup
 has not yet been verified; complete that before enabling production updates.
 
-The promotion environment also has the R2 bucket and endpoint variables. Its
-bucket-scoped R2 publishing secrets still need to be configured:
+The promotion environment also has the R2 bucket and endpoint variables and
+the bucket-scoped R2 publishing secrets:
 
 - `AGENT_SECRET_UPDATE_R2_ACCESS_KEY_ID`
 - `AGENT_SECRET_UPDATE_R2_SECRET_ACCESS_KEY`
@@ -45,23 +45,30 @@ bucket-scoped R2 publishing secrets still need to be configured:
 
 The dedicated `agent-secret-updates` bucket was created in the account that
 owns `agent-secret.sh`, with the default jurisdiction. The custom domain
-`updates.agent-secret.sh` is attached with minimum TLS 1.2. HTTPS resolves
-successfully and the absent `appcast.xml` returns HTTP 404. No appcast has
-been uploaded. Delivery of a test object still needs verification.
+`updates.agent-secret.sh` is attached with minimum TLS 1.2. HTTPS delivery was
+verified, and the absent `appcast.xml` returns HTTP 404. No appcast has been
+uploaded.
 
-The existing project deployment token can manage R2 and the custom domain,
-but requests for account token permission groups and zone cache rules were
-denied. The remaining setup is:
+The maintainer temporarily extended the existing deployment token after its
+initial requests for account token permission groups and zone cache rules
+were denied. Setup then completed:
 
-1. Create an R2 Object Read and Write credential limited to
-   `agent-secret-updates`. Store its access key ID and secret access key in
-   the GitHub promotion environment using the names above.
-2. Add a cache-bypass rule matching only
-   `http.host eq "updates.agent-secret.sh"`. Preserve unrelated zone rules.
-3. Verify HTTPS delivery and conditional object writes with disposable,
-   non-release fixture objects. Remove those objects afterward.
-4. Confirm the public appcast remains absent and promotion remains disabled
-   until the release candidate is approved.
+1. Created the account-owned token `Agent Secret update-feed publisher` with
+   Object Read and Write access limited to `agent-secret-updates`. Its S3
+   credentials were transferred directly into the GitHub promotion
+   environment without printing or writing them to plaintext files.
+2. Created and verified a cache-bypass rule matching only
+   `http.host eq "updates.agent-secret.sh"`, preserving unrelated rules.
+3. Verified exact public HTTPS bytes and `Cache-Control: no-store` using a
+   disposable object. Conditional creation refused to overwrite the object,
+   conditional replacement accepted the current ETag, and a stale ETag was
+   rejected. The updated bytes were immediately visible over HTTPS.
+4. Deleted the fixture and verified HTTP 404 for both its URL and the absent
+   stable appcast. Promotion remains disabled pending candidate approval.
+
+The two temporary setup permissions can now be removed from the original
+deployment token: Account API Tokens Edit and Cache Rules Edit. The promotion
+workflow uses only the new bucket-scoped credential.
 
 Use the [R2 credential instructions](https://developers.cloudflare.com/r2/api/tokens/)
 and [Cache Rules API documentation](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/).

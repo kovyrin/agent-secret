@@ -162,6 +162,10 @@ commands and close sessions in every account using that app before upgrading.
 - Isolated promotion fixtures checked cask-first ordering, retry after a
   write failure, first-object creation, and refusal to overwrite a concurrent
   or newer feed. The fixture adapters exercised no live release or bucket.
+- The hosted R2 endpoint served exact fixture bytes over HTTPS with
+  `Cache-Control: no-store`. Conditional creation and replacement worked, and a
+  stale ETag was refused. The fixture was removed and the public appcast still
+  returned HTTP 404. See [production update setup](production-update-setup.md).
 
 ## Checks still due before release
 
@@ -186,6 +190,6 @@ commands and close sessions in every account using that app before upgrading.
   existing reboot drill used a signed probe.
 - **Test-only provider request.** Verify one supervised command can receive
   a test-only secret after updating, without logging its value.
-- **Hosted feed promotion.** Verify disposable HTTPS and conditional writes
-  once the scoped writer credential and cache bypass are live. See
-  [production update setup](production-update-setup.md).
+- **First stable promotion.** Verify the signing key's recovery backup, then
+  confirm the cask and hosted appcast agree after the maintainer approves and
+  publishes the first updater-enabled release.
