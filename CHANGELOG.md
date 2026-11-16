@@ -20,6 +20,14 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.1.2] - Pending
+
+### Internal
+
+- Limit update-feed promotion to the pinned Go toolchain and authenticate tool
+  downloads, avoiding unnecessary development-tool downloads and GitHub rate
+  limits during release publication.
+
 ## [0.1.1] - 2026-11-16
 
 ### Fixed
