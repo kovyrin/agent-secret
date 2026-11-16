@@ -14,7 +14,8 @@ fi
 : "${AGENT_SECRET_CODESIGN_IDENTITY:?select an existing Developer ID Application identity}"
 : "${AGENT_SECRET_TRUSTED_MISE:?set the absolute path to mise}"
 umask 077
-mkdir "$1"
+mkdir -p -- "$(dirname -- "$1")"
+mkdir -- "$1"
 output="$(cd -- "$1" && pwd)"
 mkdir "$output/feed" "$output/client"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-update-smoke.XXXXXXXX")"
