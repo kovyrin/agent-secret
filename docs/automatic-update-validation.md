@@ -205,6 +205,31 @@ commands and close sessions in every account using that app before upgrading.
   stale ETag was refused. The fixture was removed and the public appcast still
   returned HTTP 404. See [production update setup](production-update-setup.md).
 
+## 0.1.0 release preparation
+
+The release preparation checks below passed on 2026-11-16. The changelog
+section is dated for `0.1.0`, whose bundle build is `1.1.0`.
+
+- `mise run lint` and `mise run build` passed. The release-note extractor
+  accepted the dated `v0.1.0` section, and the release documentation smoke and
+  Markdown lint passed after the documentation audit.
+- The mixed-install helper recovery smoke passed with
+  `AGENT_SECRET_RELEASE_SMOKE_REQUIRE_INSTALLED_CLI=1`. It used the existing
+  signed release helper and a temporary ad-hoc CLI. No host app was installed.
+- The README command list now includes the updater, and its security scope
+  excludes silent installation. The bundled skill already documents update
+  status/check, approval for installation, and finishing work and closing
+  owned sessions before updating. No additional skill change is needed.
+- The full [bounded-session E2E](session-e2e-validation.md) passed in the VM
+  after the notarized update, using the documented test-only 1Password items.
+  This ran on `0.0.35`, build `1.0.35`, revision `68ca7a09a553`. It verified
+  mixed config and CLI secret inputs, same-tree subset reuse, ancestor-name
+  binding, read counts, explicit destruction, exhaustion, and audit metadata.
+  It reached `detached process-tree replay rejected before child spawn`.
+- A separate `agent-secret exec` delivered one test-only reference to a child
+  that checked only whether its environment variable was nonempty. Both the
+  session E2E and this command completed without printing secret values.
+
 ## Remaining release validation
 
 The ordinary single-user notarized update and Homebrew lifecycle passed.
@@ -219,9 +244,6 @@ the final ordinary update drill.
   pilot archive and verify Sparkle rejects it. Interrupt a separate approved
   Sparkle run after the guard arms, then verify restart and recovery. The
   existing reboot drill used a signed probe.
-- **Test-only provider request.** Verify one supervised command can receive
-  a test-only secret after updating, without logging its value. The
-  post-update 1Password integration diagnostic passed.
 - **First stable promotion.** Verify the signing key's recovery backup, then
   confirm the cask and hosted appcast agree after the maintainer approves and
   publishes the first updater-enabled release.
