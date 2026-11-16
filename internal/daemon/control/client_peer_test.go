@@ -92,6 +92,70 @@ func TestBeginMessageAuthHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestBeginMessageAuthRejectsDaemonErrorAndUnexpectedReply(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		response   protocol.Envelope
+		wantCode   protocol.ErrorCode
+		wantPhrase string
+	}{
+		{
+			name: "daemon rejects identity",
+			response: protocol.Envelope{
+				Version: protocol.ProtocolVersion,
+				Type:    protocol.TypeError,
+				Payload: json.RawMessage(`{"code":"peer_rejected","message":"sender mismatch"}`),
+			},
+			wantCode: protocol.ErrorCodePeerRejected,
+		},
+		{
+			name: "unexpected reply",
+			response: protocol.Envelope{
+				Version: protocol.ProtocolVersion,
+				Type:    protocol.TypeDaemonStatus,
+			},
+			wantPhrase: "rejected",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serverConn, clientConn := unixsocket.Pair(t)
+			defer func() { _ = serverConn.Close() }()
+			defer func() { _ = clientConn.Close() }()
+			if err := json.NewEncoder(serverConn).Encode(tc.response); err != nil {
+				t.Fatal(err)
+			}
+			err := NewClient(clientConn).beginMessageAuth(context.Background())
+			if tc.wantCode != "" && !IsProtocolError(err, tc.wantCode) {
+				t.Fatalf("daemon rejection = %v, want code %s", err, tc.wantCode)
+			}
+			if tc.wantPhrase != "" && (err == nil || !strings.Contains(err.Error(), tc.wantPhrase)) {
+				t.Fatalf("unexpected reply error = %v, want %q", err, tc.wantPhrase)
+			}
+		})
+	}
+}
+
+func TestClientDoesNotWriteRequestWhenAttestationFails(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("request attestation requires macOS")
+	}
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+	client := NewClient(clientConn)
+	client.authPort = "com.kovyrin.agentsecret.auth.nonexistent"
+	if _, err := client.Status(context.Background()); err == nil || !strings.Contains(err.Error(), "send request attestation") {
+		t.Fatalf("Status with missing attestation port = %v", err)
+	}
+	if err := serverConn.SetReadDeadline(time.Now().Add(10 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	var byteBuffer [1]byte
+	if _, err := serverConn.Read(byteBuffer[:]); err == nil {
+		t.Fatal("request was written without an attestation")
+	}
+}
+
 func TestValidateDaemonPeerAllowsNilValidator(t *testing.T) {
 	t.Parallel()
 
