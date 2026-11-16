@@ -20,7 +20,7 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
-## [0.1.1] - Pending
+## [0.1.2] - Pending
 
 ### Security
 
@@ -40,7 +40,24 @@ file before a release is published.
   test so a `Pending` changelog section does not break the check.
 - Run the opt-in macOS socket identity regression explicitly in CI.
 - Keep updater quiescence and CLI repair working when replacing a running
-  0.1.0 daemon with the authenticated 0.1.1 protocol.
+  older daemon with the authenticated 0.1.2 protocol.
+- Limit update-feed promotion to the pinned Go toolchain and authenticate tool
+  downloads, avoiding unnecessary development-tool downloads and GitHub rate
+  limits during release publication.
+
+## [0.1.1] - 2026-11-16
+
+### Fixed
+
+- Enable automatic update checks by default when no preference has been saved.
+  Existing opt-outs and macOS background-item approval remain respected.
+- Start background checks after installation, upgrade, or first use. Failed
+  registration preserves the preference so a later launch can retry.
+- Restore update checks after releasing the shell installer's installation
+  lock, including when a failed replacement restores the previous app.
+
+Every update installation still requires approval. To acquire this fix from
+`0.1.0`, upgrade with Homebrew or use **Check for Updates** once.
 
 ## [0.1.0] - 2026-11-16
 

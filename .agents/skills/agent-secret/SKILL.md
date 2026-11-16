@@ -55,8 +55,11 @@ agent-secret doctor
 ```
 
 Use `agent-secret update status --json` to inspect the installed app build.
-`agent-secret update check` opens the macOS update window. The user approves
-installation there. If an update is waiting, let the current work finish and
+`agent-secret update check` opens the macOS update window. Background checks
+are on by default. The user can turn them off with **Check for updates
+automatically**; existing opt-outs and macOS Login Items choices are preserved.
+The user approves every installation. If an update is waiting, let the current
+work finish and
 close any sessions you own when their work is complete.
 
 Run a single-secret command:

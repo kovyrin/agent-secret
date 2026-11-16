@@ -8,6 +8,7 @@ import Sparkle
 @MainActor
 final class AgentSecretUpdaterMain: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private static let log = Logger(subsystem: "com.kovyrin.agent-secret", category: "updater")
+    private static let hostCommandTimeout: TimeInterval = 5
     private let updateReminders = GentleUpdateDelegate()
     private var updater: SPUUpdater?
     private var feedURL: String?
@@ -63,20 +64,32 @@ final class AgentSecretUpdaterMain: NSObject, NSApplicationDelegate, SPUUpdaterD
     /// SMAppService resolves the login item in the outer app's context.
     /// Running the lookup in the nested helper itself reports .notFound.
     private static func hostRegistrationStatus() -> Int? {
+        guard let text = runHostCommand("--background-updater-status") else {
+            return nil
+        }
+        return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func runHostCommand(_ argument: String) -> String? {
         guard let executable = hostBundle()?.executableURL else {
             return nil
         }
         let status = Process()
         let output = Pipe()
         status.executableURL = executable
-        status.arguments = ["--background-updater-status"]
+        status.arguments = [argument]
         status.environment = [:]
         status.standardOutput = output
         status.standardError = FileHandle.nullDevice
+        let finished = DispatchSemaphore(value: 0)
+        status.terminationHandler = { _ in finished.signal() }
         do {
             try status.run()
-            status.waitUntilExit()
         } catch {
+            return nil
+        }
+        guard finished.wait(timeout: .now() + hostCommandTimeout) == .success else {
+            status.terminate()
             return nil
         }
         guard status.terminationStatus == 0 else {
@@ -86,7 +99,7 @@ final class AgentSecretUpdaterMain: NSObject, NSApplicationDelegate, SPUUpdaterD
         guard let text = String(bytes: data, encoding: .utf8) else {
             return nil
         }
-        return Int(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        return text
     }
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -117,16 +130,16 @@ final class AgentSecretUpdaterMain: NSObject, NSApplicationDelegate, SPUUpdaterD
             NSApp.terminate(nil)
             return
         }
+        if Self.runHostCommand("--restore-background-updater") == nil {
+            Self.log.info("Could not start background update checks; keeping the saved preference")
+        }
         let driver = GatedUpdateDriver(hostBundle: host, delegate: updateReminders)
         driver.authorizeInstallation = { [weak self] item in
             await self?.authorizeInstallation(item, hostURL: hostURL, teamID: team) ?? false
         }
         driver.abandonDownload = { [weak barrier] in barrier?.cancelBeforeExtraction() }
         let updater = SPUUpdater(hostBundle: host, applicationBundle: .main, userDriver: driver, delegate: self)
-        updateReminders.presentDeferredReminder = { [weak updater] in updater?.checkForUpdates() }
-        updater.automaticallyDownloadsUpdates = false
-        updater.sendsSystemProfile = false
-        updater.automaticallyChecksForUpdates = automaticChecksEnabled
+        configureUpdater(updater)
         do {
             try updater.start()
             self.updater = updater
@@ -145,6 +158,13 @@ final class AgentSecretUpdaterMain: NSObject, NSApplicationDelegate, SPUUpdaterD
         manualCheck = true
         updater?.checkForUpdates()
         return false
+    }
+
+    private func configureUpdater(_ updater: SPUUpdater) {
+        updateReminders.presentDeferredReminder = { [weak updater] in updater?.checkForUpdates() }
+        updater.automaticallyDownloadsUpdates = false
+        updater.sendsSystemProfile = false
+        updater.automaticallyChecksForUpdates = automaticChecksEnabled
     }
 
     func feedURLString(for _: SPUUpdater) -> String? {

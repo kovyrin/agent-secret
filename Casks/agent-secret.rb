@@ -3,8 +3,8 @@
 require "tempfile"
 
 cask "agent-secret" do
-  version "0.1.0"
-  sha256 "fc4de36ae6b6e38a108f8dd5f01d7fdd87af86bc86041fce35fd9a40d9ce949f"
+  version "0.1.1"
+  sha256 "0d5f5d48b82092c1a9742b6909d9189e25fb55a56d1eb7768b78e9e82205f34a"
 
   url "https://github.com/kovyrin/agent-secret/releases/download/v#{version}/Agent-Secret-v#{version}-macos-arm64.dmg"
   name "Agent Secret"
@@ -137,6 +137,9 @@ cask "agent-secret" do
       unless system(cli, "__agent-secret-cask-postflight", 3 => transaction.fetch(:lease))
         raise "Could not install the Agent Secret CLI link."
       end
+      # The installed old cask may own at_exit. Activate through its shared
+      # transaction only after it removes the marker and releases the lease.
+      transaction[:restore_updater] = true
     else
       system_command cli, args: ["install-cli", "--force"]
     end

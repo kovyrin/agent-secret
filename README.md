@@ -48,8 +48,10 @@ bundled Codex skill.
 ### App updates
 
 Open Agent Secret and choose **Check for Updates**. You can also run
-`agent-secret update check`. Turn on **Check for updates automatically** to get
-background checks. Agent Secret asks you before each installation and waits
+`agent-secret update check`. Background checks are on by default. To turn them
+off, clear **Check for updates automatically**. Existing opt-outs and macOS
+Login Items choices are preserved. Agent Secret asks before each installation
+and waits
 for pending approvals, running commands, and live sessions to finish.
 
 `agent-secret update status` reports the actual installed app build. Homebrew
@@ -58,6 +60,8 @@ update. Use `brew reinstall --cask agent-secret` for an explicit reinstall.
 Upgrade once with your usual installation method to bring an older release
 onto the in-app update path. Close any live sessions and finish commands in
 every account using the app before this first upgrade or a manual replacement.
+If you installed `0.1.0`, upgrade with Homebrew or check manually once to get
+the default-on behavior. A previously saved opt-out stays off.
 
 ### Existing shell installations
 

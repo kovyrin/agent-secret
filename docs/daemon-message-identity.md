@@ -1,6 +1,6 @@
 # Daemon request identity research
 
-Status: implementation research for the 0.1.1 security fix.
+Status: implementation research for the 0.1.2 security fix.
 
 The Unix stream used by Agent Secret does not attach a sender identity to each
 JSON frame. XNU's `LOCAL_PEERPID` reflects the socket's last owner, and

@@ -292,6 +292,7 @@ cleanup() {
     mv "$backup_app" "$target_app" ||
       echo "agent-secret install: restore the previous app from $backup_app" >&2
   fi
+  exec 9<&-
   restore_background_updater
   rm -rf "$tmp_dir"
 }
@@ -535,8 +536,9 @@ if [ -n "$backup_app" ]; then
   rm -rf "$backup_app"
   backup_app=
 fi
-restore_background_updater
+restore_updater=enabled
 exec 9<&-
+restore_background_updater
 
 echo "Installing command symlink into $bin_dir"
 PATH="$caller_path" "$target_app/Contents/Resources/bin/agent-secret" install-cli --bin-dir "$bin_dir"
