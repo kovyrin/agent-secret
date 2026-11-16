@@ -77,9 +77,7 @@ curl --fail --silent --show-error --cacert tls/localhost.crt \
    active. Cancel once while waiting and confirm that the old build remains.
    Repeat and let the protected work finish. Confirm the candidate is
    installed and that `agent-secret daemon start` starts the new broker.
-4. Repeat with an active broker in a second console account and a second
-   account starting fresh work after the installer acquires the lock. Also
-   attempt Homebrew upgrade, reinstall, and uninstall during the update.
+4. Attempt Homebrew upgrade, reinstall, and uninstall during the update.
    Start work again after installation. Verify the symlinks and helper.
 5. Repeat from the old build with a modified appcast, modified embedded
    notes, a feed signed with another test key, and an altered archive.
@@ -133,6 +131,14 @@ commands and close sessions in every account using that app before upgrading.
   `notFound` while the outer app reported `enabled`. The updated helper
   queries the outer app. The VM reported `enabled` before suspension,
   `notRegistered` after suspension, and `enabled` after restoration.
+- The CI pilot at `eb5ad08` passed notarization and Gatekeeper assessment
+  of both app bundles and DMGs. The VM accepted the quarantined baseline,
+  started a broker from the shared app, and showed build `1.0.35` from the
+  signed localhost feed while build `1.0.34` was installed.
+- On that notarized baseline, a broker started over SSH as the standard
+  user (UID 502) prevented the installer account (UID 501) from taking the
+  writer lease. After the broker stopped, UID 501 acquired the lease and
+  both the UID 502 CLI and broker refused to start.
 - A Developer ID probe using the shipping installation barrier armed an
   update to build `1.0.35` and was killed before replacement. The marker
   blocked the old CLI and refused same-boot recovery. After a VM reboot, the
@@ -180,9 +186,6 @@ commands and close sessions in every account using that app before upgrading.
   in-app update, then verify upgrade, reinstall, and uninstall against its
   original receipt. The VM drill staged the signed candidate over the real
   `0.0.34` receipt.
-- **Two console accounts.** Run an active broker in the second account and
-  verify deferral. Then try starting fresh work in that account after the
-  first account holds the writer lease. The disposable VM has one test user.
 - **Install and reminder behavior.** Exercise Later, Skip Version, a real
   busy approval or session, a deferred scheduled reminder, and a read-only
   location in the native UI. Reminder deferral and broker admission have
@@ -196,3 +199,9 @@ commands and close sessions in every account using that app before upgrading.
 - **First stable promotion.** Verify the signing key's recovery backup, then
   confirm the cask and hosted appcast agree after the maintainer approves and
   publishes the first updater-enabled release.
+
+## Accepted validation gap
+
+The maintainer accepted leaving simultaneous console sessions untested. The
+cross-user SSH tests above verified that the same lock excludes work across
+user IDs. The shared installation safeguards apply in both cases.

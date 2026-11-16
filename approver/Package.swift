@@ -48,7 +48,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AgentSecretApproverTests",
-            dependencies: ["AgentSecretApprover"]
+            dependencies: ["AgentSecretApprover", "AgentSecretApproverApp"]
         ),
         .testTarget(
             name: "AgentSecretUpdaterTests",

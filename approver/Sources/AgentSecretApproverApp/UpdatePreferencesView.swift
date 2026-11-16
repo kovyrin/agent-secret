@@ -19,6 +19,7 @@ final class UpdatePreferencesView: NSStackView {
         let check = NSButton(title: "Check for Updates…", target: self, action: #selector(checkForUpdates))
         addArrangedSubview(check)
         refresh()
+        setFrameSize(fittingSize)
     }
 
     @available(*, unavailable)

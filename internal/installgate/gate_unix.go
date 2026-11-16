@@ -41,11 +41,6 @@ func AcquireForExecutable() (*os.File, error) {
 
 //nolint:nilnil // An executable outside an app has no bundle lease.
 func acquireForPath(executable string, buildVersion string) (*os.File, error) {
-	// os.Executable reports a resolved path on macOS. Keep the original path
-	// if the bundle disappears between launch and the first filesystem access.
-	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-		executable = resolved
-	}
 	host := HostBundle(executable)
 	if host == "" {
 		return nil, nil
@@ -63,6 +58,11 @@ func acquireForPath(executable string, buildVersion string) (*os.File, error) {
 }
 
 func HostBundle(executable string) string {
+	// macOS may report the invoked CLI symlink. Keep the original path if
+	// the bundle disappears between process launch and this lookup.
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
 	for dir := filepath.Dir(executable); dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
 		if filepath.Base(dir) == "Agent Secret.app" {
 			return dir

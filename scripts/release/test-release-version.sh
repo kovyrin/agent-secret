@@ -70,9 +70,17 @@ app_short_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionStri
 if [[ "$app_short_version" == v* ]]; then
   fail "app bundle short version kept tag prefix: $app_short_version"
 fi
-release_cli_version="$("$release_app/Contents/Resources/bin/agent-secret" --version)"
+release_cli="$release_app/Contents/Resources/bin/agent-secret"
+release_cli_version="$("$release_cli" --version)"
 if [[ "$release_cli_version" != "agent-secret $short_version ($revision)" ]]; then
   fail "release CLI version = $release_cli_version"
+fi
+mkdir "$tmp_dir/bin"
+ln -s "$release_cli" "$tmp_dir/bin/agent-secret"
+direct_status="$("$release_cli" update status --json)"
+linked_status="$("$tmp_dir/bin/agent-secret" update status --json)"
+if [[ "$linked_status" != "$direct_status" ]]; then
+  fail "the CLI link did not report the installed build's update status"
 fi
 if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$release_app/Contents/Info.plist" >/dev/null 2>&1; then
   fail "ordinary ad-hoc builds must not connect to an update feed"
