@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,34 @@ func TestConnectWithPeerValidatorRejectsUntrustedDaemonBeforeExecPayload(t *test
 	}
 	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
 		t.Fatalf("ConnectWithPeerValidator error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
+	}
+}
+
+func TestBeginMessageAuthRejectsMissingPort(t *testing.T) {
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+	response, err := protocol.NewEnvelope(protocol.TypeOK, protocol.Correlation{}, protocol.AuthHelloPayload{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(serverConn).Encode(response); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewClient(clientConn).beginMessageAuth(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "no port") {
+		t.Fatalf("missing authentication port error = %v", err)
+	}
+}
+
+func TestBeginMessageAuthHonorsCanceledContext(t *testing.T) {
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := NewClient(clientConn).beginMessageAuth(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled authentication error = %v, want context.Canceled", err)
 	}
 }
 
