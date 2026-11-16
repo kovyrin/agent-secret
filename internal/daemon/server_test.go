@@ -141,6 +141,20 @@ func TestServerRejectsPeerThatChangesProcessImageAfterAccept(t *testing.T) {
 	}
 }
 
+func TestServerRejectsPeerWithoutAcceptSnapshot(t *testing.T) {
+	t.Parallel()
+
+	peer := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	server := &Server{validator: staticPeerValidator{info: peer}}
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	if _, err := server.peerInfo(serverConn); !errors.Is(err, peercred.ErrMissingMetadata) {
+		t.Fatalf("peerInfo error = %v, want missing accept snapshot", err)
+	}
+}
+
 func TestServerHelperHello(t *testing.T) {
 	t.Parallel()
 
@@ -851,6 +865,7 @@ func TestServerRejectsExecWhileWaitingForExecPayload(t *testing.T) {
 	accepted := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
 	execChanged := accepted
 	execChanged.PIDVersion++
+	validator := &sequencePeerValidator{infos: []peercred.Info{accepted, accepted, accepted}}
 
 	broker := newTestBroker(t, daemonbroker.Options{
 		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
@@ -859,8 +874,13 @@ func TestServerRejectsExecWhileWaitingForExecPayload(t *testing.T) {
 	})
 	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
 		Broker:          broker,
-		Validator:       &sequencePeerValidator{infos: []peercred.Info{accepted, execChanged}},
+		Validator:       validator,
 		ClientValidator: peertrust.NewExecutableValidator([]string{accepted.ExecutablePath}),
+		beforeExecResponseWrite: func(*net.UnixConn) {
+			validator.mu.Lock()
+			validator.infos = append([]peercred.Info{execChanged}, validator.infos...)
+			validator.mu.Unlock()
+		},
 	})
 	defer stop()
 
@@ -1160,6 +1180,7 @@ func TestServerDaemonStopOverSocketPairAuditsRequester(t *testing.T) {
 	}
 
 	serverConn, clientConn := unixsocket.Pair(t)
+	server.acceptPeer(serverConn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -1213,6 +1234,7 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 	}
 
 	serverConn, clientConn := unixsocket.Pair(t)
+	server.acceptPeer(serverConn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -1267,6 +1289,7 @@ func TestServerOnePasswordStatusAllowsDesktopDefaultAccount(t *testing.T) {
 	}
 
 	serverConn, clientConn := unixsocket.Pair(t)
+	server.acceptPeer(serverConn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -1348,6 +1371,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	}
 
 	serverConn, clientConn := unixsocket.Pair(t)
+	server.acceptPeer(serverConn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -2156,6 +2180,7 @@ func startSocketPairTestServer(t *testing.T, opts daemonbroker.Options) (*contro
 	}
 
 	serverConn, clientConn := unixsocket.Pair(t)
+	server.acceptPeer(serverConn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -2249,6 +2274,7 @@ func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixC
 		t.Fatalf("NewServer returned error: %v", err)
 	}
 	serverConn, clientConn := unixsocket.Pair(t)
+	server.acceptPeer(serverConn)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

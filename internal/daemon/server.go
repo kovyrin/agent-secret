@@ -595,13 +595,6 @@ func (s *Server) handleSessionResolve(
 			delivery.AbortBeforePayload()
 		}
 	}()
-	// Re-check the connection peer immediately before releasing secret values. A
-	// process image change after the request was accepted must not receive the
-	// session payload.
-	if _, err := s.peerInfo(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return ""
-	}
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
@@ -609,6 +602,10 @@ func (s *Server) handleSessionResolve(
 	}
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(ctx); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	if _, err := s.peerInfo(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
@@ -782,13 +779,6 @@ func (s *Server) handleRequestExec(
 		return ""
 	}
 	defer delivery.AbortBeforePayload()
-	// The peer was validated before approval, which can take a long time. If the
-	// process image changed while waiting, the approved environment must not be
-	// written to the connection.
-	if _, err := s.peerInfo(conn); err != nil {
-		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
-		return ""
-	}
 	if s.beforeExecResponseWrite != nil {
 		s.beforeExecResponseWrite(conn)
 	}
@@ -801,6 +791,10 @@ func (s *Server) handleRequestExec(
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(); err != nil {
 		delivery.AbortBeforePayload()
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
+	if _, err := s.peerInfo(conn); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
@@ -895,25 +889,18 @@ func (s *Server) forgetPeer(conn *net.UnixConn) {
 }
 
 func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
+	s.peerMu.Lock()
+	accepted, ok := s.peers[conn]
+	s.peerMu.Unlock()
+	if !ok {
+		return peercred.Info{}, fmt.Errorf("%w: connection peer was not captured at accept", peercred.ErrMissingMetadata)
+	}
+	if accepted.err != nil {
+		return peercred.Info{}, accepted.err
+	}
 	current, err := s.validator.Info(conn)
 	if err != nil {
 		return peercred.Info{}, err
-	}
-
-	s.peerMu.Lock()
-	accepted, ok := s.peers[conn]
-	if !ok {
-		if s.peers == nil {
-			s.peers = make(map[*net.UnixConn]acceptedPeer)
-		}
-		s.peers[conn] = acceptedPeer{info: current}
-		s.peerMu.Unlock()
-		return current, nil
-	}
-	s.peerMu.Unlock()
-
-	if accepted.err != nil {
-		return peercred.Info{}, accepted.err
 	}
 	if err := peercred.ValidateConnectionPeer(current, accepted.info); err != nil {
 		return peercred.Info{}, err

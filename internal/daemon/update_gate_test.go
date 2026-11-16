@@ -45,7 +45,7 @@ func TestUpdateControlIsSeparatedFromTheSecretClientRole(t *testing.T) {
 					Approver: &mockApprover{decision: approval.Decision{Approved: true}},
 					Resolver: &mockResolver{}, Audit: &memoryAudit{},
 				}),
-				Validator:        staticPeerValidator{info: peercred.Info{ExecutablePath: test.peer}},
+				Validator:        staticPeerValidator{info: peerInfoForTest(t, 1234, test.peer)},
 				ClientValidator:  roleValidator(cli),
 				UpdaterValidator: roleValidator(updater),
 			})
@@ -53,6 +53,7 @@ func TestUpdateControlIsSeparatedFromTheSecretClientRole(t *testing.T) {
 				t.Fatal(err)
 			}
 			serverConn, clientConn := unixsocket.Pair(t)
+			server.acceptPeer(serverConn)
 			done := make(chan struct{})
 			go func() {
 				defer close(done)

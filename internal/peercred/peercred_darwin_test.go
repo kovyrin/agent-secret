@@ -40,6 +40,9 @@ func TestInspectDetectsExecOnConnectedSocket(t *testing.T) {
 		runPeerExecWriteHelper(t)
 		return
 	}
+	if os.Getenv("AGENT_SECRET_TEST_SOCKET_CREDENTIALS") != "1" {
+		t.Skip("set AGENT_SECRET_TEST_SOCKET_CREDENTIALS=1 to test live macOS socket credentials")
+	}
 	if testing.Short() {
 		t.Skip("skipping helper process exec test in short mode")
 	}

@@ -24,18 +24,17 @@ file before a release is published.
 
 ### Security
 
-- Bind each daemon socket connection to the process image that opened it. The
-  daemon now rejects later requests if the peer runs a different program with
-  `execve` while keeping the connection, and re-checks the peer immediately
-  before releasing an approved environment or session payload. This closes a
-  gap where a trusted client could connect, execute an untrusted program in the
-  same process, and have that program served as the original client. The check
-  also covers approval and approver-decision messages on the same socket.
+- Record the daemon socket peer's process identity at accept and reject later
+  requests when that identity changes, including across `execve`. Re-check it
+  after required audit writes and before releasing an approved environment or
+  session payload. This narrows the window for process-image substitution on
+  an accepted connection.
 
 ### Internal
 
 - Derive the latest release version consistently in the release signing smoke
   test so a `Pending` changelog section does not break the check.
+- Run the opt-in macOS socket identity regression explicitly in CI.
 
 ## [0.1.0] - 2026-11-16
 

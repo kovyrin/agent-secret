@@ -182,14 +182,17 @@ Required checks:
 - The socket directory is private and owner-controlled.
 - The CLI authenticates the daemon peer before accepting responses.
 - The daemon authenticates exec and stop peers before serving those requests.
-- The daemon pins each accepted connection to one peer process image (`PID` and
-  kernel `PIDVersion`), so a later `execve` on the same PID cannot take over
-  the connection.
-- The daemon re-checks the pinned peer immediately before writing an approved
-  environment or session payload.
+- The daemon records each peer's PID and kernel PID version at accept, then
+  rejects observed process-image changes on that connection.
+- The daemon re-checks the accepted peer after required audit writes and before
+  writing an approved environment or session payload.
 - Responses carrying request state are versioned and correlated by request ID
   and nonce.
 - Context cancellation and timeouts do not leave a client hung forever.
+
+The stream does not identify which process image sent buffered request bytes or
+which inheriting process reads a response. Accept-time and pre-write checks do
+not eliminate races around those operations.
 
 ### Daemon to Native Approver
 
