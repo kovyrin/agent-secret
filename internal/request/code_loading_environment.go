@@ -12,16 +12,12 @@ const maxCodeLoadingEnvironmentBytes = 8 * 1024
 // child or a tool it launches to load code not visible in argv. Duplicate
 // names use the final value, matching os/exec's environment behavior.
 func CodeLoadingEnvironmentEntries(env []string) []string {
-	byName := make(map[string]string)
-	for _, entry := range env {
+	entries := make([]string, 0)
+	for _, entry := range canonicalEnv(env) {
 		name, _, ok := strings.Cut(entry, "=")
 		if ok && isCodeLoadingEnvironmentName(name) {
-			byName[name] = entry
+			entries = append(entries, entry)
 		}
-	}
-	entries := make([]string, 0, len(byName))
-	for _, entry := range byName {
-		entries = append(entries, entry)
 	}
 	slices.Sort(entries)
 	return entries

@@ -11,10 +11,13 @@ import Foundation
             } catch {
                 throw SocketDaemonClientError.invalidResponse("invalid request authentication response")
             }
-            if response.type == "error", response.payload?.code == "bad_type" {
+            if response.type == .error, response.payload?.code == .badType {
                 throw SocketDaemonClientError.daemonError(.badType)
             }
-            guard response.type == "ok", response.version == 1, let port = response.payload?.port, !port.isEmpty else {
+            guard response.type == .okResponse, response.version == 1 else {
+                throw SocketDaemonClientError.invalidResponse("invalid request authentication response")
+            }
+            guard let port = response.payload?.port, !port.isEmpty else {
                 throw SocketDaemonClientError.invalidResponse("invalid request authentication response")
             }
             authPortName = port

@@ -340,16 +340,16 @@ func roundTripResponse[T any](
 	if err := c.setWriteDeadline(ctx); err != nil {
 		return zero, fmt.Errorf("set daemon write deadline %s: %w", messageType, err)
 	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		return zero, fmt.Errorf("encode daemon message %s: %w", messageType, err)
+	}
 	if c.authPort != "" {
-		frame, err := json.Marshal(env)
-		if err != nil {
-			return zero, fmt.Errorf("encode daemon message %s: %w", messageType, err)
-		}
 		if err := messageauth.Send(c.authPort, frame); err != nil {
 			return zero, err
 		}
 	}
-	if err := c.encoder.Encode(env); err != nil {
+	if _, err := c.conn.Write(append(frame, '\n')); err != nil {
 		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
 			return zero, fmt.Errorf("daemon request canceled: %w", ctxErr)
 		}
