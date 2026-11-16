@@ -57,7 +57,7 @@ func TestUpdateControlIsSeparatedFromTheSecretClientRole(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				server.handleConn(context.Background(), serverConn)
+				server.handleConn(context.Background(), serverConn, false)
 			}()
 			defer func() {
 				_ = clientConn.Close()

@@ -84,6 +84,7 @@ type ExecOptions struct {
 	AllowMutableExecutable bool
 	CWD                    string
 	EnvironmentFingerprint string
+	CodeLoadingEnvironment []string
 	Secrets                []SecretSpec
 	TTL                    time.Duration
 	ReceivedAt             time.Time
@@ -102,6 +103,7 @@ type ExecRequest struct {
 	AllowMutableExecutable bool                  `json:"allow_mutable_executable"`
 	CWD                    string                `json:"cwd"`
 	EnvironmentFingerprint string                `json:"environment_fingerprint"`
+	CodeLoadingEnvironment []string              `json:"code_loading_environment,omitempty"`
 	Secrets                []Secret              `json:"secrets"`
 	TTL                    time.Duration         `json:"ttl"`
 	ReceivedAt             time.Time             `json:"received_at"`
@@ -140,6 +142,9 @@ func (r ExecRequest) ValidateForDaemon() error {
 		return fmt.Errorf("%w: executable identity is required", ErrInvalidRequest)
 	}
 	if err := validateEnvironmentFingerprint(r.EnvironmentFingerprint); err != nil {
+		return err
+	}
+	if err := validateCodeLoadingEnvironmentNames(r.CodeLoadingEnvironment); err != nil {
 		return err
 	}
 	if err := validateDaemonPreparedPath("cwd", r.CWD, false); err != nil {
@@ -256,6 +261,9 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 	if err := validateEnvironmentFingerprint(opts.EnvironmentFingerprint); err != nil {
 		return ExecRequest{}, err
 	}
+	if err := validateCodeLoadingEnvironmentNames(opts.CodeLoadingEnvironment); err != nil {
+		return ExecRequest{}, err
+	}
 	secrets, err := ParseSecrets(opts.Secrets)
 	if err != nil {
 		return ExecRequest{}, err
@@ -274,6 +282,7 @@ func NewExec(opts ExecOptions) (ExecRequest, error) {
 		AllowMutableExecutable: opts.AllowMutableExecutable,
 		CWD:                    opts.CWD,
 		EnvironmentFingerprint: opts.EnvironmentFingerprint,
+		CodeLoadingEnvironment: slices.Clone(opts.CodeLoadingEnvironment),
 		Secrets:                secrets,
 		TTL:                    ttl,
 		ReceivedAt:             receivedAt,

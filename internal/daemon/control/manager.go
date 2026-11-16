@@ -430,7 +430,11 @@ type helperInspection struct {
 }
 
 func (m Manager) inspectCurrentHelper(ctx context.Context) (helperInspection, error) {
-	client, err := m.Connect(ctx)
+	trustedPaths, err := m.trustedDaemonPaths()
+	if err != nil {
+		return helperInspection{}, err
+	}
+	client, err := m.connectForInspection(ctx, peertrust.NewDaemonValidator(trustedPaths))
 	if err != nil {
 		return helperInspection{}, classifyHelperConnectError(err)
 	}
@@ -439,12 +443,30 @@ func (m Manager) inspectCurrentHelper(ctx context.Context) (helperInspection, er
 }
 
 func (m Manager) inspectTrustedHelper(ctx context.Context) (helperInspection, error) {
-	client, err := m.connectTrustedHelper(ctx)
+	trustedPaths, err := m.trustedDaemonPaths()
+	if err != nil {
+		return helperInspection{}, err
+	}
+	client, err := m.connectForInspection(ctx, m.trustedDaemonValidator(trustedPaths))
 	if err != nil {
 		return helperInspection{}, classifyHelperConnectError(err)
 	}
 	defer func() { _ = client.Close() }()
 	return m.inspectConnectedHelper(ctx, client)
+}
+
+func (m Manager) connectForInspection(ctx context.Context, validator peertrust.DaemonPeerValidator) (*Client, error) {
+	conn, err := socket.Dial(ctx, m.socketPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDaemonPeer(conn, validator); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	client := NewClient(conn)
+	client.DefaultTimeout = m.protocolTimeout()
+	return client, nil
 }
 
 func (m Manager) inspectConnectedHelper(ctx context.Context, client *Client) (helperInspection, error) {
@@ -558,6 +580,9 @@ func (m Manager) stopTrustedHelper(ctx context.Context) error {
 	client, err := m.connectTrustedHelper(ctx)
 	if errors.Is(err, socket.ErrDaemonUnavailable) {
 		return nil
+	}
+	if errors.Is(err, errLegacyDaemon) {
+		return m.signalTrustedHelper(ctx)
 	}
 	if err != nil {
 		return classifyHelperConnectError(err)
@@ -725,6 +750,9 @@ func (m Manager) statusUnavailable(ctx context.Context) (bool, error) {
 func (m Manager) trustedHelperUnavailable(ctx context.Context) (bool, error) {
 	client, err := m.connectTrustedHelper(ctx)
 	if err != nil {
+		if errors.Is(err, errLegacyDaemon) {
+			return false, nil
+		}
 		if isUnavailableDaemonStatusError(err) {
 			return true, nil
 		}

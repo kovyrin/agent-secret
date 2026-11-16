@@ -11,6 +11,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         case allowsReusable = "allows_reusable"
         case overrideEnv = "override_env"
         case overriddenAliases = "overridden_aliases"
+        case codeLoadingEnvironment = "code_loading_environment"
         case reason
         case requestID = "request_id"
         case resolvedExecutable = "resolved_executable"
@@ -44,6 +45,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
     public var resources: [RequestedResource]
     public var overrideEnv: Bool
     public var overriddenAliases: [String]
+    public var codeLoadingEnvironment: [String]
     public var reusableUses: Int
     public var sessionBinding: SessionBindingInfo?
     public var requestTTLSeconds: TimeInterval?
@@ -64,6 +66,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         accessDurationSeconds: Int? = nil,
         overrideEnv: Bool = false,
         overriddenAliases: [String] = [],
+        codeLoadingEnvironment: [String] = [],
         reusableUses: Int = Self.defaultReusableUses,
         sessionBinding: SessionBindingInfo? = nil,
         requestTTLSeconds: TimeInterval? = nil,
@@ -83,6 +86,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         self.resources = resources
         self.overrideEnv = overrideEnv
         self.overriddenAliases = overriddenAliases
+        self.codeLoadingEnvironment = codeLoadingEnvironment
         self.reusableUses = Self.boundedReusableUses(reusableUses)
         self.sessionBinding = sessionBinding
         self.requestTTLSeconds = requestTTLSeconds.flatMap { seconds in
@@ -110,6 +114,7 @@ public struct ApprovalRequest: Codable, Equatable, Sendable {
         resources = try container.decode([RequestedResource].self, forKey: .resources)
         overrideEnv = try container.decode(Bool.self, forKey: .overrideEnv)
         overriddenAliases = try container.decode([String].self, forKey: .overriddenAliases)
+        codeLoadingEnvironment = try container.decodeIfPresent([String].self, forKey: .codeLoadingEnvironment) ?? []
         let decodedReusableUses: Int = try container.decode(
             Int.self,
             forKey: .reusableUses

@@ -20,21 +20,26 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
-## [Pending]
+## [0.1.1] - Pending
 
 ### Security
 
-- Record the daemon socket peer's process identity at accept and reject later
-  requests when that identity changes, including across `execve`. Re-check it
-  after required audit writes and before releasing an approved environment or
-  session payload. This narrows the window for process-image substitution on
-  an accepted connection.
+- Authenticate each daemon request with a kernel audit token attached to a
+  connection-specific Mach message. Reject buffered socket requests written
+  before a client changes its program with `execve`, including requests that
+  would otherwise match a reusable approval.
+- Keep the accepted peer identity pinned through secret delivery and reject
+  changes after audit writes.
+- Show inherited environment variable names that can load code in the approval
+  warning, without displaying their values.
 
 ### Internal
 
 - Derive the latest release version consistently in the release signing smoke
   test so a `Pending` changelog section does not break the check.
 - Run the opt-in macOS socket identity regression explicitly in CI.
+- Keep updater quiescence and CLI repair working when replacing a running
+  0.1.0 daemon with the authenticated 0.1.1 protocol.
 
 ## [0.1.0] - 2026-11-16
 

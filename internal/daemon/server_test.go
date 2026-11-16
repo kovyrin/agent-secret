@@ -1185,7 +1185,7 @@ func TestServerDaemonStopOverSocketPairAuditsRequester(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.handleConn(ctx, serverConn)
+		server.handleConn(ctx, serverConn, false)
 	}()
 	client := control.NewClient(clientConn)
 	defer func() {
@@ -1239,7 +1239,7 @@ func TestServerOnePasswordStatusUsesInjectedCheck(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.handleConn(ctx, serverConn)
+		server.handleConn(ctx, serverConn, false)
 	}()
 	defer func() {
 		cancel()
@@ -1294,7 +1294,7 @@ func TestServerOnePasswordStatusAllowsDesktopDefaultAccount(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.handleConn(ctx, serverConn)
+		server.handleConn(ctx, serverConn, false)
 	}()
 	defer func() {
 		cancel()
@@ -1376,7 +1376,7 @@ func TestServerRejectsExecOnExistingConnectionAfterStop(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.handleConn(ctx, serverConn)
+		server.handleConn(ctx, serverConn, false)
 	}()
 	defer func() {
 		_ = clientConn.Close()
@@ -1461,7 +1461,7 @@ func TestServerServeStopsWhenServerStops(t *testing.T) {
 	}
 	listener := newFakeUnixListener()
 	done := make(chan error, 1)
-	go func() { done <- server.Serve(t.Context(), listener) }()
+	go func() { done <- server.serve(t.Context(), listener, false) }()
 
 	server.Stop(context.Background())
 	select {
@@ -1496,7 +1496,7 @@ func TestServerServeReturnsAcceptErrors(t *testing.T) {
 		t.Fatalf("NewServer returned error: %v", err)
 	}
 
-	err = server.Serve(t.Context(), &fakeUnixListener{acceptErr: wantErr})
+	err = server.serve(t.Context(), &fakeUnixListener{acceptErr: wantErr}, false)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Serve error = %v, want %v", err, wantErr)
 	}
@@ -2185,7 +2185,7 @@ func startSocketPairTestServer(t *testing.T, opts daemonbroker.Options) (*contro
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.handleConn(ctx, serverConn)
+		server.handleConn(ctx, serverConn, false)
 	}()
 
 	client := control.NewClient(clientConn)
@@ -2279,7 +2279,7 @@ func startRawServerConnWithOptions(t *testing.T, opts ServerOptions) (*net.UnixC
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		server.handleConn(ctx, serverConn)
+		server.handleConn(ctx, serverConn, false)
 	}()
 
 	return clientConn, func() {
@@ -2314,7 +2314,7 @@ func startRawServerWithOptions(t *testing.T, opts ServerOptions) (string, func()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- server.Serve(ctx, listener) }()
+	go func() { done <- server.serve(ctx, listener, false) }()
 
 	stop := func() {
 		cancel()

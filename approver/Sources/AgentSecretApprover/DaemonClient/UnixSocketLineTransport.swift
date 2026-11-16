@@ -1,6 +1,11 @@
 import Foundation
 
 #if canImport(Darwin)
+    import AgentSecretMachAuth
+    import CryptoKit
+#endif
+
+#if canImport(Darwin)
     import Darwin
 #endif
 
@@ -9,13 +14,12 @@ final class UnixSocketLineTransport: LineTransport {
         private static let defaultIOTimeout: TimeInterval = 5
         private static let defaultMaxFrameBytes: Int = 1_048_576
         private static let lineFeedByte: UInt8 = 10
-        private static let pathTerminatorByte: UInt8 = 0
         private static let readChunkBytes: Int = 0x1000
-        private static let singleAddressCapacity: Int = 1
 
         private let maxFrameBytes: Int
-        private let socketFileDescriptor: Int32
+        private var socketFileDescriptor: Int32
         private var bufferedReadData = Data()
+        var authPortName: String?
     #endif
 
     convenience init(path: String) throws {
@@ -23,7 +27,8 @@ final class UnixSocketLineTransport: LineTransport {
             path: path,
             maxFrameBytes: Self.defaultMaxFrameBytes,
             ioTimeout: Self.defaultIOTimeout,
-            peerValidator: TrustedDaemonPeerValidator.defaultForCurrentProcess()
+            peerValidator: TrustedDaemonPeerValidator.defaultForCurrentProcess(),
+            requireMessageAuth: true
         )
     }
 
@@ -57,84 +62,33 @@ final class UnixSocketLineTransport: LineTransport {
         path: String,
         maxFrameBytes: Int,
         ioTimeout: TimeInterval,
-        peerValidator: DaemonPeerValidator?
+        peerValidator: DaemonPeerValidator?,
+        requireMessageAuth: Bool = true
     ) throws {
         #if canImport(Darwin)
-            try Self.validate(maxFrameBytes: maxFrameBytes)
-            let descriptor: Int32 = socket(AF_UNIX, SOCK_STREAM, 0)
-            guard descriptor >= 0 else {
-                throw SocketDaemonClientError.connectFailed(errno)
-            }
-
-            var address = sockaddr_un()
-            address.sun_family = sa_family_t(AF_UNIX)
-            var pathBytes: [UInt8] = Array(path.utf8)
-            pathBytes.append(Self.pathTerminatorByte)
-            let capacity: Int = MemoryLayout.size(ofValue: address.sun_path)
-            guard pathBytes.count <= capacity else {
-                close(descriptor)
-                throw SocketDaemonClientError.pathTooLong(path)
-            }
-            withUnsafeMutableBytes(of: &address.sun_path) { rawBuffer in
-                rawBuffer.copyBytes(from: pathBytes)
-            }
-
-            let status: Int32 = withUnsafePointer(to: &address) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: Self.singleAddressCapacity) { sockaddrPointer in
-                    connect(descriptor, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_un>.size))
-                }
-            }
-            guard status == 0 else {
-                let errnoValue: Int32 = errno
-                close(descriptor)
-                throw SocketDaemonClientError.connectFailed(errnoValue)
-            }
-            do {
-                try Self.configureSocket(
-                    for: descriptor,
-                    ioTimeout: ioTimeout
-                )
-                try Self.validatePeer(
-                    socketFileDescriptor: descriptor,
-                    using: peerValidator
-                )
-            } catch {
-                close(descriptor)
-                throw error
-            }
+            let descriptor = try Self.openSocket(
+                path: path, maxFrameBytes: maxFrameBytes, ioTimeout: ioTimeout, peerValidator: peerValidator
+            )
             self.maxFrameBytes = maxFrameBytes
             socketFileDescriptor = descriptor
+            if requireMessageAuth {
+                do {
+                    try beginMessageAuth()
+                } catch {
+                    close(descriptor)
+                    socketFileDescriptor = -1
+                    throw error
+                }
+            }
         #else
             _ = path
             _ = maxFrameBytes
             _ = ioTimeout
             _ = peerValidator
+            _ = requireMessageAuth
             throw SocketDaemonClientError.socketUnavailable
         #endif
     }
-
-    #if canImport(Darwin)
-        private static func validate(maxFrameBytes: Int) throws {
-            guard maxFrameBytes > 0 else {
-                throw SocketDaemonClientError.invalidResponse("invalid maximum frame size")
-            }
-        }
-
-        private static func validatePeer(
-            socketFileDescriptor descriptor: Int32,
-            using peerValidator: DaemonPeerValidator?
-        ) throws {
-            do {
-                try DaemonPeerInspector.validate(
-                    socketFileDescriptor: descriptor,
-                    using: peerValidator
-                )
-            } catch let error as DaemonTrustError {
-                throw SocketDaemonClientError.untrustedDaemon(error.message)
-            }
-        }
-
-    #endif
 
     func readLine() throws -> Data {
         #if canImport(Darwin)
@@ -173,6 +127,17 @@ final class UnixSocketLineTransport: LineTransport {
         #if canImport(Darwin)
             guard data.count <= maxFrameBytes else {
                 throw SocketDaemonClientError.frameTooLarge(maxFrameBytes)
+            }
+            if let authPortName {
+                let digest = SHA256.hash(data: data)
+                let status = authPortName.withCString { name in
+                    digest.withUnsafeBytes { bytes in
+                        AgentSecretSendMachAuth(name, bytes.bindMemory(to: UInt8.self).baseAddress)
+                    }
+                }
+                guard status == 0 else {
+                    throw SocketDaemonClientError.writeFailed(EIO)
+                }
             }
             var bytes: [UInt8] = Array(data)
             bytes.append(Self.lineFeedByte)
@@ -219,7 +184,9 @@ final class UnixSocketLineTransport: LineTransport {
 
     deinit {
         #if canImport(Darwin)
-            close(socketFileDescriptor)
+            if socketFileDescriptor >= 0 {
+                close(socketFileDescriptor)
+            }
         #endif
     }
 }

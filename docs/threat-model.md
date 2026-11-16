@@ -58,6 +58,7 @@ These components may enforce security policy:
 - The official Bitwarden-signed `bws` CLI helper.
 - Apple code-signing, Gatekeeper, and notarization checks.
 - The local operating system's Unix socket peer credential APIs.
+- The macOS Mach message audit trailer for per-request sender identity.
 
 Trust in Agent Secret binaries should be tied to concrete executable identity
 and, for production builds, the expected Apple Developer Team ID.
@@ -104,6 +105,9 @@ Agent Secret must meet these goals:
 - Approval is bound to the displayed reason, command argv, resolved executable,
   executable identity, cwd, secret references, account scope, TTL, and override
   behavior.
+- Approval warnings show inherited environment variable names known to load
+  code. Their values remain out of the prompt and are bound to reuse by the
+  environment fingerprint.
 - Reusable approvals expire at their TTL, consume uses correctly, and clear
   cached raw values when exhausted, expired, or rolled back.
 - Bounded session tokens are returned only at `session create` time, are not
@@ -184,15 +188,18 @@ Required checks:
 - The daemon authenticates exec and stop peers before serving those requests.
 - The daemon records each peer's PID and kernel PID version at accept, then
   rejects observed process-image changes on that connection.
+- The daemon binds every request frame to a one-use Mach message sent by the
+  same PID and PID version. It rejects missing and mismatched attestations.
 - The daemon re-checks the accepted peer after required audit writes and before
   writing an approved environment or session payload.
 - Responses carrying request state are versioned and correlated by request ID
   and nonce.
 - Context cancellation and timeouts do not leave a client hung forever.
 
-The stream does not identify which process image sent buffered request bytes or
-which inheriting process reads a response. Accept-time and pre-write checks do
-not eliminate races around those operations.
+The Unix stream alone does not identify which process image sent buffered
+request bytes. The connection-specific Mach port provides that sender identity
+for each frame. The response still uses the Unix stream, so the CLI must keep
+its socket private while secrets are delivered.
 
 ### Daemon to Native Approver
 

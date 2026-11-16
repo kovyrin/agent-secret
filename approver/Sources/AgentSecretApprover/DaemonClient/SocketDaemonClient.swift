@@ -59,12 +59,25 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
             let requestID = UUID().uuidString
             let nonce = UUID().uuidString
             do {
-                let transport = try UnixSocketLineTransport(
-                    path: path,
-                    maxFrameBytes: updateControlFrameBytes,
-                    ioTimeout: updateControlTimeout,
-                    peerValidator: validator
-                )
+                let transport: UnixSocketLineTransport
+                do {
+                    transport = try UnixSocketLineTransport(
+                        path: path,
+                        maxFrameBytes: updateControlFrameBytes,
+                        ioTimeout: updateControlTimeout,
+                        peerValidator: validator,
+                        requireMessageAuth: true
+                    )
+                } catch SocketDaemonClientError.daemonError(.badType) {
+                    // An installed 0.1.0 daemon must quiesce before its bundle is replaced.
+                    transport = try UnixSocketLineTransport(
+                        path: path,
+                        maxFrameBytes: updateControlFrameBytes,
+                        ioTimeout: updateControlTimeout,
+                        peerValidator: validator,
+                        requireMessageAuth: false
+                    )
+                }
                 let client = Self(transport: transport)
                 let request = DaemonEnvelope<EmptyPayload>(
                     nonce: nonce, payload: nil, requestID: requestID, type: .updateQuiesce, version: protocolVersion

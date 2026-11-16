@@ -20,6 +20,7 @@ type MessageType string
 
 const (
 	TypeHelperHello       MessageType = "helper.hello"
+	TypeAuthHello         MessageType = "auth.hello"
 	TypeDaemonStatus      MessageType = "daemon.status"
 	TypeDaemonStop        MessageType = "daemon.stop"
 	TypeUpdateQuiesce     MessageType = "update.quiesce"
@@ -86,6 +87,11 @@ type Envelope struct {
 	RequestID string          `json:"request_id,omitempty"`
 	Nonce     string          `json:"nonce,omitempty"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
+	RawFrame  []byte          `json:"-"`
+}
+
+type AuthHelloPayload struct {
+	Port string `json:"port"`
 }
 
 type Correlation struct {
@@ -257,6 +263,7 @@ func ReadEnvelopeFrame(reader *bufio.Reader, maxBytes int64) (Envelope, error) {
 	if err := json.Unmarshal(line, &env); err != nil {
 		return Envelope{}, fmt.Errorf("%w: %w", ErrMalformedEnvelope, err)
 	}
+	env.RawFrame = line
 	return env, nil
 }
 

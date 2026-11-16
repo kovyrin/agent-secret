@@ -30,7 +30,11 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1")
     ],
     targets: [
-        .target(name: "AgentSecretApprover"),
+        .target(
+            name: "AgentSecretMachAuth",
+            publicHeadersPath: "include"
+        ),
+        .target(name: "AgentSecretApprover", dependencies: ["AgentSecretMachAuth"]),
         .executableTarget(
             name: "AgentSecretApproverApp",
             dependencies: ["AgentSecretApprover"]
