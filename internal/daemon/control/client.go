@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/messageauth"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -32,9 +33,12 @@ type Client struct {
 	encoder        *json.Encoder
 	reader         *bufio.Reader
 	DefaultTimeout time.Duration
+	authPort       string
 }
 
 const DefaultClientProtocolTimeout = 30 * time.Second
+
+var errLegacyDaemon = errors.New("daemon does not support request attestation")
 
 func Connect(ctx context.Context, path string) (*Client, error) {
 	trustedPaths, err := defaultTrustedDaemonPaths()
@@ -53,7 +57,71 @@ func ConnectWithPeerValidator(ctx context.Context, path string, validator peertr
 		_ = conn.Close()
 		return nil, err
 	}
-	return NewClient(conn), nil
+	client := NewClient(conn)
+	if err := client.beginMessageAuth(ctx); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return client, nil
+}
+
+func (c *Client) beginMessageAuth(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("daemon authentication canceled: %w", err)
+	}
+	stopCancelWatch := c.closeOnContextCancel(ctx)
+	defer stopCancelWatch()
+	deadline := time.Now().Add(5 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if err := c.conn.SetDeadline(deadline); err != nil {
+		return err
+	}
+	defer c.clearDeadlines()
+	env, err := protocol.NewEnvelope(protocol.TypeAuthHello, protocol.Correlation{}, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.encoder.Encode(env); err != nil {
+		return fmt.Errorf("send daemon authentication hello: %w", err)
+	}
+	response, err := c.readEnvelope()
+	if err != nil {
+		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
+			return fmt.Errorf("daemon authentication canceled: %w", ctxErr)
+		}
+		return fmt.Errorf("read daemon authentication hello: %w", err)
+	}
+	if err := protocol.ValidateEnvelope(response); err != nil {
+		return err
+	}
+	if response.Type == protocol.TypeError {
+		return decodeAuthHelloError(response)
+	}
+	if response.Type != protocol.TypeOK {
+		return fmt.Errorf("daemon authentication hello rejected: %s", response.Type)
+	}
+	payload, err := protocol.DecodeRequiredPayload[protocol.AuthHelloPayload](response)
+	if err != nil {
+		return err
+	}
+	if payload.Port == "" {
+		return errors.New("daemon authentication hello returned no port")
+	}
+	c.authPort = payload.Port
+	return nil
+}
+
+func decodeAuthHelloError(response protocol.Envelope) error {
+	payload, err := protocol.DecodeRequiredPayload[protocol.ErrorPayload](response)
+	if err != nil {
+		return err
+	}
+	if payload.Code == protocol.ErrorCodeBadType {
+		return errLegacyDaemon
+	}
+	return &ProtocolError{Code: payload.Code, Message: payload.Message}
 }
 
 func validateDaemonPeer(conn *net.UnixConn, validator peertrust.DaemonPeerValidator) error {
@@ -272,7 +340,16 @@ func roundTripResponse[T any](
 	if err := c.setWriteDeadline(ctx); err != nil {
 		return zero, fmt.Errorf("set daemon write deadline %s: %w", messageType, err)
 	}
-	if err := c.encoder.Encode(env); err != nil {
+	frame, err := json.Marshal(env)
+	if err != nil {
+		return zero, fmt.Errorf("encode daemon message %s: %w", messageType, err)
+	}
+	if c.authPort != "" {
+		if err := messageauth.Send(c.authPort, frame); err != nil {
+			return zero, err
+		}
+	}
+	if _, err := c.conn.Write(append(frame, '\n')); err != nil {
 		if ctxErr := contextErrorAfterIOError(ctx, err); ctxErr != nil {
 			return zero, fmt.Errorf("daemon request canceled: %w", ctxErr)
 		}

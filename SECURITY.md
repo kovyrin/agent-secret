@@ -15,13 +15,14 @@ The supported runtime scope is narrow:
   process tree or explicit ancestor binding selected at session creation.
   Named ancestor binding walks only the current process ancestry and matches an
   executable basename; it does not allow arbitrary PID binding.
+- Signed in-app updates with explicit approval before installation.
 
-Linux, Windows, credential helpers, automatic updates, and alternative secret
+Linux, Windows, credential helpers, and alternative secret
 backends are not supported security surfaces yet.
 
 ## Reporting A Vulnerability
 
-Use GitHub private vulnerability reporting:
+Use GitHub private vulnerability reporting when the repository offers it:
 
 <https://github.com/kovyrin/agent-secret/security/advisories/new>
 

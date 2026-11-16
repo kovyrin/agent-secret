@@ -29,6 +29,7 @@ extension ApprovalRequestViewModel {
                 printsEnvironmentWarning: printsEnvironment,
                 highScopeWarning: highScopeWarning,
                 overrideWarning: override,
+                codeLoadingEnvironment: request.codeLoadingEnvironment,
                 allowMutableExecutable: request.allowMutableExecutable
             )
         )
@@ -46,6 +47,7 @@ extension ApprovalRequestViewModel {
         printsEnvironmentWarning: Bool,
         highScopeWarning _: Bool,
         overrideWarning: String?,
+        codeLoadingEnvironment: [String],
         allowMutableExecutable: Bool
     ) -> [String] {
         var messages: [String] = []
@@ -54,6 +56,13 @@ extension ApprovalRequestViewModel {
         }
         if allowMutableExecutable {
             messages.append(mutableExecutableWarningText)
+        }
+        if !codeLoadingEnvironment.isEmpty {
+            let entries = codeLoadingEnvironment.map(sanitizedDisplayText).joined(separator: "\n")
+            messages.append(
+                "Inherited environment can load code outside the shown command:\n\(entries)\n" +
+                    "Only approve if you expect these exact values."
+            )
         }
         if let overrideWarning {
             messages.append(overrideWarning)

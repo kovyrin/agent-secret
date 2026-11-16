@@ -21,6 +21,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/control"
+	"github.com/kovyrin/agent-secret/internal/daemon/messageauth"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -3515,10 +3516,37 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
+	var authPort *messageauth.Port
+	defer func() {
+		if authPort != nil {
+			authPort.Close()
+		}
+	}()
 	for {
 		var env protocol.Envelope
 		if err := decoder.Decode(&env); err != nil {
 			return err
+		}
+		if env.Type == protocol.TypeAuthHello {
+			var err error
+			authPort, err = messageauth.NewPort()
+			if err != nil {
+				return err
+			}
+			if err := writePostStartStoppedDaemonOK(encoder, env.RequestID, env.Nonce,
+				protocol.AuthHelloPayload{Port: authPort.Name()}); err != nil {
+				return err
+			}
+			continue
+		}
+		if authPort != nil {
+			frame, err := json.Marshal(env)
+			if err != nil {
+				return err
+			}
+			if _, err := authPort.Receive(frame, 5*time.Second); err != nil {
+				return err
+			}
 		}
 		select {
 		case events <- env.Type:
@@ -3555,7 +3583,8 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 			if err := writePostStartStoppedDaemonError(encoder, env.RequestID, env.Nonce, protocol.ErrorCodeDaemonStopped, daemonbroker.ErrDaemonStopped); err != nil {
 				return err
 			}
-		case protocol.TypeDaemonStop,
+		case protocol.TypeAuthHello,
+			protocol.TypeDaemonStop,
 			protocol.TypeUpdateQuiesce,
 			protocol.TypeApprovalPending,
 			protocol.TypeApprovalDecision,

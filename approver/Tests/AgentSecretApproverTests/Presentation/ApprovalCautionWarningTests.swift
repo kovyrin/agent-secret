@@ -57,4 +57,22 @@ final class ApprovalCautionWarningTests: XCTestCase {
         })
         XCTAssertTrue(viewModel.requestInspectionText.contains("Mutable executable allowed: yes"))
     }
+
+    func testCodeLoadingEnvironmentWarningShowsExactValues() {
+        var request: ApprovalRequest = Self.sampleRequest
+        request.codeLoadingEnvironment = [
+            "GIT_SSH_COMMAND=/tmp/example-ssh",
+            "NODE_OPTIONS=--require /tmp/example.js"
+        ]
+        let viewModel = ApprovalRequestViewModel(
+            request: request,
+            now: Date(timeIntervalSince1970: Self.viewModelNow)
+        )
+
+        XCTAssertTrue(viewModel.cautionMessages.contains { message in
+            message.contains("NODE_OPTIONS=--require /tmp/example.js") &&
+                message.contains("GIT_SSH_COMMAND=/tmp/example-ssh")
+        })
+        XCTAssertTrue(viewModel.renderedText.contains("/tmp/example.js"))
+    }
 }

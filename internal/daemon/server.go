@@ -15,6 +15,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/audit"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
+	"github.com/kovyrin/agent-secret/internal/daemon/messageauth"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -45,6 +46,11 @@ func (SameUIDValidator) Validate(conn *net.UnixConn) error {
 	return nil
 }
 
+type acceptedPeer struct {
+	info peercred.Info
+	err  error
+}
+
 type Server struct {
 	broker                  *daemonbroker.Broker
 	approvals               approval.ApprovalEndpoint
@@ -60,6 +66,8 @@ type Server struct {
 	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func(*net.UnixConn)
 	listenUnix              func(string) (unixListener, error)
+	peerMu                  sync.Mutex
+	peers                   map[*net.UnixConn]acceptedPeer
 	retireMu                sync.Mutex
 	retireAfterActive       bool
 	stopOnce                sync.Once
@@ -187,6 +195,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		beforeRead:              opts.beforeRead,
 		beforeExecResponseWrite: opts.beforeExecResponseWrite,
 		listenUnix:              listenUnix,
+		peers:                   make(map[*net.UnixConn]acceptedPeer),
 		stop:                    make(chan struct{}),
 	}, nil
 }
@@ -211,6 +220,10 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 }
 
 func (s *Server) Serve(ctx context.Context, listener unixListener) error {
+	return s.serve(ctx, listener, true)
+}
+
+func (s *Server) serve(ctx context.Context, listener unixListener, requireMessageAuth bool) error {
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -232,7 +245,8 @@ func (s *Server) Serve(ctx context.Context, listener unixListener) error {
 				return err
 			}
 		}
-		go s.handleConn(ctx, conn)
+		s.acceptPeer(conn)
+		go s.handleConn(ctx, conn, requireMessageAuth)
 	}
 }
 
@@ -295,8 +309,9 @@ func (s *Server) stopForExecutableChange(ctx context.Context) {
 	})
 }
 
-func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
+func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn, requireMessageAuth bool) {
 	defer func() { _ = conn.Close() }()
+	defer s.forgetPeer(conn)
 	if err := s.validator.Validate(conn); err != nil {
 		_ = writeError(conn, protocol.Correlation{}, protocol.ErrorCodePeerRejected, err)
 		return
@@ -305,6 +320,12 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	reader := bufio.NewReader(conn)
 	encoder := json.NewEncoder(conn)
 	state := newConnectionState(s.readTimeout)
+	var authPort *messageauth.Port
+	defer func() {
+		if authPort != nil {
+			authPort.Close()
+		}
+	}()
 	for {
 		env, err := s.readEnvelope(conn, reader, state.readTimeout())
 		if err != nil {
@@ -322,6 +343,15 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		if err := protocol.ValidateEnvelope(env); err != nil {
 			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeBadEnvelope, err)
 			continue
+		}
+		if requireMessageAuth {
+			authenticated, authErr := s.authenticateMessage(conn, encoder, env, &authPort)
+			if authErr != nil {
+				return
+			}
+			if !authenticated {
+				continue
+			}
 		}
 		if s.retireIfExecutableChanged(ctx, encoder, env) {
 			return
@@ -342,6 +372,51 @@ func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 		}
 		action.apply(&state)
 	}
+}
+
+func (s *Server) authenticateMessage(
+	conn *net.UnixConn,
+	encoder *json.Encoder,
+	env protocol.Envelope,
+	port **messageauth.Port,
+) (bool, error) {
+	if env.Type == protocol.TypeHelperHello && *port == nil {
+		s.handleHelperHello(encoder, env)
+		return false, nil
+	}
+	if env.Type == protocol.TypeAuthHello && *port == nil {
+		newPort, err := messageauth.NewPort()
+		if err != nil {
+			return false, err
+		}
+		*port = newPort
+		return false, writeOK(encoder, env.Correlation(), protocol.AuthHelloPayload{Port: newPort.Name()})
+	}
+	if *port == nil {
+		err := errors.New("request attestation required")
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
+		return false, err
+	}
+	if err := s.validateMessageSender(conn, *port, env.RawFrame); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodePeerRejected, err)
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Server) validateMessageSender(conn *net.UnixConn, port *messageauth.Port, frame []byte) error {
+	identity, err := port.Receive(frame, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	peer, err := s.peerInfo(conn)
+	if err != nil {
+		return err
+	}
+	if identity.PID != peer.PID || identity.PIDVersion != peer.PIDVersion || identity.UID != peer.UID {
+		return errors.New("request sender does not match the connected peer")
+	}
+	return nil
 }
 
 type connectionDispatchAction struct {
@@ -595,6 +670,10 @@ func (s *Server) handleSessionResolve(
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
+	if _, err := s.peerInfo(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
@@ -780,6 +859,10 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
+	if _, err := s.peerInfo(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
 	if err := writeOK(encoder, env.Correlation(), delivery.Payload()); err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
@@ -854,8 +937,40 @@ func (s *Server) handleCommandCompleted(
 	return true
 }
 
+func (s *Server) acceptPeer(conn *net.UnixConn) {
+	info, err := s.validator.Info(conn)
+	s.peerMu.Lock()
+	if s.peers == nil {
+		s.peers = make(map[*net.UnixConn]acceptedPeer)
+	}
+	s.peers[conn] = acceptedPeer{info: info, err: err}
+	s.peerMu.Unlock()
+}
+
+func (s *Server) forgetPeer(conn *net.UnixConn) {
+	s.peerMu.Lock()
+	delete(s.peers, conn)
+	s.peerMu.Unlock()
+}
+
 func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
-	return s.validator.Info(conn)
+	s.peerMu.Lock()
+	accepted, ok := s.peers[conn]
+	s.peerMu.Unlock()
+	if !ok {
+		return peercred.Info{}, fmt.Errorf("%w: connection peer was not captured at accept", peercred.ErrMissingMetadata)
+	}
+	if accepted.err != nil {
+		return peercred.Info{}, accepted.err
+	}
+	current, err := s.validator.Info(conn)
+	if err != nil {
+		return peercred.Info{}, err
+	}
+	if err := peercred.ValidateConnectionPeer(current, accepted.info); err != nil {
+		return peercred.Info{}, err
+	}
+	return current, nil
 }
 
 func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader, timeout time.Duration) (protocol.Envelope, error) {
@@ -960,6 +1075,8 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeStaleApproval
 	case errors.Is(err, peertrust.ErrUntrustedClient):
 		return protocol.ErrorCodeUntrustedClient
+	case errors.Is(err, peercred.ErrPolicyMismatch), errors.Is(err, peercred.ErrMissingMetadata):
+		return protocol.ErrorCodePeerRejected
 	case errors.Is(err, context.Canceled):
 		return protocol.ErrorCodeContextCanceled
 	case errors.Is(err, context.DeadlineExceeded):

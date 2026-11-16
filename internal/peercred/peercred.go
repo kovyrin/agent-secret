@@ -20,6 +20,7 @@ type Info struct {
 	UID            int
 	GID            int
 	PID            int
+	PIDVersion     uint32 // Kernel process image version; changes on execve.
 	ExecutablePath string
 	CWD            string
 }
@@ -69,6 +70,19 @@ func Inspect(conn *net.UnixConn) (Info, error) {
 	return info, nil
 }
 
+// Expected returns the policy fields of the peer identity. PIDVersion is
+// intentionally excluded: it identifies the process image that opened a
+// connection, not the policy a requester declares for a session.
+func (i Info) Expected() Expected {
+	return Expected{
+		UID:            i.UID,
+		GID:            i.GID,
+		PID:            i.PID,
+		ExecutablePath: i.ExecutablePath,
+		CWD:            i.CWD,
+	}
+}
+
 func Validate(info Info, expected Expected) error {
 	if err := requireComplete(info); err != nil {
 		return err
@@ -111,6 +125,43 @@ func Validate(info Info, expected Expected) error {
 	return nil
 }
 
+// ValidateConnectionPeer verifies that the peer currently visible on a
+// connection is the same process image that was accepted for that connection.
+// PIDs survive execve, so comparing PIDs alone lets a process stand in for the
+// program that opened the connection. The kernel process identity version
+// changes on execve and closes that gap.
+func ValidateConnectionPeer(current Info, accepted Info) error {
+	if err := requireComplete(current); err != nil {
+		return err
+	}
+	if err := requireComplete(accepted); err != nil {
+		return err
+	}
+
+	if current.UID != accepted.UID || current.GID != accepted.GID {
+		return fmt.Errorf(
+			"%w: peer credentials changed after connection accept: uid %d gid %d != uid %d gid %d",
+			ErrPolicyMismatch,
+			current.UID,
+			current.GID,
+			accepted.UID,
+			accepted.GID,
+		)
+	}
+	if current.PID != accepted.PID || current.PIDVersion != accepted.PIDVersion {
+		return fmt.Errorf(
+			"%w: peer process changed after connection accept: pid %d version %d != pid %d version %d",
+			ErrPolicyMismatch,
+			current.PID,
+			current.PIDVersion,
+			accepted.PID,
+			accepted.PIDVersion,
+		)
+	}
+
+	return nil
+}
+
 func CurrentExpected() (Expected, error) {
 	return currentExpected(os.Executable, os.Getwd)
 }
@@ -146,7 +197,8 @@ func currentExpected(executable func() (string, error), getwd func() (string, er
 }
 
 func requireComplete(info Info) error {
-	if info.UID < 0 || info.GID < 0 || info.PID <= 0 || info.ExecutablePath == "" || info.CWD == "" {
+	if info.UID < 0 || info.GID < 0 || info.PID <= 0 || info.PIDVersion == 0 ||
+		info.ExecutablePath == "" || info.CWD == "" {
 		return ErrMissingMetadata
 	}
 

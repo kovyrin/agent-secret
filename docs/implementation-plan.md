@@ -349,10 +349,12 @@ the prompt was visually confirmed in front.
 - Implementation:
   - create a Unix socket server/client pair
   - inspect peer credentials through public APIs equivalent to `getpeereid`,
-    `LOCAL_PEERPID`, `LOCAL_PEERCRED`, `proc_pidpath`, and
+    `LOCAL_PEERPID`, `LOCAL_PEERTOKEN`, `LOCAL_PEERCRED`, `proc_pidpath`, and
     `PROC_PIDVNODEPATHINFO`
   - require same UID and expected peer PID/executable/cwd policy for
     session/socket reads
+  - pin each accepted connection to the peer PID and kernel process identity
+    version, and reject requests after the peer executes a new image
   - fail closed if required peer metadata is unavailable or mismatched
 - Verification:
   - `go test ./...`

@@ -276,7 +276,8 @@ import XCTest
                 path: server.path,
                 maxFrameBytes: 64,
                 ioTimeout: 0.05,
-                peerValidator: validator
+                peerValidator: validator,
+                requireMessageAuth: false
             )
             releaseConnection.signal()
 

@@ -20,10 +20,27 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
-## [0.1.2] - Pending
+## [0.1.2] - 2026-11-16
+
+### Security
+
+- Authenticate each daemon request with a kernel audit token attached to a
+  connection-specific Mach message. Reject buffered socket requests written
+  before a client changes its program with `execve`, including requests that
+  would otherwise match a reusable approval.
+- Keep the accepted peer identity pinned through secret delivery and reject
+  changes after audit writes.
+- Show the exact values of inherited environment variables that can load code
+  in the approval warning. Reject requests whose code-loading values exceed
+  the prompt's display bound.
 
 ### Internal
 
+- Derive the latest release version consistently in the release signing smoke
+  test so a `Pending` changelog section does not break the check.
+- Run the opt-in macOS socket identity regression explicitly in CI.
+- Keep updater quiescence and CLI repair working when replacing a running
+  older daemon with the authenticated 0.1.2 protocol.
 - Limit update-feed promotion to the pinned Go toolchain and authenticate tool
   downloads, avoiding unnecessary development-tool downloads and GitHub rate
   limits during release publication.

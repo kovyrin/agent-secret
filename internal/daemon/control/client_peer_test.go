@@ -7,8 +7,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/kovyrin/agent-secret/internal/daemon/messageauth"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
@@ -17,6 +21,9 @@ import (
 )
 
 func TestConnectWithPeerValidatorAcceptsTrustedDaemonPeer(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("request attestation requires macOS")
+	}
 	t.Parallel()
 
 	path, stop := startStatusDaemon(t)
@@ -54,6 +61,98 @@ func TestConnectWithPeerValidatorRejectsUntrustedDaemonBeforeExecPayload(t *test
 	}
 	if !errors.Is(err, peertrust.ErrUntrustedDaemon) {
 		t.Fatalf("ConnectWithPeerValidator error = %v, want %v", err, peertrust.ErrUntrustedDaemon)
+	}
+}
+
+func TestBeginMessageAuthRejectsMissingPort(t *testing.T) {
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+	response, err := protocol.NewEnvelope(protocol.TypeOK, protocol.Correlation{}, protocol.AuthHelloPayload{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(serverConn).Encode(response); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewClient(clientConn).beginMessageAuth(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "no port") {
+		t.Fatalf("missing authentication port error = %v", err)
+	}
+}
+
+func TestBeginMessageAuthHonorsCanceledContext(t *testing.T) {
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := NewClient(clientConn).beginMessageAuth(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled authentication error = %v, want context.Canceled", err)
+	}
+}
+
+func TestBeginMessageAuthRejectsDaemonErrorAndUnexpectedReply(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		response   protocol.Envelope
+		wantCode   protocol.ErrorCode
+		wantPhrase string
+	}{
+		{
+			name: "daemon rejects identity",
+			response: protocol.Envelope{
+				Version: protocol.ProtocolVersion,
+				Type:    protocol.TypeError,
+				Payload: json.RawMessage(`{"code":"peer_rejected","message":"sender mismatch"}`),
+			},
+			wantCode: protocol.ErrorCodePeerRejected,
+		},
+		{
+			name: "unexpected reply",
+			response: protocol.Envelope{
+				Version: protocol.ProtocolVersion,
+				Type:    protocol.TypeDaemonStatus,
+			},
+			wantPhrase: "rejected",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serverConn, clientConn := unixsocket.Pair(t)
+			defer func() { _ = serverConn.Close() }()
+			defer func() { _ = clientConn.Close() }()
+			if err := json.NewEncoder(serverConn).Encode(tc.response); err != nil {
+				t.Fatal(err)
+			}
+			err := NewClient(clientConn).beginMessageAuth(context.Background())
+			if tc.wantCode != "" && !IsProtocolError(err, tc.wantCode) {
+				t.Fatalf("daemon rejection = %v, want code %s", err, tc.wantCode)
+			}
+			if tc.wantPhrase != "" && (err == nil || !strings.Contains(err.Error(), tc.wantPhrase)) {
+				t.Fatalf("unexpected reply error = %v, want %q", err, tc.wantPhrase)
+			}
+		})
+	}
+}
+
+func TestClientDoesNotWriteRequestWhenAttestationFails(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("request attestation requires macOS")
+	}
+	serverConn, clientConn := unixsocket.Pair(t)
+	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
+	client := NewClient(clientConn)
+	client.authPort = "com.kovyrin.agentsecret.auth.nonexistent"
+	if _, err := client.Status(context.Background()); err == nil || !strings.Contains(err.Error(), "send request attestation") {
+		t.Fatalf("Status with missing attestation port = %v", err)
+	}
+	if err := serverConn.SetReadDeadline(time.Now().Add(10 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	var byteBuffer [1]byte
+	if _, err := serverConn.Read(byteBuffer[:]); err == nil {
+		t.Fatal("request was written without an attestation")
 	}
 }
 
@@ -137,8 +236,33 @@ func serveStatusPayload(conn *net.UnixConn) error {
 	if err := decoder.Decode(&env); err != nil {
 		return err
 	}
+	if env.Type != protocol.TypeAuthHello {
+		return errors.New("expected auth.hello request")
+	}
+	port, err := messageauth.NewPort()
+	if err != nil {
+		return err
+	}
+	defer port.Close()
+	response, err := protocol.NewEnvelope(protocol.TypeOK, env.Correlation(), protocol.AuthHelloPayload{Port: port.Name()})
+	if err != nil {
+		return err
+	}
+	if err := encoder.Encode(response); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&env); err != nil {
+		return err
+	}
 	if env.Type != protocol.TypeDaemonStatus {
 		return errors.New("expected daemon.status request")
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	if _, err := port.Receive(frame, 5*time.Second); err != nil {
+		return err
 	}
 	resp, err := protocol.NewEnvelope(protocol.TypeOK, env.Correlation(), protocol.StatusPayload{PID: os.Getpid()})
 	if err != nil {

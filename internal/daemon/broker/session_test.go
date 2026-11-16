@@ -588,7 +588,7 @@ func testSessionResolveRequest(
 	if err != nil {
 		t.Fatalf("NewSessionResolve returned error: %v", err)
 	}
-	return req.WithExpectedPeer(peercred.Expected(peer))
+	return req.WithExpectedPeer(peer.Expected())
 }
 
 func testSessionPeer(t *testing.T, cwd string) peercred.Info {
@@ -602,6 +602,7 @@ func testSessionPeerWithPID(t *testing.T, cwd string, pid int) peercred.Info {
 		UID:            os.Getuid(),
 		GID:            os.Getgid(),
 		PID:            pid,
+		PIDVersion:     1,
 		ExecutablePath: currentTestExecutable(t),
 		CWD:            cwd,
 	}

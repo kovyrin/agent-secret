@@ -26,6 +26,7 @@ type ApprovalRequestPayload struct {
 	Resources              []ApprovalRequestedResource `json:"resources"`
 	OverrideEnv            bool                        `json:"override_env"`
 	OverriddenAliases      []string                    `json:"overridden_aliases"`
+	CodeLoadingEnvironment []string                    `json:"code_loading_environment,omitempty"`
 	ReusableUses           int                         `json:"reusable_uses"`
 	SessionBinding         *request.SessionBindingInfo `json:"session_binding,omitempty"`
 }
@@ -93,6 +94,7 @@ func NewExecPayload(correlation protocol.Correlation, req request.ExecRequest) A
 		Resources:              resources,
 		OverrideEnv:            req.OverrideEnv,
 		OverriddenAliases:      overriddenAliases,
+		CodeLoadingEnvironment: slices.Clone(req.CodeLoadingEnvironment),
 		ReusableUses:           request.ReusableUsesOrDefault(req.ReusableUses),
 	}
 }

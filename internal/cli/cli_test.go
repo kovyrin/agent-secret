@@ -19,6 +19,7 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	dir := t.TempDir()
 	writeExecutable(t, dir, "terraform")
 	t.Setenv("PATH", dir)
+	t.Setenv("NODE_OPTIONS", "--require /tmp/example.js")
 	parser := NewParser()
 
 	command, err := parser.Parse([]string{
@@ -48,6 +49,9 @@ func TestParseExecBuildsValidatedRequest(t *testing.T) {
 	}
 	if !req.ReceivedAt.IsZero() || !req.ExpiresAt.IsZero() {
 		t.Fatalf("client request times = received %s expires %s, want daemon-owned zero values", req.ReceivedAt, req.ExpiresAt)
+	}
+	if !slices.Contains(req.CodeLoadingEnvironment, "NODE_OPTIONS=--require /tmp/example.js") {
+		t.Fatalf("code-loading environment = %v, want displayed NODE_OPTIONS value", req.CodeLoadingEnvironment)
 	}
 }
 

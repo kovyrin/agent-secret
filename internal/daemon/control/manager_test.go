@@ -21,6 +21,7 @@ import (
 	"github.com/kovyrin/agent-secret/internal/daemon"
 	"github.com/kovyrin/agent-secret/internal/daemon/approval"
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
+	"github.com/kovyrin/agent-secret/internal/daemon/messageauth"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	daemonprocess "github.com/kovyrin/agent-secret/internal/daemon/process"
 	"github.com/kovyrin/agent-secret/internal/daemon/protocol"
@@ -995,9 +996,11 @@ func TestManagerInspectConnectedHelperClassifiesLegacyHello(t *testing.T) {
 		socketPath: path,
 		DaemonPath: executable,
 	}
-	client, err := manager.connectTrustedHelper(context.Background())
+	client, err := manager.connectForInspection(
+		context.Background(), peertrust.NewDaemonProductValidator([]string{executable}),
+	)
 	if err != nil {
-		t.Fatalf("connectTrustedHelper returned error: %v", err)
+		t.Fatalf("connectForInspection returned error: %v", err)
 	}
 	defer func() { _ = client.Close() }()
 
@@ -1027,6 +1030,32 @@ func TestManagerStopTrustedHelperStopsMatchingSocket(t *testing.T) {
 	}
 	if _, err := manager.Status(context.Background()); !errors.Is(err, socket.ErrDaemonUnavailable) {
 		t.Fatalf("Status after stop error = %v, want daemon unavailable", err)
+	}
+}
+
+func TestManagerStopTrustedHelperSignalsLegacyDaemon(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, stop := startFakeHelperDaemonWithOptions(t, fakeHelperOptions{
+		hello:      helperidentity.ForExecutable(executable, os.Getpid()),
+		legacyAuth: true,
+	})
+	defer stop()
+	manager := Manager{
+		socketPath: path,
+		DaemonPath: executable,
+		signalProcess: func(pid int, signal os.Signal) error {
+			if pid != os.Getpid() || signal != syscall.SIGTERM {
+				t.Fatalf("unexpected helper signal: pid %d, signal %v", pid, signal)
+			}
+			stop()
+			return nil
+		},
+	}
+	if err := manager.stopTrustedHelper(context.Background()); err != nil {
+		t.Fatalf("stopTrustedHelper legacy daemon: %v", err)
 	}
 }
 
@@ -1518,6 +1547,7 @@ func startFakeHelperDaemon(t *testing.T, hello protocol.HelperHelloPayload) (str
 
 type fakeHelperOptions struct {
 	hello                protocol.HelperHelloPayload
+	legacyAuth           bool
 	stopErrorCode        protocol.ErrorCode
 	onePasswordErrorCode protocol.ErrorCode
 }
@@ -1567,12 +1597,34 @@ func serveFakeHelperDaemonConn(
 	defer func() { _ = conn.Close() }()
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
+	var authPort *messageauth.Port
+	defer func() {
+		if authPort != nil {
+			authPort.Close()
+		}
+	}()
 	for {
 		var env protocol.Envelope
 		if err := decoder.Decode(&env); err != nil {
 			return
 		}
 		switch env.Type { //nolint:exhaustive // Fake helper handles only manager repair requests.
+		case protocol.TypeAuthHello:
+			if opts.legacyAuth {
+				_ = writeFakeHelperError(encoder, env.Correlation(), protocol.ErrorCodeBadType)
+				return
+			}
+			if authPort != nil {
+				return
+			}
+			port, err := messageauth.NewPort()
+			if err != nil {
+				return
+			}
+			authPort = port
+			if !writeFakeHelperResponse(encoder, env.Correlation(), protocol.AuthHelloPayload{Port: authPort.Name()}) {
+				return
+			}
 		case protocol.TypeHelperHello:
 			if !writeFakeHelperResponse(encoder, env.Correlation(), opts.hello) {
 				return
@@ -1655,6 +1707,17 @@ func serveFakeStatusError(conn *net.UnixConn, code protocol.ErrorCode) {
 	if err := decoder.Decode(&env); err != nil {
 		return
 	}
+	if env.Type == protocol.TypeAuthHello {
+		port, err := messageauth.NewPort()
+		if err != nil {
+			return
+		}
+		defer port.Close()
+		env, err = serveFakeAuthenticatedRequest(decoder, encoder, port, env)
+		if err != nil {
+			return
+		}
+	}
 	resp, err := protocol.NewEnvelope(protocol.TypeError, env.Correlation(), protocol.ErrorPayload{
 		Code:    code,
 		Message: "daemon stopped",
@@ -1665,6 +1728,27 @@ func serveFakeStatusError(conn *net.UnixConn, code protocol.ErrorCode) {
 	if err := encoder.Encode(resp); err != nil {
 		return
 	}
+}
+
+func serveFakeAuthenticatedRequest(
+	decoder *json.Decoder,
+	encoder *json.Encoder,
+	port *messageauth.Port,
+	hello protocol.Envelope,
+) (protocol.Envelope, error) {
+	if !writeFakeHelperResponse(encoder, hello.Correlation(), protocol.AuthHelloPayload{Port: port.Name()}) {
+		return protocol.Envelope{}, errors.New("send fake authentication hello")
+	}
+	var env protocol.Envelope
+	if err := decoder.Decode(&env); err != nil {
+		return protocol.Envelope{}, err
+	}
+	frame, err := json.Marshal(env)
+	if err != nil {
+		return protocol.Envelope{}, err
+	}
+	_, err = port.Receive(frame, 5*time.Second)
+	return env, err
 }
 
 func serveFakeExecPayload(conn *net.UnixConn) {
