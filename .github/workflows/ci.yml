@@ -46,10 +46,14 @@ jobs:
       - name: Run lints and tests
         run: mise run lint
 
-      - name: Verify macOS socket identity across exec
+      - name: Verify macOS socket and message identity across exec
         env:
           AGENT_SECRET_TEST_SOCKET_CREDENTIALS: "1"
-        run: mise exec -- go test ./internal/peercred -run '^TestInspectDetectsExecOnConnectedSocket$' -count=1
+          AGENT_SECRET_TEST_MACOS_PEER_IDENTITY: "1"
+        run: >-
+          mise exec -- go test ./internal/peercred ./internal/daemon/messageauth ./internal/daemon
+          -run '^(TestInspectDetectsExecOnConnectedSocket|TestMachSenderTokenPrecedesExecImage|TestAuthenticatedServerBindsExactFrame)$'
+          -count=1
 
       - name: Build commands and app bundle
         run: mise run build
