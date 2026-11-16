@@ -41,9 +41,9 @@ adds or repairs the bundled Codex skill symlink for the current user.
 
 To install without Homebrew, download the DMG from the
 [latest GitHub release](https://github.com/kovyrin/agent-secret/releases/latest).
-Open the DMG, drag Agent Secret into Applications, then open the app and choose
-**Install Command Line Tool**. Run `agent-secret skill-install` to link the
-bundled Codex skill.
+Open the DMG, drag Agent Secret into Applications, then open the app's Settings
+and choose **Install…** beside Command-line tool. Run `agent-secret skill-install`
+to link the bundled Codex skill.
 
 ### App updates
 
@@ -53,6 +53,10 @@ off, clear **Check for updates automatically**. Existing opt-outs and macOS
 Login Items choices are preserved. Agent Secret asks before each installation
 and waits
 for pending approvals, running commands, and live sessions to finish.
+
+Settings shows the app version and command-line tool status. **Run Diagnostics**
+opens selectable results in a scrollable sheet. Closing Settings leaves the
+background service and updater running independently.
 
 `agent-secret update status` reports the actual installed app build. Homebrew
 maintains its own receipt, which can show an older version after an in-app
