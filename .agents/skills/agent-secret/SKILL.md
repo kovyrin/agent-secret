@@ -62,6 +62,11 @@ The user approves every installation. If an update is waiting, let the current
 work finish and
 close any sessions you own when their work is complete.
 
+Opening Agent Secret shows Settings with the app version, command-line tool
+status, and update preferences. **Run Diagnostics** shows selectable results
+in a scrollable sheet; opening Settings alone does not request secrets. Closing
+Settings leaves the background service and updater running independently.
+
 Run a single-secret command:
 
 ```bash
