@@ -263,7 +263,12 @@ if [[ "$notarize" == "1" && "$codesign_identity" == "-" ]]; then
 fi
 
 echo "Building Agent Secret.app for $version..."
-"$project_root/scripts/build/build-app-bundle.sh" --version "$version" --output "$build_dir"
+(
+  # A shared Applications install must be traversable by other local users.
+  # The parent temporary directory remains private.
+  umask 022
+  "$project_root/scripts/build/build-app-bundle.sh" --version "$version" --output "$build_dir"
+)
 
 if [[ "$notarize" == "1" ]]; then
   echo "Submitting app bundle for notarization..."

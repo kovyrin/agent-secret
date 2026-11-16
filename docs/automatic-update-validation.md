@@ -115,6 +115,9 @@ commands and close sessions in every account using that app before upgrading.
   ID bundle. Both passed strict recursive signature verification. The pinned
   tool generated a signed feed from the final signed pilot DMG and embedded
   its notes.
+- The release smoke test built and mounted a DMG under a private shell
+  umask. It verified that the app's installed directory modes allow other
+  accounts to read and run the bundle.
 - Go tests exercise exclusion across readers and writer ownership. Protocol
   tests exercise the accepted updater role and deny that same role secret
   requests, session access, and forced broker stops.
