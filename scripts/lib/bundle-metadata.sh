@@ -28,6 +28,26 @@ agent_secret_release_bundle_version() {
   printf '%d.%s.%s\n' "$((BASH_REMATCH[1] + 1))" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
 }
 
+agent_secret_previous_release_bundle_version() {
+  local bundle_version major minor patch
+  bundle_version="$(agent_secret_release_bundle_version "$1")" || return 1
+  IFS=. read -r major minor patch <<<"$bundle_version"
+  if ((patch > 0)); then
+    patch=$((patch - 1))
+  elif ((minor > 0)); then
+    minor=$((minor - 1))
+    patch=99
+  elif ((major > 1)); then
+    major=$((major - 1))
+    minor=99
+    patch=99
+  else
+    echo "release has no earlier supported bundle version: $1" >&2
+    return 1
+  fi
+  printf '%d.%d.%d\n' "$major" "$minor" "$patch"
+}
+
 agent_secret_latest_changelog_version() {
   local changelog="$1"
 

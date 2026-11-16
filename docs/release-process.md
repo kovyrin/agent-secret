@@ -33,7 +33,7 @@ this before publishing draft artifacts. Local smoke coverage for this contract
 lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
 The app's build version increments the first semantic version component by
-one. Release `0.0.35` has build `1.0.35`. The build rejects major versions
+one. Release `0.1.0` has build `1.1.0`. The build rejects major versions
 above 9998 and minor or patch versions above 99.
 
 ## Release Checklist

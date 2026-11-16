@@ -126,12 +126,11 @@ if [[ "$update_feed" != "" || "$update_public_key" != "" ]]; then
   fi
 fi
 if [[ "${AGENT_SECRET_UPDATE_SMOKE_OLDER_BUILD:-0}" == 1 ]]; then
-  if [[ ! "$update_feed" =~ ^https://localhost:[0-9]+/appcast\.xml$ ||
-    ! "$version" =~ ^([0-9]+\.[0-9]+)\.([1-9][0-9]?)$ ]]; then
-    echo "build-app-bundle: an older smoke build requires a localhost feed and a nonzero patch version" >&2
+  if [[ ! "$update_feed" =~ ^https://localhost:[0-9]+/appcast\.xml$ ]]; then
+    echo "build-app-bundle: an older smoke build requires a localhost feed" >&2
     exit 1
   fi
-  bundle_version="$(agent_secret_release_bundle_version "${BASH_REMATCH[1]}.$((BASH_REMATCH[2] - 1))")"
+  bundle_version="$(agent_secret_previous_release_bundle_version "$version")"
 fi
 if [[ "$build_revision" == "" ]]; then
   build_revision="$(agent_secret_git_revision "$project_root")" || {

@@ -43,11 +43,39 @@ check_mapping 0.0.35 1.0.35
 check_mapping 0.0.99 1.0.99
 check_mapping 0.1.0 1.1.0
 check_mapping 1.0.0 2.0.0
+
+check_previous_mapping() {
+  local version="$1" expected="$2" actual
+  actual="$(agent_secret_previous_release_bundle_version "$version")"
+  [[ "$actual" == "$expected" ]] || fail "$version predecessor mapped to $actual, expected $expected"
+}
+
+check_previous_mapping 0.0.1 1.0.0
+check_previous_mapping 0.0.35 1.0.34
+check_previous_mapping 0.1.0 1.0.99
+check_previous_mapping 1.0.0 1.99.99
+if agent_secret_previous_release_bundle_version 0.0.0 >/dev/null 2>&1; then
+  fail "accepted a predecessor below the supported bundle version range"
+fi
 for invalid in 0.00.34 0.0.100 0.100.0 9999.0.0 0.0.34-dev; do
   if agent_secret_release_bundle_version "$invalid" >/dev/null 2>&1; then
     fail "accepted invalid release build version $invalid"
   fi
+  if agent_secret_previous_release_bundle_version "$invalid" >/dev/null 2>&1; then
+    fail "accepted invalid previous release version $invalid"
+  fi
 done
+
+if AGENT_SECRET_IN_MISE=1 AGENT_SECRET_UPDATE_SMOKE_OLDER_BUILD=1 \
+  AGENT_SECRET_UPDATE_FEED_URL=https://updates.example.test/appcast.xml \
+  AGENT_SECRET_UPDATE_PUBLIC_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+  AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Synthetic Test Identity" \
+  "$project_root/scripts/build/build-app-bundle.sh" --version "$tag_version" \
+  --output "$tmp_dir/nonlocal-smoke" >"$tmp_dir/nonlocal-smoke.log" 2>&1; then
+  fail "accepted an older smoke build outside localhost"
+fi
+grep -F 'an older smoke build requires a localhost feed' "$tmp_dir/nonlocal-smoke.log" >/dev/null ||
+  fail "older smoke build did not enforce the localhost feed restriction"
 
 (
   umask 077
