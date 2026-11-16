@@ -32,6 +32,7 @@ notarize="${AGENT_SECRET_NOTARIZE:-0}"
 notary_key="${AGENT_SECRET_NOTARY_KEY:-}"
 notary_key_id="${AGENT_SECRET_NOTARY_KEY_ID:-}"
 notary_issuer_id="${AGENT_SECRET_NOTARY_ISSUER_ID:-}"
+notary_profile="${AGENT_SECRET_NOTARY_PROFILE:-}"
 
 production_signing_requested() {
   [[ "$require_production_signing" == "1" ]] ||
@@ -39,6 +40,7 @@ production_signing_requested() {
     [[ "$notarize" == "1" ]] ||
     [[ "$notary_key" != "" ]] ||
     [[ "$notary_key_id" != "" ]] ||
+    [[ "$notary_profile" != "" ]] ||
     [[ "$notary_issuer_id" != "" ]]
 }
 
@@ -104,6 +106,11 @@ done
 if [[ "$version" == "" ]]; then
   echo "build-release: VERSION is required" >&2
   exit 2
+fi
+
+if [[ "$notary_profile" != "" && ("$notary_key" != "" || "$notary_key_id" != "" || "$notary_issuer_id" != "") ]]; then
+  echo "build-release: select a Keychain notarization profile or API key credentials" >&2
+  exit 1
 fi
 
 if [[ "${AGENT_SECRET_IN_MISE:-}" != "1" ]]; then
@@ -235,6 +242,10 @@ prepare_notary_key() {
 submit_for_notarization() {
   local path="$1"
 
+  if [[ "$notary_profile" != "" ]]; then
+    "$tool_xcrun" notarytool submit "$path" --keychain-profile "$notary_profile" --wait
+    return
+  fi
   if [[ "$notary_key_path" == "" ]]; then
     notary_key_path="$(prepare_notary_key)"
   fi

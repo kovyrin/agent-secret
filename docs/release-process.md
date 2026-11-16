@@ -32,6 +32,10 @@ The tag-triggered workflow runs `scripts/release/extract-release-notes.sh` to en
 this before publishing draft artifacts. Local smoke coverage for this contract
 lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
+The app's build version increments the first semantic version component by
+one. Release `0.0.35` has build `1.0.35`. The build rejects major versions
+above 9998 and minor or patch versions above 99.
+
 ## Release Checklist
 
 1. Confirm `main` is clean and current:
@@ -161,28 +165,19 @@ lives in `AGENT_SECRET_IN_MISE=1 scripts/release/test-release-notes.sh`.
 
 1. Confirm the published release page shows the expected notes and assets.
 
-1. Update the Homebrew cask to the published release before announcing the
-    release. Use the SHA-256 digest for the
-    `Agent-Secret-vX.Y.Z-macos-arm64.dmg` asset:
+1. Wait for **Promote stable Agent Secret update**. The workflow verifies the
+    public assets, updates the cask on `main`, then writes the signed stable
+    feed. If a release is published by the GitHub Actions token, dispatch
+    promotion explicitly because GitHub suppresses most chained workflow
+    events:
 
     ```bash
-    version="0.0.1"
-    artifact="Agent-Secret-v${version}-macos-arm64.dmg"
-    gh release download "v$version" --pattern "$artifact" --dir "$RUNNER_TEMP"
-    shasum -a 256 "$RUNNER_TEMP/$artifact"
+    gh workflow run publish-updates.yml --ref main -f tag="v$version"
     ```
 
-    Then update `Casks/agent-secret.rb`, run the cask checks, and push the cask
-    bump:
-
-    ```bash
-    brew tap kovyrin/agent-secret https://github.com/kovyrin/agent-secret
-    AGENT_SECRET_IN_MISE=1 scripts/release/check-homebrew-cask.sh "v$version"
-    brew audit --cask --strict --online --tap=kovyrin/agent-secret agent-secret
-    git add Casks/agent-secret.rb
-    git commit -m "Bump Homebrew cask to v$version"
-    git push origin main
-    ```
+    During bootstrap, while the feed is disabled, update the cask as a
+    maintainer using the published DMG's verified SHA-256 checksum. Run
+    `scripts/release/check-homebrew-cask.sh` and the cask audit before pushing.
 
 1. Verify the public Homebrew upgrade path from a fresh tap update:
 
@@ -301,6 +296,39 @@ scripts/release/check-release-signing-env.sh
 AGENT_SECRET_IN_MISE=1 scripts/release/build-release.sh v0.0.0 \
   --require-production-signing
 ```
+
+## Stable update feed
+
+Before enabling the production feed, complete the
+[signed update drill](automatic-update-validation.md). Configure a dedicated
+Cloudflare R2 bucket whose public custom domain serves
+`https://updates.agent-secret.sh/appcast.xml` with caching disabled. Keep the
+bucket out of the website deployment. The GitHub repository's
+`AGENT_SECRET_UPDATES_ENABLED` variable enables promotion.
+
+- In the `agent-secret-release-signing` environment, configure
+  `AGENT_SECRET_UPDATE_FEED_URL`, `AGENT_SECRET_UPDATE_PUBLIC_KEY`, and the
+  `AGENT_SECRET_UPDATE_SIGNING_KEY` secret. Store a protected offline backup of
+  the Ed25519 seed. The release job passes the seed to Sparkle over stdin.
+- In `agent-secret-update-promotion`, configure the same feed URL and public
+  key, plus `AGENT_SECRET_UPDATE_R2_BUCKET` and
+  `AGENT_SECRET_UPDATE_R2_ENDPOINT`. Grant its R2 access key and secret access
+  key write access to the feed bucket. This job needs permission to update the
+  cask on `main`. Keep signing credentials in the signing environment.
+
+CI generates authenticated embedded release notes and a signed `appcast.xml`
+from the stapled DMG. The draft asset is the promotion input. Promotion
+serializes the cask and feed operations, rejects versions older than either
+destination, and writes the feed using a conditional R2 put. If cask
+publication succeeds and the feed write fails, rerun promotion for the same
+tag. It verifies the existing cask before retrying. A higher version requires
+its own verified release. Keep published GitHub release assets immutable.
+
+For a bad release, publish a corrective release with a higher bundle version.
+An older signed feed can still be replayed to clients. Removing an item affects
+future discovery, while an already downloaded update can still install. If the
+signing key is lost, use the signed DMG or Homebrew to bootstrap a build with
+the replacement verification key after coordinating the feed transition.
 
 ## Installer Bootstrap Documentation
 

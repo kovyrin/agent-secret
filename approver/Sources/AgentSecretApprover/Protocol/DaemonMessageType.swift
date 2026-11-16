@@ -11,6 +11,7 @@ enum DaemonMessageType: String, Codable, Equatable, Hashable {
     case okResponse = "ok"
     case requestExec = "request.exec"
     case unknown
+    case updateQuiesce = "update.quiesce"
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

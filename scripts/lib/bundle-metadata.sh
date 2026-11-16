@@ -10,12 +10,22 @@ AGENT_SECRET_APP_CATEGORY="public.app-category.developer-tools"
 AGENT_SECRET_ICON_FILE="AppIcon"
 AGENT_SECRET_MIN_MACOS_VERSION="14.0"
 AGENT_SECRET_INFO_DICTIONARY_VERSION="6.0"
-AGENT_SECRET_DEFAULT_BUNDLE_VERSION="1"
+AGENT_SECRET_UPDATER_BUNDLE_ID="com.kovyrin.agent-secret.updater"
 
 agent_secret_normalize_short_version() {
   local release_version="$1"
 
   printf '%s\n' "${release_version#v}"
+}
+
+agent_secret_release_bundle_version() {
+  local version="$1"
+  if [[ ! "$version" =~ ^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)$ ]] ||
+    [[ "${BASH_REMATCH[1]}" == 9999 ]]; then
+    echo "release version cannot be represented in CFBundleVersion: $version" >&2
+    return 1
+  fi
+  printf '%d.%s.%s\n' "$((BASH_REMATCH[1] + 1))" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
 }
 
 agent_secret_latest_changelog_version() {

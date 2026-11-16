@@ -102,7 +102,10 @@ SCRIPT
   cat >"$fake_bin/ditto" <<'SCRIPT'
 #!/bin/sh
 printf 'ditto %s %s\n' "$1" "$2" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
-cp -R "$1" "$2"
+cp -R "$1" "$2" || exit
+if [ "${AGENT_SECRET_INSTALL_TEST_DISCARD_STAGING:-0}" = 1 ]; then
+  rm -rf "$2"
+fi
 SCRIPT
 
   cat >"$fake_bin/hdiutil" <<'SCRIPT'
@@ -559,6 +562,47 @@ test_diagnostics_failure_does_not_fail_install() {
   fi
 }
 
+test_competing_installer_blocks_replacement() (
+  local name="competing-installer"
+  local app_dir="$tmp_dir/$name/apps"
+  local output
+  mkdir -p "$app_dir/Agent Secret.app"
+  touch "$app_dir/Agent Secret.app/original"
+  exec 8<"$app_dir"
+  /usr/bin/ruby -e 'abort unless File.for_fd(8).flock(File::LOCK_EX | File::LOCK_NB)'
+  if output="$(run_installer "$name" 8<&- 2>&1)"; then
+    fail "installer replaced an app while another installer owned the directory"
+  fi
+  [[ "$output" == *"Agent Secret is in use or being updated"* ]] || fail "$output"
+  [[ -f "$app_dir/Agent Secret.app/original" ]] || fail "the original app changed"
+)
+
+test_failed_replacement_restores_original_and_updater() {
+  local name="restore-after-failure"
+  local app="$tmp_dir/$name/apps/Agent Secret.app"
+  local updater="$app/Contents/Library/LoginItems/AgentSecretUpdater.app/Contents/MacOS"
+  local executable="$app/Contents/MacOS/Agent Secret"
+  run_installer "$name"
+  mkdir -p "$updater" "$(dirname "$executable")"
+  printf '#!/bin/sh\nexit 0\n' >"$updater/agent-secret-updater"
+  cat >"$executable" <<'APP'
+#!/bin/sh
+case "$1" in
+  --suspend-background-updater) echo enabled ;;
+  --restore-background-updater)
+    echo "restored background updater" >>"$AGENT_SECRET_INSTALL_TEST_LOG"
+    ;;
+esac
+APP
+  chmod 755 "$updater/agent-secret-updater" "$executable"
+  touch "$app/original"
+  if run_installer "$name" AGENT_SECRET_INSTALL_TEST_DISCARD_STAGING=1; then
+    fail "installer reported success after it lost the staged app"
+  fi
+  [[ -f "$app/original" ]] || fail "the original app was not restored"
+  assert_log_contains "$tmp_dir/$name/tools.log" "restored background updater"
+}
+
 test_identity_checks_run
 test_installer_has_no_developer_tool_dependency
 test_identity_failure_stops_install
@@ -577,5 +621,7 @@ test_dev_mode_unsigned_override_skips_identity_checks_for_local_artifacts
 test_untrusted_existing_cli_is_not_used_for_daemon_stop
 test_install_cli_receives_original_path_before_sanitization
 test_diagnostics_failure_does_not_fail_install
+test_competing_installer_blocks_replacement
+test_failed_replacement_restores_original_and_updater
 
 echo "test-install: ok"

@@ -40,6 +40,8 @@ const (
 	KindDaemonStart    Kind = "daemon_start"
 	KindDaemonStop     Kind = "daemon_stop"
 	KindDaemonStatus   Kind = "daemon_status"
+	KindUpdateStatus   Kind = "update_status"
+	KindUpdateCheck    Kind = "update_check"
 )
 
 type Command struct {
@@ -109,6 +111,8 @@ func (p Parser) Parse(args []string) (Command, error) {
 		return parseBitwarden(args[1:])
 	case "daemon":
 		return parseDaemon(args[1:])
+	case "update":
+		return parseUpdate(args[1:])
 	case "doctor":
 		return parseDoctor(args[1:])
 	case "repair":

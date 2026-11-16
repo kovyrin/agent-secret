@@ -50,6 +50,8 @@ type Server struct {
 	approvals               approval.ApprovalEndpoint
 	validator               PeerValidator
 	clientValidator         peertrust.ClientValidator
+	updaterValidator        peertrust.ClientValidator
+	updateAdmission         updateAdmission
 	onePasswordCheck        func(context.Context, string) error
 	selfCheck               func() error
 	maxFrameBytes           int64
@@ -69,6 +71,7 @@ type ServerOptions struct {
 	Approvals               approval.ApprovalEndpoint
 	Validator               PeerValidator
 	ClientValidator         peertrust.ClientValidator
+	UpdaterValidator        peertrust.ClientValidator
 	OnePasswordCheck        func(context.Context, string) error
 	SelfCheck               func() error
 	MaxFrameBytes           int64
@@ -175,6 +178,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		approvals:               opts.Approvals,
 		validator:               validator,
 		clientValidator:         clientValidator,
+		updaterValidator:        opts.UpdaterValidator,
 		onePasswordCheck:        onePasswordCheck,
 		selfCheck:               opts.SelfCheck,
 		maxFrameBytes:           maxFrameBytes,
@@ -371,6 +375,17 @@ func (s *Server) dispatchClientEnvelope(
 	env protocol.Envelope,
 	state *connectionState,
 ) connectionDispatchAction {
+	if env.Type == protocol.TypeUpdateQuiesce {
+		s.handleUpdateQuiesce(ctx, conn, encoder, env)
+		return connectionDispatchAction{closeConnection: true}
+	}
+	if env.Type != protocol.TypeHelperHello && env.Type != protocol.TypeDaemonStatus {
+		if !s.updateAdmission.enter() {
+			_ = writeErrorEncoder(encoder, env.Correlation(), protocol.ErrorCodeDaemonStopped, daemonbroker.ErrDaemonStopped)
+			return connectionDispatchAction{closeConnection: true}
+		}
+		defer s.updateAdmission.leave()
+	}
 	//nolint:exhaustive // Response envelopes are invalid client requests; default rejects them with unknown request types.
 	switch env.Type {
 	case protocol.TypeHelperHello:
@@ -749,22 +764,19 @@ func (s *Server) handleRequestExec(
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			delivery.AbortBeforePayload()
-		}
-	}()
+	defer delivery.AbortBeforePayload()
 	if s.beforeExecResponseWrite != nil {
 		s.beforeExecResponseWrite(conn)
 	}
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
+		delivery.AbortBeforePayload()
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
 	defer clearWriteDeadline()
 	if err := delivery.BeforeWrite(); err != nil {
+		delivery.AbortBeforePayload()
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
 		return ""
 	}
@@ -773,7 +785,6 @@ func (s *Server) handleRequestExec(
 		return ""
 	}
 	delivery.CommitDelivered()
-	committed = true
 	return env.RequestID
 }
 

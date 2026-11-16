@@ -27,6 +27,7 @@ Commands:
   skill-install Install or repair the Agent Secret agent skill for this user.
   repair    Inspect and repair Agent Secret background helper state.
   daemon    Low-level daemon diagnostics: status, start, stop.
+  update    Show installed update information or open Check for Updates.
   doctor    Print non-secret local diagnostics for setup troubleshooting.
   version   Print the installed agent-secret version.
   help      Show this help.

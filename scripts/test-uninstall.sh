@@ -507,6 +507,20 @@ SCRIPT
   fi
 }
 
+competing_installer_blocks_removal() (
+  local name="competing-installer"
+  local app_dir="$tmp_dir/$name/apps"
+  local app="$app_dir/Agent Secret.app"
+  make_untrusted_app "$app"
+  exec 8<"$app_dir"
+  /usr/bin/ruby -e 'abort unless File.for_fd(8).flock(File::LOCK_EX | File::LOCK_NB)'
+  expect_failure "$name" "Agent Secret is in use or being updated" \
+    AGENT_SECRET_ALLOW_CUSTOM_UNINSTALL_PATHS=1 \
+    AGENT_SECRET_APP_DIR="$app_dir" \
+    AGENT_SECRET_FORCE_REMOVE_UNTRUSTED_APP=1 8<&-
+  [[ -f "$app/keep.txt" ]] || fail "the original app was removed"
+)
+
 custom_guard_rejects_override
 custom_destination_guard_rejects_override
 dangerous_paths_are_rejected_even_with_guard
@@ -519,5 +533,6 @@ untrusted_app_is_left_in_place_by_default
 force_removes_untrusted_app_explicitly
 untrusted_existing_cli_is_not_used_for_daemon_stop
 fake_path_codesign_is_not_used_for_trust_checks
+competing_installer_blocks_removal
 
 echo "test-uninstall: ok"

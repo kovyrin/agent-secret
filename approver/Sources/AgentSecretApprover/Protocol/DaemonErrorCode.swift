@@ -26,6 +26,7 @@ enum DaemonErrorCode: String, Codable, Equatable, Hashable {
     case staleApproval = "stale_approval"
     case unknown
     case untrustedClient = "untrusted_client"
+    case updateBusy = "update_busy"
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

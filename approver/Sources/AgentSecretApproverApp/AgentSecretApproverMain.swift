@@ -13,6 +13,22 @@ private enum AgentSecretApproverMain {
                 print("Agent Secret: ok")
                 exit(0)
             }
+            if arguments == ["--background-updater-status"] {
+                print(UpdaterSettings.registrationStatus.rawValue)
+                exit(0)
+            }
+            if arguments == ["--suspend-background-updater"] {
+                let wasEnabled = UpdaterSettings.registrationStatus == .enabled
+                try UpdaterSettings.unregister()
+                print(wasEnabled ? "enabled" : "inactive")
+                exit(0)
+            }
+            if arguments == ["--restore-background-updater"] {
+                if UpdaterSettings.checksRequested {
+                    try UpdaterSettings.setAutomaticChecks(true)
+                }
+                exit(0)
+            }
             guard let socketPath: String = try socketPath(from: arguments) else {
                 runSetupDialog()
                 exit(0)

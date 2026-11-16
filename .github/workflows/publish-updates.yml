@@ -1,0 +1,56 @@
+name: Promote stable Agent Secret update
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact already-published release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-secret-stable-publication
+  cancel-in-progress: false
+
+jobs:
+  promotion:
+    if: vars.AGENT_SECRET_UPDATES_ENABLED == 'true' && (github.event_name == 'release' || github.ref == 'refs/heads/main')
+    runs-on: macos-latest
+    environment: agent-secret-update-promotion
+    permissions:
+      contents: write
+    steps:
+      - name: Check out trusted promotion scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: main
+      - name: Install pinned mise
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_SECRET_MISE_VERSION: "2026.4.28"
+          AGENT_SECRET_MISE_SHA256_MACOS_ARM64: f0f5fa48643a00442c8cc066f8350285896561f2491bcbbee93b1a9a8249816d
+        run: scripts/checks/install-ci-mise.sh
+      - name: Verify the runner supports conditional object writes
+        run: |
+          aws --version
+          aws s3api put-object --generate-cli-skeleton input |
+            jq -e 'has("IfMatch") and has("IfNoneMatch")'
+      - name: Verify and promote exact published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_SECRET_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          AGENT_SECRET_UPDATE_FEED_URL: ${{ vars.AGENT_SECRET_UPDATE_FEED_URL }}
+          AGENT_SECRET_UPDATE_PUBLIC_KEY: ${{ vars.AGENT_SECRET_UPDATE_PUBLIC_KEY }}
+          AGENT_SECRET_UPDATE_R2_BUCKET: ${{ vars.AGENT_SECRET_UPDATE_R2_BUCKET }}
+          AGENT_SECRET_UPDATE_R2_ENDPOINT: ${{ vars.AGENT_SECRET_UPDATE_R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AGENT_SECRET_UPDATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AGENT_SECRET_UPDATE_R2_SECRET_ACCESS_KEY }}
+        run: |
+          mise trust --yes
+          mise install go
+          mise exec -- scripts/release/promote-update-feed.sh "$AGENT_SECRET_RELEASE_TAG"

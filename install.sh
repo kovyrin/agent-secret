@@ -277,11 +277,22 @@ fi
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-install.XXXXXX")"
 mount_dir="$tmp_dir/mount"
 mounted=0
+tmp_app=
+backup_app=
+restore_updater=
 
 cleanup() {
   if [ "$mounted" -eq 1 ]; then
     "$tool_hdiutil" detach "$mount_dir" >/dev/null 2>&1 || true
   fi
+  if [ -n "${tmp_app:-}" ]; then
+    rm -rf "$tmp_app"
+  fi
+  if [ -n "$backup_app" ] && [ ! -e "$target_app" ] && [ ! -L "$target_app" ]; then
+    mv "$backup_app" "$target_app" ||
+      echo "agent-secret install: restore the previous app from $backup_app" >&2
+  fi
+  restore_background_updater
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT HUP INT TERM
@@ -425,6 +436,24 @@ stop_existing_daemon() {
   fi
 }
 
+quiesce_existing_updater() {
+  updater="$target_app/Contents/Library/LoginItems/AgentSecretUpdater.app"
+  if [ -d "$updater" ]; then
+    (verify_app_identity "$target_app") >/dev/null 2>&1 ||
+      die "the installed app failed verification. Reinstall a signed copy from the DMG."
+    "$updater/Contents/MacOS/agent-secret-updater" --quiesce-for-package-manager ||
+      die "Agent Secret still has active work or another running copy. Close it and retry."
+  fi
+}
+
+restore_background_updater() {
+  if [ "$restore_updater" = "enabled" ] && [ -d "$target_app/Contents/Library/LoginItems/AgentSecretUpdater.app" ]; then
+    "$target_app/Contents/MacOS/Agent Secret" --restore-background-updater ||
+      echo "agent-secret install: open Agent Secret to restore background update checks" >&2
+  fi
+  restore_updater=
+}
+
 require_tool curl "$tool_curl"
 require_tool hdiutil "$tool_hdiutil"
 require_tool shasum "$tool_shasum"
@@ -466,16 +495,48 @@ source_app="$mount_dir/Agent Secret.app"
 verify_app_identity "$source_app"
 
 target_app="$app_dir/Agent Secret.app"
-tmp_app="$app_dir/.Agent Secret.app.installing.$$"
 
-stop_existing_daemon
-
-echo "Installing Agent Secret.app into $app_dir"
 mkdir -p "$app_dir"
+[ -x /usr/bin/ruby ] || die "macOS Ruby is unavailable. Use Homebrew or the signed DMG."
+quiesce_existing_updater
+# The shell owns fd 9 until replacement finishes. The Ruby child locks the
+# same open file description used by Sparkle, Homebrew, and the broker.
+exec 9<"$app_dir"
+/usr/bin/env -u RUBYOPT -u RUBYLIB /usr/bin/ruby --disable=gems \
+  -e 'exit File.for_fd(9).flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 1' ||
+  die "Agent Secret is in use or being updated. Wait for it to finish and retry."
+if [ -e "$app_dir/.agent-secret-update" ] || [ -L "$app_dir/.agent-secret-update" ]; then
+  die "an Agent Secret update needs to finish or recover before you install"
+fi
+tmp_app="$app_dir/.Agent Secret.app.installing.$$"
+echo "Installing Agent Secret.app into $app_dir"
 rm -rf "$tmp_app"
 "$tool_ditto" "$source_app" "$tmp_app"
-rm -rf "$target_app"
+
+if [ -d "$target_app/Contents/Library/LoginItems/AgentSecretUpdater.app" ]; then
+  (verify_app_identity "$target_app") >/dev/null 2>&1 ||
+    die "the installed app failed verification. Reinstall a signed copy from the DMG."
+  restore_updater="$("$target_app/Contents/MacOS/Agent Secret" --suspend-background-updater)" ||
+    die "could not unregister the Agent Secret background updater"
+else
+  stop_existing_daemon
+fi
+
+if [ -e "$target_app" ] || [ -L "$target_app" ]; then
+  backup_app="$app_dir/.Agent Secret.app.previous.$$"
+  if [ -e "$backup_app" ] || [ -L "$backup_app" ]; then
+    die "previous app staging path is occupied: $backup_app"
+  fi
+  mv "$target_app" "$backup_app"
+fi
 mv "$tmp_app" "$target_app"
+tmp_app=
+if [ -n "$backup_app" ]; then
+  rm -rf "$backup_app"
+  backup_app=
+fi
+restore_background_updater
+exec 9<&-
 
 echo "Installing command symlink into $bin_dir"
 PATH="$caller_path" "$target_app/Contents/Resources/bin/agent-secret" install-cli --bin-dir "$bin_dir"

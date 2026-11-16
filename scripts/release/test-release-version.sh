@@ -23,9 +23,26 @@ revision="$(agent_secret_git_revision "$project_root")"
 tag_version="v$latest_version"
 short_version="$(agent_secret_normalize_short_version "$tag_version")"
 dev_version="$short_version-dev"
-bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
+bundle_version="$(agent_secret_release_bundle_version "$short_version")"
 release_dir="$tmp_dir/release"
 dev_dir="$tmp_dir/dev"
+
+check_mapping() {
+  local version="$1" expected="$2" actual
+  actual="$(agent_secret_release_bundle_version "$version")"
+  [[ "$actual" == "$expected" ]] || fail "$version mapped to $actual, expected $expected"
+}
+
+check_mapping 0.0.34 1.0.34
+check_mapping 0.0.35 1.0.35
+check_mapping 0.0.99 1.0.99
+check_mapping 0.1.0 1.1.0
+check_mapping 1.0.0 2.0.0
+for invalid in 0.00.34 0.0.100 0.100.0 9999.0.0 0.0.34-dev; do
+  if agent_secret_release_bundle_version "$invalid" >/dev/null 2>&1; then
+    fail "accepted invalid release build version $invalid"
+  fi
+done
 
 "$project_root/scripts/build/build-app-bundle.sh" --version "$tag_version" --output "$release_dir"
 "$project_root/scripts/build/check-bundle-metadata.sh" \
@@ -40,6 +57,9 @@ fi
 release_cli_version="$("$release_dir/$AGENT_SECRET_APP_NAME.app/Contents/Resources/bin/agent-secret" --version)"
 if [[ "$release_cli_version" != "agent-secret $short_version ($revision)" ]]; then
   fail "release CLI version = $release_cli_version"
+fi
+if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$release_dir/$AGENT_SECRET_APP_NAME.app/Contents/Info.plist" >/dev/null 2>&1; then
+  fail "ordinary ad-hoc builds must not connect to an update feed"
 fi
 
 "$project_root/scripts/build/build-app-bundle.sh" --output "$dev_dir"

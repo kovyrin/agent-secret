@@ -21,6 +21,9 @@ func runSetupDialog() {
             alert.addButton(withTitle: "Install Command Line Tool")
             alert.addButton(withTitle: "Run Diagnostics")
             alert.addButton(withTitle: "Quit")
+            if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
+                alert.accessoryView = UpdatePreferencesView()
+            }
 
             switch alert.runModal() {
             case .alertFirstButtonReturn:

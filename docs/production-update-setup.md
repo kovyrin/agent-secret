@@ -1,0 +1,77 @@
+# Production update setup
+
+This records the provisioning state observed on 2026-11-16. Recheck the live
+configuration before release. No release or stable appcast has been published
+as part of this setup.
+
+## GitHub
+
+The repository is `kovyrin/agent-secret`. Automatic promotion is disabled by
+the repository variable `AGENT_SECRET_UPDATES_ENABLED=false`.
+
+All three environments require review by `kovyrin`:
+
+- `agent-secret-release-signing` allows `main` and tags matching `v*`.
+- `agent-secret-update-promotion` allows `main` and tags matching `v*`.
+- `agent-secret-candidate-signing` allows `main` and the temporary
+  `kovyrin/automatic-app-updates` branch for the isolated notarized pilot.
+
+Release events use a tag ref even when a job checks out `main`; both production
+environments therefore allow release tags. Remove the temporary candidate
+branch allowance after validation. Candidate signing has no production update
+signing key. Existing repository-level Developer ID and notarization secrets
+remain available to the appropriate jobs.
+
+Both production environments contain:
+
+- `AGENT_SECRET_UPDATE_FEED_URL=https://updates.agent-secret.sh/appcast.xml`
+- `AGENT_SECRET_UPDATE_PUBLIC_KEY=nbLYHrJHmHN0mBtkdzBNb0WnsAFfsLkfmTH6wQkMr9E=`
+
+The release-signing environment contains `AGENT_SECRET_UPDATE_SIGNING_KEY`.
+The pinned Sparkle tool generated this key in macOS Keychain under account
+`com.kovyrin.agent-secret.production-updates`, service
+`https://sparkle-project.org`. Its private seed was transferred directly to
+GitHub through stdin. It was not printed or written to a plaintext file.
+The public key above is safe to commit. A separate protected recovery backup
+has not yet been verified; complete that before enabling production updates.
+
+The promotion environment also has the R2 bucket and endpoint variables. Its
+bucket-scoped R2 publishing secrets still need to be configured:
+
+- `AGENT_SECRET_UPDATE_R2_ACCESS_KEY_ID`
+- `AGENT_SECRET_UPDATE_R2_SECRET_ACCESS_KEY`
+
+## Cloudflare
+
+The dedicated `agent-secret-updates` bucket was created in the account that
+owns `agent-secret.sh`, with the default jurisdiction. The custom domain
+`updates.agent-secret.sh` is attached with minimum TLS 1.2. HTTPS resolves
+successfully and the absent `appcast.xml` returns HTTP 404. No appcast has
+been uploaded. Delivery of a test object still needs verification.
+
+The existing project deployment token can manage R2 and the custom domain,
+but requests for account token permission groups and zone cache rules were
+denied. The remaining setup is:
+
+1. Create an R2 Object Read and Write credential limited to
+   `agent-secret-updates`. Store its access key ID and secret access key in
+   the GitHub promotion environment using the names above.
+2. Add a cache-bypass rule matching only
+   `http.host eq "updates.agent-secret.sh"`. Preserve unrelated zone rules.
+3. Verify HTTPS delivery and conditional object writes with disposable,
+   non-release fixture objects. Remove those objects afterward.
+4. Confirm the public appcast remains absent and promotion remains disabled
+   until the release candidate is approved.
+
+Use the [R2 credential instructions](https://developers.cloudflare.com/r2/api/tokens/)
+and [Cache Rules API documentation](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/).
+Do not reuse the broad website deployment token in the promotion workflow.
+
+## Enablement
+
+Finish the checks in [automatic update validation](automatic-update-validation.md)
+and follow the [release process](release-process.md). Approve the exact
+notarized candidate before publishing. Enable promotion only when its
+credential, hosting checks, recovery backup, and signed release artifacts
+are ready. Existing installations need one ordinary Homebrew or DMG upgrade
+to acquire the updater.

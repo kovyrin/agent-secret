@@ -67,9 +67,10 @@ fi
 
 output_dir="$project_root/_dist"
 version="${AGENT_SECRET_VERSION:-}"
-bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 build_revision="${AGENT_SECRET_BUILD_REVISION:-}"
 codesign_identity="${AGENT_SECRET_CODESIGN_IDENTITY:-"-"}"
+update_feed="${AGENT_SECRET_UPDATE_FEED_URL:-}"
+update_public_key="${AGENT_SECRET_UPDATE_PUBLIC_KEY:-}"
 approver_team_id="-"
 daemon_entitlements="$project_root/scripts/build/agent-secretd.entitlements"
 icon_png="$project_root/scripts/build/assets/AppIcon.png"
@@ -114,6 +115,23 @@ version="$(agent_secret_normalize_short_version "$version")"
 if ! agent_secret_assert_latest_changelog_version "$version" "$project_root/CHANGELOG.md"; then
   echo "build-app-bundle: version must be the latest CHANGELOG.md version" >&2
   exit 1
+fi
+bundle_version="$(agent_secret_release_bundle_version "${version%-dev}")"
+if [[ "$update_feed" != "" || "$update_public_key" != "" ]]; then
+  if [[ "$codesign_identity" != "Developer ID Application: "* || "$version" == *-dev ||
+    ! "$update_feed" =~ ^https://[a-zA-Z0-9.:_-]+(/[a-zA-Z0-9._/-]+)?$ ||
+    ! "$update_public_key" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    echo "build-app-bundle: updates require a Developer ID release build, HTTPS feed URL, and Ed25519 public key" >&2
+    exit 1
+  fi
+fi
+if [[ "${AGENT_SECRET_UPDATE_SMOKE_OLDER_BUILD:-0}" == 1 ]]; then
+  if [[ ! "$update_feed" =~ ^https://localhost:[0-9]+/appcast\.xml$ ||
+    ! "$version" =~ ^([0-9]+\.[0-9]+)\.([1-9][0-9]?)$ ]]; then
+    echo "build-app-bundle: an older smoke build requires a localhost feed and a nonzero patch version" >&2
+    exit 1
+  fi
+  bundle_version="$(agent_secret_release_bundle_version "${BASH_REMATCH[1]}.$((BASH_REMATCH[2] - 1))")"
 fi
 if [[ "$build_revision" == "" ]]; then
   build_revision="$(agent_secret_git_revision "$project_root")" || {
@@ -217,6 +235,8 @@ trap cleanup EXIT
 
 app_bundle="$output_dir/$AGENT_SECRET_APP_NAME.app"
 daemon_bundle="$tmp_dir/AgentSecretDaemon.app"
+updater_bundle="$app_bundle/Contents/Library/LoginItems/AgentSecretUpdater.app"
+sparkle_framework="$app_bundle/Contents/Frameworks/Sparkle.framework"
 skill_source="$project_root/.agents/skills/agent-secret"
 iconset="$tmp_dir/AppIcon.iconset"
 
@@ -328,6 +348,70 @@ build_daemon_app() {
 PLIST
 }
 
+build_updater_app() {
+  local binary="$1"
+  local framework="$2"
+  "$tool_mkdir" -p "$updater_bundle/Contents/MacOS" "$app_bundle/Contents/Frameworks"
+  "$tool_install" -m 0755 "$binary" "$updater_bundle/Contents/MacOS/agent-secret-updater"
+  /usr/bin/ditto "$framework" "$sparkle_framework"
+  cat >"$updater_bundle/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>Agent Secret Updater</string>
+  <key>CFBundleName</key>
+  <string>Agent Secret Updater</string>
+  <key>CFBundleIdentifier</key>
+  <string>$AGENT_SECRET_UPDATER_BUNDLE_ID</string>
+  <key>CFBundleExecutable</key>
+  <string>agent-secret-updater</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$version</string>
+  <key>CFBundleVersion</key>
+  <string>$bundle_version</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>$AGENT_SECRET_MIN_MACOS_VERSION</string>
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+}
+
+sign_updater_app() {
+  local sparkle_version="$sparkle_framework/Versions/Current"
+  sign_path "$sparkle_version/Autoupdate"
+  sign_path "$sparkle_version/Updater.app"
+  sign_path "$sparkle_version/XPCServices/Downloader.xpc"
+  sign_path "$sparkle_version/XPCServices/Installer.xpc"
+  sign_path "$sparkle_framework"
+  sign_path "$updater_bundle"
+}
+
+configure_updates() {
+  if [[ "$update_feed" == "" ]]; then
+    return
+  fi
+  local plist="$app_bundle/Contents/Info.plist"
+  /usr/libexec/PlistBuddy \
+    -c "Add :SUFeedURL string $update_feed" \
+    -c "Add :SUPublicEDKey string $update_public_key" \
+    -c "Add :SURequireSignedFeed bool true" \
+    -c "Add :SUSignedFeedFailureExpirationInterval integer 0" \
+    -c "Add :SUVerifyUpdateBeforeExtraction bool true" \
+    -c "Add :SUAllowsAutomaticUpdates bool false" \
+    -c "Add :SUAutomaticallyUpdate bool false" \
+    -c "Add :SUEnableAutomaticChecks bool false" \
+    -c "Add :SUEnableJavaScript bool false" \
+    -c "Add :SUEnableSystemProfiling bool false" \
+    "$plist"
+}
+
 echo "Building Go commands..."
 cd "$project_root"
 go_build_flags=(-trimpath)
@@ -340,6 +424,7 @@ fi
 go_ldflags=(
   "-X github.com/kovyrin/agent-secret/internal/daemon/trust.defaultDeveloperIDTeamID=$approver_team_id"
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Version=$version"
+  "-X github.com/kovyrin/agent-secret/internal/buildinfo.BundleVersion=$bundle_version"
   "-X github.com/kovyrin/agent-secret/internal/buildinfo.Revision=$build_revision"
 )
 go_build_flags+=(-ldflags "${go_ldflags[*]}")
@@ -348,8 +433,11 @@ run_go build "${go_build_flags[@]}" -o "$tmp_dir/agent-secretd" ./cmd/agent-secr
 
 echo "Building Swift app executable..."
 cd "$project_root/approver"
-"$tool_swift" build -c release --product agent-secret-app
+"$tool_swift" build --force-resolved-versions -c release --product agent-secret-app
+"$tool_swift" build --force-resolved-versions -c release --product agent-secret-updater
 approver_binary="$project_root/approver/.build/release/agent-secret-app"
+updater_binary="$project_root/approver/.build/release/agent-secret-updater"
+sparkle_source="$project_root/approver/.build/release/Sparkle.framework"
 if [[ ! -x "$approver_binary" ]]; then
   echo "build-app-bundle: missing Swift executable $approver_binary" >&2
   exit 1
@@ -377,6 +465,7 @@ fi
 "$tool_cp" "$tmp_dir/AppIcon.icns" "$app_bundle/Contents/Resources/$AGENT_SECRET_ICON_FILE.icns"
 "$tool_cp" -R "$daemon_bundle" "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 "$tool_install" -m 0755 "$tmp_dir/agent-secret" "$app_bundle/Contents/Resources/bin/agent-secret"
+build_updater_app "$updater_binary" "$sparkle_source"
 
 cat >"$app_bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -419,6 +508,7 @@ cat >"$app_bundle/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+configure_updates
 
 if [[ "$codesign_identity" == "-" ]]; then
   echo "Signing app bundle with ad-hoc identity..."
@@ -427,6 +517,7 @@ else
 fi
 sign_path "$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app" "$daemon_entitlements"
 sign_path "$app_bundle/Contents/Resources/bin/agent-secret"
+sign_updater_app
 sign_path "$app_bundle"
 "$project_root/scripts/build/check-bundle-metadata.sh" "$app_bundle" "$version" "$bundle_version"
 
