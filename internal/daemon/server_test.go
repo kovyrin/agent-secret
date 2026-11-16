@@ -81,6 +81,66 @@ func TestNewServerRequiresClientValidator(t *testing.T) {
 	}
 }
 
+type sequencePeerValidator struct {
+	mu    sync.Mutex
+	infos []peercred.Info
+}
+
+func (v *sequencePeerValidator) Validate(_ *net.UnixConn) error {
+	return nil
+}
+
+func (v *sequencePeerValidator) Info(_ *net.UnixConn) (peercred.Info, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if len(v.infos) == 0 {
+		return peercred.Info{}, errors.New("no peer info queued")
+	}
+	info := v.infos[0]
+	v.infos = v.infos[1:]
+	return info, nil
+}
+
+func TestServerRejectsPeerThatChangesProcessImageAfterAccept(t *testing.T) {
+	t.Parallel()
+
+	accepted := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	execChanged := accepted
+	execChanged.PIDVersion++
+
+	tests := []struct {
+		name    string
+		change  peercred.Info
+		wantErr bool
+	}{
+		{name: "same process image", change: accepted},
+		{name: "exec after accept", change: execChanged, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			validator := &sequencePeerValidator{infos: []peercred.Info{accepted, tt.change}}
+			server := &Server{validator: validator}
+			serverConn, clientConn := unixsocket.Pair(t)
+			defer func() { _ = clientConn.Close() }()
+			defer func() { _ = serverConn.Close() }()
+
+			server.acceptPeer(serverConn)
+			_, err := server.peerInfo(serverConn)
+			if tt.wantErr {
+				if !errors.Is(err, peercred.ErrPolicyMismatch) {
+					t.Fatalf("peerInfo error = %v, want %v", err, peercred.ErrPolicyMismatch)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("peerInfo returned error: %v", err)
+			}
+		})
+	}
+}
+
 func TestServerHelperHello(t *testing.T) {
 	t.Parallel()
 
@@ -239,7 +299,7 @@ func TestServerSessionProtocolLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSessionResolve returned error: %v", err)
 	}
-	resolveReq = resolveReq.WithExpectedPeer(peercred.Expected(peer))
+	resolveReq = resolveReq.WithExpectedPeer(peer.Expected())
 	resolved, err := client.ResolveSession(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq)
 	if err != nil {
 		t.Fatalf("ResolveSession returned error: %v", err)
@@ -332,7 +392,7 @@ func TestServerSessionResolveRejectsUnapprovedAliasProjection(t *testing.T) {
 	}
 	peer := peerInfoForTest(t, os.Getpid(), peerExe)
 	peer.CWD = cwd
-	resolveReq = resolveReq.WithExpectedPeer(peercred.Expected(peer))
+	resolveReq = resolveReq.WithExpectedPeer(peer.Expected())
 
 	_, err = client.ResolveSession(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq)
 	if !control.IsProtocolError(err, protocol.ErrorCodeBadRequest) {
@@ -782,6 +842,39 @@ func TestServerClientDisconnectAfterPayloadAudits(t *testing.T) {
 	_ = client.Close()
 
 	_ = receiveAuditEvent(t, aud, events, audit.EventExecClientDisconnectedAfterPayload, "req_1")
+}
+
+func TestServerRejectsExecWhileWaitingForExecPayload(t *testing.T) {
+	t.Parallel()
+
+	ref := "op://Example/Item/token"
+	accepted := peerInfoForTest(t, os.Getpid(), currentExecutable(t))
+	execChanged := accepted
+	execChanged.PIDVersion++
+
+	broker := newTestBroker(t, daemonbroker.Options{
+		Approver: &mockApprover{decision: approval.Decision{Approved: true}},
+		Resolver: &mockResolver{values: map[string]string{resolverCallKey(ref, "Work"): "value"}},
+		Audit:    &memoryAudit{},
+	})
+	conn, stop := startRawServerConnWithOptions(t, ServerOptions{
+		Broker:          broker,
+		Validator:       &sequencePeerValidator{infos: []peercred.Info{accepted, execChanged}},
+		ClientValidator: peertrust.NewExecutableValidator([]string{accepted.ExecutablePath}),
+	})
+	defer stop()
+
+	client := control.NewClient(conn)
+	defer func() { _ = client.Close() }()
+
+	_, err := client.RequestExec(
+		context.Background(),
+		testCorrelation("req_1", "nonce_1"),
+		testExecRequest(t, []request.SecretSpec{{Alias: "TOKEN", Ref: ref, Account: "Work"}}),
+	)
+	if !control.IsProtocolError(err, protocol.ErrorCodePeerRejected) {
+		t.Fatalf("RequestExec error = %v, want peer_rejected", err)
+	}
 }
 
 func TestServerFailedExecResponseWriteDoesNotConsumeReusableUse(t *testing.T) {
@@ -2002,6 +2095,8 @@ func TestCodeForErrorMapsProtocolFailures(t *testing.T) {
 		{err: approval.ErrRequestExpired, want: protocol.ErrorCodeRequestExpired},
 		{err: approval.ErrStaleApproval, want: protocol.ErrorCodeStaleApproval},
 		{err: peertrust.ErrUntrustedClient, want: protocol.ErrorCodeUntrustedClient},
+		{err: peercred.ErrPolicyMismatch, want: protocol.ErrorCodePeerRejected},
+		{err: peercred.ErrMissingMetadata, want: protocol.ErrorCodePeerRejected},
 		{err: context.Canceled, want: protocol.ErrorCodeContextCanceled},
 		{err: context.DeadlineExceeded, want: protocol.ErrorCodeContextDeadlineExceeded},
 		{err: daemonbroker.ErrSecretResolveFailed, want: protocol.ErrorCodeResolveFailed},

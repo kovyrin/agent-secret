@@ -48,6 +48,7 @@ func TestPeerCredRejectsMismatchedPolicy(t *testing.T) {
 		UID:            os.Getuid(),
 		GID:            os.Getgid(),
 		PID:            os.Getpid(),
+		PIDVersion:     1,
 		ExecutablePath: expected.ExecutablePath,
 		CWD:            expected.CWD,
 	}
@@ -99,7 +100,7 @@ func TestPeerCredRejectsSpecificMismatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("current expected peer: %v", err)
 	}
-	info := Info(expected)
+	info := infoForExpected(expected)
 
 	tests := []struct {
 		name string
@@ -164,7 +165,7 @@ func TestPeerCredRejectsBrokenSymlinkEvenWhenPathsMatch(t *testing.T) {
 		ExecutablePath: broken,
 		CWD:            t.TempDir(),
 	}
-	info := Info(expected)
+	info := infoForExpected(expected)
 
 	err := Validate(info, expected)
 	if !errors.Is(err, ErrPolicyMismatch) {
@@ -236,6 +237,92 @@ func TestProcessAncestryRejectsInvalidPID(t *testing.T) {
 	_, err := ProcessAncestry(0)
 	if !errors.Is(err, ErrMissingMetadata) {
 		t.Fatalf("ProcessAncestry error = %v, want ErrMissingMetadata", err)
+	}
+}
+
+func TestValidateConnectionPeerRejectsExecAfterAccept(t *testing.T) {
+	t.Parallel()
+
+	accepted := Info{
+		UID:            os.Getuid(),
+		GID:            os.Getgid(),
+		PID:            1234,
+		PIDVersion:     7,
+		ExecutablePath: "/usr/local/bin/agent-secret",
+		CWD:            "/work",
+	}
+
+	tests := []struct {
+		name    string
+		current Info
+		want    bool
+		mention string
+	}{
+		{
+			name:    "same process image",
+			current: accepted,
+		},
+		{
+			name:    "execve changed the process image",
+			current: withPIDVersion(accepted, accepted.PIDVersion+1),
+			want:    true,
+			mention: "peer process changed",
+		},
+		{
+			name:    "pid reuse",
+			current: withPID(accepted, accepted.PID+1),
+			want:    true,
+			mention: "peer process changed",
+		},
+		{
+			name:    "uid change",
+			current: withUID(accepted, accepted.UID+1),
+			want:    true,
+			mention: "peer credentials changed",
+		},
+		{
+			name:    "missing pid version",
+			current: withPIDVersion(accepted, 0),
+			want:    true,
+			mention: ErrMissingMetadata.Error(),
+		},
+	}
+
+	for _, tt := range tests {
+		err := ValidateConnectionPeer(tt.current, accepted)
+		if !tt.want {
+			if err != nil {
+				t.Fatalf("%s: ValidateConnectionPeer error = %v", tt.name, err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrPolicyMismatch) && !errors.Is(err, ErrMissingMetadata) {
+			t.Fatalf("%s: ValidateConnectionPeer error = %v, want policy mismatch or missing metadata", tt.name, err)
+		}
+		if !strings.Contains(err.Error(), tt.mention) {
+			t.Fatalf("%s: error %q did not mention %q", tt.name, err, tt.mention)
+		}
+	}
+}
+
+func withPID(info Info, pid int) Info {
+	info.PID = pid
+	return info
+}
+
+func withPIDVersion(info Info, version uint32) Info {
+	info.PIDVersion = version
+	return info
+}
+
+func infoForExpected(expected Expected) Info {
+	return Info{
+		UID:            expected.UID,
+		GID:            expected.GID,
+		PID:            expected.PID,
+		PIDVersion:     1,
+		ExecutablePath: expected.ExecutablePath,
+		CWD:            expected.CWD,
 	}
 }
 

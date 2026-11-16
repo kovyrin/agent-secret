@@ -4,6 +4,8 @@ package peercred
 
 /*
 #cgo darwin CFLAGS: -Wall -Werror
+#cgo darwin LDFLAGS: -lbsm
+#include <bsm/libbsm.h>
 #include <errno.h>
 #include <libproc.h>
 #include <stddef.h>
@@ -12,6 +14,7 @@ package peercred
 #include <sys/syslimits.h>
 #include <sys/types.h>
 #include <sys/ucred.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 enum {
@@ -26,6 +29,23 @@ static int agentsecret_getpeereid(int fd, uid_t *uid, gid_t *gid) {
 static int agentsecret_peerpid(int fd, pid_t *pid) {
 	socklen_t len = sizeof(*pid);
 	return getsockopt(fd, 0, LOCAL_PEERPID, pid, &len);
+}
+
+static int agentsecret_peertoken(int fd, pid_t *pid, uint32_t *pidversion, uid_t *euid, gid_t *egid) {
+	audit_token_t token;
+	socklen_t len = sizeof(token);
+	if (getsockopt(fd, 0, LOCAL_PEERTOKEN, &token, &len) != 0) {
+		return -1;
+	}
+	if (len != sizeof(token)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*pid = audit_token_to_pid(token);
+	*pidversion = (uint32_t)audit_token_to_pidversion(token);
+	*euid = audit_token_to_euid(token);
+	*egid = audit_token_to_egid(token);
+	return 0;
 }
 
 static int agentsecret_peercred(int fd, uid_t *uid, gid_t *gid) {
@@ -105,6 +125,20 @@ func inspectFD(fd uintptr) (Info, error) {
 		return Info{}, fmt.Errorf("LOCAL_PEERPID: %w", err)
 	}
 
+	var tokenPID C.pid_t
+	var pidVersion C.uint32_t
+	var tokenUID C.uid_t
+	var tokenGID C.gid_t
+	if _, err := C.agentsecret_peertoken(C.int(fd), &tokenPID, &pidVersion, &tokenUID, &tokenGID); err != nil {
+		return Info{}, fmt.Errorf("LOCAL_PEERTOKEN: %w", err)
+	}
+	if tokenPID != pid {
+		return Info{}, fmt.Errorf("%w: LOCAL_PEERPID and LOCAL_PEERTOKEN disagree", ErrMissingMetadata)
+	}
+	if tokenUID != uid || tokenGID != gid {
+		return Info{}, fmt.Errorf("%w: getpeereid and LOCAL_PEERTOKEN disagree", ErrMissingMetadata)
+	}
+
 	exe := make([]C.char, int(C.agentsecret_proc_path_size))
 	if _, err := C.agentsecret_pidpath(pid, (*C.char)(unsafe.Pointer(&exe[0])), C.size_t(len(exe))); err != nil {
 		return Info{}, fmt.Errorf("proc_pidpath: %w", err)
@@ -119,6 +153,7 @@ func inspectFD(fd uintptr) (Info, error) {
 		UID:            int(uid),
 		GID:            int(gid),
 		PID:            int(pid),
+		PIDVersion:     uint32(pidVersion),
 		ExecutablePath: C.GoString((*C.char)(unsafe.Pointer(&exe[0]))),
 		CWD:            C.GoString((*C.char)(unsafe.Pointer(&cwd[0]))),
 	}, nil

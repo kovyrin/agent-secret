@@ -20,6 +20,18 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [Pending]
+
+### Security
+
+- Bind each daemon socket connection to the process image that opened it. The
+  daemon now rejects later requests if the peer runs a different program with
+  `execve` while keeping the connection, and re-checks the peer immediately
+  before releasing an approved environment or session payload. This closes a
+  gap where a trusted client could connect, execute an untrusted program in the
+  same process, and have that program served as the original client. The check
+  also covers approval and approver-decision messages on the same socket.
+
 ## [0.1.0] - 2026-11-16
 
 ### Added

@@ -1181,6 +1181,7 @@ func peerInfoForTest(t *testing.T, pid int, exe string) peercred.Info {
 		UID:            os.Getuid(),
 		GID:            os.Getgid(),
 		PID:            pid,
+		PIDVersion:     1,
 		ExecutablePath: exe,
 		CWD:            "/tmp",
 	}

@@ -45,6 +45,11 @@ func (SameUIDValidator) Validate(conn *net.UnixConn) error {
 	return nil
 }
 
+type acceptedPeer struct {
+	info peercred.Info
+	err  error
+}
+
 type Server struct {
 	broker                  *daemonbroker.Broker
 	approvals               approval.ApprovalEndpoint
@@ -60,6 +65,8 @@ type Server struct {
 	beforeRead              func(time.Duration)
 	beforeExecResponseWrite func(*net.UnixConn)
 	listenUnix              func(string) (unixListener, error)
+	peerMu                  sync.Mutex
+	peers                   map[*net.UnixConn]acceptedPeer
 	retireMu                sync.Mutex
 	retireAfterActive       bool
 	stopOnce                sync.Once
@@ -187,6 +194,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		beforeRead:              opts.beforeRead,
 		beforeExecResponseWrite: opts.beforeExecResponseWrite,
 		listenUnix:              listenUnix,
+		peers:                   make(map[*net.UnixConn]acceptedPeer),
 		stop:                    make(chan struct{}),
 	}, nil
 }
@@ -232,6 +240,7 @@ func (s *Server) Serve(ctx context.Context, listener unixListener) error {
 				return err
 			}
 		}
+		s.acceptPeer(conn)
 		go s.handleConn(ctx, conn)
 	}
 }
@@ -297,6 +306,7 @@ func (s *Server) stopForExecutableChange(ctx context.Context) {
 
 func (s *Server) handleConn(ctx context.Context, conn *net.UnixConn) {
 	defer func() { _ = conn.Close() }()
+	defer s.forgetPeer(conn)
 	if err := s.validator.Validate(conn); err != nil {
 		_ = writeError(conn, protocol.Correlation{}, protocol.ErrorCodePeerRejected, err)
 		return
@@ -585,6 +595,13 @@ func (s *Server) handleSessionResolve(
 			delivery.AbortBeforePayload()
 		}
 	}()
+	// Re-check the connection peer immediately before releasing secret values. A
+	// process image change after the request was accepted must not receive the
+	// session payload.
+	if _, err := s.peerInfo(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
 	clearWriteDeadline, err := s.setExecResponseWriteDeadline(conn, delivery.ExpiresAt())
 	if err != nil {
 		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
@@ -765,6 +782,13 @@ func (s *Server) handleRequestExec(
 		return ""
 	}
 	defer delivery.AbortBeforePayload()
+	// The peer was validated before approval, which can take a long time. If the
+	// process image changed while waiting, the approved environment must not be
+	// written to the connection.
+	if _, err := s.peerInfo(conn); err != nil {
+		_ = writeErrorEncoder(encoder, env.Correlation(), codeForError(err), err)
+		return ""
+	}
 	if s.beforeExecResponseWrite != nil {
 		s.beforeExecResponseWrite(conn)
 	}
@@ -854,8 +878,47 @@ func (s *Server) handleCommandCompleted(
 	return true
 }
 
+func (s *Server) acceptPeer(conn *net.UnixConn) {
+	info, err := s.validator.Info(conn)
+	s.peerMu.Lock()
+	if s.peers == nil {
+		s.peers = make(map[*net.UnixConn]acceptedPeer)
+	}
+	s.peers[conn] = acceptedPeer{info: info, err: err}
+	s.peerMu.Unlock()
+}
+
+func (s *Server) forgetPeer(conn *net.UnixConn) {
+	s.peerMu.Lock()
+	delete(s.peers, conn)
+	s.peerMu.Unlock()
+}
+
 func (s *Server) peerInfo(conn *net.UnixConn) (peercred.Info, error) {
-	return s.validator.Info(conn)
+	current, err := s.validator.Info(conn)
+	if err != nil {
+		return peercred.Info{}, err
+	}
+
+	s.peerMu.Lock()
+	accepted, ok := s.peers[conn]
+	if !ok {
+		if s.peers == nil {
+			s.peers = make(map[*net.UnixConn]acceptedPeer)
+		}
+		s.peers[conn] = acceptedPeer{info: current}
+		s.peerMu.Unlock()
+		return current, nil
+	}
+	s.peerMu.Unlock()
+
+	if accepted.err != nil {
+		return peercred.Info{}, accepted.err
+	}
+	if err := peercred.ValidateConnectionPeer(current, accepted.info); err != nil {
+		return peercred.Info{}, err
+	}
+	return current, nil
 }
 
 func (s *Server) readEnvelope(conn *net.UnixConn, reader *bufio.Reader, timeout time.Duration) (protocol.Envelope, error) {
@@ -960,6 +1023,8 @@ func codeForError(err error) protocol.ErrorCode {
 		return protocol.ErrorCodeStaleApproval
 	case errors.Is(err, peertrust.ErrUntrustedClient):
 		return protocol.ErrorCodeUntrustedClient
+	case errors.Is(err, peercred.ErrPolicyMismatch), errors.Is(err, peercred.ErrMissingMetadata):
+		return protocol.ErrorCodePeerRejected
 	case errors.Is(err, context.Canceled):
 		return protocol.ErrorCodeContextCanceled
 	case errors.Is(err, context.DeadlineExceeded):

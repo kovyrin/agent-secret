@@ -526,10 +526,16 @@ purposes, then expanded back to the approved alias set for delivery.
 Session resolution requires peer PID and executable checks on supported macOS
 versions. A local probe on macOS 26.3 with the macOS 26.2 SDK confirmed that a
 Unix socket server can obtain peer UID/GID, peer PID, executable path, and cwd
-using public Darwin APIs (`getpeereid`, `LOCAL_PEERPID`, `LOCAL_PEERCRED`,
-`proc_pidpath`, and `PROC_PIDVNODEPATHINFO`). If those fields cannot be obtained
-or do not match the approved session policy, the daemon must fail closed rather
-than silently falling back to weaker checks.
+using public Darwin APIs (`getpeereid`, `LOCAL_PEERPID`, `LOCAL_PEERTOKEN`,
+`LOCAL_PEERCRED`, `proc_pidpath`, and `PROC_PIDVNODEPATHINFO`). If those fields
+cannot be obtained or do not match the approved session policy, the daemon must
+fail closed rather than silently falling back to weaker checks.
+
+A peer PID is not a stable process identity because it survives `execve`. The
+daemon therefore records the peer PID and its kernel process identity version
+when it accepts a connection, rejects later requests if either value changes,
+and re-checks the value immediately before releasing secret values. This keeps a
+connection bound to the program image that opened it.
 
 `agent-secret exec` remains the strongest single-command mode because the
 trusted CLI wrapper controls environment injection and child lifecycle while the

@@ -683,6 +683,7 @@ func testPeerInfo(pid int) peercred.Info {
 		UID:            501,
 		GID:            20,
 		PID:            pid,
+		PIDVersion:     1,
 		ExecutablePath: "/Applications/Agent Secret.app/Contents/MacOS/Agent Secret",
 		CWD:            "/Users/example/project",
 	}
