@@ -43,6 +43,7 @@ jobs:
       - name: Verify and promote exact published assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           AGENT_SECRET_RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
           AGENT_SECRET_UPDATE_FEED_URL: ${{ vars.AGENT_SECRET_UPDATE_FEED_URL }}
           AGENT_SECRET_UPDATE_PUBLIC_KEY: ${{ vars.AGENT_SECRET_UPDATE_PUBLIC_KEY }}
@@ -53,4 +54,6 @@ jobs:
         run: |
           mise trust --yes
           mise install go
-          mise exec -- scripts/release/promote-update-feed.sh "$AGENT_SECRET_RELEASE_TAG"
+          go_bin="$(mise where go)/bin"
+          export PATH="$go_bin:$PATH"
+          scripts/release/promote-update-feed.sh "$AGENT_SECRET_RELEASE_TAG"
