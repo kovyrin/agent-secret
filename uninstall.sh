@@ -375,10 +375,35 @@ validate_uninstall_paths
 target_app="$app_dir/Agent Secret.app"
 cli_link="$bin_dir/agent-secret"
 skill_link="$skills_dir/agent-secret"
-stop_existing_daemon
+if [ -d "$app_dir" ]; then
+  [ -x /usr/bin/ruby ] || fail "macOS Ruby is unavailable. Use Homebrew or remove the app in Finder."
+  updater="$target_app/Contents/Library/LoginItems/AgentSecretUpdater.app"
+  if [ -d "$updater" ]; then
+    existing_app_is_trusted ||
+      fail "the installed app failed verification. Reinstall a signed copy from the DMG."
+    "$updater/Contents/MacOS/agent-secret-updater" --quiesce-for-package-manager ||
+      fail "Agent Secret still has active work or another running copy. Close it and retry."
+  fi
+  # Keep the directory lease for bundle and local-state removal.
+  exec 9<"$app_dir"
+  /usr/bin/env -u RUBYOPT -u RUBYLIB /usr/bin/ruby --disable=gems \
+    -e 'exit File.for_fd(9).flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 1' ||
+    fail "Agent Secret is in use or being updated. Wait for it to finish and retry."
+  if [ -e "$app_dir/.agent-secret-update" ] || [ -L "$app_dir/.agent-secret-update" ]; then
+    fail "an Agent Secret update needs to finish or recover before you uninstall"
+  fi
+  if [ -d "$updater" ]; then
+    existing_app_is_trusted ||
+      fail "the installed app failed verification. Reinstall a signed copy from the DMG."
+    "$target_app/Contents/MacOS/Agent Secret" --suspend-background-updater >/dev/null ||
+      fail "could not unregister the Agent Secret background updater"
+  else
+    stop_existing_daemon
+  fi
+  remove_app_bundle
+fi
 remove_cli_link
 remove_skill_link
-remove_app_bundle
 
 remove_known_support_dir
 

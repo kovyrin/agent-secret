@@ -20,6 +20,24 @@ version numbers for public releases.
 - GitHub release notes are copied from the matching version section in this
 file before a release is published.
 
+## [0.1.0] - 2026-11-16
+
+### Added
+
+- Check for Agent Secret updates in the app. Optional background checks find
+  new releases, and every installation requires approval.
+- Use `agent-secret update status` to see the installed build and
+  `agent-secret update check` to open the native updater.
+
+### Changed
+
+- Support signed update pilots at minor and major version boundaries.
+
+### Security
+
+- Authenticate update feeds and release archives. Updates wait for approvals,
+  supervised commands, and live sessions before replacing the signed bundle.
+
 ## [0.0.34] - 2026-11-15
 
 ### Added

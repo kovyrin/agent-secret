@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
@@ -56,6 +57,7 @@ type Broker struct {
 	resolver              Resolver
 	audit                 AuditSink
 	active                map[string]*activeExec
+	metadataFetches       atomic.Int32
 	stopOnce              sync.Once
 	stop                  chan struct{}
 }
@@ -363,6 +365,12 @@ func (b *Broker) ActiveCount() int {
 	return len(b.active)
 }
 
+// IdleForUpdate is called with new broker requests excluded by the server.
+func (b *Broker) IdleForUpdate() bool {
+	return b.ActiveCount() == 0 && b.metadataFetches.Load() == 0 &&
+		b.grants.fetchWorkers.Load() == 0 && !b.sessions.hasLive()
+}
+
 func (b *Broker) PrepareExecDelivery(
 	ctx context.Context,
 	correlation protocol.Correlation,
@@ -514,7 +522,9 @@ func (b *Broker) HandleItemDescribe(
 
 func (b *Broker) describeItem(ctx context.Context, req request.ItemDescribeRequest) (itemmetadata.Metadata, error) {
 	result := make(chan itemDescribeResult, 1)
+	b.metadataFetches.Add(1)
 	go func() {
+		defer b.metadataFetches.Add(-1)
 		metadata, err := b.resolver.DescribeItem(ctx, req.Ref, req.Account)
 		select {
 		case result <- itemDescribeResult{metadata: metadata, err: err}:

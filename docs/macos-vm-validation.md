@@ -20,6 +20,9 @@ The drill validates:
 - One real approval that injects a test-only value into a child process without
   printing it.
 
+Use the [signed update drill](automatic-update-validation.md) for Sparkle,
+installer exclusion, and Homebrew operations after an in-app update.
+
 ## Golden VM Setup
 
 Create one stopped UTM VM that acts as the reusable base image.

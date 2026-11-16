@@ -11,7 +11,6 @@ dist_dir="$approver_root/dist"
 bundle="$dist_dir/$AGENT_SECRET_APP_NAME.app"
 binary_name="agent-secret-app"
 version="${AGENT_SECRET_VERSION:-}"
-bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
 
 if [[ "$version" == "" ]]; then
   version="$(agent_secret_default_dev_version "$project_root/CHANGELOG.md")" || {
@@ -20,6 +19,7 @@ if [[ "$version" == "" ]]; then
   }
 fi
 version="$(agent_secret_normalize_short_version "$version")"
+bundle_version="$(agent_secret_release_bundle_version "${version%-dev}")"
 if ! agent_secret_assert_latest_changelog_version "$version" "$project_root/CHANGELOG.md"; then
   echo "build-app: version must be the latest CHANGELOG.md version" >&2
   exit 1

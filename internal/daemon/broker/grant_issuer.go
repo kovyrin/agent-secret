@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
@@ -14,13 +15,14 @@ import (
 )
 
 type grantIssuer struct {
-	now        func() time.Time
-	reusable   *reusableGrantManager
-	approver   approval.Approver
-	resolver   Resolver
-	audit      AuditSink
-	fetchLimit int
-	stopped    func() bool
+	now          func() time.Time
+	reusable     *reusableGrantManager
+	approver     approval.Approver
+	resolver     Resolver
+	audit        AuditSink
+	fetchLimit   int
+	fetchWorkers atomic.Int32
+	stopped      func() bool
 }
 
 type Grant struct {
@@ -421,7 +423,11 @@ func (g *grantIssuer) fetchUniqueRefs(ctx context.Context, identities []secretId
 	jobs := make(chan secretIdentity)
 	results := make(chan uniqueRefFetchResult, workerCount)
 	for range workerCount {
-		go g.fetchUniqueRefWorker(fetchCtx, jobs, results)
+		g.fetchWorkers.Add(1)
+		go func() {
+			defer g.fetchWorkers.Add(-1)
+			g.fetchUniqueRefWorker(fetchCtx, jobs, results)
+		}()
 	}
 	go func() {
 		defer close(jobs)

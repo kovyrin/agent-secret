@@ -8,7 +8,11 @@ project_root="$(cd -- "$script_dir/../.." && pwd)"
 source "$project_root/scripts/lib/bundle-metadata.sh"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-secret-release-version-test.XXXXXX")"
+release_mounted=0
 cleanup() {
+  if [[ "$release_mounted" == 1 ]]; then
+    hdiutil detach "$release_mount" >/dev/null
+  fi
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
@@ -23,23 +27,91 @@ revision="$(agent_secret_git_revision "$project_root")"
 tag_version="v$latest_version"
 short_version="$(agent_secret_normalize_short_version "$tag_version")"
 dev_version="$short_version-dev"
-bundle_version="${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}"
+bundle_version="$(agent_secret_release_bundle_version "$short_version")"
 release_dir="$tmp_dir/release"
+release_mount="$tmp_dir/mount"
 dev_dir="$tmp_dir/dev"
 
-"$project_root/scripts/build/build-app-bundle.sh" --version "$tag_version" --output "$release_dir"
+check_mapping() {
+  local version="$1" expected="$2" actual
+  actual="$(agent_secret_release_bundle_version "$version")"
+  [[ "$actual" == "$expected" ]] || fail "$version mapped to $actual, expected $expected"
+}
+
+check_mapping 0.0.34 1.0.34
+check_mapping 0.0.35 1.0.35
+check_mapping 0.0.99 1.0.99
+check_mapping 0.1.0 1.1.0
+check_mapping 1.0.0 2.0.0
+
+check_previous_mapping() {
+  local version="$1" expected="$2" actual
+  actual="$(agent_secret_previous_release_bundle_version "$version")"
+  [[ "$actual" == "$expected" ]] || fail "$version predecessor mapped to $actual, expected $expected"
+}
+
+check_previous_mapping 0.0.1 1.0.0
+check_previous_mapping 0.0.35 1.0.34
+check_previous_mapping 0.1.0 1.0.99
+check_previous_mapping 1.0.0 1.99.99
+if agent_secret_previous_release_bundle_version 0.0.0 >/dev/null 2>&1; then
+  fail "accepted a predecessor below the supported bundle version range"
+fi
+for invalid in 0.00.34 0.0.100 0.100.0 9999.0.0 0.0.34-dev; do
+  if agent_secret_release_bundle_version "$invalid" >/dev/null 2>&1; then
+    fail "accepted invalid release build version $invalid"
+  fi
+  if agent_secret_previous_release_bundle_version "$invalid" >/dev/null 2>&1; then
+    fail "accepted invalid previous release version $invalid"
+  fi
+done
+
+if AGENT_SECRET_IN_MISE=1 AGENT_SECRET_UPDATE_SMOKE_OLDER_BUILD=1 \
+  AGENT_SECRET_UPDATE_FEED_URL=https://updates.example.test/appcast.xml \
+  AGENT_SECRET_UPDATE_PUBLIC_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+  AGENT_SECRET_CODESIGN_IDENTITY="Developer ID Application: Synthetic Test Identity" \
+  "$project_root/scripts/build/build-app-bundle.sh" --version "$tag_version" \
+  --output "$tmp_dir/nonlocal-smoke" >"$tmp_dir/nonlocal-smoke.log" 2>&1; then
+  fail "accepted an older smoke build outside localhost"
+fi
+grep -F 'an older smoke build requires a localhost feed' "$tmp_dir/nonlocal-smoke.log" >/dev/null ||
+  fail "older smoke build did not enforce the localhost feed restriction"
+
+(
+  umask 077
+  "$project_root/scripts/release/build-release.sh" "$tag_version" --output "$release_dir"
+)
+mkdir "$release_mount"
+hdiutil attach -readonly -nobrowse -mountpoint "$release_mount" \
+  "$release_dir/Agent-Secret-$tag_version-macos-arm64.dmg" >/dev/null
+release_mounted=1
+release_app="$release_mount/$AGENT_SECRET_APP_NAME.app"
+for directory in "$release_app" "$release_app/Contents" "$release_app/Contents/Resources/bin"; do
+  [[ "$(stat -f %Lp "$directory")" == 755 ]] || fail "shared release directory has private permissions: $directory"
+done
 "$project_root/scripts/build/check-bundle-metadata.sh" \
-  "$release_dir/$AGENT_SECRET_APP_NAME.app" \
+  "$release_app" \
   "$short_version" \
   "$bundle_version"
 
-app_short_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$release_dir/$AGENT_SECRET_APP_NAME.app/Contents/Info.plist")"
+app_short_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$release_app/Contents/Info.plist")"
 if [[ "$app_short_version" == v* ]]; then
   fail "app bundle short version kept tag prefix: $app_short_version"
 fi
-release_cli_version="$("$release_dir/$AGENT_SECRET_APP_NAME.app/Contents/Resources/bin/agent-secret" --version)"
+release_cli="$release_app/Contents/Resources/bin/agent-secret"
+release_cli_version="$("$release_cli" --version)"
 if [[ "$release_cli_version" != "agent-secret $short_version ($revision)" ]]; then
   fail "release CLI version = $release_cli_version"
+fi
+mkdir "$tmp_dir/bin"
+ln -s "$release_cli" "$tmp_dir/bin/agent-secret"
+direct_status="$("$release_cli" update status --json)"
+linked_status="$("$tmp_dir/bin/agent-secret" update status --json)"
+if [[ "$linked_status" != "$direct_status" ]]; then
+  fail "the CLI link did not report the installed build's update status"
+fi
+if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$release_app/Contents/Info.plist" >/dev/null 2>&1; then
+  fail "ordinary ad-hoc builds must not connect to an update feed"
 fi
 
 "$project_root/scripts/build/build-app-bundle.sh" --output "$dev_dir"

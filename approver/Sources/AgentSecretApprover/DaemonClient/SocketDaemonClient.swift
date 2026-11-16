@@ -24,6 +24,8 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
     }
 
     private static let protocolVersion: Int = 1
+    private static let updateControlFrameBytes = 0x4000
+    private static let updateControlTimeout: TimeInterval = 2
 
     private let transport: LineTransport
     private let decoder: JSONDecoder
@@ -42,6 +44,41 @@ public final class SocketDaemonClient: ApprovalDaemonClient {
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
     }
+
+    // Asks the adjacent broker to exit only when its work and sessions have finished.
+    #if canImport(Darwin)
+        public static func quiesceForUpdate(hostBundle: URL, expectedTeamID: String) throws -> Bool {
+            let path = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/agent-secret/agent-secretd.sock").path
+            let daemon = hostBundle.appendingPathComponent(
+                "Contents/Library/Helpers/AgentSecretDaemon.app/Contents/MacOS/Agent Secret"
+            )
+            let validator = TrustedDaemonPeerValidator(
+                expectedExecutablePaths: [daemon.path], expectedTeamID: expectedTeamID
+            )
+            let requestID = UUID().uuidString
+            let nonce = UUID().uuidString
+            do {
+                let transport = try UnixSocketLineTransport(
+                    path: path,
+                    maxFrameBytes: updateControlFrameBytes,
+                    ioTimeout: updateControlTimeout,
+                    peerValidator: validator
+                )
+                let client = Self(transport: transport)
+                let request = DaemonEnvelope<EmptyPayload>(
+                    nonce: nonce, payload: nil, requestID: requestID, type: .updateQuiesce, version: protocolVersion
+                )
+                try client.send(request)
+                try client.readOKAck(requestID: requestID, nonce: nonce)
+                return true
+            } catch let SocketDaemonClientError.connectFailed(number) where number == ENOENT || number == ECONNREFUSED {
+                return true // The installation lock still excludes a broker starting concurrently.
+            } catch SocketDaemonClientError.daemonError(.updateBusy) {
+                return false
+            }
+        }
+    #endif
 
     public func fetchPendingRequest() throws -> ApprovalRequest {
         let request = DaemonEnvelope<EmptyPayload>(

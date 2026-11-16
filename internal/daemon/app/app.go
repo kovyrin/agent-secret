@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kovyrin/agent-secret/internal/audit"
@@ -14,6 +16,7 @@ import (
 	daemonbroker "github.com/kovyrin/agent-secret/internal/daemon/broker"
 	"github.com/kovyrin/agent-secret/internal/daemon/peertrust"
 	"github.com/kovyrin/agent-secret/internal/daemon/socket"
+	"github.com/kovyrin/agent-secret/internal/installgate"
 	"github.com/kovyrin/agent-secret/internal/opresolver"
 	"github.com/kovyrin/agent-secret/internal/processhardening"
 	"github.com/kovyrin/agent-secret/internal/providerresolver"
@@ -31,6 +34,21 @@ func Run(args []string, stderr io.Writer) int {
 		return 2
 	}
 
+	lease, err := installgate.AcquireForExecutable()
+	if err != nil {
+		stderrf(stderr, "agent-secretd: %v\n", err)
+		return 1
+	}
+	var updaterValidator peertrust.ClientValidator
+	if lease != nil {
+		defer func() { _ = lease.Close() }()
+		if executable, err := os.Executable(); err == nil {
+			updaterValidator = peertrust.NewUpdaterValidator(filepath.Join(
+				installgate.HostBundle(executable), "Contents", "Library", "LoginItems",
+				"AgentSecretUpdater.app", "Contents", "MacOS", "agent-secret-updater",
+			))
+		}
+	}
 	auditWriter, err := audit.OpenDefault(nil)
 	if err != nil {
 		stderrf(stderr, "agent-secretd: open audit log: %v\n", err)
@@ -74,6 +92,7 @@ func Run(args []string, stderr io.Writer) int {
 		Broker:           broker,
 		Approvals:        approver,
 		ClientValidator:  peertrust.NewExecutableValidator(defaultClientPaths),
+		UpdaterValidator: updaterValidator,
 		OnePasswordCheck: onePasswordDesktopIntegrationCheck(),
 		SelfCheck:        selfCheck,
 	})

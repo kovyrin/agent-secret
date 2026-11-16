@@ -39,7 +39,31 @@ The Homebrew cask installs `Agent Secret.app` into `/Applications` and links the
 bundled `agent-secret` command into Homebrew's `bin` directory. `skill-install`
 adds or repairs the bundled Codex skill symlink for the current user.
 
-You can also install without Homebrew:
+To install without Homebrew, download the DMG from the
+[latest GitHub release](https://github.com/kovyrin/agent-secret/releases/latest).
+Open the DMG, drag Agent Secret into Applications, then open the app and choose
+**Install Command Line Tool**. Run `agent-secret skill-install` to link the
+bundled Codex skill.
+
+### App updates
+
+Open Agent Secret and choose **Check for Updates**. You can also run
+`agent-secret update check`. Turn on **Check for updates automatically** to get
+background checks. Agent Secret asks you before each installation and waits
+for pending approvals, running commands, and live sessions to finish.
+
+`agent-secret update status` reports the actual installed app build. Homebrew
+maintains its own receipt, which can show an older version after an in-app
+update. Use `brew reinstall --cask agent-secret` for an explicit reinstall.
+Upgrade once with your usual installation method to bring an older release
+onto the in-app update path. Close any live sessions and finish commands in
+every account using the app before this first upgrade or a manual replacement.
+
+### Existing shell installations
+
+The release installer remains available for existing shell-based setups.
+Treat it as a maintenance operation and close active Agent Secret sessions
+before running it.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -59,11 +83,6 @@ The unattended installer copies `Agent Secret.app` into `/Applications`, install
 `~/.local/bin/agent-secret`, installs the bundled Codex skill at
 `~/.agents/skills/agent-secret`, and runs diagnostics. If `~/.local/bin` is not
 on your shell `PATH`, the installer prints a copy-pasteable command to add it.
-
-You can also install manually from the DMG on the
-[latest GitHub Release](https://github.com/kovyrin/agent-secret/releases/latest):
-open the DMG, drag `Agent Secret.app` into `/Applications`, open the app, and
-click `Install Command Line Tool`.
 
 ## Enable 1Password SDK Integration
 
@@ -272,6 +291,8 @@ precedence, env-file migration, and the full schema.
 - `agent-secret repair`: inspect and repair Agent Secret background helper
   state.
 - `agent-secret daemon status|start|stop`: run low-level daemon diagnostics.
+- `agent-secret update status|check`: inspect the installed build or open the
+  native update window.
 - `agent-secret install-cli`: repair the command symlink for the current user
   and try to refresh the local background helper.
 - `agent-secret skill-install`: repair the bundled coding-agent skill symlink.
@@ -303,7 +324,7 @@ Out of scope:
   app or helper, or a malicious approved child process.
 - Hiding env vars from the operating-system APIs needed to launch the approved
   child process.
-- Cross-platform secret management, background updates, credential helpers,
+- Cross-platform secret management, silent update installation, credential helpers,
   file-descriptor delivery, arbitrary long-lived shells, or raw socket value
   reads.
 

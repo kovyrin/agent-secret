@@ -3556,6 +3556,7 @@ func handlePostStartStoppedDaemonConn(conn *net.UnixConn, events chan<- protocol
 				return err
 			}
 		case protocol.TypeDaemonStop,
+			protocol.TypeUpdateQuiesce,
 			protocol.TypeApprovalPending,
 			protocol.TypeApprovalDecision,
 			protocol.TypeOK,

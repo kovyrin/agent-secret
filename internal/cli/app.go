@@ -168,6 +168,10 @@ func (a App) Run(ctx context.Context, args []string) int {
 		return a.runDaemonStart(ctx, command)
 	case KindDaemonStop:
 		return a.runDaemonStop(ctx, command)
+	case KindUpdateStatus:
+		return a.runUpdateStatus(command)
+	case KindUpdateCheck:
+		return a.runUpdateCheck(ctx)
 	case KindDoctor:
 		return a.runDoctor(ctx, command)
 	case KindRepair:

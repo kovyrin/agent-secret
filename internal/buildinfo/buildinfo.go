@@ -5,6 +5,11 @@ package buildinfo
 //nolint:gochecknoglobals
 var Version = "dev"
 
+// BundleVersion identifies the release build embedded in packaged executables.
+//
+//nolint:gochecknoglobals // Set by go build -ldflags -X.
+var BundleVersion = ""
+
 // Revision is set by app-bundle builds with go build -ldflags -X.
 //
 //nolint:gochecknoglobals

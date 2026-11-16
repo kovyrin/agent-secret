@@ -43,6 +43,15 @@ func NewExecutableValidator(paths []string) ExecutableValidator {
 	return newExecutableValidator(paths, trust.DefaultExpectedTeamID())
 }
 
+// NewUpdaterValidator accepts only the adjacent Developer ID-signed updater.
+func NewUpdaterValidator(path string) ClientValidator {
+	teamID := trust.DefaultExpectedTeamID()
+	if runtime.GOOS != "darwin" || teamID == "" || teamID == trust.DevelopmentExpectedTeamID || !filepath.IsAbs(path) {
+		return nil
+	}
+	return newExecutableValidator([]string{path}, teamID)
+}
+
 func newExecutableValidator(paths []string, expectedTeamID string) ExecutableValidator {
 	return ExecutableValidator{
 		set: newExecutableSet(paths, expectedTeamID, ErrUntrustedClient),

@@ -222,6 +222,18 @@ func (s *sessionStore) list() []request.SessionSummary {
 	return summaries
 }
 
+func (s *sessionStore) hasLive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	for _, record := range s.sessions {
+		if now.Before(record.ExpiresAt) && record.Reads < record.MaxReads {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *sessionStore) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

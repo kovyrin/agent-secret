@@ -22,6 +22,7 @@ const (
 	TypeHelperHello       MessageType = "helper.hello"
 	TypeDaemonStatus      MessageType = "daemon.status"
 	TypeDaemonStop        MessageType = "daemon.stop"
+	TypeUpdateQuiesce     MessageType = "update.quiesce"
 	TypeOnePasswordStatus MessageType = "onepassword.status"
 	TypeApprovalPending   MessageType = "approval.pending"
 	TypeApprovalDecision  MessageType = "approval.decision"
@@ -68,6 +69,7 @@ const (
 	ErrorCodeSessionReadExhausted     ErrorCode = "session_read_exhausted"
 	ErrorCodeStaleApproval            ErrorCode = "stale_approval"
 	ErrorCodeUntrustedClient          ErrorCode = "untrusted_client"
+	ErrorCodeUpdateBusy               ErrorCode = "update_busy"
 )
 
 var (

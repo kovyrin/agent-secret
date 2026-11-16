@@ -38,6 +38,9 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 	if created.SessionID == "" || created.SessionToken == "" || created.RemainingReads != 1 {
 		t.Fatalf("created session payload = %+v", created)
 	}
+	if broker.IdleForUpdate() {
+		t.Fatal("an idle but live reusable session must defer an update")
+	}
 
 	resolveReq := testSessionResolveRequest(t, created.SessionToken, createReq.CWD, peer)
 	delivery, err := broker.PrepareSessionResolve(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), resolveReq, peer)
@@ -54,6 +57,9 @@ func TestBrokerSessionCreateResolveConsumesReadAndAuditsCommand(t *testing.T) {
 
 	if err := broker.ReportStarted(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), 1234); err != nil {
 		t.Fatalf("ReportStarted returned error: %v", err)
+	}
+	if broker.IdleForUpdate() {
+		t.Fatal("a running command must defer an update after consuming the session's last read")
 	}
 	if err := broker.ReportCompleted(context.Background(), testCorrelation("req_resolve", "nonce_resolve"), 0, ""); err != nil {
 		t.Fatalf("ReportCompleted returned error: %v", err)

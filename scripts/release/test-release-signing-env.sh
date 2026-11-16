@@ -83,6 +83,15 @@ expect_failure "production release requires AGENT_SECRET_CODESIGN_IDENTITY" \
   AGENT_SECRET_IN_MISE=1 \
   "$build_release" v0.0.0 --require-production-signing --output "$tmp_dir/out"
 
+expect_failure "select a Keychain notarization profile or API key credentials" \
+  env -i \
+  "PATH=$test_path" \
+  "${release_env[@]}" \
+  AGENT_SECRET_IN_MISE=1 \
+  AGENT_SECRET_NOTARIZE=1 \
+  AGENT_SECRET_NOTARY_PROFILE=synthetic-smoke-profile \
+  "$build_release" "$latest_version" --output "$tmp_dir/conflicting-notary-settings"
+
 expect_failure "set AGENT_SECRET_CODESIGN_CERT_PASSWORD" \
   env -i \
   "PATH=$test_path" \

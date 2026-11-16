@@ -34,7 +34,7 @@ fi
 
 app_bundle="$1"
 short_version="${2:-${AGENT_SECRET_VERSION:-}}"
-bundle_version="${3:-${AGENT_SECRET_BUNDLE_VERSION:-$AGENT_SECRET_DEFAULT_BUNDLE_VERSION}}"
+bundle_version="${3:-}"
 daemon_bundle="$app_bundle/Contents/Library/Helpers/AgentSecretDaemon.app"
 bundled_cli="$app_bundle/Contents/Resources/bin/agent-secret"
 if [[ "$short_version" == "" ]]; then
@@ -47,6 +47,9 @@ short_version="$(agent_secret_normalize_short_version "$short_version")"
 if ! agent_secret_assert_latest_changelog_version "$short_version" "$project_root/CHANGELOG.md"; then
   echo "check-bundle-metadata: version must be the latest CHANGELOG.md version" >&2
   exit 1
+fi
+if [[ "$bundle_version" == "" ]]; then
+  bundle_version="$(agent_secret_release_bundle_version "${short_version%-dev}")"
 fi
 
 require_command() {

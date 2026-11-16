@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full reviewed commit SHA for a notarized localhost update pilot
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -69,10 +74,91 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: mise run test:smoke
 
+  signed-update-pilot:
+    name: Build Notarized Update Pilot (arm64)
+    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && inputs.candidate_sha != ''
+    needs: [lint-test-build, smoke-tests]
+    runs-on: macos-latest
+    environment: agent-secret-candidate-signing
+    steps:
+      - name: Verify reviewed candidate SHA
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_SIGNING_ENABLED: ${{ vars.AGENT_SECRET_CANDIDATE_SIGNING_ENABLED }}
+        run: |
+          if [[ "$CANDIDATE_SIGNING_ENABLED" != true || "$CANDIDATE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Enable the protected pilot environment and dispatch its reviewed commit SHA." >&2
+            exit 1
+          fi
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install mise
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/checks/install-ci-mise.sh
+
+      - name: Install project dependencies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mise trust --yes
+          mise run setup
+
+      - name: Verify pilot signing configuration
+        env:
+          AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
+          AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
+          AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_NOTARIZE: "1"
+          AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
+          AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
+          AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
+        run: scripts/release/check-release-signing-env.sh
+
+      - name: Import Developer ID certificate
+        env:
+          AGENT_SECRET_CODESIGN_CERT_P12_BASE64: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_P12_BASE64 }}
+          AGENT_SECRET_CODESIGN_CERT_PASSWORD: ${{ secrets.AGENT_SECRET_CODESIGN_CERT_PASSWORD }}
+        run: scripts/release/import-codesign-certificate.sh
+
+      - name: Build and notarize both localhost pilot DMGs
+        env:
+          AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
+          AGENT_SECRET_NOTARIZE: "1"
+          AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
+          AGENT_SECRET_NOTARY_KEY: ${{ secrets.AGENT_SECRET_NOTARY_KEY }}
+          AGENT_SECRET_NOTARY_KEY_ID: ${{ secrets.AGENT_SECRET_NOTARY_KEY_ID }}
+        run: |
+          export AGENT_SECRET_TRUSTED_MISE="$HOME/.local/share/mise/bin/mise"
+          export AGENT_SECRET_IN_MISE=1
+          "$AGENT_SECRET_TRUSTED_MISE" exec -- scripts/release/smoke-app-update.sh _dist/update-pilot
+
+      - name: Upload localhost pilot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: notarized-update-pilot-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: _dist/update-pilot/
+
+      - name: Delete temporary signing keychain
+        if: ${{ always() }}
+        run: |
+          keychain_path="$RUNNER_TEMP/agent-secret-codesign.keychain-db"
+          if [ -f "$keychain_path" ]; then
+            security delete-keychain "$keychain_path"
+          fi
+
   draft-release-artifacts:
     name: Build Release Artifact (arm64)
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.candidate_sha == ''
     runs-on: macos-latest
+    environment: agent-secret-release-signing
     steps:
       - name: Check out trusted release guards
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -123,6 +209,8 @@ jobs:
 
       - name: Build release artifacts
         env:
+          AGENT_SECRET_UPDATE_FEED_URL: ${{ vars.AGENT_SECRET_UPDATE_FEED_URL }}
+          AGENT_SECRET_UPDATE_PUBLIC_KEY: ${{ vars.AGENT_SECRET_UPDATE_PUBLIC_KEY }}
           AGENT_SECRET_CODESIGN_IDENTITY: ${{ secrets.AGENT_SECRET_CODESIGN_IDENTITY }}
           AGENT_SECRET_NOTARIZE: ${{ secrets.AGENT_SECRET_NOTARIZE }}
           AGENT_SECRET_NOTARY_ISSUER_ID: ${{ secrets.AGENT_SECRET_NOTARY_ISSUER_ID }}
@@ -134,6 +222,19 @@ jobs:
           AGENT_SECRET_IN_MISE=1 \
             AGENT_SECRET_TRUSTED_MISE="$trusted_mise" \
             "$trusted_mise" exec -- scripts/release/build-release.sh "$GITHUB_REF_NAME" --require-production-signing
+
+      - name: Sign the update feed for the candidate DMG
+        if: vars.AGENT_SECRET_UPDATE_FEED_URL != ''
+        env:
+          AGENT_SECRET_UPDATE_PUBLIC_KEY: ${{ vars.AGENT_SECRET_UPDATE_PUBLIC_KEY }}
+          AGENT_SECRET_UPDATE_SIGNING_KEY: ${{ secrets.AGENT_SECRET_UPDATE_SIGNING_KEY }}
+        run: |
+          test -n "$AGENT_SECRET_UPDATE_SIGNING_KEY"
+          printf '%s' "$AGENT_SECRET_UPDATE_SIGNING_KEY" |
+            env -u AGENT_SECRET_UPDATE_SIGNING_KEY mise exec -- scripts/release/generate-update-feed.sh \
+              "$GITHUB_REF_NAME" "_dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \
+              "$RUNNER_TEMP/release-notes.md" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
 
       - name: Verify release artifact architecture
         run: |
@@ -148,6 +249,7 @@ jobs:
           path: |
             _dist/Agent-Secret-${{ github.ref_name }}-macos-arm64.dmg
             _dist/checksums.txt
+            _dist/appcast.xml
 
       - name: Delete temporary signing keychain
         if: ${{ always() }}
@@ -159,7 +261,7 @@ jobs:
 
   publish-draft-release:
     name: Publish Draft Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.candidate_sha == ''
     runs-on: ubuntu-latest
     needs: draft-release-artifacts
     permissions:
@@ -179,6 +281,9 @@ jobs:
           mkdir -p _dist
           cp "_dist/release-artifacts/release-arm64/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" _dist/
           cp "_dist/release-artifacts/release-arm64/checksums.txt" _dist/checksums.txt
+          if [[ -f _dist/release-artifacts/release-arm64/appcast.xml ]]; then
+            cp _dist/release-artifacts/release-arm64/appcast.xml _dist/
+          fi
           scripts/release/prepare-bootstrap-scripts.sh "$GITHUB_REF_NAME" _dist
 
       - name: Extract changelog release notes
@@ -189,8 +294,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           AGENT_SECRET_RELEASE_NOTES_FILE: _dist/release-notes.md
         run: |
+          assets=()
+          if [[ -f _dist/appcast.xml ]]; then
+            assets+=("_dist/appcast.xml")
+          fi
           scripts/release/publish-draft-release.sh "$GITHUB_REF_NAME" \
             "_dist/Agent-Secret-${GITHUB_REF_NAME}-macos-arm64.dmg" \
             "_dist/checksums.txt" \
             "_dist/install.sh" \
-            "_dist/uninstall.sh"
+            "_dist/uninstall.sh" "${assets[@]}"
