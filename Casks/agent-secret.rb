@@ -3,8 +3,8 @@
 require "tempfile"
 
 cask "agent-secret" do
-  version "0.0.34"
-  sha256 "4d3ed7aea0f378a2c8e30741a83932c817dd452031d014c5fff39d5263973fb5"
+  version "0.1.0"
+  sha256 "fc4de36ae6b6e38a108f8dd5f01d7fdd87af86bc86041fce35fd9a40d9ce949f"
 
   url "https://github.com/kovyrin/agent-secret/releases/download/v#{version}/Agent-Secret-v#{version}-macos-arm64.dmg"
   name "Agent Secret"
